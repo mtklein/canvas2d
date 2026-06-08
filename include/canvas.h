@@ -77,6 +77,15 @@ void canvas_fill(canvas *__single cv);
 void canvas_clip(canvas *__single cv);
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
+// Gradient stroke paint, mirroring the fill gradient calls; stroke() uses it
+// until the next canvas_set_stroke_rgba.  (Coordinates are baked through the
+// transform now, as for fills.)
+void canvas_set_stroke_linear_gradient(canvas *__single cv,
+                                       float x0, float y0, float x1, float y1);
+void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
+                                       float r0, float x1, float y1, float r1);
+void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
+                                  float r, float g, float b, float a);
 void canvas_set_line_width(canvas *__single cv, float width);
 void canvas_set_line_join(canvas *__single cv, canvas_line_join join);
 void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap);

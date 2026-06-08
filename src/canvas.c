@@ -26,6 +26,8 @@ struct canvas_state {
     int fill_is_gradient;  // 0 = solid `fill`; 1 = `fill_grad`
     cnvs_gradient fill_grad;
     gpu_rgba stroke;
+    int stroke_is_gradient;  // 0 = solid `stroke`; 1 = `stroke_grad`
+    cnvs_gradient stroke_grad;
     float global_alpha;
     float line_width;
     cnvs_fill_rule fill_rule;
@@ -86,6 +88,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.fill = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
     cv->cur.fill_is_gradient = 0;
     cv->cur.stroke = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
+    cv->cur.stroke_is_gradient = 0;
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
     cv->cur.fill_rule = CNVS_NONZERO;
@@ -198,34 +201,63 @@ static float ctm_scale(cnvs_mat m) {
     return sqrtf(fabsf(det));
 }
 
-void canvas_set_fill_linear_gradient(canvas *__single cv,
-                                     float x0, float y0, float x1, float y1) {
-    cnvs_gradient *gr = &cv->cur.fill_grad;
+// Initialise a gradient struct in device space (the CTM is baked in now); the
+// caller flips the matching is_gradient flag.  Coordinates are transformed and
+// radii scaled like path points and line widths.
+static void grad_set_linear(canvas *__single cv, cnvs_gradient *gr,
+                            float x0, float y0, float x1, float y1) {
     gr->kind = CNVS_GRAD_LINEAR;
     gr->p0 = xf(cv, x0, y0);
     gr->p1 = xf(cv, x1, y1);
     gr->r0 = 0.0f;
     gr->r1 = 0.0f;
     gr->stop_count = 0;
-    cv->cur.fill_is_gradient = 1;
 }
 
-void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
-                                     float r0, float x1, float y1, float r1) {
+static void grad_set_radial(canvas *__single cv, cnvs_gradient *gr, float x0,
+                            float y0, float r0, float x1, float y1, float r1) {
     float s = ctm_scale(cv->cur.ctm);
-    cnvs_gradient *gr = &cv->cur.fill_grad;
     gr->kind = CNVS_GRAD_RADIAL;
     gr->p0 = xf(cv, x0, y0);
     gr->p1 = xf(cv, x1, y1);
     gr->r0 = r0 * s;
     gr->r1 = r1 * s;
     gr->stop_count = 0;
+}
+
+void canvas_set_fill_linear_gradient(canvas *__single cv,
+                                     float x0, float y0, float x1, float y1) {
+    grad_set_linear(cv, &cv->cur.fill_grad, x0, y0, x1, y1);
+    cv->cur.fill_is_gradient = 1;
+}
+
+void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
+                                     float r0, float x1, float y1, float r1) {
+    grad_set_radial(cv, &cv->cur.fill_grad, x0, y0, r0, x1, y1, r1);
     cv->cur.fill_is_gradient = 1;
 }
 
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.fill_grad, offset,
+                           (gpu_rgba){ .r = r, .g = g, .b = b, .a = a });
+}
+
+void canvas_set_stroke_linear_gradient(canvas *__single cv,
+                                       float x0, float y0, float x1, float y1) {
+    grad_set_linear(cv, &cv->cur.stroke_grad, x0, y0, x1, y1);
+    cv->cur.stroke_is_gradient = 1;
+}
+
+void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
+                                       float r0, float x1, float y1, float r1) {
+    grad_set_radial(cv, &cv->cur.stroke_grad, x0, y0, r0, x1, y1, r1);
+    cv->cur.stroke_is_gradient = 1;
+}
+
+void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
+                                  float r, float g, float b, float a) {
+    cnvs_gradient_add_stop(&cv->cur.stroke_grad, offset,
                            (gpu_rgba){ .r = r, .g = g, .b = b, .a = a });
 }
 
@@ -531,6 +563,32 @@ static void fill_gradient(canvas *__single cv) {
     }
 }
 
+// Colour the stroke triangle list (in scratch_verts) by sampling the gradient at
+// each vertex.  No subdivision: stroke geometry is thin, so per-vertex Gouraud
+// already tracks the ramp closely.
+static void stroke_gradient(canvas *__single cv) {
+    cnvs_gradient const *gr = &cv->cur.stroke_grad;
+    float alpha = cv->cur.global_alpha;
+    cnvs_cverts_reset(&cv->scratch_cverts);
+    for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
+        gpu_vert p0 = cv->scratch_verts.data[i];
+        gpu_vert p1 = cv->scratch_verts.data[i + 1];
+        gpu_vert p2 = cv->scratch_verts.data[i + 2];
+        gpu_cvert a = cvert(p0.x, p0.y,
+                            cnvs_gradient_sample(gr, (cnvs_vec2){ .x = p0.x, .y = p0.y }, alpha));
+        gpu_cvert b = cvert(p1.x, p1.y,
+                            cnvs_gradient_sample(gr, (cnvs_vec2){ .x = p1.x, .y = p1.y }, alpha));
+        gpu_cvert c = cvert(p2.x, p2.y,
+                            cnvs_gradient_sample(gr, (cnvs_vec2){ .x = p2.x, .y = p2.y }, alpha));
+        if (!cnvs_cverts_tri(&cv->scratch_cverts, a, b, c)) {
+            return;
+        }
+    }
+    if (cv->scratch_cverts.len > 0) {
+        gpu_draw_verts(cv->g, cv->scratch_cverts.data, cv->scratch_cverts.len);
+    }
+}
+
 void canvas_fill(canvas *__single cv) {
     if (cv->cur.fill_is_gradient) {
         cv->scratch_spans.len = 0;
@@ -558,6 +616,7 @@ void canvas_fill(canvas *__single cv) {
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
     cv->cur.stroke = (gpu_rgba){ .r = r, .g = g, .b = b, .a = a };
+    cv->cur.stroke_is_gradient = 0;
 }
 
 void canvas_set_line_width(canvas *__single cv, float width) {
@@ -632,10 +691,14 @@ void canvas_stroke(canvas *__single cv) {
         }
     }
     if (cv->scratch_verts.len > 0) {
-        gpu_rgba color = cv->cur.stroke;
-        color.a *= cv->cur.global_alpha;
-        gpu_draw_solid(cv->g, cv->scratch_verts.data, cv->scratch_verts.len,
-                       color, true);
+        if (cv->cur.stroke_is_gradient) {
+            stroke_gradient(cv);
+        } else {
+            gpu_rgba color = cv->cur.stroke;
+            color.a *= cv->cur.global_alpha;
+            gpu_draw_solid(cv->g, cv->scratch_verts.data, cv->scratch_verts.len,
+                           color, true);
+        }
     }
 }
 

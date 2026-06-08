@@ -47,8 +47,9 @@ self-intersecting star, each masking the same flood of stripes (GPU stencil):
 
 ![clip](gallery/clip.png)
 
-Gradients — a diagonal linear fill, an off-centre radial "sphere", and a
-multi-stop rainbow ramp (evaluated on the CPU, Gouraud-interpolated):
+Gradients — a diagonal linear fill (outlined with a cyan→yellow gradient
+*stroke*), an off-centre radial "sphere", and a multi-stop rainbow ramp
+(evaluated on the CPU, Gouraud-interpolated):
 
 ![gradients](gallery/gradients.png)
 
@@ -129,6 +130,7 @@ canvas_save / canvas_restore
 canvas_translate / scale / rotate / transform / set_transform / reset_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
+canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / add_stroke_color_stop
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
 canvas_set_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect
@@ -152,7 +154,7 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ GPU stencil |
-| Gradients — linear + radial fills, multi-stop, CPU-evaluated | ✅ Gouraud |
+| Gradients — linear + radial, fills *and* strokes, multi-stop, CPU-evaluated | ✅ Gouraud |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
 | `drawImage`, text | ❌ not yet |
 | Batched GPU submission | ✅ consecutive draws share one command buffer |

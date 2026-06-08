@@ -87,6 +87,33 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 6, 32), 51, 51, 51, 255, 2));  // restored solid
 
+    // Gradient stroke: a thick horizontal line, red -> blue left to right.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_stroke_linear_gradient(cv, 0.0f, 0.0f, (float)w, 0.0f);
+    canvas_add_stroke_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_add_stroke_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_line_width(cv, 12.0f);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 6.0f, 32.0f);
+    canvas_line_to(cv, 58.0f, 32.0f);
+    canvas_stroke(cv);
+    canvas_read_rgba(cv, px, len);
+    struct px4 s_lft = pixel_at(px, len, w, 10, 32);
+    struct px4 s_rgt = pixel_at(px, len, w, 54, 32);
+    CHECK(s_lft.r > 180 && s_lft.b < 80);  // red end
+    CHECK(s_rgt.b > 180 && s_rgt.r < 80);  // blue end
+
+    // A solid stroke colour reverts the stroke paint away from the gradient.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_stroke_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_line_width(cv, 12.0f);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 6.0f, 32.0f);
+    canvas_line_to(cv, 58.0f, 32.0f);
+    canvas_stroke(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 2));  // solid green again
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

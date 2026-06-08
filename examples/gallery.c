@@ -319,8 +319,8 @@ static void clipping(void) {
     save(c, "gallery/clip.png");
 }
 
-// Gradients: a diagonal linear fill, an off-centre radial "sphere", and a
-// multi-stop rainbow ramp.
+// Gradients: a diagonal linear fill (outlined with a gradient stroke), an
+// off-centre radial "sphere", and a multi-stop rainbow ramp.
 static void gradients(void) {
     canvas *__single c = canvas_create(300, 120);
     if (!c) {
@@ -335,6 +335,14 @@ static void gradients(void) {
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_fill(c);
+    // Outline it with a contrasting gradient stroke (cyan -> yellow, diagonal).
+    canvas_set_stroke_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
+    canvas_add_stroke_color_stop(c, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
+    canvas_add_stroke_color_stop(c, 1.0f, 0.95f, 0.95f, 0.20f, 1.0f);
+    canvas_set_line_width(c, 5.0f);
+    canvas_begin_path(c);
+    canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
+    canvas_stroke(c);
 
     canvas_set_fill_radial_gradient(c, 140.0f, 46.0f, 3.0f, 150.0f, 60.0f, 44.0f);
     canvas_add_fill_color_stop(c, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
