@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 void cnvs_cover_free(cnvs_cover *c) {
     free(c->acc);
@@ -19,9 +20,7 @@ bool cnvs_cover_reset(cnvs_cover *c, int w, int h) {
         c->acc = na;            // pointer and its count updated together
         c->cap = need;
     }
-    for (int i = 0; i < need; i++) {
-        c->acc[i] = 0.0f;
-    }
+    memset(c->acc, 0, (size_t)need * sizeof *c->acc);  // 0.0f is all-zero bits
     return true;
 }
 

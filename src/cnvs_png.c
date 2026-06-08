@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Output cursor sized up front, so a wrong size estimate traps at buf[at]
 // rather than corrupting the heap.
@@ -26,6 +27,13 @@ static void put32be(struct writer *w, uint32_t v) {
     put8(w, (uint8_t)(v >> 16));
     put8(w, (uint8_t)(v >> 8));
     put8(w, (uint8_t)(v));
+}
+
+// Bulk copy `n` bytes into the cursor with one bounds check (vs n put8s); the
+// memcpy still traps if at+n exceeds cap, since w->buf is __counted_by(cap).
+static void put_bytes(struct writer *w, uint8_t const *__counted_by(n) src, size_t n) {
+    memcpy(w->buf + w->at, src, n);
+    w->at += n;
 }
 
 static uint32_t g_crc_table[256];
@@ -77,9 +85,7 @@ static void emit_zlib(struct writer *w,
         put8(w, final ? 0x01u : 0x00u);          // BFINAL + BTYPE=00 (stored)
         put16le(w, (uint16_t)seg);               // LEN
         put16le(w, (uint16_t)(~(uint16_t)seg));  // NLEN = ~LEN
-        for (size_t i = 0; i < seg; i++) {
-            put8(w, raw[off + i]);
-        }
+        put_bytes(w, raw + off, seg);
         off += seg;
     }
     put32be(w, adler32(raw, rawlen));  // big-endian, unlike deflate's LEN/NLEN
@@ -104,13 +110,10 @@ bool cnvs_png_write(char const *__null_terminated path,
     {
         size_t pos = 0;
         for (int y = 0; y < height; y++) {
-            raw[pos] = 0;
+            raw[pos] = 0;  // per-row filter byte (None)
             pos += 1;
-            size_t row = (size_t)y * (size_t)stride;
-            for (int x = 0; x < stride; x++) {
-                raw[pos] = pixels[row + (size_t)x];
-                pos += 1;
-            }
+            memcpy(raw + pos, pixels + (size_t)y * (size_t)stride, (size_t)stride);
+            pos += (size_t)stride;
         }
     }
 
