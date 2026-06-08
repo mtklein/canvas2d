@@ -29,8 +29,8 @@ static void put32be(struct writer *w, uint32_t v) {
     put8(w, (uint8_t)(v));
 }
 
-// Bulk copy `n` bytes into the cursor with one bounds check (vs n put8s); the
-// memcpy still traps if at+n exceeds cap, since w->buf is __counted_by(cap).
+// Bulk copy into the cursor; traps if at+n exceeds cap, since w->buf is
+// __counted_by(cap).
 static void put_bytes(struct writer *w, uint8_t const *__counted_by(n) src, size_t n) {
     memcpy(w->buf + w->at, src, n);
     w->at += n;
