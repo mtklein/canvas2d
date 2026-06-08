@@ -123,25 +123,27 @@ The natural question isn't "how fast vs. Rust" but "how much does the safety cos
 vs `unsafe` comparison:
 
 ```sh
-ninja benchcmp     # hyperfine ./build/release/bench vs ./build/unsafe/bench
+ninja benchcmp     # hyperfine: each phase + e2e, release vs unsafe
 ```
 
-[bench/bench.c](bench/bench.c) is a CPU-only workload (no GPU) that pounds the
-checked hot paths: cubic-Bézier flattening, ear-clip tessellation of concave
-polygons, stroke expansion, and PNG encoding. On an Apple Silicon laptop a recent
-run was:
+The hot paths are benchmarked **in isolation** ([bench/](bench/)) so a slow phase
+can't hide a regression in a faster one, plus an end-to-end run. All are CPU-only
+(no GPU). A recent run on an Apple Silicon laptop:
 
-```
-release (-fbounds-safety):  118.3 ms ± 1.0
-unsafe  (no bounds safety):  92.5 ms ± 0.4
-  → unsafe is 1.28× faster  (≈28% bounds-safety overhead)
-```
+| Phase | `release` (checked) | `unsafe` | overhead |
+|---|---|---|---|
+| `bench_flatten` — cubic-Bézier flattening | 116 ms | 108 ms | **1.07×** |
+| `bench_stroke` — stroke expansion | 43 ms | 36 ms | **1.21×** |
+| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 106 ms | 85 ms | **1.25×** |
+| `bench_tess` — ear-clip tessellation | 42 ms | 30 ms | **1.41×** |
+| `bench` — end-to-end | 120 ms | 93 ms | **1.28×** |
 
-Read that as a **worst case**: this microbenchmark is almost nothing *but*
-bounds-checked indexing (ear clipping is `O(n²)` of point-in-triangle tests; the
-PNG encoder writes every byte through a checked cursor). Real canvas rendering is
-GPU-bound, so the end-to-end cost is far smaller — but ~28% is the honest price on
-the hottest pure-C kernels, and now it's one command to re-measure.
+The spread is the point: tessellation — an `O(n²)` loop of almost nothing *but*
+checked point-in-triangle indexing — pays **41%**, while flattening (lots of float
+math between a few indexed writes) is nearly free at **7%**. The end-to-end 1.28×
+is a blend that, on its own, would mask both. Real canvas rendering is GPU-bound,
+so the end-to-end cost of safety is smaller still — but these are the honest prices
+on the hottest pure-C kernels, one command to re-measure.
 
 ## Roadmap
 

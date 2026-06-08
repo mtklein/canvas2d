@@ -125,13 +125,17 @@ def main():
     w("  description = TEST $bin")
     w("")
     w("rule benchcmp")
-    w("  command = hyperfine --warmup 3 -N ./build/release/bench ./build/unsafe/bench")
+    w("  command = $cmd")
     w("  pool = console")
-    w("  description = hyperfine release vs unsafe")
+    w("  description = benchmark: cost of -fbounds-safety (per phase + e2e)")
     w("")
 
+    # Bench stems, e2e "bench" sorted last; variants that build benches.
+    bench_stems = sorted((os.path.splitext(os.path.basename(b))[0] for b in benches),
+                         key=lambda s: (s == "bench", s))
+    bench_variants = [v for v, cfg in VARIANTS.items() if cfg[3]]
+
     test_stamps = []
-    bench_exes = []
     for variant, (_opt, _bounds, do_tests, do_bench) in VARIANTS.items():
         lib_objs = []
         for c in core_c:
@@ -165,17 +169,27 @@ def main():
                 w(f"build {o}: cc_{variant} {b}")
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
                 produced.append(exe)
-                if stem == "bench":
-                    bench_exes.append(exe)
         w("")
         w(f"build {variant}: phony {' '.join(produced)}")
         w("")
 
+    # All bench executables (every stem in every bench-building variant).
+    bench_exes = [f"build/{v}/{s}" for v in bench_variants for s in bench_stems]
+
+    # One hyperfine invocation per phase, comparing the variants side by side, so
+    # a slow phase can't mask a regression in a fast one.
+    calls = []
+    for s in bench_stems:
+        args = " ".join(f'-n "{s} {v}" ./build/{v}/{s}' for v in bench_variants)
+        calls.append(f"hyperfine --warmup 3 -N {args}")
+    benchcmp_cmd = " ; ".join(calls)
+
     w(f"build test: phony {' '.join(test_stamps)}")
     w(f"build bench: phony {' '.join(bench_exes)}")
     # `benchcmp` names a file that is never created, so ninja always reruns it
-    # (after building the two binaries it depends on).
+    # (after building the binaries it depends on).
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
+    w(f"  cmd = {benchcmp_cmd}")
     w("build all: phony release debug")
     w("default all")
     w("")

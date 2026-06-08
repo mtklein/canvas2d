@@ -144,20 +144,30 @@ independent of the cast diagnostic.
 
 We measure this directly: the `release` and `unsafe` builds are identical `-Os`
 sources differing only in `-fbounds-safety`, and `ninja benchcmp` runs hyperfine
-over both. On a CPU-only workload that does almost nothing but checked indexing —
-ear-clip tessellation (`O(n²)` point-in-triangle tests), Bézier flattening, stroke
-expansion, and PNG encoding through a per-byte cursor — the overhead was about
-**28%** (`release` ~118 ms vs `unsafe` ~92 ms).
+over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
-Two honest framings of that number:
+| phase | overhead |
+|---|---|
+| cubic-Bézier flattening | 1.07× |
+| stroke expansion | 1.21× |
+| PNG encode | 1.25× |
+| ear-clip tessellation | **1.41×** |
+| end-to-end | 1.28× |
 
-- It's a **worst case**. This microbenchmark is wall-to-wall bounds checks in
-  tight loops; there's little real work to amortise them against. Code that does
-  arithmetic or memory traffic between accesses sees far less.
-- Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety here is
-  much smaller than 28% — but the hottest pure-C kernels do pay, and it's worth
-  knowing by how much rather than hand-waving "negligible." The compiler still
-  elides checks it can prove redundant; 28% is what's left on code it can't.
+The isolation matters. The end-to-end 1.28× is a blend that hides a 6× spread
+between phases — and a regression in tessellation could disappear into it. What
+the spread shows:
+
+- **Tessellation pays the most (~41%)** because it is almost nothing *but* checked
+  indexing: an `O(n²)` loop doing point-in-triangle tests against the polygon and
+  the working ring. There's no other work to amortise the bounds checks against.
+- **Flattening is nearly free (~7%)**: lots of float arithmetic (de Casteljau
+  midpoints, the flatness test) between a handful of indexed pushes, so the checks
+  are noise next to the FLOPs.
+- Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety is
+  smaller still — but these are the honest prices on the hottest pure-C kernels.
+  The compiler elides checks it can prove redundant; what's left is the cost of the
+  ones it can't, and that cost is very workload-dependent.
 
 ## ABI and the C ↔ Objective-C boundary
 
