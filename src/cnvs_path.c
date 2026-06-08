@@ -138,7 +138,6 @@ static float chord_len2(cnvs_vec2 a, cnvs_vec2 b) {
 
 static bool quad_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                      float tol2, int depth) {
-    // Flat enough when control offset^2 <= tol^2 * chord_len^2.
     if (depth >= 16 || cross_chord2(p0, p2, p1) <= tol2 * chord_len2(p0, p2)) {
         return cnvs_path_line_to(p, p2);
     }

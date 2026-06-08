@@ -1,9 +1,5 @@
 #pragma once
 
-// Shared helpers for GPU pixel tests.  static inline so a test may include this
-// without using every helper -- an unused static inline is warning-free, even
-// under -Weverything.
-
 #include "canvas.h"
 
 #include <stdlib.h>

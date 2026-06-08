@@ -1,11 +1,6 @@
-// End-to-end CPU benchmark of the bounds-safety-covered hot paths: curve
-// flattening, ear-clip tessellation, stroke expansion, and PNG encoding.  No GPU
-// work, so the timing reflects the checked C, not Metal.  See bench_flatten.c /
-// bench_tess.c / bench_stroke.c / bench_png.c for the isolated per-phase versions.
-//
-// Built in two variants that differ ONLY in -fbounds-safety (release vs unsafe),
-// so `ninja benchcmp` (hyperfine) measures exactly what the bounds checks cost.
-// Deterministic: a fixed-seed LCG drives all geometry.
+// End-to-end CPU benchmark (no GPU): flatten, tessellate, stroke, encode.  The
+// bench_*.c files isolate each phase.  release vs unsafe differ only in
+// -fbounds-safety, so `ninja benchcmp` measures what the bounds checks cost.
 
 #include "bench_util.h"
 
@@ -42,7 +37,6 @@ int main(void) {
                                bench_rpt(w, h), 0.25f);
         }
 
-        // Fill: tessellate every fillable subpath.
         cnvs_verts_reset(&verts);
         for (int s = 0; s < path.sp_len; s++) {
             cnvs_subpath sp = path.subs[s];
@@ -54,7 +48,6 @@ int main(void) {
         }
         sink += (double)verts.len;
 
-        // Stroke: expand every subpath.
         cnvs_verts_reset(&verts);
         for (int s = 0; s < path.sp_len; s++) {
             cnvs_subpath sp = path.subs[s];
@@ -67,8 +60,7 @@ int main(void) {
         sink += (double)verts.len;
     }
 
-    // PNG encoding -> stress the per-byte bounds-checked output cursor plus the
-    // CRC32/Adler32 loops.  Output goes to /dev/null so disk I/O isn't timed.
+    // /dev/null keeps disk I/O out of the timing; the encode still runs in full.
     {
         int const iw = 256;
         int const ih = 256;

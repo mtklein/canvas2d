@@ -3,9 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// A bounds-checked output cursor.  Every byte goes through buf[at], so if the
-// pre-computed output size is ever wrong, -fbounds-safety traps instead of
-// silently corrupting memory -- the encoder is self-checking.
+// Output cursor sized up front, so a wrong size estimate traps at buf[at]
+// rather than corrupting the heap.
 struct writer {
     uint8_t *__counted_by(cap) buf;
     size_t cap;
@@ -29,8 +28,6 @@ static void put32be(struct writer *w, uint32_t v) {
     put8(w, (uint8_t)(v));
 }
 
-// --- CRC32 (PNG/zlib polynomial) -------------------------------------------
-
 static uint32_t g_crc_table[256];
 static bool g_crc_ready = false;
 
@@ -45,7 +42,6 @@ static void crc_init(void) {
     g_crc_ready = true;
 }
 
-// CRC32 over the already-written bytes in [start, end) of the output.
 static uint32_t crc32_range(struct writer const *w, size_t start, size_t end) {
     if (!g_crc_ready) {
         crc_init();
@@ -58,8 +54,6 @@ static uint32_t crc32_range(struct writer const *w, size_t start, size_t end) {
     return c ^ 0xFFFFFFFFu;
 }
 
-// --- zlib stream (stored/uncompressed deflate blocks) ----------------------
-
 static uint32_t adler32(uint8_t const *__counted_by(n) data, size_t n) {
     uint32_t s1 = 1, s2 = 0;
     for (size_t i = 0; i < n; i++) {
@@ -71,8 +65,8 @@ static uint32_t adler32(uint8_t const *__counted_by(n) data, size_t n) {
 
 static void emit_zlib(struct writer *w,
                       uint8_t const *__counted_by(rawlen) raw, size_t rawlen) {
-    put8(w, 0x78);  // zlib header: CM=deflate, CINFO=7 ...
-    put8(w, 0x01);  // ... FLEVEL=0, FCHECK makes 0x7801 a multiple of 31.
+    put8(w, 0x78);  // CMF/FLG: 0x7801 selects deflate and is a multiple of 31
+    put8(w, 0x01);
     size_t off = 0;
     while (off < rawlen) {
         size_t seg = rawlen - off;
@@ -88,15 +82,13 @@ static void emit_zlib(struct writer *w,
         }
         off += seg;
     }
-    put32be(w, adler32(raw, rawlen));  // zlib trailer: Adler-32, big-endian
+    put32be(w, adler32(raw, rawlen));  // big-endian, unlike deflate's LEN/NLEN
 }
-
-// ---------------------------------------------------------------------------
 
 bool cnvs_png_write(char const *__null_terminated path,
                     uint8_t const *__counted_by(width * height * 4) pixels,
                     int width, int height) {
-    // Bound the size so the integer arithmetic below cannot overflow.
+    // Bounded so the size arithmetic below cannot overflow.
     if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
         return false;
     }
@@ -104,7 +96,7 @@ bool cnvs_png_write(char const *__null_terminated path,
     int stride = width * 4;
     size_t const rawlen = (size_t)height * (size_t)(stride + 1);
 
-    // Build the filtered raw stream: each row is prefixed with filter byte 0.
+    // Each row is prefixed by a filter-type byte (0 = None).
     uint8_t *__counted_by(rawlen) raw = malloc(rawlen);
     if (!raw) {
         return false;
@@ -112,7 +104,7 @@ bool cnvs_png_write(char const *__null_terminated path,
     {
         size_t pos = 0;
         for (int y = 0; y < height; y++) {
-            raw[pos] = 0;  // filter type 0 (None)
+            raw[pos] = 0;
             pos += 1;
             size_t row = (size_t)y * (size_t)stride;
             for (int x = 0; x < stride; x++) {
@@ -122,10 +114,9 @@ bool cnvs_png_write(char const *__null_terminated path,
         }
     }
 
-    // Pre-compute the exact output size.
     size_t nseg = (rawlen + 65534u) / 65535u;
     size_t zlib_len = 2u + 5u * nseg + rawlen + 4u;
-    size_t const total = 8u                       // PNG signature
+    size_t const total = 8u                       // signature
                        + (12u + 13u)              // IHDR
                        + (12u + zlib_len)          // IDAT
                        + 12u;                      // IEND
@@ -137,33 +128,29 @@ bool cnvs_png_write(char const *__null_terminated path,
 
     struct writer w = { .buf = out, .cap = total, .at = 0 };
 
-    // Signature.
     static uint8_t const sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
     for (int i = 0; i < 8; i++) {
         put8(&w, sig[i]);
     }
 
-    // IHDR.
     put32be(&w, 13u);
     size_t ihdr = w.at;
     put8(&w, 'I'); put8(&w, 'H'); put8(&w, 'D'); put8(&w, 'R');
     put32be(&w, (uint32_t)width);
     put32be(&w, (uint32_t)height);
     put8(&w, 8u);  // bit depth
-    put8(&w, 6u);  // colour type: RGBA
+    put8(&w, 6u);  // colour type RGBA
     put8(&w, 0u);  // compression
     put8(&w, 0u);  // filter method
     put8(&w, 0u);  // interlace
     put32be(&w, crc32_range(&w, ihdr, w.at));
 
-    // IDAT.
     put32be(&w, (uint32_t)zlib_len);
     size_t idat = w.at;
     put8(&w, 'I'); put8(&w, 'D'); put8(&w, 'A'); put8(&w, 'T');
     emit_zlib(&w, raw, rawlen);
     put32be(&w, crc32_range(&w, idat, w.at));
 
-    // IEND.
     put32be(&w, 0u);
     size_t iend = w.at;
     put8(&w, 'I'); put8(&w, 'E'); put8(&w, 'N'); put8(&w, 'D');

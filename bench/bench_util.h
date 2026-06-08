@@ -1,16 +1,12 @@
 #pragma once
 
-// Shared helpers for the benchmarks.  static inline so each bench TU can include
-// this and use only what it needs -- an unused static inline is warning-free.
-
 #include "cnvs_math.h"
 #include "cnvs_path.h"
 
 #include <math.h>
 #include <stdint.h>
 
-// Deterministic LCG in [0, 1).  The state is a function-local static, so there
-// is no file-scope variable to leave unused.
+// Deterministic LCG in [0, 1).
 static inline float bench_frand(void) {
     static uint64_t state = 0x9E3779B97F4A7C15ULL;
     state = state * 6364136223846793005ULL + 1442695040888963407ULL;

@@ -1,7 +1,4 @@
-// Isolated benchmark: PNG encoding (per-byte checked cursor + CRC32/Adler32).
-// Encodes to /dev/null so disk I/O isn't part of the measurement (the encode
-// processes ~megabytes; the single write per call is negligible and identical
-// across variants).
+// Isolated benchmark: PNG encoding.  /dev/null keeps disk I/O out of the timing.
 #include "cnvs_png.h"
 
 #include <stdint.h>

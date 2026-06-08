@@ -33,8 +33,8 @@ struct canvas {
     int stack_len;
     int stack_cap;
     cnvs_path path;
-    cnvs_verts scratch_verts;  // reused tessellation/stroke output
-    cnvs_ints scratch_ints;    // reused ear-clip working ring
+    cnvs_verts scratch_verts;
+    cnvs_ints scratch_ints;
 };
 
 canvas *__single canvas_create(int width, int height) {
@@ -62,7 +62,6 @@ canvas *__single canvas_create(int width, int height) {
     cv->stack_len = 0;
     cv->stack_cap = 0;
     cnvs_path_init(&cv->path);
-    // scratch_verts / scratch_ints are zero-initialised by calloc.
     return cv;
 }
 
@@ -143,7 +142,6 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha) {
     cv->cur.global_alpha = alpha;
 }
 
-// Transform an axis-aligned rectangle by the CTM and draw it as two triangles.
 static void fill_quad(canvas *__single cv, float x, float y, float w, float h,
                       gpu_rgba color, bool blend) {
     cnvs_mat m = cv->cur.ctm;
@@ -170,7 +168,6 @@ void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
     fill_quad(cv, x, y, w, h, color, true);
 }
 
-// Transform a user-space point by the current transform.
 static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
     return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
 }
@@ -253,7 +250,7 @@ void canvas_fill(canvas *__single cv) {
         if (sp.count < 3) {
             continue;
         }
-        cnvs_vec2 *poly = cv->path.pts + sp.start;  // bounds-checked slice
+        cnvs_vec2 *poly = cv->path.pts + sp.start;
         if (!cnvs_tess_polygon(poly, sp.count, &cv->scratch_verts,
                                &cv->scratch_ints)) {
             return;

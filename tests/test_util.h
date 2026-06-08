@@ -2,9 +2,7 @@
 
 #include <stdio.h>
 
-// Minimal test harness: CHECK records failures, TEST_REPORT() returns a process
-// exit code (0 = all passed).  Tests are built with the same strict flags as
-// the library, so this header must itself be -fbounds-safety/-Weverything clean.
+// TEST_REPORT() returns 0 if every CHECK passed, else 1 -- use as main's return.
 
 static int g_test_fails = 0;
 

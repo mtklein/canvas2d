@@ -1,11 +1,8 @@
 #pragma once
 
-// Expand a polyline into stroke triangles: one quad per segment plus a bevel
-// join at each shared vertex.  Caps are butt (no extension).  Widths are in
-// device space (the caller bakes in the CTM scale).
-//
-// M1 limitation: bevel joins only (no miter/round), and joins may double-cover
-// on the inner side -- visible only for translucent strokes.
+// `half_width` is in device space -- the caller bakes in the CTM scale.
+// Bevel joins and butt caps only; joins double-cover on the inner side, which
+// shows only for translucent strokes.
 
 #include "cnvs_geom.h"
 #include "cnvs_math.h"

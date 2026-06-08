@@ -32,8 +32,6 @@ def rel(p):
     return os.path.relpath(p, HERE)
 
 
-# --- flag groups -----------------------------------------------------------
-
 CSTD = "-std=c23"
 BOUNDS = "-fbounds-safety"
 

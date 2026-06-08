@@ -1,9 +1,5 @@
-// Objective-C Metal backend behind the C ABI declared in gpu.h.
-//
-// This is the project's single "unsafe boundary": it is compiled WITHOUT
-// -fbounds-safety (it talks to a system framework), under ARC.  It keeps the
-// surface tiny -- create an offscreen target, clear it, draw solid triangles,
-// read pixels back -- so that everything interesting stays in the checked C core.
+// Objective-C Metal backend behind the C ABI in gpu.h, and the project's single
+// unsafe boundary: -fbounds-safety is C-only, so this talks to Metal without it.
 
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
