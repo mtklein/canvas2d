@@ -58,6 +58,11 @@ single compositor command buffer (the alpha overlap shows ordering is preserved)
 
 ![batch](gallery/batch.png)
 
+`drawImage` — a 16×16 source drawn 1:1 (crisp), scaled up (bilinear smoothing),
+and scaled + rotated (AA quad edges from the coverage rasterizer):
+
+![drawimage](gallery/drawimage.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
@@ -141,6 +146,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path
 canvas_fill / canvas_stroke / canvas_clip
 canvas_get_image_data / put_image_data / read_rgba / write_png
+canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_destroy(cv);
 ```
 
@@ -159,7 +165,8 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ exact per-pixel |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage`, text | ❌ not yet |
+| `drawImage` — RGBA8 source, bilinear, transform/clip/alpha-aware | ✅ |
+| Text | ❌ not yet |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
@@ -232,7 +239,10 @@ hottest pure-C kernels, one command to re-measure.
   checked C ([cnvs_cover.c](src/cnvs_cover.c)) antialiases fills, strokes, and
   clip edges in **both** axes; the GPU is now a pure tile compositor with no
   MSAA. See the AA discussion in [docs/bounds-safety.md](docs/bounds-safety.md).
-- `drawImage`, text.
+- ~~`drawImage`~~ — done; bilinear-sampled RGBA8 source, transformed/clipped/
+  alpha-composited through the coverage pipeline ([canvas.c](src/canvas.c)
+  `canvas_draw_image*`).
+- Text.
 
 ## Layout
 

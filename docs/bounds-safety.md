@@ -38,6 +38,10 @@ Passing `(pointer, count)` pairs is exactly how careful C already gets written;
 the annotation just makes the relationship checkable. Our PNG encoder's
 `adler32(uint8_t const *__counted_by(n) data, size_t n)` reads naturally and the
 loop body needs nothing special — indexing is checked against `n` automatically.
+`drawImage`'s bilinear sampler is the same story at its sharpest: a
+`uint8_t const *__counted_by(slen)` source, four clamp-to-edge taps per output
+pixel, every `src[(y*sw + x)*4 + k]` guarded — the canonical 2D image-sampling
+hot path, and the annotations cost nothing to write or read.
 
 **Slicing converts cleanly.** The single nicest surprise: to hand one subpath to
 the stroker we write
@@ -286,8 +290,12 @@ were superseded by the analytic coverage rasterizer.
 
 ## Aspirations
 
-- `drawImage` (image sampling — likely CPU bilinear, another rich bounds-safety
-  target) and text.
+- Text (glyph rasterization / an atlas — the remaining Canvas 2D pillar).
+- Vectorizing the hot kernels with `ext_vector_type` to see how SIMD and
+  `-fbounds-safety` get along.
+
+(`drawImage` was on this list — now done; its bilinear sampler is noted above as
+the canonical checked-2D-sampling case, and it cost nothing.)
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 
