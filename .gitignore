@@ -1,0 +1,6 @@
+# Build outputs and generated files.
+/build/
+/build.ninja
+/.ninja_log
+/.ninja_deps
+.DS_Store
