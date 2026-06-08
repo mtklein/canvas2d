@@ -32,6 +32,7 @@ struct canvas_state {
     float dash[CANVAS_MAX_DASH];
     int dash_count;
     float dash_offset;
+    int clip_depth;  // number of clips active when this state was saved
 };
 
 struct canvas {
@@ -47,7 +48,15 @@ struct canvas {
     cnvs_verts scratch_verts;
     cnvs_edges scratch_edges;
     cnvs_xings scratch_xings;
+    // Clip stack: one triangle set per active clip; their intersection is the
+    // mask.  clip_len tracks the live count; entries past it stay allocated for
+    // reuse.  cur.clip_depth records how many were live at each save().
+    cnvs_verts *__counted_by(clip_cap) clip_tris;
+    int clip_len;
+    int clip_cap;
 };
+
+static void clip_rebuild(canvas *__single cv);
 
 canvas *__single canvas_create(int width, int height) {
     if (width <= 0 || height <= 0) {
@@ -76,9 +85,13 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.miter_limit = 10.0f;
     cv->cur.dash_count = 0;
     cv->cur.dash_offset = 0.0f;
+    cv->cur.clip_depth = 0;
     cv->stack = NULL;
     cv->stack_len = 0;
     cv->stack_cap = 0;
+    cv->clip_tris = NULL;
+    cv->clip_len = 0;
+    cv->clip_cap = 0;
     cnvs_path_init(&cv->path);
     return cv;
 }
@@ -89,6 +102,10 @@ void canvas_destroy(canvas *__single cv) {
     }
     gpu_destroy(cv->g);
     free(cv->stack);
+    for (int i = 0; i < cv->clip_cap; i++) {
+        cnvs_verts_free(&cv->clip_tris[i]);
+    }
+    free(cv->clip_tris);
     cnvs_path_free(&cv->path);
     cnvs_verts_free(&cv->scratch_verts);
     cnvs_edges_free(&cv->scratch_edges);
@@ -123,6 +140,10 @@ void canvas_restore(canvas *__single cv) {
     if (cv->stack_len > 0) {
         cv->stack_len -= 1;
         cv->cur = cv->stack[cv->stack_len];
+        if (cv->clip_len != cv->cur.clip_depth) {
+            cv->clip_len = cv->cur.clip_depth;  // drop clips added since the save
+            clip_rebuild(cv);
+        }
     }
 }
 
@@ -359,6 +380,46 @@ void canvas_close_path(canvas *__single cv) {
 
 void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
     cv->cur.fill_rule = (rule == CANVAS_EVENODD) ? CNVS_EVENODD : CNVS_NONZERO;
+}
+
+static bool clip_grow(canvas *__single cv, int need) {
+    if (need <= cv->clip_cap) {
+        return true;
+    }
+    int newcap = cnvs_grow_cap(cv->clip_cap, need);
+    cnvs_verts *nt = realloc(cv->clip_tris, (size_t)newcap * sizeof *nt);
+    if (!nt) {
+        return false;
+    }
+    for (int i = cv->clip_cap; i < newcap; i++) {
+        nt[i] = (cnvs_verts){ 0 };  // fresh slots start empty/unallocated
+    }
+    cv->clip_tris = nt;       // pointer and its count updated together
+    cv->clip_cap = newcap;
+    return true;
+}
+
+// Re-mask the GPU stencil from scratch: clear, then intersect each live clip.
+static void clip_rebuild(canvas *__single cv) {
+    gpu_clip_reset(cv->g);
+    for (int i = 0; i < cv->clip_len; i++) {
+        gpu_clip_add(cv->g, cv->clip_tris[i].data, cv->clip_tris[i].len);
+    }
+}
+
+void canvas_clip(canvas *__single cv) {
+    if (!clip_grow(cv, cv->clip_len + 1)) {
+        return;
+    }
+    cnvs_verts *slot = &cv->clip_tris[cv->clip_len];
+    cnvs_verts_reset(slot);
+    if (!cnvs_fill_path(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
+                        slot, &cv->scratch_edges, &cv->scratch_xings)) {
+        return;
+    }
+    cv->clip_len += 1;
+    cv->cur.clip_depth = cv->clip_len;
+    clip_rebuild(cv);
 }
 
 void canvas_fill(canvas *__single cv) {

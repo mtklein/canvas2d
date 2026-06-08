@@ -42,6 +42,11 @@ Path primitives — a filled ellipse and a rounded rectangle (filled + outlined)
 
 ![paths](gallery/paths.png)
 
+Clipping — a circular window, the intersection of two discs, and a
+self-intersecting star, each masking the same flood of stripes (GPU stencil):
+
+![clip](gallery/clip.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
@@ -81,14 +86,15 @@ Three variants are produced from one source tree:
       │  │
       │  ├── cnvs_math     2x3 affine transforms
       │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
-      │  ├── cnvs_tess     ear-clipping fill triangulation
-      │  ├── cnvs_stroke   polyline → stroke triangles (bevel joins, butt caps)
+      │  ├── cnvs_fill     scanline rasterizer → span quads (winding rules)
+      │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
+      │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
       │  ├── cnvs_geom     growable vertex/int buffers
       │  └── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
       │
       ▼   gpu.h  (C ABI: opaque gpu*, gpu_vert, gpu_rgba)
    metal_backend.m  ── the ONE unsafe boundary: device, pipelines, offscreen
-                        RGBA8 target, draw, readback   (Objective-C + ARC)
+                        RGBA8 target, draw, stencil clip, readback  (ObjC + ARC)
 ```
 
 Everything above `gpu.h` is pure C23 under `-fbounds-safety`. The
@@ -115,7 +121,7 @@ canvas_set_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path
-canvas_fill / canvas_stroke
+canvas_fill / canvas_stroke / canvas_clip
 canvas_get_image_data / put_image_data / read_rgba / write_png
 canvas_destroy(cv);
 ```
@@ -132,8 +138,9 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ scanline rasterizer |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
+| `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ GPU stencil |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
-| Gradients, clipping, `drawImage`, text | ❌ not yet |
+| Gradients, `drawImage`, text | ❌ not yet |
 | Batched GPU submission | ❌ one command buffer per draw (correctness first) |
 
 ## Warning policy
@@ -191,8 +198,10 @@ on the hottest pure-C kernels, one command to re-measure.
   ([cnvs_fill.c](src/cnvs_fill.c)) with nonzero + even-odd.
 - ~~`getImageData` / `putImageData`~~ — done; clipped 2D blits
   ([cnvs_image.c](src/cnvs_image.c)).
-- Anti-aliasing (MSAA); miter/round joins; batched GPU submission.
-- Gradients, clipping, `drawImage`, text.
+- ~~`clip()`~~ — done; the scanline fill's non-overlapping spans drive a GPU
+  stencil mask ([metal_backend.m](src/metal_backend.m), `gpu_clip_add`).
+- Anti-aliasing (MSAA); batched GPU submission.
+- Gradients, `drawImage`, text.
 
 ## Layout
 

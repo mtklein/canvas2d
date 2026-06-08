@@ -268,6 +268,56 @@ static void paths(void) {
     save(c, "gallery/paths.png");
 }
 
+// Flood a box with rainbow stripes; only what falls inside the active clip
+// survives, so the stripes trace out the clip shape.
+static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
+    int const n = 16;
+    float bw = (x1 - x0) / (float)n;
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / (float)(n - 1);
+        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+        canvas_fill_rect(c, x0 + (float)i * bw, y0, bw + 1.0f, y1 - y0);
+    }
+}
+
+// Clipping: a circular window, the intersection of two discs, and a
+// self-intersecting star window — each masking the same flood of stripes.
+static void clipping(void) {
+    canvas *__single c = canvas_create(300, 120);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
+
+    canvas_save(c);
+    canvas_begin_path(c);
+    canvas_arc(c, 55.0f, 60.0f, 40.0f, 0.0f, TAU, false);
+    canvas_clip(c);
+    clip_stripes(c, 15.0f, 20.0f, 95.0f, 100.0f);
+    canvas_restore(c);
+
+    canvas_save(c);
+    canvas_begin_path(c);
+    canvas_arc(c, 135.0f, 60.0f, 38.0f, 0.0f, TAU, false);
+    canvas_clip(c);
+    canvas_begin_path(c);
+    canvas_arc(c, 170.0f, 60.0f, 38.0f, 0.0f, TAU, false);
+    canvas_clip(c);  // intersect: only the lens overlap survives
+    clip_stripes(c, 95.0f, 20.0f, 210.0f, 100.0f);
+    canvas_restore(c);
+
+    canvas_save(c);
+    star(c, 250.0f, 60.0f, 42.0f);
+    canvas_clip(c);
+    clip_stripes(c, 205.0f, 15.0f, 295.0f, 105.0f);
+    canvas_restore(c);
+
+    save(c, "gallery/clip.png");
+}
+
 int main(void) {
     shapes();
     winding();
@@ -275,5 +325,6 @@ int main(void) {
     imagedata();
     joinscaps();
     paths();
+    clipping();
     return 0;
 }

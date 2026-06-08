@@ -30,6 +30,13 @@ void gpu_draw_solid(gpu *__single g,
                     gpu_vert const *__counted_by(count) verts, int count,
                     gpu_rgba color, bool blend);
 
+// Clip stack via the stencil buffer.  gpu_clip_reset clears it (no clip);
+// gpu_clip_add intersects the triangles (which must be non-overlapping, e.g. the
+// scanline fill output) into the current clip.  Subsequent draws are masked to
+// the intersection of all added clips.
+void gpu_clip_reset(gpu *__single g);
+void gpu_clip_add(gpu *__single g, gpu_vert const *__counted_by(count) verts, int count);
+
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void gpu_read_rgba(gpu *__single g, uint8_t *__counted_by(len) out, int len);
 

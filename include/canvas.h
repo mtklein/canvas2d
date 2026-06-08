@@ -59,6 +59,11 @@ void canvas_close_path(canvas *__single cv);
 void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule);
 void canvas_fill(canvas *__single cv);
 
+// Intersect the clip region with the current path (under the current fill rule).
+// Subsequent draws are masked to the running intersection of all clips; the
+// region is part of the saved state, so save()/restore() brackets a clip.
+void canvas_clip(canvas *__single cv);
+
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_line_width(canvas *__single cv, float width);
 void canvas_set_line_join(canvas *__single cv, canvas_line_join join);

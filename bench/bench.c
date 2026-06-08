@@ -49,7 +49,8 @@ int main(void) {
                 continue;
             }
             cnvs_vec2 *poly = path.pts + sp.start;
-            cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f, &verts);
+            cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
+                                 CNVS_JOIN_MITER, CNVS_CAP_BUTT, 10.0f, &verts);
         }
         sink += (double)verts.len;
     }
