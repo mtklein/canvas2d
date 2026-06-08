@@ -26,6 +26,12 @@ typedef struct {
 // Build a colour from float components (the only place float -> _Float16 narrows).
 cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a);
 
+// sRGB transfer functions on a single colour channel, both clamped to [0,1].
+// Convention: float/16F values are linear-light; unorm r,g,b are sRGB-encoded
+// (alpha and coverage are always linear, so they don't use these).
+float cnvs_srgb_encode(float linear);  // linear -> sRGB (for 8-bit output)
+float cnvs_srgb_decode(float srgb);    // sRGB -> linear (for 8-bit input)
+
 typedef struct {
     float a, b, c, d, e, f;
 } cnvs_mat;

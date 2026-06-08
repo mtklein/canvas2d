@@ -28,6 +28,13 @@ void canvas_set_transform(canvas *__single cv,
                           float a, float b, float c, float d, float e, float f);
 void canvas_reset_transform(canvas *__single cv);
 
+// Colour components passed to this API are LINEAR-light (compositing, gradient
+// interpolation, and antialiasing all happen in linear).  Author from sRGB (CSS
+// hex / 0-255 style) by decoding each r,g,b channel through this helper; alpha
+// is already linear.  8-bit pixels at the edges (get/putImageData, PNG) use the
+// sRGB transfer automatically.
+float canvas_srgb_to_linear(float srgb);
+
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_global_alpha(canvas *__single cv, float alpha);
 

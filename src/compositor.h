@@ -1,14 +1,14 @@
 #pragma once
 
 // The rendering backend boundary.  The canvas does all the interesting work --
-// geometry, analytic coverage, gradient evaluation, clip intersection -- in
-// bounds-checked C, and hands the compositor only finished RGBA8 tiles to blend.
-// A Metal backend implements this today; nothing here is GPU-specific, so a pure
-// CPU backend could implement the same ABI.
+// geometry, analytic coverage, gradient evaluation, clip intersection, and the
+// sRGB <-> linear transfer at the 8-bit edges -- in bounds-checked C, and hands
+// the compositor only finished tiles to blend.  A Metal backend implements this
+// today; nothing here is GPU-specific, so a pure CPU backend could too.
 //
-// Colour tiles are tightly packed straight-alpha RGBA16F (_Float16 channels),
-// row-major, top row first; putImageData tiles are RGBA8.  All regions must lie
-// within the target (the caller clips to it).
+// Everything here is linear-light, straight-alpha RGBA16F (_Float16 channels),
+// row-major, top row first: the compositor is a pure *linear* blender and never
+// touches a transfer function.  All regions must lie within the target.
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -31,14 +31,15 @@ void compositor_set_clip(compositor *__single c,
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       _Float16 const *__counted_by(w * h * 4) tile);
 
-// Overwrite a w*h region at (x,y) with the RGBA8 tile (no blend, ignores the
-// clip).  This is putImageData, whose source is 8-bit.
+// Overwrite a w*h region at (x,y) with the RGBA16F tile (no blend, ignores the
+// clip).  This is putImageData (the caller has already decoded sRGB -> linear).
 void compositor_replace(compositor *__single c, int x, int y, int w, int h,
-                        uint8_t const *__counted_by(w * h * 4) tile);
+                        _Float16 const *__counted_by(w * h * 4) tile);
 
 // Erase a rectangle toward transparent black, weighted by the clip mask.  This
 // is clearRect (with no clip set it fully clears).
 void compositor_clear(compositor *__single c, int x, int y, int w, int h);
 
-// Tightly packed RGBA8, top row first; len must be width*height*4.
-void compositor_read_rgba(compositor *__single c, uint8_t *__counted_by(len) out, int len);
+// Read the linear-light target as tightly packed RGBA16F, top row first; len
+// must be width*height*4.  The caller encodes to sRGB 8-bit for output.
+void compositor_read_f16(compositor *__single c, _Float16 *__counted_by(len) out, int len);

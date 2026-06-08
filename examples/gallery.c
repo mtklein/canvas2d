@@ -10,6 +10,28 @@
 
 static float const TAU = 6.2831853f;
 
+// The canvas API is linear-light; these author colours in sRGB (CSS-style) and
+// decode r,g,b to linear, the way a real consumer would.  Alpha stays linear.
+static float S(float c) { return canvas_srgb_to_linear(c); }
+
+static void fill_srgb(canvas *__single cv, float r, float g, float b, float a) {
+    canvas_set_fill_rgba(cv, S(r), S(g), S(b), a);
+}
+
+static void stroke_srgb(canvas *__single cv, float r, float g, float b, float a) {
+    canvas_set_stroke_rgba(cv, S(r), S(g), S(b), a);
+}
+
+static void fill_stop_srgb(canvas *__single cv, float off,
+                           float r, float g, float b, float a) {
+    canvas_add_fill_color_stop(cv, off, S(r), S(g), S(b), a);
+}
+
+static void stroke_stop_srgb(canvas *__single cv, float off,
+                             float r, float g, float b, float a) {
+    canvas_add_stroke_color_stop(cv, off, S(r), S(g), S(b), a);
+}
+
 static void save(canvas *__single cv, char const *__null_terminated path) {
     if (!canvas_write_png(cv, path)) {
         (void)fprintf(stderr, "gallery: write failed: %s\n", path);
@@ -36,25 +58,25 @@ static void shapes(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.12f, 0.12f, 0.16f, 1.0f);
+    fill_srgb(c, 0.12f, 0.12f, 0.16f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 240.0f, 180.0f);
 
-    canvas_set_fill_rgba(c, 0.90f, 0.25f, 0.25f, 1.0f);
+    fill_srgb(c, 0.90f, 0.25f, 0.25f, 1.0f);
     canvas_fill_rect(c, 20.0f, 20.0f, 55.0f, 55.0f);
 
     canvas_save(c);
     canvas_translate(c, 150.0f, 52.0f);
     canvas_rotate(c, 0.5f);
-    canvas_set_fill_rgba(c, 0.25f, 0.80f, 0.35f, 1.0f);
+    fill_srgb(c, 0.25f, 0.80f, 0.35f, 1.0f);
     canvas_fill_rect(c, -28.0f, -28.0f, 56.0f, 56.0f);
     canvas_restore(c);
 
     canvas_set_global_alpha(c, 0.5f);
-    canvas_set_fill_rgba(c, 0.25f, 0.45f, 0.95f, 1.0f);
+    fill_srgb(c, 0.25f, 0.45f, 0.95f, 1.0f);
     canvas_fill_rect(c, 55.0f, 95.0f, 110.0f, 65.0f);
     canvas_set_global_alpha(c, 1.0f);
 
-    canvas_set_fill_rgba(c, 0.30f, 0.85f, 0.85f, 1.0f);
+    fill_srgb(c, 0.30f, 0.85f, 0.85f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 100.0f, 28.0f);
     canvas_bezier_curve_to(c, 150.0f, 8.0f, 150.0f, 88.0f, 100.0f, 68.0f);
@@ -62,18 +84,18 @@ static void shapes(void) {
     canvas_close_path(c);
     canvas_fill(c);
 
-    canvas_set_fill_rgba(c, 0.85f, 0.30f, 0.75f, 1.0f);
+    fill_srgb(c, 0.85f, 0.30f, 0.75f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 198.0f, 135.0f, 28.0f, 0.0f, TAU, false);
     canvas_fill(c);
-    canvas_set_stroke_rgba(c, 1.0f, 0.60f, 0.10f, 1.0f);
+    stroke_srgb(c, 1.0f, 0.60f, 0.10f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
     canvas_arc(c, 198.0f, 135.0f, 28.0f, 0.0f, TAU, false);
     canvas_close_path(c);
     canvas_stroke(c);
 
-    canvas_set_stroke_rgba(c, 0.95f, 0.95f, 0.98f, 1.0f);
+    stroke_srgb(c, 0.95f, 0.95f, 0.98f, 1.0f);
     canvas_set_line_width(c, 5.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 20.0f, 125.0f);
@@ -91,11 +113,11 @@ static void winding(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    fill_srgb(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_set_fill_rule(c, CANVAS_NONZERO);
-    canvas_set_fill_rgba(c, 0.95f, 0.80f, 0.25f, 1.0f);
+    fill_srgb(c, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_begin_path(c);
     canvas_rect(c, 20.0f, 20.0f, 80.0f, 80.0f);
     canvas_move_to(c, 85.0f, 35.0f);
@@ -107,12 +129,12 @@ static void winding(void) {
 
     star(c, 160.0f, 60.0f, 40.0f);
     canvas_set_fill_rule(c, CANVAS_NONZERO);
-    canvas_set_fill_rgba(c, 0.90f, 0.30f, 0.40f, 1.0f);
+    fill_srgb(c, 0.90f, 0.30f, 0.40f, 1.0f);
     canvas_fill(c);
 
     star(c, 250.0f, 60.0f, 40.0f);
     canvas_set_fill_rule(c, CANVAS_EVENODD);
-    canvas_set_fill_rgba(c, 0.30f, 0.75f, 0.95f, 1.0f);
+    fill_srgb(c, 0.30f, 0.75f, 0.95f, 1.0f);
     canvas_fill(c);
 
     save(c, "gallery/winding.png");
@@ -124,13 +146,13 @@ static void dashes(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    fill_srgb(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 260.0f, 120.0f);
     canvas_set_line_width(c, 4.0f);
 
     float const d1[2] = { 14.0f, 9.0f };
     canvas_set_line_dash(c, d1, 2);
-    canvas_set_stroke_rgba(c, 0.90f, 0.45f, 0.45f, 1.0f);
+    stroke_srgb(c, 0.90f, 0.45f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 15.0f, 26.0f);
     canvas_line_to(c, 245.0f, 26.0f);
@@ -138,7 +160,7 @@ static void dashes(void) {
 
     float const d2[4] = { 2.0f, 7.0f, 14.0f, 7.0f };
     canvas_set_line_dash(c, d2, 4);
-    canvas_set_stroke_rgba(c, 0.45f, 0.85f, 0.55f, 1.0f);
+    stroke_srgb(c, 0.45f, 0.85f, 0.55f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 15.0f, 50.0f);
     canvas_line_to(c, 245.0f, 50.0f);
@@ -146,7 +168,7 @@ static void dashes(void) {
 
     float const d3[2] = { 2.0f, 6.0f };
     canvas_set_line_dash(c, d3, 2);
-    canvas_set_stroke_rgba(c, 0.55f, 0.65f, 0.95f, 1.0f);
+    stroke_srgb(c, 0.55f, 0.65f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 15.0f, 72.0f);
     canvas_line_to(c, 245.0f, 72.0f);
@@ -155,7 +177,7 @@ static void dashes(void) {
     float const d4[2] = { 11.0f, 8.0f };
     canvas_set_line_dash(c, d4, 2);
     canvas_set_line_width(c, 3.0f);
-    canvas_set_stroke_rgba(c, 0.95f, 0.85f, 0.30f, 1.0f);
+    stroke_srgb(c, 0.95f, 0.85f, 0.30f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 130.0f, 98.0f, 16.0f, 0.0f, TAU, false);
     canvas_close_path(c);
@@ -170,14 +192,14 @@ static void imagedata(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.12f, 0.12f, 0.16f, 1.0f);
+    fill_srgb(c, 0.12f, 0.12f, 0.16f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 240.0f, 90.0f);
 
-    canvas_set_fill_rgba(c, 0.95f, 0.80f, 0.25f, 1.0f);
+    fill_srgb(c, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 30.0f, 45.0f, 17.0f, 0.0f, TAU, false);
     canvas_fill(c);
-    canvas_set_fill_rgba(c, 0.85f, 0.30f, 0.75f, 1.0f);
+    fill_srgb(c, 0.85f, 0.30f, 0.75f, 1.0f);
     canvas_fill_rect(c, 12.0f, 27.0f, 14.0f, 14.0f);
 
     int const blen = 44 * 44 * 4;
@@ -200,7 +222,7 @@ static void joinscaps(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    fill_srgb(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 160.0f);
 
     canvas_line_join const js[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
@@ -208,7 +230,7 @@ static void joinscaps(void) {
     canvas_set_line_width(c, 16.0f);
     for (int k = 0; k < 3; k++) {
         canvas_set_line_join(c, js[k]);
-        canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.35f, 1.0f);
+        stroke_srgb(c, 0.95f, 0.55f, 0.35f, 1.0f);
         float cx = 55.0f + (float)k * 85.0f;
         canvas_begin_path(c);
         canvas_move_to(c, cx - 28.0f, 80.0f);
@@ -222,7 +244,7 @@ static void joinscaps(void) {
     canvas_set_line_join(c, CANVAS_JOIN_MITER);
     for (int k = 0; k < 3; k++) {
         canvas_set_line_cap(c, cs[k]);
-        canvas_set_stroke_rgba(c, 0.40f, 0.80f, 0.95f, 1.0f);
+        stroke_srgb(c, 0.40f, 0.80f, 0.95f, 1.0f);
         float x0 = 45.0f + (float)k * 80.0f;
         canvas_begin_path(c);
         canvas_move_to(c, x0, 130.0f);
@@ -239,25 +261,25 @@ static void paths(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    fill_srgb(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 170.0f);
 
-    canvas_set_fill_rgba(c, 0.40f, 0.65f, 0.95f, 1.0f);
+    fill_srgb(c, 0.40f, 0.65f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_ellipse(c, 72.0f, 52.0f, 52.0f, 28.0f, 0.0f, 0.0f, TAU, false);
     canvas_fill(c);
 
-    canvas_set_fill_rgba(c, 0.55f, 0.85f, 0.45f, 1.0f);
+    fill_srgb(c, 0.55f, 0.85f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
     canvas_fill(c);
-    canvas_set_stroke_rgba(c, 0.95f, 0.60f, 0.20f, 1.0f);
+    stroke_srgb(c, 0.95f, 0.60f, 0.20f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
     canvas_stroke(c);
 
-    canvas_set_stroke_rgba(c, 0.85f, 0.45f, 0.90f, 1.0f);
+    stroke_srgb(c, 0.85f, 0.45f, 0.90f, 1.0f);
     canvas_set_line_width(c, 6.0f);
     canvas_set_line_cap(c, CANVAS_CAP_ROUND);
     canvas_begin_path(c);
@@ -276,7 +298,7 @@ static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float
     float bw = (x1 - x0) / (float)n;
     for (int i = 0; i < n; i++) {
         float t = (float)i / (float)(n - 1);
-        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+        fill_srgb(c, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
         canvas_fill_rect(c, x0 + (float)i * bw, y0, bw + 1.0f, y1 - y0);
@@ -290,7 +312,7 @@ static void clipping(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    fill_srgb(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_save(c);
@@ -326,37 +348,37 @@ static void gradients(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    fill_srgb(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_set_fill_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.90f, 0.22f, 0.42f, 1.0f);
+    fill_stop_srgb(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    fill_stop_srgb(c, 1.0f, 0.90f, 0.22f, 0.42f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_fill(c);
     // Outline it with a contrasting gradient stroke (cyan -> yellow, diagonal).
     canvas_set_stroke_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
-    canvas_add_stroke_color_stop(c, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
-    canvas_add_stroke_color_stop(c, 1.0f, 0.95f, 0.95f, 0.20f, 1.0f);
+    stroke_stop_srgb(c, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
+    stroke_stop_srgb(c, 1.0f, 0.95f, 0.95f, 0.20f, 1.0f);
     canvas_set_line_width(c, 5.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_stroke(c);
 
     canvas_set_fill_radial_gradient(c, 140.0f, 46.0f, 3.0f, 150.0f, 60.0f, 44.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.4f, 0.30f, 0.65f, 0.95f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.05f, 0.10f, 0.35f, 1.0f);
+    fill_stop_srgb(c, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    fill_stop_srgb(c, 0.4f, 0.30f, 0.65f, 0.95f, 1.0f);
+    fill_stop_srgb(c, 1.0f, 0.05f, 0.10f, 0.35f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 150.0f, 60.0f, 44.0f, 0.0f, TAU, false);
     canvas_fill(c);
 
     canvas_set_fill_linear_gradient(c, 205.0f, 0.0f, 285.0f, 0.0f);
-    canvas_add_fill_color_stop(c, 0.00f, 0.90f, 0.20f, 0.25f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.33f, 0.95f, 0.80f, 0.25f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.66f, 0.30f, 0.80f, 0.45f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.00f, 0.30f, 0.45f, 0.95f, 1.0f);
+    fill_stop_srgb(c, 0.00f, 0.90f, 0.20f, 0.25f, 1.0f);
+    fill_stop_srgb(c, 0.33f, 0.95f, 0.80f, 0.25f, 1.0f);
+    fill_stop_srgb(c, 0.66f, 0.30f, 0.80f, 0.45f, 1.0f);
+    fill_stop_srgb(c, 1.00f, 0.30f, 0.45f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 205.0f, 25.0f, 75.0f, 70.0f, 12.0f);
     canvas_fill(c);
@@ -380,7 +402,7 @@ static void batching(void) {
     if (!c) {
         return;
     }
-    canvas_set_fill_rgba(c, 0.07f, 0.08f, 0.10f, 1.0f);
+    fill_srgb(c, 0.07f, 0.08f, 0.10f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_set_global_alpha(c, 0.55f);
@@ -389,7 +411,7 @@ static void batching(void) {
         float y = batch_rand() * 120.0f;
         float r = 3.0f + batch_rand() * 9.0f;
         float t = batch_rand();
-        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+        fill_srgb(c, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
         canvas_begin_path(c);
