@@ -195,28 +195,6 @@ void gpu_destroy(gpu *g) {
     }
 }
 
-void gpu_clear(gpu *g, gpu_rgba color) {
-    if (!g) {
-        return;
-    }
-    @autoreleasepool {
-        GpuImpl *o = (__bridge GpuImpl *)g;
-        flush_batch(o);  // the clear must land after any pending draws
-        MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-        rp.colorAttachments[0].texture = o.target;
-        rp.colorAttachments[0].loadAction = MTLLoadActionClear;
-        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-        rp.colorAttachments[0].clearColor =
-            MTLClearColorMake(color.r, color.g, color.b, color.a);
-        id<MTLCommandBuffer> cb = [o.queue commandBuffer];
-        id<MTLRenderCommandEncoder> enc =
-            [cb renderCommandEncoderWithDescriptor:rp];
-        [enc endEncoding];
-        [cb commit];
-        [cb waitUntilCompleted];
-    }
-}
-
 void gpu_draw_solid(gpu *g, gpu_vert const *verts, int count,
                     gpu_rgba color, bool blend) {
     if (!g || count <= 0 || !verts) {

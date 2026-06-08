@@ -29,8 +29,6 @@ typedef struct {
 gpu *__single gpu_create(int width, int height);
 void gpu_destroy(gpu *__single g);
 
-void gpu_clear(gpu *__single g, gpu_rgba color);
-
 // Triangle list (every 3 vertices = 1 triangle).  blend=false overwrites the
 // target (for clearRect) rather than compositing source-over.
 void gpu_draw_solid(gpu *__single g,
