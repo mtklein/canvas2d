@@ -41,3 +41,8 @@ cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p) {
         .y = m.b * p.x + m.d * p.y + m.f,
     };
 }
+
+cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a) {
+    return (cnvs_rgba){ .r = (_Float16)r, .g = (_Float16)g,
+                        .b = (_Float16)b, .a = (_Float16)a };
+}

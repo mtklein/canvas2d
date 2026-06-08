@@ -5,8 +5,26 @@
 #include <stdlib.h>
 #include <string.h>
 
-static uint8_t *__counted_by(w * h * 4) make_tile(int w, int h,
-                                                  int r, int g, int b, int a) {
+// RGBA16F blend tile (channels in [0,1]).
+static _Float16 *__counted_by(w * h * 4) make_tile16(int w, int h,
+                                                     float r, float g, float b, float a) {
+    int len = w * h * 4;
+    _Float16 *t = malloc((size_t)len * sizeof(_Float16));
+    if (!t) {
+        return NULL;
+    }
+    for (int i = 0; i < w * h; i++) {
+        t[i * 4] = (_Float16)r;
+        t[i * 4 + 1] = (_Float16)g;
+        t[i * 4 + 2] = (_Float16)b;
+        t[i * 4 + 3] = (_Float16)a;
+    }
+    return t;
+}
+
+// RGBA8 replace tile (channels in 0..255).
+static uint8_t *__counted_by(w * h * 4) make_tile8(int w, int h,
+                                                   int r, int g, int b, int a) {
     int len = w * h * 4;
     uint8_t *t = malloc((size_t)len);
     if (!t) {
@@ -36,7 +54,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 0));
 
     // Blend an opaque red tile over a 4x4 region.
-    uint8_t *red = make_tile(4, 4, 255, 0, 0, 255);
+    _Float16 *red = make_tile16(4, 4, 1.0f, 0.0f, 0.0f, 1.0f);
     if (red) {
         compositor_blend(c, 2, 2, 4, 4, red);
         compositor_read_rgba(c, px, len);
@@ -46,7 +64,7 @@ int main(void) {
     }
 
     // replace overwrites (no blend) -- putImageData semantics.
-    uint8_t *blue = make_tile(2, 2, 0, 0, 255, 255);
+    uint8_t *blue = make_tile8(2, 2, 0, 0, 255, 255);
     if (blue) {
         compositor_replace(c, 3, 3, 2, 2, blue);
         compositor_read_rgba(c, px, len);
@@ -69,7 +87,7 @@ int main(void) {
             }
         }
         compositor_set_clip(c, mask, w * h);
-        uint8_t *green = make_tile(w, h, 0, 255, 0, 255);
+        _Float16 *green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 1.0f);
         if (green) {
             compositor_blend(c, 0, 0, w, h, green);
             compositor_read_rgba(c, px, len);
@@ -83,8 +101,8 @@ int main(void) {
     // Re-open the clip and check source-over compositing of a half-alpha tile.
     compositor_set_clip(c, NULL, 0);
     compositor_clear(c, 0, 0, w, h);
-    uint8_t *opaque_red = make_tile(w, h, 255, 0, 0, 255);
-    uint8_t *half_green = make_tile(w, h, 0, 255, 0, 128);
+    _Float16 *opaque_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 1.0f);
+    _Float16 *half_green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 0.5f);
     if (opaque_red && half_green) {
         compositor_blend(c, 0, 0, w, h, opaque_red);
         compositor_blend(c, 0, 0, w, h, half_green);

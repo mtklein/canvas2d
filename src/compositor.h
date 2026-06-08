@@ -6,8 +6,9 @@
 // A Metal backend implements this today; nothing here is GPU-specific, so a pure
 // CPU backend could implement the same ABI.
 //
-// Tiles are tightly packed straight-alpha RGBA8, row-major, top row first.  All
-// regions must lie within the target (the caller clips to it).
+// Colour tiles are tightly packed straight-alpha RGBA16F (_Float16 channels),
+// row-major, top row first; putImageData tiles are RGBA8.  All regions must lie
+// within the target (the caller clips to it).
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -24,13 +25,14 @@ void compositor_destroy(compositor *__single c);
 void compositor_set_clip(compositor *__single c,
                          uint8_t const *__counted_by(len) mask, int len);
 
-// Source-over a w*h tile at (x,y), multiplied by the current clip mask.  This is
-// every painted fill and stroke (colour and coverage already baked into alpha).
+// Source-over a w*h RGBA16F tile at (x,y), multiplied by the current clip mask.
+// This is every painted fill and stroke (colour and coverage already baked into
+// alpha).
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
-                      uint8_t const *__counted_by(w * h * 4) tile);
+                      _Float16 const *__counted_by(w * h * 4) tile);
 
-// Overwrite a w*h region at (x,y) with the tile (no blend, ignores the clip).
-// This is putImageData.
+// Overwrite a w*h region at (x,y) with the RGBA8 tile (no blend, ignores the
+// clip).  This is putImageData, whose source is 8-bit.
 void compositor_replace(compositor *__single c, int x, int y, int w, int h,
                         uint8_t const *__counted_by(w * h * 4) tile);
 

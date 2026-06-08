@@ -56,9 +56,9 @@ struct canvas {
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
     cnvs_verts scratch_verts;  // stroke triangle output, fed to the coverage rasterizer
     cnvs_cover cover;
-    uint8_t *__counted_by(cov_cap) cov;    // per-pixel coverage for the current op's bbox
+    uint8_t *__counted_by(cov_cap) cov;     // per-pixel coverage for the current op's bbox
     int cov_cap;
-    uint8_t *__counted_by(tile_cap) tile;  // RGBA8 tile for the current op's bbox
+    _Float16 *__counted_by(tile_cap) tile;  // RGBA16F tile for the current op's bbox (4 chans/pixel)
     int tile_cap;
 };
 
@@ -81,9 +81,9 @@ canvas *__single canvas_create(int width, int height) {
     cv->width = width;
     cv->height = height;
     cv->cur.ctm = cnvs_mat_identity();
-    cv->cur.fill = (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
+    cv->cur.fill = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 1.0f);
     cv->cur.fill_is_gradient = 0;
-    cv->cur.stroke = (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
+    cv->cur.stroke = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 1.0f);
     cv->cur.stroke_is_gradient = 0;
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
@@ -194,7 +194,7 @@ void canvas_reset_transform(canvas *__single cv) {
 }
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.fill = (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a };
+    cv->cur.fill = cnvs_rgba_of(r, g, b, a);
     cv->cur.fill_is_gradient = 0;
 }
 
@@ -242,7 +242,7 @@ void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.fill_grad, offset,
-                           (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a });
+                           cnvs_rgba_of(r, g, b, a));
 }
 
 void canvas_set_stroke_linear_gradient(canvas *__single cv,
@@ -260,7 +260,7 @@ void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, offset,
-                           (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a });
+                           cnvs_rgba_of(r, g, b, a));
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
@@ -313,7 +313,7 @@ static bool ensure_tile(canvas *__single cv, int npix) {
     }
     int tneed = npix * 4;
     if (tneed > cv->tile_cap) {
-        uint8_t *nt = realloc(cv->tile, (size_t)tneed);
+        _Float16 *nt = realloc(cv->tile, (size_t)tneed * sizeof *nt);
         if (!nt) {
             return false;
         }
@@ -323,11 +323,11 @@ static bool ensure_tile(canvas *__single cv, int npix) {
     return true;
 }
 
-static uint8_t u8(float v) {
-    v = v * 255.0f + 0.5f;
+// Clamp a colour channel to [0,1] and narrow to the tile's _Float16.
+static _Float16 f16c(float v) {
     if (v < 0.0f) { v = 0.0f; }
-    if (v > 255.0f) { v = 255.0f; }
-    return (uint8_t)v;
+    if (v > 1.0f) { v = 1.0f; }
+    return (_Float16)v;
 }
 
 // Add a path edge to the coverage rasterizer, translated into the tile's frame.
@@ -350,7 +350,7 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
     }
 }
 
-// Build an RGBA8 tile from the coverage in cv->cov and the given paint, then
+// Build an RGBA16F tile from the coverage in cv->cov and the given paint, then
 // composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage.
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                        cnvs_gradient const *gr, cnvs_rgba solid) {
@@ -360,18 +360,20 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             int i = py * b.w + px;
             float covf = (float)cv->cov[i] / 255.0f;
             cnvs_rgba col;
+            float a;
             if (is_grad) {
                 col = cnvs_gradient_sample(
                     gr, (cnvs_vec2){ .x = (float)b.x + (float)px + 0.5f,
                                      .y = (float)b.y + (float)py + 0.5f }, ga);
+                a = (float)col.a;
             } else {
                 col = solid;
-                col.a *= ga;
+                a = (float)col.a * ga;
             }
-            cv->tile[i * 4] = u8(col.r);
-            cv->tile[i * 4 + 1] = u8(col.g);
-            cv->tile[i * 4 + 2] = u8(col.b);
-            cv->tile[i * 4 + 3] = u8(col.a * covf);
+            cv->tile[i * 4] = f16c((float)col.r);
+            cv->tile[i * 4 + 1] = f16c((float)col.g);
+            cv->tile[i * 4 + 2] = f16c((float)col.b);
+            cv->tile[i * 4 + 3] = f16c(a * covf);
         }
     }
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile);
@@ -618,7 +620,7 @@ void canvas_clip(canvas *__single cv) {
 }
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.stroke = (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a };
+    cv->cur.stroke = cnvs_rgba_of(r, g, b, a);
     cv->cur.stroke_is_gradient = 0;
 }
 

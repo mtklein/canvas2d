@@ -31,7 +31,7 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_rgba color) {
 cnvs_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     int n = gr->stop_count;
     if (n == 0) {
-        return (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f };
+        return cnvs_rgba_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
     t = clamp01(t);
     if (t <= gr->stops[0].offset) {
@@ -46,12 +46,12 @@ cnvs_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         if (t <= hi.offset) {
             float span = hi.offset - lo.offset;
             float u = span > 1e-9f ? (t - lo.offset) / span : 0.0f;
-            return (cnvs_rgba){
-                .r = lo.color.r + (hi.color.r - lo.color.r) * u,
-                .g = lo.color.g + (hi.color.g - lo.color.g) * u,
-                .b = lo.color.b + (hi.color.b - lo.color.b) * u,
-                .a = lo.color.a + (hi.color.a - lo.color.a) * u,
-            };
+            // Interpolate in float, then narrow once via cnvs_rgba_of.
+            return cnvs_rgba_of(
+                (float)lo.color.r + ((float)hi.color.r - (float)lo.color.r) * u,
+                (float)lo.color.g + ((float)hi.color.g - (float)lo.color.g) * u,
+                (float)lo.color.b + ((float)hi.color.b - (float)lo.color.b) * u,
+                (float)lo.color.a + ((float)hi.color.a - (float)lo.color.a) * u);
         }
     }
     return gr->stops[n - 1].color;  // unreachable: t < last offset handled above
@@ -119,8 +119,8 @@ cnvs_rgba cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha
     if (cnvs_gradient_param(gr, p, &t)) {
         c = cnvs_gradient_color_at(gr, t);
     } else {
-        c = (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f };
+        c = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
-    c.a *= alpha;
+    c.a = (_Float16)((float)c.a * alpha);
     return c;
 }

@@ -73,7 +73,7 @@ static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
                                             : mode == TILE_REPLACE ? @"tile_replace_fs"
                                                                    : @"clear_fs"];
     MTLRenderPipelineColorAttachmentDescriptor *ca = pd.colorAttachments[0];
-    ca.pixelFormat = MTLPixelFormatRGBA8Unorm;
+    ca.pixelFormat = MTLPixelFormatRGBA16Float;
     if (mode == TILE_BLEND) {
         ca.blendingEnabled = YES;
         ca.rgbBlendOperation = MTLBlendOperationAdd;
@@ -140,11 +140,11 @@ compositor *compositor_create(int width, int height) {
         }
 
         MTLTextureDescriptor *td =
-            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA16Float
                                                                width:(NSUInteger)width
                                                               height:(NSUInteger)height
                                                            mipmapped:NO];
-        td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        td.usage = MTLTextureUsageRenderTarget;  // never sampled, only resolved-to + read back
         td.storageMode = MTLStorageModeShared;
 
         MTLTextureDescriptor *cd =
@@ -232,10 +232,11 @@ static void draw_tile(CmpImpl *o, id<MTLRenderPipelineState> pipe,
     [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
 }
 
-// Upload an RGBA8 tile to a sampleable texture.
-static id<MTLTexture> upload_tile(CmpImpl *o, int w, int h, uint8_t const *tile) {
+// Upload a tile to a sampleable texture (read as float4 by the shaders).
+static id<MTLTexture> upload_tile(CmpImpl *o, MTLPixelFormat fmt, int w, int h,
+                                  void const *bytes, NSUInteger bytesPerRow) {
     MTLTextureDescriptor *itd =
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:fmt
                                                            width:(NSUInteger)w
                                                           height:(NSUInteger)h
                                                        mipmapped:NO];
@@ -244,12 +245,12 @@ static id<MTLTexture> upload_tile(CmpImpl *o, int w, int h, uint8_t const *tile)
     id<MTLTexture> tex = [o.device newTextureWithDescriptor:itd];
     [tex replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)w, (NSUInteger)h)
            mipmapLevel:0
-             withBytes:tile
-           bytesPerRow:(NSUInteger)w * 4];
+             withBytes:bytes
+           bytesPerRow:bytesPerRow];
     return tex;
 }
 
-void compositor_blend(compositor *c, int x, int y, int w, int h, uint8_t const *tile) {
+void compositor_blend(compositor *c, int x, int y, int w, int h, _Float16 const *tile) {
     if (!c || !tile || w <= 0 || h <= 0) {
         return;
     }
@@ -258,7 +259,9 @@ void compositor_blend(compositor *c, int x, int y, int w, int h, uint8_t const *
         if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
             return;
         }
-        draw_tile(o, o.blendPipe, x, y, w, h, upload_tile(o, w, h, tile));
+        id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA16Float, w, h, tile,
+                                         (NSUInteger)w * 4 * sizeof(_Float16));
+        draw_tile(o, o.blendPipe, x, y, w, h, tex);
     }
 }
 
@@ -271,7 +274,9 @@ void compositor_replace(compositor *c, int x, int y, int w, int h, uint8_t const
         if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
             return;
         }
-        draw_tile(o, o.replacePipe, x, y, w, h, upload_tile(o, w, h, tile));
+        id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA8Unorm, w, h, tile,
+                                         (NSUInteger)w * 4);
+        draw_tile(o, o.replacePipe, x, y, w, h, tex);
     }
 }
 
@@ -292,13 +297,27 @@ void compositor_read_rgba(compositor *c, uint8_t *out, int len) {
     if (!c || !out) {
         return;
     }
-    CmpImpl *o = (__bridge CmpImpl *)c;
-    if (len < o.width * o.height * 4) {
-        return;
+    @autoreleasepool {
+        CmpImpl *o = (__bridge CmpImpl *)c;
+        int n = o.width * o.height;
+        if (len < n * 4) {
+            return;
+        }
+        flush_batch(o);  // execute pending ops so the readback sees them
+        // The target is RGBA16Float; read it and quantize to 8-bit (the edge).
+        _Float16 *halfs = malloc((size_t)n * 4 * sizeof(_Float16));
+        if (!halfs) {
+            return;
+        }
+        [o.target getBytes:halfs
+               bytesPerRow:(NSUInteger)o.width * 4 * sizeof(_Float16)
+                fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
+               mipmapLevel:0];
+        for (int i = 0; i < n * 4; i++) {
+            float v = (float)halfs[i];
+            v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+            out[i] = (uint8_t)(v * 255.0f + 0.5f);
+        }
+        free(halfs);
     }
-    flush_batch(o);  // execute pending ops so the readback sees them
-    [o.target getBytes:out
-           bytesPerRow:(NSUInteger)o.width * 4
-            fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
-           mipmapLevel:0];
 }

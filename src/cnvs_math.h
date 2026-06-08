@@ -15,10 +15,16 @@ typedef struct {
     float x, y;
 } cnvs_vec2;
 
-// Straight-alpha colour, components in [0,1].
+// Straight-alpha colour.  Channels are _Float16 -- the project's lingua franca
+// for colour: native on this hardware, half the footprint of float32 in the
+// pixel tiles, and a direct match for Metal's `half` / RGBA16Float.  Plenty of
+// precision for [0,1] colour (and headroom past it); 8-bit only at the edges.
 typedef struct {
-    float r, g, b, a;
+    _Float16 r, g, b, a;
 } cnvs_rgba;
+
+// Build a colour from float components (the only place float -> _Float16 narrows).
+cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a);
 
 typedef struct {
     float a, b, c, d, e, f;
