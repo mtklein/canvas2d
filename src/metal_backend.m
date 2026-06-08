@@ -181,3 +181,18 @@ void gpu_read_rgba(gpu *g, uint8_t *out, int len) {
             fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
            mipmapLevel:0];
 }
+
+void gpu_write_region(gpu *g, int x, int y, int w, int h, uint8_t const *pixels) {
+    if (!g || !pixels || w <= 0 || h <= 0) {
+        return;
+    }
+    GpuImpl *o = (__bridge GpuImpl *)g;
+    if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
+        return;  // caller must clip to the target
+    }
+    [o.target replaceRegion:MTLRegionMake2D((NSUInteger)x, (NSUInteger)y,
+                                            (NSUInteger)w, (NSUInteger)h)
+                mipmapLevel:0
+                  withBytes:pixels
+                bytesPerRow:(NSUInteger)w * 4];
+}

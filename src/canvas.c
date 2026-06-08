@@ -2,6 +2,7 @@
 
 #include "cnvs_fill.h"
 #include "cnvs_geom.h"
+#include "cnvs_image.h"
 #include "cnvs_math.h"
 #include "cnvs_mem.h"
 #include "cnvs_path.h"
@@ -12,6 +13,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Maximum chord deviation (device pixels) when flattening curves.
 #define CANVAS_FLATTEN_TOL 0.25f
@@ -314,4 +316,55 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     bool ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
+}
+
+void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
+                           uint8_t *__counted_by(len) out, int len) {
+    if (w <= 0 || h <= 0 || len < w * h * 4) {
+        return;
+    }
+    memset(out, 0, (size_t)len);  // pixels outside the canvas stay transparent
+    int const clen = cv->width * cv->height * 4;
+    uint8_t *__counted_by(clen) buf = malloc((size_t)clen);
+    if (!buf) {
+        return;
+    }
+    gpu_read_rgba(cv->g, buf, clen);
+    cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
+    free(buf);
+}
+
+void canvas_put_image_data(canvas *__single cv,
+                           uint8_t const *__counted_by(len) data, int len,
+                           int w, int h, int dx, int dy) {
+    if (w <= 0 || h <= 0 || len < w * h * 4) {
+        return;
+    }
+    int cx0 = dx < 0 ? 0 : dx;
+    int cy0 = dy < 0 ? 0 : dy;
+    int cx1 = dx + w;
+    int cy1 = dy + h;
+    if (cx1 > cv->width) {
+        cx1 = cv->width;
+    }
+    if (cy1 > cv->height) {
+        cy1 = cv->height;
+    }
+    int rw = cx1 - cx0;
+    int rh = cy1 - cy0;
+    if (rw <= 0 || rh <= 0) {
+        return;
+    }
+    if (cx0 == dx && cy0 == dy && rw == w && rh == h) {
+        gpu_write_region(cv->g, dx, dy, w, h, data);  // fully inside; no copy
+        return;
+    }
+    int const tlen = rw * rh * 4;
+    uint8_t *__counted_by(tlen) tmp = malloc((size_t)tlen);
+    if (!tmp) {
+        return;
+    }
+    cnvs_blit_rgba(tmp, rw, rh, 0, 0, data, w, h, cx0 - dx, cy0 - dy, rw, rh);
+    gpu_write_region(cv->g, cx0, cy0, rw, rh, tmp);
+    free(tmp);
 }

@@ -57,3 +57,12 @@ void canvas_stroke(canvas *__single cv);
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path);
+
+// Pixel I/O for a w*h sub-image (tightly packed RGBA8, len must be w*h*4).
+// get: pixels outside the canvas read back transparent black.
+// put: overwrites (no blending), clipped to the canvas.
+void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
+                           uint8_t *__counted_by(len) out, int len);
+void canvas_put_image_data(canvas *__single cv,
+                           uint8_t const *__counted_by(len) data, int len,
+                           int w, int h, int dx, int dy);

@@ -32,3 +32,8 @@ void gpu_draw_solid(gpu *__single g,
 
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void gpu_read_rgba(gpu *__single g, uint8_t *__counted_by(len) out, int len);
+
+// Overwrite a w x h region of the target at (x,y) with tightly packed RGBA8.
+// The region must lie within the target (the caller clips).
+void gpu_write_region(gpu *__single g, int x, int y, int w, int h,
+                      uint8_t const *__counted_by(w * h * 4) pixels);

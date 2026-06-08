@@ -160,21 +160,22 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
 | phase | overhead |
 |---|---|
-| cubic-Bézier flattening | 1.08× |
+| cubic-Bézier flattening | 1.07× |
 | stroke expansion | 1.22× |
-| PNG encode | 1.25× |
-| scanline fill | **1.63×** |
-| end-to-end | 1.26× |
+| PNG encode | 1.27× |
+| scanline fill | 1.47× |
+| 2D RGBA8 blit | **2.43×** |
+| end-to-end | 1.27× |
 
-The isolation matters. The end-to-end 1.26× is a blend that hides an ~8× spread
-between phases — and a regression in the fill could disappear into it. What the
-spread shows:
+The isolation matters. The end-to-end 1.27× is a blend that hides a wide spread
+between phases — and a regression in a fast phase could disappear into it. What
+the spread shows:
 
-- **The scanline fill pays the most (~63%)** because it is almost nothing *but*
-  checked indexing: gather edge crossings per row, sort them, walk them
-  accumulating winding, emit spans — buffer accesses with negligible arithmetic
-  between them.
-- **Flattening is nearly free (~8%)**: lots of float arithmetic (de Casteljau
+- **The 2D blit pays the most (~2.4×)** because it is *only* checked indexing:
+  four byte loads and four stores per pixel across two buffers, with no arithmetic
+  between them to amortize the checks. This is the canonical C buffer-bug
+  pattern — and the strongest case for having the checks at all.
+- **Flattening is nearly free (~7%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.
 - Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety is

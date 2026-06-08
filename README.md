@@ -98,9 +98,10 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | Paths: lines, rects, quadratic/cubic Béziers, arcs | ✅ |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ scanline rasterizer |
 | `stroke()` — width (CTM-scaled), bevel joins, butt caps | ✅ |
+| `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
 | Miter / round joins, round caps | ❌ bevel + butt only |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
-| Gradients, clipping, images, text | ❌ not yet |
+| Gradients, clipping, `drawImage`, text | ❌ not yet |
 | Batched GPU submission | ❌ one command buffer per draw (correctness first) |
 
 ## Warning policy
@@ -131,16 +132,17 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_flatten` — cubic-Bézier flattening | 118 ms | 109 ms | **1.08×** |
-| `bench_stroke` — stroke expansion | 44 ms | 36 ms | **1.22×** |
-| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 108 ms | 86 ms | **1.25×** |
-| `bench_fill` — scanline fill (edge gather, crossing sort, winding walk) | 121 ms | 74 ms | **1.63×** |
-| `bench` — end-to-end | 194 ms | 154 ms | **1.26×** |
+| `bench_flatten` — cubic-Bézier flattening | 120 ms | 111 ms | **1.07×** |
+| `bench_stroke` — stroke expansion | 45 ms | 37 ms | **1.22×** |
+| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 110 ms | 87 ms | **1.27×** |
+| `bench_fill` — scanline fill (edge gather, crossing sort, winding walk) | 110 ms | 75 ms | **1.47×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 127 ms | 52 ms | **2.43×** |
+| `bench` — end-to-end | 199 ms | 159 ms | **1.27×** |
 
-The spread is the point: the scanline fill — wall-to-wall checked indexing (edge
-gather, per-row crossing sort, winding walk, span emission) — pays the most at
-**63%**, while flattening (lots of float math between a few indexed writes) is
-nearly free at **8%**. The end-to-end 1.26× is a blend that, on its own, would
+The spread is the point: the 2D blit — four bounds-checked byte loads and stores
+per pixel across two buffers, with no arithmetic to amortize them — pays the most
+at **~2.4×**, while flattening (lots of float math between a few indexed writes)
+is nearly free at **7%**. The end-to-end 1.27× is a blend that, on its own, would
 mask both. Real canvas rendering is GPU-bound,
 so the end-to-end cost of safety is smaller still — but these are the honest prices
 on the hottest pure-C kernels, one command to re-measure.
@@ -155,8 +157,10 @@ on the hottest pure-C kernels, one command to re-measure.
   (`ninja benchcmp`); see above.
 - ~~Winding-rule fills (holes, self-intersection)~~ — done; scanline rasterizer
   ([cnvs_fill.c](src/cnvs_fill.c)) with nonzero + even-odd.
+- ~~`getImageData` / `putImageData`~~ — done; clipped 2D blits
+  ([cnvs_image.c](src/cnvs_image.c)).
 - Anti-aliasing (MSAA); miter/round joins; batched GPU submission.
-- Gradients, clipping, then images/text.
+- Gradients, clipping, `drawImage`, text.
 
 ## Layout
 
