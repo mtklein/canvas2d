@@ -96,6 +96,24 @@ void canvas_set_line_dash(canvas *__single cv,
 void canvas_set_line_dash_offset(canvas *__single cv, float offset);
 void canvas_stroke(canvas *__single cv);
 
+// drawImage: a tightly packed RGBA8 source (sw*sh, top row first), sampled
+// bilinearly, transformed by the current transform, composited source-over under
+// the current global alpha and clip.  The three forms mirror the Canvas 2D
+// overloads; the subrect form samples source rect [sx,sy,sw',sh'] into dest rect
+// [dx,dy,dw,dh] (both user space).
+void canvas_draw_image(canvas *__single cv,
+                       uint8_t const *__counted_by(sw * sh * 4) src,
+                       int sw, int sh, float dx, float dy);
+void canvas_draw_image_scaled(canvas *__single cv,
+                              uint8_t const *__counted_by(sw * sh * 4) src,
+                              int sw, int sh, float dx, float dy,
+                              float dw, float dh);
+void canvas_draw_image_subrect(canvas *__single cv,
+                               uint8_t const *__counted_by(sw * sh * 4) src,
+                               int sw, int sh, float sx, float sy,
+                               float sww, float shh, float dx, float dy,
+                               float dw, float dh);
+
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path);

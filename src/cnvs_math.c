@@ -42,6 +42,19 @@ cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p) {
     };
 }
 
+cnvs_mat cnvs_mat_invert(cnvs_mat m) {
+    float det = m.a * m.d - m.b * m.c;
+    if (det < 1e-12f && det > -1e-12f) {
+        return cnvs_mat_identity();
+    }
+    float inv = 1.0f / det;
+    cnvs_mat r = { .a = m.d * inv, .b = -m.b * inv,
+                   .c = -m.c * inv, .d = m.a * inv };
+    r.e = -(r.a * m.e + r.c * m.f);
+    r.f = -(r.b * m.e + r.d * m.f);
+    return r;
+}
+
 cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a) {
     return (cnvs_rgba){ .r = (_Float16)r, .g = (_Float16)g,
                         .b = (_Float16)b, .a = (_Float16)a };

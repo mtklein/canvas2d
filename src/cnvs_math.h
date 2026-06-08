@@ -42,3 +42,6 @@ cnvs_mat cnvs_mat_scale(float sx, float sy);
 cnvs_mat cnvs_mat_rotate(float radians);
 
 cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p);
+
+// Inverse of an affine transform; cnvs_mat_identity() if (near-)singular.
+cnvs_mat cnvs_mat_invert(cnvs_mat m);

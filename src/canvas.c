@@ -721,6 +721,100 @@ void canvas_stroke(canvas *__single cv) {
     paint_tile(cv, b, cv->cur.stroke_is_gradient, &cv->cur.stroke_grad, cv->cur.stroke);
 }
 
+// Bilinear sample of an RGBA8 source at source-pixel coords (fx,fy), straight
+// alpha, clamp-to-edge.  Four checked taps per pixel -- the indexing is bounded
+// by the clamps, and -fbounds-safety guards each src[] against `slen`.
+static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
+                       int sw, int sh, float fx, float fy,
+                       float *__counted_by(4) out) {
+    (void)slen;
+    float gx = fx - 0.5f, gy = fy - 0.5f;
+    float fxx = floorf(gx), fyy = floorf(gy);
+    int x0 = (int)fxx, y0 = (int)fyy;
+    int x1 = x0 + 1, y1 = y0 + 1;
+    float tx = gx - fxx, ty = gy - fyy;
+    if (x0 < 0) { x0 = 0; } else if (x0 > sw - 1) { x0 = sw - 1; }
+    if (x1 < 0) { x1 = 0; } else if (x1 > sw - 1) { x1 = sw - 1; }
+    if (y0 < 0) { y0 = 0; } else if (y0 > sh - 1) { y0 = sh - 1; }
+    if (y1 < 0) { y1 = 0; } else if (y1 > sh - 1) { y1 = sh - 1; }
+    for (int k = 0; k < 4; k++) {
+        float c00 = (float)src[(y0 * sw + x0) * 4 + k];
+        float c10 = (float)src[(y0 * sw + x1) * 4 + k];
+        float c01 = (float)src[(y1 * sw + x0) * 4 + k];
+        float c11 = (float)src[(y1 * sw + x1) * 4 + k];
+        float top = c00 + (c10 - c00) * tx;
+        float bot = c01 + (c11 - c01) * tx;
+        out[k] = (top + (bot - top) * ty) / 255.0f;
+    }
+}
+
+void canvas_draw_image_subrect(canvas *__single cv,
+                               uint8_t const *__counted_by(sw * sh * 4) src,
+                               int sw, int sh, float sx, float sy,
+                               float sww, float shh, float dx, float dy,
+                               float dw, float dh) {
+    if (sw <= 0 || sh <= 0 || dw <= 0.0f || dh <= 0.0f) {
+        return;
+    }
+    // The dest rect transforms to a (possibly rotated) device-space quad.
+    cnvs_vec2 q[4] = { xf(cv, dx, dy), xf(cv, dx + dw, dy),
+                       xf(cv, dx + dw, dy + dh), xf(cv, dx, dy + dh) };
+    cbbox b = points_bbox(cv, q, 4);
+    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
+        !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
+        return;
+    }
+    cover_edge(cv, b, q[0], q[1]);
+    cover_edge(cv, b, q[1], q[2]);
+    cover_edge(cv, b, q[2], q[3]);
+    cover_edge(cv, b, q[3], q[0]);
+    cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
+
+    cnvs_mat inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
+    float ga = cv->cur.global_alpha;
+    for (int py = 0; py < b.h; py++) {
+        for (int px = 0; px < b.w; px++) {
+            int i = py * b.w + px;
+            float covf = (float)cv->cov[i] / 255.0f;
+            if (covf <= 0.0f) {
+                cv->tile[i * 4] = (_Float16)0.0f;
+                cv->tile[i * 4 + 1] = (_Float16)0.0f;
+                cv->tile[i * 4 + 2] = (_Float16)0.0f;
+                cv->tile[i * 4 + 3] = (_Float16)0.0f;
+                continue;
+            }
+            // Device pixel centre -> user space -> dest-rect uv -> source coords.
+            cnvs_vec2 u = cnvs_mat_apply(
+                inv, (cnvs_vec2){ .x = (float)b.x + (float)px + 0.5f,
+                                  .y = (float)b.y + (float)py + 0.5f });
+            float fsx = sx + ((u.x - dx) / dw) * sww;
+            float fsy = sy + ((u.y - dy) / dh) * shh;
+            float s[4];
+            sample_src(src, sw * sh * 4, sw, sh, fsx, fsy, s);
+            cv->tile[i * 4] = f16c(s[0]);
+            cv->tile[i * 4 + 1] = f16c(s[1]);
+            cv->tile[i * 4 + 2] = f16c(s[2]);
+            cv->tile[i * 4 + 3] = f16c(s[3] * ga * covf);
+        }
+    }
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile);
+}
+
+void canvas_draw_image(canvas *__single cv,
+                       uint8_t const *__counted_by(sw * sh * 4) src,
+                       int sw, int sh, float dx, float dy) {
+    canvas_draw_image_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
+                              dx, dy, (float)sw, (float)sh);
+}
+
+void canvas_draw_image_scaled(canvas *__single cv,
+                              uint8_t const *__counted_by(sw * sh * 4) src,
+                              int sw, int sh, float dx, float dy,
+                              float dw, float dh) {
+    canvas_draw_image_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
+                              dx, dy, dw, dh);
+}
+
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     compositor_read_rgba(cv->comp, out, len);
 }

@@ -400,6 +400,39 @@ static void batching(void) {
     save(c, "gallery/batch.png");
 }
 
+// drawImage: a small procedural source, drawn 1:1 (crisp), scaled up (bilinear
+// smoothing), and scaled + rotated through the transform.
+static void drawimage(void) {
+    canvas *__single c = canvas_create(300, 120);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
+
+    // A 16x16 multi-hue source image (tightly packed RGBA8).
+    uint8_t img[16 * 16 * 4];
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 16; x++) {
+            int i = (y * 16 + x) * 4;
+            img[i] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (float)x / 16.0f)));
+            img[i + 1] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (float)y / 16.0f)));
+            img[i + 2] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (float)(x + y) / 16.0f)));
+            img[i + 3] = 255;
+        }
+    }
+
+    canvas_draw_image(c, img, 16, 16, 20.0f, 20.0f);                       // 1:1
+    canvas_draw_image_scaled(c, img, 16, 16, 50.0f, 20.0f, 80.0f, 80.0f);  // bilinear
+    canvas_save(c);
+    canvas_translate(c, 235.0f, 60.0f);
+    canvas_rotate(c, 0.5f);
+    canvas_draw_image_scaled(c, img, 16, 16, -40.0f, -40.0f, 80.0f, 80.0f);  // rotated
+    canvas_restore(c);
+
+    save(c, "gallery/drawimage.png");
+}
+
 int main(void) {
     shapes();
     winding();
@@ -410,5 +443,6 @@ int main(void) {
     clipping();
     gradients();
     batching();
+    drawimage();
     return 0;
 }
