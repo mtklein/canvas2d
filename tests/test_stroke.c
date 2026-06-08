@@ -50,6 +50,39 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 25, 32), 0, 0, 255, 255, 1));  // on  [20,30)
     CHECK(px_near(pixel_at(px, len, w, 35, 32), 0, 0, 0, 0, 1));      // off [30,40)
 
+    // Line caps: butt stops at the endpoint; square/round extend by half-width.
+    canvas_set_line_dash(cv, dash, 0);  // back to solid
+    canvas_set_line_width(cv, 8.0f);
+    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_line_cap(cv, CANVAS_CAP_BUTT);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 20.0f, 32.0f);
+    canvas_line_to(cv, 40.0f, 32.0f);
+    canvas_stroke(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 30, 32), 255, 0, 0, 255, 1));  // on the line
+    CHECK(px_near(pixel_at(px, len, w, 43, 32), 0, 0, 0, 0, 1));      // past butt end
+
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_line_cap(cv, CANVAS_CAP_SQUARE);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 20.0f, 32.0f);
+    canvas_line_to(cv, 40.0f, 32.0f);
+    canvas_stroke(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 43, 32), 255, 0, 0, 255, 1));  // square extends
+
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_line_cap(cv, CANVAS_CAP_ROUND);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 20.0f, 32.0f);
+    canvas_line_to(cv, 40.0f, 32.0f);
+    canvas_stroke(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 42, 32), 255, 0, 0, 255, 1));  // round extends
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

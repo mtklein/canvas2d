@@ -26,6 +26,9 @@ struct canvas_state {
     float global_alpha;
     float line_width;
     cnvs_fill_rule fill_rule;
+    cnvs_line_join line_join;
+    cnvs_line_cap line_cap;
+    float miter_limit;
     float dash[CANVAS_MAX_DASH];
     int dash_count;
     float dash_offset;
@@ -67,6 +70,9 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
     cv->cur.fill_rule = CNVS_NONZERO;
+    cv->cur.line_join = CNVS_JOIN_MITER;
+    cv->cur.line_cap = CNVS_CAP_BUTT;
+    cv->cur.miter_limit = 10.0f;
     cv->cur.dash_count = 0;
     cv->cur.dash_offset = 0.0f;
     cv->stack = NULL;
@@ -282,6 +288,22 @@ void canvas_set_line_width(canvas *__single cv, float width) {
     cv->cur.line_width = width;
 }
 
+void canvas_set_line_join(canvas *__single cv, canvas_line_join join) {
+    cv->cur.line_join = (join == CANVAS_JOIN_ROUND)   ? CNVS_JOIN_ROUND
+                        : (join == CANVAS_JOIN_BEVEL) ? CNVS_JOIN_BEVEL
+                                                      : CNVS_JOIN_MITER;
+}
+
+void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap) {
+    cv->cur.line_cap = (cap == CANVAS_CAP_ROUND)    ? CNVS_CAP_ROUND
+                       : (cap == CANVAS_CAP_SQUARE) ? CNVS_CAP_SQUARE
+                                                    : CNVS_CAP_BUTT;
+}
+
+void canvas_set_miter_limit(canvas *__single cv, float limit) {
+    cv->cur.miter_limit = limit;
+}
+
 void canvas_set_line_dash(canvas *__single cv,
                           float const *__counted_by(count) pattern, int count) {
     // Clamp into a separate variable: mutating `count` would desync the
@@ -326,6 +348,8 @@ void canvas_stroke(canvas *__single cv) {
                                            cv->cur.dash_count, soff,
                                            &cv->scratch_verts)
                       : cnvs_stroke_polyline(poly, sp.count, sp.closed, hw,
+                                             cv->cur.line_join, cv->cur.line_cap,
+                                             cv->cur.miter_limit,
                                              &cv->scratch_verts);
         if (!ok) {
             return;

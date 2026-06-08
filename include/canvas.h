@@ -9,6 +9,8 @@
 typedef struct canvas canvas;
 
 typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
+typedef enum { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL } canvas_line_join;
+typedef enum { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE } canvas_line_cap;
 
 // NULL on failure; the canvas starts transparent black.
 canvas *__single canvas_create(int width, int height);
@@ -52,6 +54,9 @@ void canvas_fill(canvas *__single cv);
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_line_width(canvas *__single cv, float width);
+void canvas_set_line_join(canvas *__single cv, canvas_line_join join);
+void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap);
+void canvas_set_miter_limit(canvas *__single cv, float limit);
 // `pattern` lists alternating on/off lengths (user units); count 0 = solid.
 void canvas_set_line_dash(canvas *__single cv,
                           float const *__counted_by(count) pattern, int count);

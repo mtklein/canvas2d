@@ -192,10 +192,51 @@ static void imagedata(void) {
     save(c, "gallery/imagedata.png");
 }
 
+// Line joins (miter / round / bevel) on sharp Vs, and caps (butt / round /
+// square) on short segments.
+static void joinscaps(void) {
+    canvas *__single c = canvas_create(280, 160);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 160.0f);
+
+    canvas_line_join const js[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
+                                     CANVAS_JOIN_BEVEL };
+    canvas_set_line_width(c, 16.0f);
+    for (int k = 0; k < 3; k++) {
+        canvas_set_line_join(c, js[k]);
+        canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.35f, 1.0f);
+        float cx = 55.0f + (float)k * 85.0f;
+        canvas_begin_path(c);
+        canvas_move_to(c, cx - 28.0f, 80.0f);
+        canvas_line_to(c, cx, 26.0f);
+        canvas_line_to(c, cx + 28.0f, 80.0f);
+        canvas_stroke(c);
+    }
+
+    canvas_line_cap const cs[3] = { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND,
+                                    CANVAS_CAP_SQUARE };
+    canvas_set_line_join(c, CANVAS_JOIN_MITER);
+    for (int k = 0; k < 3; k++) {
+        canvas_set_line_cap(c, cs[k]);
+        canvas_set_stroke_rgba(c, 0.40f, 0.80f, 0.95f, 1.0f);
+        float x0 = 45.0f + (float)k * 80.0f;
+        canvas_begin_path(c);
+        canvas_move_to(c, x0, 130.0f);
+        canvas_line_to(c, x0 + 45.0f, 130.0f);
+        canvas_stroke(c);
+    }
+
+    save(c, "gallery/joins.png");
+}
+
 int main(void) {
     shapes();
     winding();
     dashes();
     imagedata();
+    joinscaps();
     return 0;
 }

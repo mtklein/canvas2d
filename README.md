@@ -34,6 +34,10 @@ Line dashing — `setLineDash` patterns and a dashed arc:
 
 ![dashes](gallery/dashes.png)
 
+Line joins (miter / round / bevel) and caps (butt / round / square):
+
+![joins](gallery/joins.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
