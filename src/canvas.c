@@ -47,6 +47,7 @@ struct canvas {
     int stack_len;
     int stack_cap;
     cnvs_path path;
+    cnvs_path scratch_path;  // transient paths (e.g. gradient fill_rect) off the user's path
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
     cnvs_verts scratch_verts;
     cnvs_cverts scratch_cverts;
@@ -63,6 +64,7 @@ struct canvas {
 
 static void clip_rebuild(canvas *__single cv);
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
+static void fill_gradient(canvas *__single cv);  // colours scratch_spans via cur.fill_grad
 
 canvas *__single canvas_create(int width, int height) {
     if (width <= 0 || height <= 0) {
@@ -100,6 +102,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->clip_len = 0;
     cv->clip_cap = 0;
     cnvs_path_init(&cv->path);
+    cnvs_path_init(&cv->scratch_path);
     return cv;
 }
 
@@ -114,6 +117,7 @@ void canvas_destroy(canvas *__single cv) {
     }
     free(cv->clip_tris);
     cnvs_path_free(&cv->path);
+    cnvs_path_free(&cv->scratch_path);
     cnvs_verts_free(&cv->scratch_verts);
     cnvs_cverts_free(&cv->scratch_cverts);
     cnvs_edges_free(&cv->scratch_edges);
@@ -250,6 +254,20 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
+    if (cv->cur.fill_is_gradient) {
+        // Scan-convert the rect (off the user's path) and shade it like fill().
+        cnvs_path_reset(&cv->scratch_path);
+        cnvs_path_rect(&cv->scratch_path, xf(cv, x, y), xf(cv, x + w, y),
+                       xf(cv, x + w, y + h), xf(cv, x, y + h));
+        cv->scratch_spans.len = 0;
+        if (!cnvs_fill_spans(&cv->scratch_path, cv->cur.fill_rule, cv->width,
+                             cv->height, &cv->scratch_spans, &cv->scratch_edges,
+                             &cv->scratch_xings)) {
+            return;
+        }
+        fill_gradient(cv);
+        return;
+    }
     gpu_rgba color = cv->cur.fill;
     color.a *= cv->cur.global_alpha;
     fill_quad(cv, x, y, w, h, color, true);

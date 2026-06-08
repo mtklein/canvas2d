@@ -21,15 +21,12 @@ int main(void) {
         return TEST_REPORT();
     }
 
-    // Horizontal linear gradient red -> blue across the canvas.
+    // Horizontal linear gradient red -> blue, painted with fillRect (which must
+    // honour a gradient fill, like fill()).
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)w, 0.0f);
     canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);  // gradients ignore fill_rect
-
-    canvas_begin_path(cv);
-    canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_fill(cv);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     struct px4 lft = pixel_at(px, len, w, 6, 32);
     struct px4 mid = pixel_at(px, len, w, 32, 32);
