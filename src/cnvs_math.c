@@ -46,25 +46,3 @@ cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a) {
     return (cnvs_rgba){ .r = (_Float16)r, .g = (_Float16)g,
                         .b = (_Float16)b, .a = (_Float16)a };
 }
-
-float cnvs_srgb_encode(float linear) {
-    if (linear <= 0.0f) {
-        return 0.0f;
-    }
-    if (linear >= 1.0f) {
-        return 1.0f;
-    }
-    return linear <= 0.0031308f ? 12.92f * linear
-                                : 1.055f * powf(linear, 1.0f / 2.4f) - 0.055f;
-}
-
-float cnvs_srgb_decode(float srgb) {
-    if (srgb <= 0.0f) {
-        return 0.0f;
-    }
-    if (srgb >= 1.0f) {
-        return 1.0f;
-    }
-    return srgb <= 0.04045f ? srgb / 12.92f
-                            : powf((srgb + 0.055f) / 1.055f, 2.4f);
-}

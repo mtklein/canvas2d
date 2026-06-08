@@ -31,8 +31,7 @@ int main(void) {
         canvas_destroy(cv);
     }
 
-    // 50% blue over red, blended in linear light -> linear (0.5, 0, 0.5) ->
-    // sRGB-encoded ~(188, 0, 188, 255).  (8-bit-space blending would give 128.)
+    // 50% blue over red -> ~(128, 0, 128, 255).
     canvas *__single cb = canvas_create(w, h);
     CHECK(cb != NULL);
     if (cb) {
@@ -42,7 +41,7 @@ int main(void) {
         canvas_set_global_alpha(cb, 0.5f);
         canvas_fill_rect(cb, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cb, px, len);
-        CHECK(px_near(pixel_at(px, len, w, 4, 4), 188, 0, 188, 255, 3));
+        CHECK(px_near(pixel_at(px, len, w, 4, 4), 128, 0, 128, 255, 3));
         canvas_destroy(cb);
     }
     free(px);

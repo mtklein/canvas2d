@@ -193,10 +193,6 @@ void canvas_reset_transform(canvas *__single cv) {
     cv->cur.ctm = cnvs_mat_identity();
 }
 
-float canvas_srgb_to_linear(float srgb) {
-    return cnvs_srgb_decode(srgb);
-}
-
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
     cv->cur.fill = cnvs_rgba_of(r, g, b, a);
     cv->cur.fill_is_gradient = 0;
@@ -725,47 +721,8 @@ void canvas_stroke(canvas *__single cv) {
     paint_tile(cv, b, cv->cur.stroke_is_gradient, &cv->cur.stroke_grad, cv->cur.stroke);
 }
 
-// 8-bit edge conversions.  r,g,b carry the sRGB transfer; alpha stays linear.
-static uint8_t lin_to_srgb8(_Float16 h) {
-    float v = cnvs_srgb_encode((float)h);
-    return (uint8_t)(v * 255.0f + 0.5f);
-}
-
-static uint8_t lin_alpha8(_Float16 h) {
-    float v = (float)h;
-    if (v < 0.0f) { v = 0.0f; }
-    if (v > 1.0f) { v = 1.0f; }
-    return (uint8_t)(v * 255.0f + 0.5f);
-}
-
-static _Float16 srgb8_to_lin(uint8_t b) {
-    float v = cnvs_srgb_decode((float)b / 255.0f);
-    return (_Float16)v;
-}
-
-// Read the linear target and sRGB-encode it to 8-bit RGBA in `out`.
-static void read_srgb8(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
-    int const flen = cv->width * cv->height * 4;
-    if (len < flen) {
-        return;
-    }
-    _Float16 *__counted_by(flen) lin = malloc((size_t)flen * sizeof *lin);
-    if (!lin) {
-        memset(out, 0, (size_t)len);
-        return;
-    }
-    compositor_read_f16(cv->comp, lin, flen);
-    for (int i = 0; i < cv->width * cv->height; i++) {
-        out[i * 4] = lin_to_srgb8(lin[i * 4]);
-        out[i * 4 + 1] = lin_to_srgb8(lin[i * 4 + 1]);
-        out[i * 4 + 2] = lin_to_srgb8(lin[i * 4 + 2]);
-        out[i * 4 + 3] = lin_alpha8(lin[i * 4 + 3]);
-    }
-    free(lin);
-}
-
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
-    read_srgb8(cv, out, len);
+    compositor_read_rgba(cv->comp, out, len);
 }
 
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
@@ -774,7 +731,7 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     if (!out) {
         return false;
     }
-    read_srgb8(cv, out, len);
+    compositor_read_rgba(cv->comp, out, len);
     bool ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
@@ -791,7 +748,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     if (!buf) {
         return;
     }
-    read_srgb8(cv, buf, clen);
+    compositor_read_rgba(cv->comp, buf, clen);
     cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
     free(buf);
 }
@@ -814,19 +771,19 @@ void canvas_put_image_data(canvas *__single cv,
     }
     int rw = cx1 - cx0;
     int rh = cy1 - cy0;
-    if (rw <= 0 || rh <= 0 || !ensure_tile(cv, rw * rh)) {
+    if (rw <= 0 || rh <= 0) {
         return;
     }
-    // Decode the (clipped) 8-bit sRGB region directly into a linear RGBA16F tile.
-    for (int yy = 0; yy < rh; yy++) {
-        for (int xx = 0; xx < rw; xx++) {
-            int si = (((cy0 - dy) + yy) * w + ((cx0 - dx) + xx)) * 4;
-            int ti = (yy * rw + xx) * 4;
-            cv->tile[ti] = srgb8_to_lin(data[si]);
-            cv->tile[ti + 1] = srgb8_to_lin(data[si + 1]);
-            cv->tile[ti + 2] = srgb8_to_lin(data[si + 2]);
-            cv->tile[ti + 3] = (_Float16)((float)data[si + 3] / 255.0f);
-        }
+    if (cx0 == dx && cy0 == dy && rw == w && rh == h) {
+        compositor_replace(cv->comp, dx, dy, w, h, data);  // fully inside; no copy
+        return;
     }
-    compositor_replace(cv->comp, cx0, cy0, rw, rh, cv->tile);
+    int const tlen = rw * rh * 4;
+    uint8_t *__counted_by(tlen) tmp = malloc((size_t)tlen);
+    if (!tmp) {
+        return;
+    }
+    cnvs_blit_rgba(tmp, rw, rh, 0, 0, data, w, h, cx0 - dx, cy0 - dy, rw, rh);
+    compositor_replace(cv->comp, cx0, cy0, rw, rh, tmp);
+    free(tmp);
 }

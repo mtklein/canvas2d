@@ -265,7 +265,7 @@ void compositor_blend(compositor *c, int x, int y, int w, int h, _Float16 const 
     }
 }
 
-void compositor_replace(compositor *c, int x, int y, int w, int h, _Float16 const *tile) {
+void compositor_replace(compositor *c, int x, int y, int w, int h, uint8_t const *tile) {
     if (!c || !tile || w <= 0 || h <= 0) {
         return;
     }
@@ -274,8 +274,8 @@ void compositor_replace(compositor *c, int x, int y, int w, int h, _Float16 cons
         if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
             return;
         }
-        id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA16Float, w, h, tile,
-                                         (NSUInteger)w * 4 * sizeof(_Float16));
+        id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA8Unorm, w, h, tile,
+                                         (NSUInteger)w * 4);
         draw_tile(o, o.replacePipe, x, y, w, h, tex);
     }
 }
@@ -293,17 +293,31 @@ void compositor_clear(compositor *c, int x, int y, int w, int h) {
     }
 }
 
-void compositor_read_f16(compositor *c, _Float16 *out, int len) {
+void compositor_read_rgba(compositor *c, uint8_t *out, int len) {
     if (!c || !out) {
         return;
     }
-    CmpImpl *o = (__bridge CmpImpl *)c;
-    if (len < o.width * o.height * 4) {
-        return;
+    @autoreleasepool {
+        CmpImpl *o = (__bridge CmpImpl *)c;
+        int n = o.width * o.height;
+        if (len < n * 4) {
+            return;
+        }
+        flush_batch(o);  // execute pending ops so the readback sees them
+        // The target is RGBA16Float; read it and quantize to 8-bit (the edge).
+        _Float16 *halfs = malloc((size_t)n * 4 * sizeof(_Float16));
+        if (!halfs) {
+            return;
+        }
+        [o.target getBytes:halfs
+               bytesPerRow:(NSUInteger)o.width * 4 * sizeof(_Float16)
+                fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
+               mipmapLevel:0];
+        for (int i = 0; i < n * 4; i++) {
+            float v = (float)halfs[i];
+            v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+            out[i] = (uint8_t)(v * 255.0f + 0.5f);
+        }
+        free(halfs);
     }
-    flush_batch(o);  // execute pending ops so the readback sees them
-    [o.target getBytes:out
-           bytesPerRow:(NSUInteger)o.width * 4 * sizeof(_Float16)
-            fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
-           mipmapLevel:0];
 }

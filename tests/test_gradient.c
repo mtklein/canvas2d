@@ -28,14 +28,12 @@ int main(void) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
-    // Interpolated in linear light, then sRGB-encoded for 8-bit readout: the
-    // midpoint is ~(186, 0, 189), lighter than the 128 an 8-bit-space lerp gives.
     struct px4 lft = pixel_at(px, len, w, 6, 32);
     struct px4 mid = pixel_at(px, len, w, 32, 32);
     struct px4 rgt = pixel_at(px, len, w, 58, 32);
-    CHECK(lft.r > 200 && lft.b < 130 && lft.g < 20);                 // near red
-    CHECK(rgt.b > 200 && rgt.r < 130 && rgt.g < 20);                 // near blue
-    CHECK(mid.r > 150 && mid.r < 220 && mid.b > 150 && mid.b < 220 && mid.g < 20);
+    CHECK(lft.r > 200 && lft.b < 60 && lft.g < 20);                  // near red
+    CHECK(rgt.b > 200 && rgt.r < 60 && rgt.g < 20);                  // near blue
+    CHECK(mid.r > 96 && mid.r < 160 && mid.b > 96 && mid.b < 160);   // purple
 
     // Concentric radial gradient yellow centre -> red rim (radius 28).
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -87,8 +85,7 @@ int main(void) {
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv);
     canvas_read_rgba(cv, px, len);
-    // Linear 0.2 sRGB-encodes to ~124, not 51.
-    CHECK(px_near(pixel_at(px, len, w, 6, 32), 124, 124, 124, 255, 2));  // restored solid
+    CHECK(px_near(pixel_at(px, len, w, 6, 32), 51, 51, 51, 255, 2));  // restored solid
 
     // Gradient stroke: a thick horizontal line, red -> blue left to right.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -103,8 +100,8 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     struct px4 s_lft = pixel_at(px, len, w, 10, 32);
     struct px4 s_rgt = pixel_at(px, len, w, 54, 32);
-    CHECK(s_lft.r > 180 && s_lft.b < 150 && s_lft.r > s_lft.b);  // red end
-    CHECK(s_rgt.b > 180 && s_rgt.r < 150 && s_rgt.b > s_rgt.r);  // blue end
+    CHECK(s_lft.r > 180 && s_lft.b < 80);  // red end
+    CHECK(s_rgt.b > 180 && s_rgt.r < 80);  // blue end
 
     // A solid stroke colour reverts the stroke paint away from the gradient.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
