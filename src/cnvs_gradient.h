@@ -3,10 +3,9 @@
 // Linear and radial colour gradients.  Stops are kept sorted by offset in a
 // small fixed array (so a gradient is a plain value, copied with the canvas
 // state on save/restore).  Evaluation happens entirely on the CPU: a fill or
-// stroke samples the gradient per vertex and the GPU just interpolates colours.
+// stroke samples the gradient per pixel into the tile the compositor blends.
 
 #include "cnvs_math.h"
-#include "gpu.h"
 
 #include <ptrcheck.h>
 
@@ -16,7 +15,7 @@ typedef enum { CNVS_GRAD_LINEAR, CNVS_GRAD_RADIAL } cnvs_grad_kind;
 
 typedef struct {
     float offset;  // in [0,1]
-    gpu_rgba color;
+    cnvs_rgba color;
 } cnvs_stop;
 
 // Coordinates and radii are device space (the CTM is baked in when the gradient
@@ -30,11 +29,11 @@ typedef struct {
 } cnvs_gradient;
 
 // Insert a stop in offset order (offset clamped to [0,1]); a no-op once full.
-void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, gpu_rgba color);
+void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_rgba color);
 
 // Colour at parameter t (clamped to [0,1]), piecewise-linear across the stops.
 // With no stops the result is transparent black.
-gpu_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
+cnvs_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
 
 // Gradient parameter for a device-space point, written to *t (clamped to
 // [0,1]).  Returns false when a radial point lies outside the gradient (no
@@ -43,4 +42,4 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
 
 // Convenience: the straight-alpha colour to paint at a device-space point,
 // with `alpha` (global alpha) folded into the result's alpha.
-gpu_rgba cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);
+cnvs_rgba cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);

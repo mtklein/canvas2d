@@ -4,10 +4,6 @@
 
 static float const TAU = 6.2831853f;
 
-static gpu_vert vof(cnvs_vec2 p) {
-    return (gpu_vert){ .x = p.x, .y = p.y };
-}
-
 // Unit direction and length of p0->p1; false if degenerate.
 static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
     float dx = p1.x - p0.x;
@@ -23,10 +19,10 @@ static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
 
 // Rectangle from p0 to p1 offset by +/-nrm, as two triangles.
 static bool emit_quad(cnvs_verts *out, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 nrm) {
-    gpu_vert a0 = vof((cnvs_vec2){ .x = p0.x + nrm.x, .y = p0.y + nrm.y });
-    gpu_vert b0 = vof((cnvs_vec2){ .x = p0.x - nrm.x, .y = p0.y - nrm.y });
-    gpu_vert a1 = vof((cnvs_vec2){ .x = p1.x + nrm.x, .y = p1.y + nrm.y });
-    gpu_vert b1 = vof((cnvs_vec2){ .x = p1.x - nrm.x, .y = p1.y - nrm.y });
+    cnvs_vec2 a0 = { .x = p0.x + nrm.x, .y = p0.y + nrm.y };
+    cnvs_vec2 b0 = { .x = p0.x - nrm.x, .y = p0.y - nrm.y };
+    cnvs_vec2 a1 = { .x = p1.x + nrm.x, .y = p1.y + nrm.y };
+    cnvs_vec2 b1 = { .x = p1.x - nrm.x, .y = p1.y - nrm.y };
     return cnvs_verts_tri(out, a0, b0, b1) && cnvs_verts_tri(out, a0, b1, a1);
 }
 
@@ -51,12 +47,11 @@ static int disc_segs(float r) {
 // extra coverage over a half-disc lands on already-stroked geometry).
 static bool emit_disc(cnvs_verts *out, cnvs_vec2 c, float r) {
     int segs = disc_segs(r);
-    gpu_vert center = vof(c);
     cnvs_vec2 prev = { .x = c.x + r, .y = c.y };
     for (int i = 1; i <= segs; i++) {
         float a = TAU * (float)i / (float)segs;
         cnvs_vec2 cur = { .x = c.x + r * cosf(a), .y = c.y + r * sinf(a) };
-        if (!cnvs_verts_tri(out, center, vof(prev), vof(cur))) {
+        if (!cnvs_verts_tri(out, c, prev, cur)) {
             return false;
         }
         prev = cur;
@@ -78,7 +73,7 @@ static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
     float sgn = cross > 0.0f ? -1.0f : 1.0f;
     cnvs_vec2 pa = { .x = v.x + sgn * -d0.y * hw, .y = v.y + sgn * d0.x * hw };
     cnvs_vec2 pb = { .x = v.x + sgn * -d1.y * hw, .y = v.y + sgn * d1.x * hw };
-    if (!cnvs_verts_tri(out, vof(pa), vof(v), vof(pb))) {  // bevel wedge
+    if (!cnvs_verts_tri(out, pa, v, pb)) {  // bevel wedge
         return false;
     }
     if (join == CNVS_JOIN_MITER) {
@@ -88,7 +83,7 @@ static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
         float mx = tip.x - v.x;
         float my = tip.y - v.y;
         if (sqrtf(mx * mx + my * my) <= miter_limit * hw) {
-            if (!cnvs_verts_tri(out, vof(pa), vof(tip), vof(pb))) {
+            if (!cnvs_verts_tri(out, pa, tip, pb)) {
                 return false;
             }
         }

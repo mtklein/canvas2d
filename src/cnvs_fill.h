@@ -59,9 +59,8 @@ bool cnvs_fill_spans(cnvs_path const *path, cnvs_fill_rule rule,
                      int width, int height, cnvs_spans *out,
                      cnvs_edges *edges, cnvs_xings *xings);
 
-// Convenience over cnvs_fill_spans: emit each span as a solid quad (gpu_vert
-// triples) into `out`.  `spans` is caller-owned scratch.  Used for plain fills
-// and for building clip masks.
+// Convenience over cnvs_fill_spans: emit each span as a solid quad (cnvs_vec2
+// triples) into `out`.  `spans` is caller-owned scratch.
 bool cnvs_fill_path(cnvs_path const *path, cnvs_fill_rule rule,
                     int width, int height, cnvs_verts *out,
                     cnvs_edges *edges, cnvs_xings *xings, cnvs_spans *spans);

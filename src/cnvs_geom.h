@@ -3,18 +3,18 @@
 // Growable buffers: each data pointer and its count are siblings, so
 // __counted_by(cap) is valid and the two must be reassigned together.
 
-#include "gpu.h"
+#include "cnvs_math.h"
 
 #include <ptrcheck.h>
 
 typedef struct {
-    gpu_vert *__counted_by(cap) data;
+    cnvs_vec2 *__counted_by(cap) data;
     int len;
     int cap;
 } cnvs_verts;
 
-bool cnvs_verts_push(cnvs_verts *v, gpu_vert p);
-bool cnvs_verts_tri(cnvs_verts *v, gpu_vert a, gpu_vert b, gpu_vert c);
+bool cnvs_verts_push(cnvs_verts *v, cnvs_vec2 p);
+bool cnvs_verts_tri(cnvs_verts *v, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c);
 void cnvs_verts_reset(cnvs_verts *v);
 void cnvs_verts_free(cnvs_verts *v);
 
@@ -28,13 +28,3 @@ bool cnvs_ints_push(cnvs_ints *v, int value);
 void cnvs_ints_remove(cnvs_ints *v, int index);
 void cnvs_ints_reset(cnvs_ints *v);
 void cnvs_ints_free(cnvs_ints *v);
-
-typedef struct {
-    gpu_cvert *__counted_by(cap) data;
-    int len;
-    int cap;
-} cnvs_cverts;
-
-bool cnvs_cverts_tri(cnvs_cverts *v, gpu_cvert a, gpu_cvert b, gpu_cvert c);
-void cnvs_cverts_reset(cnvs_cverts *v);
-void cnvs_cverts_free(cnvs_cverts *v);

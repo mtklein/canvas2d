@@ -15,6 +15,11 @@ typedef struct {
     float x, y;
 } cnvs_vec2;
 
+// Straight-alpha colour, components in [0,1].
+typedef struct {
+    float r, g, b, a;
+} cnvs_rgba;
+
 typedef struct {
     float a, b, c, d, e, f;
 } cnvs_mat;

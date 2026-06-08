@@ -17,16 +17,16 @@ int main(void) {
         .r1 = (float)DIM * 0.6f,
         .stop_count = 0,
     };
-    cnvs_gradient_add_stop(&gr, 0.00f, (gpu_rgba){ .r = 1.0f, .g = 1.0f, .b = 1.0f, .a = 1.0f });
-    cnvs_gradient_add_stop(&gr, 0.35f, (gpu_rgba){ .r = 0.3f, .g = 0.6f, .b = 0.95f, .a = 1.0f });
-    cnvs_gradient_add_stop(&gr, 0.70f, (gpu_rgba){ .r = 0.9f, .g = 0.3f, .b = 0.4f, .a = 1.0f });
-    cnvs_gradient_add_stop(&gr, 1.00f, (gpu_rgba){ .r = 0.05f, .g = 0.1f, .b = 0.3f, .a = 1.0f });
+    cnvs_gradient_add_stop(&gr, 0.00f, (cnvs_rgba){ .r = 1.0f, .g = 1.0f, .b = 1.0f, .a = 1.0f });
+    cnvs_gradient_add_stop(&gr, 0.35f, (cnvs_rgba){ .r = 0.3f, .g = 0.6f, .b = 0.95f, .a = 1.0f });
+    cnvs_gradient_add_stop(&gr, 0.70f, (cnvs_rgba){ .r = 0.9f, .g = 0.3f, .b = 0.4f, .a = 1.0f });
+    cnvs_gradient_add_stop(&gr, 1.00f, (cnvs_rgba){ .r = 0.05f, .g = 0.1f, .b = 0.3f, .a = 1.0f });
 
     double sink = 0.0;
     for (int it = 0; it < ITERS; it++) {
         for (int y = 0; y < DIM; y++) {
             for (int x = 0; x < DIM; x++) {
-                gpu_rgba c = cnvs_gradient_sample(
+                cnvs_rgba c = cnvs_gradient_sample(
                     &gr, (cnvs_vec2){ .x = (float)x + 0.5f, .y = (float)y + 0.5f }, 1.0f);
                 sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
             }

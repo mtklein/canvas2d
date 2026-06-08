@@ -1,6 +1,7 @@
 #include "canvas.h"
 
-#include "cnvs_fill.h"
+#include "compositor.h"
+#include "cnvs_cover.h"
 #include "cnvs_geom.h"
 #include "cnvs_gradient.h"
 #include "cnvs_image.h"
@@ -9,7 +10,6 @@
 #include "cnvs_path.h"
 #include "cnvs_png.h"
 #include "cnvs_stroke.h"
-#include "gpu.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -22,10 +22,10 @@
 
 struct canvas_state {
     cnvs_mat ctm;
-    gpu_rgba fill;
+    cnvs_rgba fill;
     int fill_is_gradient;  // 0 = solid `fill`; 1 = `fill_grad`
     cnvs_gradient fill_grad;
-    gpu_rgba stroke;
+    cnvs_rgba stroke;
     int stroke_is_gradient;  // 0 = solid `stroke`; 1 = `stroke_grad`
     cnvs_gradient stroke_grad;
     float global_alpha;
@@ -37,11 +37,15 @@ struct canvas_state {
     float dash[CANVAS_MAX_DASH];
     int dash_count;
     float dash_offset;
-    int clip_depth;  // number of clips active when this state was saved
+    // Clip coverage, one byte per canvas pixel (NULL = open).  Held by value in
+    // the state, so save() snapshots it and restore() brings it back; clip()
+    // intersects the current path's coverage into it.
+    uint8_t *__counted_by(clip_len) clip_mask;
+    int clip_len;
 };
 
 struct canvas {
-    gpu *__single g;
+    compositor *__single comp;
     int width;
     int height;
     struct canvas_state cur;
@@ -49,45 +53,37 @@ struct canvas {
     int stack_len;
     int stack_cap;
     cnvs_path path;
-    cnvs_path scratch_path;  // transient paths (e.g. gradient fill_rect) off the user's path
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
-    cnvs_verts scratch_verts;
-    cnvs_cverts scratch_cverts;
-    cnvs_edges scratch_edges;
-    cnvs_xings scratch_xings;
-    cnvs_spans scratch_spans;
-    // Clip stack: one triangle set per active clip; their intersection is the
-    // mask.  clip_len tracks the live count; entries past it stay allocated for
-    // reuse.  cur.clip_depth records how many were live at each save().
-    cnvs_verts *__counted_by(clip_cap) clip_tris;
-    int clip_len;
-    int clip_cap;
+    cnvs_verts scratch_verts;  // stroke triangle output, fed to the coverage rasterizer
+    cnvs_cover cover;
+    uint8_t *__counted_by(cov_cap) cov;    // per-pixel coverage for the current op's bbox
+    int cov_cap;
+    uint8_t *__counted_by(tile_cap) tile;  // RGBA8 tile for the current op's bbox
+    int tile_cap;
 };
 
-static void clip_rebuild(canvas *__single cv);
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
-static void fill_gradient(canvas *__single cv);  // colours scratch_spans via cur.fill_grad
 
 canvas *__single canvas_create(int width, int height) {
     if (width <= 0 || height <= 0) {
         return NULL;
     }
-    gpu *__single g = gpu_create(width, height);
-    if (!g) {
+    compositor *__single comp = compositor_create(width, height);
+    if (!comp) {
         return NULL;
     }
     canvas *__single cv = calloc(1, sizeof *cv);
     if (!cv) {
-        gpu_destroy(g);
+        compositor_destroy(comp);
         return NULL;
     }
-    cv->g = g;
+    cv->comp = comp;
     cv->width = width;
     cv->height = height;
     cv->cur.ctm = cnvs_mat_identity();
-    cv->cur.fill = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
+    cv->cur.fill = (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
     cv->cur.fill_is_gradient = 0;
-    cv->cur.stroke = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
+    cv->cur.stroke = (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
     cv->cur.stroke_is_gradient = 0;
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
@@ -97,15 +93,12 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.miter_limit = 10.0f;
     cv->cur.dash_count = 0;
     cv->cur.dash_offset = 0.0f;
-    cv->cur.clip_depth = 0;
+    cv->cur.clip_mask = NULL;
+    cv->cur.clip_len = 0;
     cv->stack = NULL;
     cv->stack_len = 0;
     cv->stack_cap = 0;
-    cv->clip_tris = NULL;
-    cv->clip_len = 0;
-    cv->clip_cap = 0;
     cnvs_path_init(&cv->path);
-    cnvs_path_init(&cv->scratch_path);
     return cv;
 }
 
@@ -113,19 +106,17 @@ void canvas_destroy(canvas *__single cv) {
     if (!cv) {
         return;
     }
-    gpu_destroy(cv->g);
-    free(cv->stack);
-    for (int i = 0; i < cv->clip_cap; i++) {
-        cnvs_verts_free(&cv->clip_tris[i]);
+    compositor_destroy(cv->comp);
+    for (int i = 0; i < cv->stack_len; i++) {
+        free(cv->stack[i].clip_mask);
     }
-    free(cv->clip_tris);
+    free(cv->stack);
+    free(cv->cur.clip_mask);
     cnvs_path_free(&cv->path);
-    cnvs_path_free(&cv->scratch_path);
     cnvs_verts_free(&cv->scratch_verts);
-    cnvs_cverts_free(&cv->scratch_cverts);
-    cnvs_edges_free(&cv->scratch_edges);
-    cnvs_xings_free(&cv->scratch_xings);
-    cnvs_spans_free(&cv->scratch_spans);
+    cnvs_cover_free(&cv->cover);
+    free(cv->cov);
+    free(cv->tile);
     free(cv);
 }
 
@@ -149,17 +140,29 @@ void canvas_save(canvas *__single cv) {
         return;
     }
     cv->stack[cv->stack_len] = cv->cur;
+    // Give the saved entry its own copy of the clip mask so clip() can mutate
+    // cur's independently.
+    if (cv->cur.clip_mask) {
+        int n = cv->cur.clip_len;
+        uint8_t *copy = malloc((size_t)n);
+        if (copy) {
+            memcpy(copy, cv->cur.clip_mask, (size_t)n);
+            cv->stack[cv->stack_len].clip_mask = copy;
+            cv->stack[cv->stack_len].clip_len = n;
+        } else {
+            cv->stack[cv->stack_len].clip_mask = NULL;
+            cv->stack[cv->stack_len].clip_len = 0;
+        }
+    }
     cv->stack_len += 1;
 }
 
 void canvas_restore(canvas *__single cv) {
     if (cv->stack_len > 0) {
         cv->stack_len -= 1;
-        cv->cur = cv->stack[cv->stack_len];
-        if (cv->clip_len != cv->cur.clip_depth) {
-            cv->clip_len = cv->cur.clip_depth;  // drop clips added since the save
-            clip_rebuild(cv);
-        }
+        free(cv->cur.clip_mask);
+        cv->cur = cv->stack[cv->stack_len];  // adopts the saved clip mask
+        compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
     }
 }
 
@@ -191,7 +194,7 @@ void canvas_reset_transform(canvas *__single cv) {
 }
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.fill = (gpu_rgba){ .r = r, .g = g, .b = b, .a = a };
+    cv->cur.fill = (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a };
     cv->cur.fill_is_gradient = 0;
 }
 
@@ -202,8 +205,7 @@ static float ctm_scale(cnvs_mat m) {
 }
 
 // Initialise a gradient struct in device space (the CTM is baked in now); the
-// caller flips the matching is_gradient flag.  Coordinates are transformed and
-// radii scaled like path points and line widths.
+// caller flips the matching is_gradient flag.
 static void grad_set_linear(canvas *__single cv, cnvs_gradient *gr,
                             float x0, float y0, float x1, float y1) {
     gr->kind = CNVS_GRAD_LINEAR;
@@ -240,7 +242,7 @@ void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.fill_grad, offset,
-                           (gpu_rgba){ .r = r, .g = g, .b = b, .a = a });
+                           (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a });
 }
 
 void canvas_set_stroke_linear_gradient(canvas *__single cv,
@@ -258,55 +260,146 @@ void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, offset,
-                           (gpu_rgba){ .r = r, .g = g, .b = b, .a = a });
+                           (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a });
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
     cv->cur.global_alpha = alpha;
 }
 
-static void fill_quad(canvas *__single cv, float x, float y, float w, float h,
-                      gpu_rgba color, bool blend) {
-    cnvs_mat m = cv->cur.ctm;
-    cnvs_vec2 p0 = cnvs_mat_apply(m, (cnvs_vec2){ .x = x, .y = y });
-    cnvs_vec2 p1 = cnvs_mat_apply(m, (cnvs_vec2){ .x = x + w, .y = y });
-    cnvs_vec2 p2 = cnvs_mat_apply(m, (cnvs_vec2){ .x = x + w, .y = y + h });
-    cnvs_vec2 p3 = cnvs_mat_apply(m, (cnvs_vec2){ .x = x, .y = y + h });
-    gpu_vert verts[6] = {
-        { .x = p0.x, .y = p0.y }, { .x = p1.x, .y = p1.y }, { .x = p2.x, .y = p2.y },
-        { .x = p0.x, .y = p0.y }, { .x = p2.x, .y = p2.y }, { .x = p3.x, .y = p3.y },
-    };
-    gpu_draw_solid(cv->g, verts, 6, color, blend);
+static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
+    return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
+}
+
+// Integer device-space bounding box of a point set, clamped to the canvas.
+typedef struct {
+    int x, y, w, h;
+} cbbox;
+
+static cbbox points_bbox(canvas *__single cv,
+                         cnvs_vec2 const *__counted_by(n) pts, int n) {
+    if (n <= 0) {
+        return (cbbox){ .x = 0, .y = 0, .w = 0, .h = 0 };
+    }
+    float minx = pts[0].x, maxx = pts[0].x, miny = pts[0].y, maxy = pts[0].y;
+    for (int i = 1; i < n; i++) {
+        cnvs_vec2 p = pts[i];
+        minx = p.x < minx ? p.x : minx;
+        maxx = p.x > maxx ? p.x : maxx;
+        miny = p.y < miny ? p.y : miny;
+        maxy = p.y > maxy ? p.y : maxy;
+    }
+    float fx0 = floorf(minx), fy0 = floorf(miny);
+    float fx1 = ceilf(maxx), fy1 = ceilf(maxy);
+    int x0 = (int)fx0, y0 = (int)fy0, x1 = (int)fx1, y1 = (int)fy1;
+    if (x0 < 0) { x0 = 0; }
+    if (y0 < 0) { y0 = 0; }
+    if (x1 > cv->width) { x1 = cv->width; }
+    if (y1 > cv->height) { y1 = cv->height; }
+    cbbox b = { .x = x0, .y = y0, .w = x1 - x0, .h = y1 - y0 };
+    if (b.w < 0) { b.w = 0; }
+    if (b.h < 0) { b.h = 0; }
+    return b;
+}
+
+static bool ensure_tile(canvas *__single cv, int npix) {
+    if (npix > cv->cov_cap) {
+        uint8_t *nc = realloc(cv->cov, (size_t)npix);
+        if (!nc) {
+            return false;
+        }
+        cv->cov = nc;
+        cv->cov_cap = npix;
+    }
+    int tneed = npix * 4;
+    if (tneed > cv->tile_cap) {
+        uint8_t *nt = realloc(cv->tile, (size_t)tneed);
+        if (!nt) {
+            return false;
+        }
+        cv->tile = nt;
+        cv->tile_cap = tneed;
+    }
+    return true;
+}
+
+static uint8_t u8(float v) {
+    v = v * 255.0f + 0.5f;
+    if (v < 0.0f) { v = 0.0f; }
+    if (v > 255.0f) { v = 255.0f; }
+    return (uint8_t)v;
+}
+
+// Add a path edge to the coverage rasterizer, translated into the tile's frame.
+static void cover_edge(canvas *__single cv, cbbox b, cnvs_vec2 p0, cnvs_vec2 p1) {
+    cnvs_cover_add_edge(&cv->cover, b.w, b.h, p0.x - (float)b.x, p0.y - (float)b.y,
+                        p1.x - (float)b.x, p1.y - (float)b.y);
+}
+
+static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
+    for (int s = 0; s < p->sp_len; s++) {
+        cnvs_subpath sp = p->subs[s];
+        if (sp.count < 2) {
+            continue;
+        }
+        for (int k = 0; k < sp.count; k++) {
+            cnvs_vec2 a = p->pts[sp.start + k];
+            cnvs_vec2 c = p->pts[sp.start + (k + 1) % sp.count];
+            cover_edge(cv, b, a, c);
+        }
+    }
+}
+
+// Build an RGBA8 tile from the coverage in cv->cov and the given paint, then
+// composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage.
+static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
+                       cnvs_gradient const *gr, cnvs_rgba solid) {
+    float ga = cv->cur.global_alpha;
+    for (int py = 0; py < b.h; py++) {
+        for (int px = 0; px < b.w; px++) {
+            int i = py * b.w + px;
+            float covf = (float)cv->cov[i] / 255.0f;
+            cnvs_rgba col;
+            if (is_grad) {
+                col = cnvs_gradient_sample(
+                    gr, (cnvs_vec2){ .x = (float)b.x + (float)px + 0.5f,
+                                     .y = (float)b.y + (float)py + 0.5f }, ga);
+            } else {
+                col = solid;
+                col.a *= ga;
+            }
+            cv->tile[i * 4] = u8(col.r);
+            cv->tile[i * 4 + 1] = u8(col.g);
+            cv->tile[i * 4 + 2] = u8(col.b);
+            cv->tile[i * 4 + 3] = u8(col.a * covf);
+        }
+    }
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile);
 }
 
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) {
-    // clearRect erases to transparent black, overwriting (no blend).
-    fill_quad(cv, x, y, w, h,
-              (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f }, false);
+    cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
+                       xf(cv, x + w, y + h), xf(cv, x, y + h) };
+    cbbox b = points_bbox(cv, q, 4);
+    if (b.w > 0 && b.h > 0) {
+        compositor_clear(cv->comp, b.x, b.y, b.w, b.h);
+    }
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
-    if (cv->cur.fill_is_gradient) {
-        // Scan-convert the rect (off the user's path) and shade it like fill().
-        cnvs_path_reset(&cv->scratch_path);
-        cnvs_path_rect(&cv->scratch_path, xf(cv, x, y), xf(cv, x + w, y),
-                       xf(cv, x + w, y + h), xf(cv, x, y + h));
-        cv->scratch_spans.len = 0;
-        if (!cnvs_fill_spans(&cv->scratch_path, cv->cur.fill_rule, cv->width,
-                             cv->height, &cv->scratch_spans, &cv->scratch_edges,
-                             &cv->scratch_xings)) {
-            return;
-        }
-        fill_gradient(cv);
+    cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
+                       xf(cv, x + w, y + h), xf(cv, x, y + h) };
+    cbbox b = points_bbox(cv, q, 4);
+    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
+        !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
     }
-    gpu_rgba color = cv->cur.fill;
-    color.a *= cv->cur.global_alpha;
-    fill_quad(cv, x, y, w, h, color, true);
-}
-
-static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
-    return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
+    cover_edge(cv, b, q[0], q[1]);
+    cover_edge(cv, b, q[1], q[2]);
+    cover_edge(cv, b, q[2], q[3]);
+    cover_edge(cv, b, q[3], q[0]);
+    cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
+    paint_tile(cv, b, cv->cur.fill_is_gradient, &cv->cur.fill_grad, cv->cur.fill);
 }
 
 void canvas_begin_path(canvas *__single cv) {
@@ -479,143 +572,53 @@ void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
     cv->cur.fill_rule = (rule == CANVAS_EVENODD) ? CNVS_EVENODD : CNVS_NONZERO;
 }
 
-static bool clip_grow(canvas *__single cv, int need) {
-    if (need <= cv->clip_cap) {
-        return true;
+void canvas_fill(canvas *__single cv) {
+    cbbox b = points_bbox(cv, cv->path.pts, cv->path.pt_len);
+    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
+        !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
+        return;
     }
-    int newcap = cnvs_grow_cap(cv->clip_cap, need);
-    cnvs_verts *nt = realloc(cv->clip_tris, (size_t)newcap * sizeof *nt);
-    if (!nt) {
-        return false;
-    }
-    for (int i = cv->clip_cap; i < newcap; i++) {
-        nt[i] = (cnvs_verts){ 0 };  // fresh slots start empty/unallocated
-    }
-    cv->clip_tris = nt;       // pointer and its count updated together
-    cv->clip_cap = newcap;
-    return true;
-}
-
-// Re-mask the GPU stencil from scratch: clear, then intersect each live clip.
-static void clip_rebuild(canvas *__single cv) {
-    gpu_clip_reset(cv->g);
-    for (int i = 0; i < cv->clip_len; i++) {
-        gpu_clip_add(cv->g, cv->clip_tris[i].data, cv->clip_tris[i].len);
-    }
+    cover_path_edges(cv, b, &cv->path);
+    cnvs_cover_resolve(&cv->cover, b.w, b.h, cv->cur.fill_rule, cv->cov);
+    paint_tile(cv, b, cv->cur.fill_is_gradient, &cv->cur.fill_grad, cv->cur.fill);
 }
 
 void canvas_clip(canvas *__single cv) {
-    if (!clip_grow(cv, cv->clip_len + 1)) {
+    int n = cv->width * cv->height;
+    uint8_t *nm = malloc((size_t)n);
+    if (!nm) {
         return;
     }
-    cnvs_verts *slot = &cv->clip_tris[cv->clip_len];
-    cnvs_verts_reset(slot);
-    if (!cnvs_fill_path(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
-                        slot, &cv->scratch_edges, &cv->scratch_xings,
-                        &cv->scratch_spans)) {
-        return;
+    // Rasterize the path's coverage into cv->cov over its (clamped) bbox.
+    cbbox b = points_bbox(cv, cv->path.pts, cv->path.pt_len);
+    if (b.w > 0 && b.h > 0 && ensure_tile(cv, b.w * b.h) &&
+        cnvs_cover_reset(&cv->cover, b.w, b.h)) {
+        cover_path_edges(cv, b, &cv->path);
+        cnvs_cover_resolve(&cv->cover, b.w, b.h, cv->cur.fill_rule, cv->cov);
+    } else {
+        b.w = 0;
+        b.h = 0;  // empty path: clip to nothing
     }
-    cv->clip_len += 1;
-    cv->cur.clip_depth = cv->clip_len;
-    clip_rebuild(cv);
-}
-
-static gpu_cvert cvert(float x, float y, gpu_rgba c) {
-    return (gpu_cvert){ .x = x, .y = y, .r = c.r, .g = c.g, .b = c.b, .a = c.a };
-}
-
-// Colour each fill span with the gradient, subdividing along x so the linear
-// per-vertex interpolation tracks the ramp (exact between stops for linear
-// gradients; a close approximation for radial, whose parameter curves in x).
-static void fill_gradient(canvas *__single cv) {
-    float const step = 8.0f;
-    cnvs_gradient const *gr = &cv->cur.fill_grad;
-    float alpha = cv->cur.global_alpha;
-    cnvs_cverts_reset(&cv->scratch_cverts);
-    for (int i = 0; i < cv->scratch_spans.len; i++) {
-        cnvs_span s = cv->scratch_spans.data[i];
-        float y0 = (float)s.row;
-        float y1 = (float)(s.row + 1);
-        float yc = y0 + 0.5f;
-        float x = s.xl;
-        gpu_rgba cl = cnvs_gradient_sample(gr, (cnvs_vec2){ .x = x, .y = yc }, alpha);
-        while (x < s.xr) {
-            float xn = x + step;
-            if (xn > s.xr) {
-                xn = s.xr;
+    // new_clip = old_clip * path_coverage, zero outside the path's bbox.
+    for (int yy = 0; yy < cv->height; yy++) {
+        for (int xx = 0; xx < cv->width; xx++) {
+            int i = yy * cv->width + xx;
+            int pc = 0;
+            if (xx >= b.x && xx < b.x + b.w && yy >= b.y && yy < b.y + b.h) {
+                pc = cv->cov[(yy - b.y) * b.w + (xx - b.x)];
             }
-            gpu_rgba cr =
-                cnvs_gradient_sample(gr, (cnvs_vec2){ .x = xn, .y = yc }, alpha);
-            gpu_cvert a = cvert(x, y0, cl);
-            gpu_cvert b = cvert(xn, y0, cr);
-            gpu_cvert c = cvert(xn, y1, cr);
-            gpu_cvert d = cvert(x, y1, cl);
-            if (!cnvs_cverts_tri(&cv->scratch_cverts, a, b, c) ||
-                !cnvs_cverts_tri(&cv->scratch_cverts, a, c, d)) {
-                return;
-            }
-            x = xn;
-            cl = cr;
+            int old = cv->cur.clip_mask ? cv->cur.clip_mask[i] : 255;
+            nm[i] = (uint8_t)(old * pc / 255);
         }
     }
-    if (cv->scratch_cverts.len > 0) {
-        gpu_draw_verts(cv->g, cv->scratch_cverts.data, cv->scratch_cverts.len);
-    }
-}
-
-// Colour the stroke triangle list (in scratch_verts) by sampling the gradient at
-// each vertex.  No subdivision: stroke geometry is thin, so per-vertex Gouraud
-// already tracks the ramp closely.
-static void stroke_gradient(canvas *__single cv) {
-    cnvs_gradient const *gr = &cv->cur.stroke_grad;
-    float alpha = cv->cur.global_alpha;
-    cnvs_cverts_reset(&cv->scratch_cverts);
-    for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
-        gpu_vert p0 = cv->scratch_verts.data[i];
-        gpu_vert p1 = cv->scratch_verts.data[i + 1];
-        gpu_vert p2 = cv->scratch_verts.data[i + 2];
-        gpu_cvert a = cvert(p0.x, p0.y,
-                            cnvs_gradient_sample(gr, (cnvs_vec2){ .x = p0.x, .y = p0.y }, alpha));
-        gpu_cvert b = cvert(p1.x, p1.y,
-                            cnvs_gradient_sample(gr, (cnvs_vec2){ .x = p1.x, .y = p1.y }, alpha));
-        gpu_cvert c = cvert(p2.x, p2.y,
-                            cnvs_gradient_sample(gr, (cnvs_vec2){ .x = p2.x, .y = p2.y }, alpha));
-        if (!cnvs_cverts_tri(&cv->scratch_cverts, a, b, c)) {
-            return;
-        }
-    }
-    if (cv->scratch_cverts.len > 0) {
-        gpu_draw_verts(cv->g, cv->scratch_cverts.data, cv->scratch_cverts.len);
-    }
-}
-
-void canvas_fill(canvas *__single cv) {
-    if (cv->cur.fill_is_gradient) {
-        cv->scratch_spans.len = 0;
-        if (!cnvs_fill_spans(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
-                             &cv->scratch_spans, &cv->scratch_edges,
-                             &cv->scratch_xings)) {
-            return;
-        }
-        fill_gradient(cv);
-        return;
-    }
-    cnvs_verts_reset(&cv->scratch_verts);
-    if (!cnvs_fill_path(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
-                        &cv->scratch_verts, &cv->scratch_edges,
-                        &cv->scratch_xings, &cv->scratch_spans)) {
-        return;
-    }
-    if (cv->scratch_verts.len > 0) {
-        gpu_rgba color = cv->cur.fill;
-        color.a *= cv->cur.global_alpha;
-        gpu_draw_solid(cv->g, cv->scratch_verts.data, cv->scratch_verts.len,
-                       color, true);
-    }
+    free(cv->cur.clip_mask);
+    cv->cur.clip_mask = nm;
+    cv->cur.clip_len = n;
+    compositor_set_clip(cv->comp, cv->cur.clip_mask, n);
 }
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.stroke = (gpu_rgba){ .r = r, .g = g, .b = b, .a = a };
+    cv->cur.stroke = (cnvs_rgba){ .r = r, .g = g, .b = b, .a = a };
     cv->cur.stroke_is_gradient = 0;
 }
 
@@ -660,9 +663,7 @@ void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
 void canvas_stroke(canvas *__single cv) {
     cnvs_verts_reset(&cv->scratch_verts);
     // Line width and dash lengths are in user units; bake the CTM scale in.
-    cnvs_mat m = cv->cur.ctm;
-    float det = m.a * m.d - m.b * m.c;
-    float scale = sqrtf(fabsf(det));
+    float scale = ctm_scale(cv->cur.ctm);
     float hw = cv->cur.line_width * 0.5f * scale;
 
     bool dashed = cv->cur.dash_count > 0;
@@ -690,20 +691,36 @@ void canvas_stroke(canvas *__single cv) {
             return;
         }
     }
-    if (cv->scratch_verts.len > 0) {
-        if (cv->cur.stroke_is_gradient) {
-            stroke_gradient(cv);
-        } else {
-            gpu_rgba color = cv->cur.stroke;
-            color.a *= cv->cur.global_alpha;
-            gpu_draw_solid(cv->g, cv->scratch_verts.data, cv->scratch_verts.len,
-                           color, true);
-        }
+    if (cv->scratch_verts.len < 3) {
+        return;
     }
+    cbbox b = points_bbox(cv, cv->scratch_verts.data, cv->scratch_verts.len);
+    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
+        !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
+        return;
+    }
+    // Feed each stroke triangle as edges, forced to a consistent winding so the
+    // overlapping join/cap triangles union (nonzero) instead of cancelling.
+    for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
+        cnvs_vec2 p0 = cv->scratch_verts.data[i];
+        cnvs_vec2 p1 = cv->scratch_verts.data[i + 1];
+        cnvs_vec2 p2 = cv->scratch_verts.data[i + 2];
+        float area = (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y);
+        if (area < 0.0f) {
+            cnvs_vec2 t = p1;
+            p1 = p2;
+            p2 = t;
+        }
+        cover_edge(cv, b, p0, p1);
+        cover_edge(cv, b, p1, p2);
+        cover_edge(cv, b, p2, p0);
+    }
+    cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
+    paint_tile(cv, b, cv->cur.stroke_is_gradient, &cv->cur.stroke_grad, cv->cur.stroke);
 }
 
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
-    gpu_read_rgba(cv->g, out, len);
+    compositor_read_rgba(cv->comp, out, len);
 }
 
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
@@ -712,7 +729,7 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     if (!out) {
         return false;
     }
-    gpu_read_rgba(cv->g, out, len);
+    compositor_read_rgba(cv->comp, out, len);
     bool ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
@@ -729,7 +746,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     if (!buf) {
         return;
     }
-    gpu_read_rgba(cv->g, buf, clen);
+    compositor_read_rgba(cv->comp, buf, clen);
     cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
     free(buf);
 }
@@ -756,7 +773,7 @@ void canvas_put_image_data(canvas *__single cv,
         return;
     }
     if (cx0 == dx && cy0 == dy && rw == w && rh == h) {
-        gpu_write_region(cv->g, dx, dy, w, h, data);  // fully inside; no copy
+        compositor_replace(cv->comp, dx, dy, w, h, data);  // fully inside; no copy
         return;
     }
     int const tlen = rw * rh * 4;
@@ -765,6 +782,6 @@ void canvas_put_image_data(canvas *__single cv,
         return;
     }
     cnvs_blit_rgba(tmp, rw, rh, 0, 0, data, w, h, cx0 - dx, cy0 - dy, rw, rh);
-    gpu_write_region(cv->g, cx0, cy0, rw, rh, tmp);
+    compositor_replace(cv->comp, cx0, cy0, rw, rh, tmp);
     free(tmp);
 }

@@ -12,7 +12,7 @@ static float clamp01(float v) {
     return v;
 }
 
-void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, gpu_rgba color) {
+void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_rgba color) {
     if (gr->stop_count >= CNVS_MAX_STOPS) {
         return;
     }
@@ -28,10 +28,10 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, gpu_rgba color) {
     gr->stop_count += 1;
 }
 
-gpu_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
+cnvs_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     int n = gr->stop_count;
     if (n == 0) {
-        return (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f };
+        return (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f };
     }
     t = clamp01(t);
     if (t <= gr->stops[0].offset) {
@@ -46,7 +46,7 @@ gpu_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         if (t <= hi.offset) {
             float span = hi.offset - lo.offset;
             float u = span > 1e-9f ? (t - lo.offset) / span : 0.0f;
-            return (gpu_rgba){
+            return (cnvs_rgba){
                 .r = lo.color.r + (hi.color.r - lo.color.r) * u,
                 .g = lo.color.g + (hi.color.g - lo.color.g) * u,
                 .b = lo.color.b + (hi.color.b - lo.color.b) * u,
@@ -113,13 +113,13 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
     return true;
 }
 
-gpu_rgba cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
+cnvs_rgba cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
     float t;
-    gpu_rgba c;
+    cnvs_rgba c;
     if (cnvs_gradient_param(gr, p, &t)) {
         c = cnvs_gradient_color_at(gr, t);
     } else {
-        c = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f };
+        c = (cnvs_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f };
     }
     c.a *= alpha;
     return c;

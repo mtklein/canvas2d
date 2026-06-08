@@ -226,10 +226,10 @@ bool cnvs_fill_path(cnvs_path const *path, cnvs_fill_rule rule,
         cnvs_span s = spans->data[i];
         float y0 = (float)s.row;
         float y1 = (float)(s.row + 1);
-        gpu_vert a = { .x = s.xl, .y = y0 };
-        gpu_vert b = { .x = s.xr, .y = y0 };
-        gpu_vert c = { .x = s.xr, .y = y1 };
-        gpu_vert d = { .x = s.xl, .y = y1 };
+        cnvs_vec2 a = { .x = s.xl, .y = y0 };
+        cnvs_vec2 b = { .x = s.xr, .y = y0 };
+        cnvs_vec2 c = { .x = s.xr, .y = y1 };
+        cnvs_vec2 d = { .x = s.xl, .y = y1 };
         if (!cnvs_verts_tri(out, a, b, c) || !cnvs_verts_tri(out, a, c, d)) {
             return false;
         }

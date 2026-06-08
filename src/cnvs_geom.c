@@ -9,7 +9,7 @@ static bool verts_reserve(cnvs_verts *v, int need) {
         return true;
     }
     int newcap = cnvs_grow_cap(v->cap, need);
-    gpu_vert *nd = realloc(v->data, (size_t)newcap * sizeof *nd);
+    cnvs_vec2 *nd = realloc(v->data, (size_t)newcap * sizeof *nd);
     if (!nd) {
         return false;
     }
@@ -18,7 +18,7 @@ static bool verts_reserve(cnvs_verts *v, int need) {
     return true;
 }
 
-bool cnvs_verts_push(cnvs_verts *v, gpu_vert p) {
+bool cnvs_verts_push(cnvs_verts *v, cnvs_vec2 p) {
     if (!verts_reserve(v, v->len + 1)) {
         return false;
     }
@@ -27,7 +27,7 @@ bool cnvs_verts_push(cnvs_verts *v, gpu_vert p) {
     return true;
 }
 
-bool cnvs_verts_tri(cnvs_verts *v, gpu_vert a, gpu_vert b, gpu_vert c) {
+bool cnvs_verts_tri(cnvs_verts *v, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
     if (!verts_reserve(v, v->len + 3)) {
         return false;
     }
@@ -87,42 +87,6 @@ void cnvs_ints_reset(cnvs_ints *v) {
 }
 
 void cnvs_ints_free(cnvs_ints *v) {
-    free(v->data);
-    v->data = NULL;
-    v->len = 0;
-    v->cap = 0;
-}
-
-static bool cverts_reserve(cnvs_cverts *v, int need) {
-    if (need <= v->cap) {
-        return true;
-    }
-    int newcap = cnvs_grow_cap(v->cap, need);
-    gpu_cvert *nd = realloc(v->data, (size_t)newcap * sizeof *nd);
-    if (!nd) {
-        return false;
-    }
-    v->data = nd;
-    v->cap = newcap;
-    return true;
-}
-
-bool cnvs_cverts_tri(cnvs_cverts *v, gpu_cvert a, gpu_cvert b, gpu_cvert c) {
-    if (!cverts_reserve(v, v->len + 3)) {
-        return false;
-    }
-    v->data[v->len] = a;
-    v->data[v->len + 1] = b;
-    v->data[v->len + 2] = c;
-    v->len += 3;
-    return true;
-}
-
-void cnvs_cverts_reset(cnvs_cverts *v) {
-    v->len = 0;
-}
-
-void cnvs_cverts_free(cnvs_cverts *v) {
     free(v->data);
     v->data = NULL;
     v->len = 0;
