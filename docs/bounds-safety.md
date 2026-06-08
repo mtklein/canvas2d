@@ -150,9 +150,36 @@ because the representations match. `gpu_draw_solid(gpu*, const gpu_vert
 *__counted_by(count), int count, ...)` is a checked call on the C side and an
 ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
 
-Whether that boundary can itself be brought under `-fbounds-safety` — given
-ARC and the Metal/Foundation headers (which default to `__unsafe_indexable`) — is
-the next thing we want to find out.
+### Can the boundary itself be bounds-safe? No — and that's fine
+
+We tried. Two findings, both verified:
+
+1. **`-fbounds-safety` is C-only.** Adding it to the `.m` shim fails outright:
+   `error: -fbounds-safety is supported only for C language`. There is no way to
+   put an Objective-C translation unit under the flag.
+
+2. You *can* drive Metal from a pure-C `.c` file via the Objective-C runtime
+   (`objc_msgSend`, `<objc/*>`) and that compiles under `-fbounds-safety` — but
+   the runtime and SDK hand back `__unsafe_indexable` pointers for every
+   `id`/`SEL`/`Class`, and bounds-safety refuses to implicitly narrow them. The
+   only way to build is to declare the **entire TU** `__unsafe_indexable`
+   (`__ptrcheck_abi_assume_unsafe_indexable()`). A spike doing exactly this — a
+   clear-to-red and pixel readback in pure C — compiles and runs, but the TU is
+   then *entirely* unchecked, loses ARC (manual `retain`/`release`), and is
+   fragile FFI (hardcoded selector strings, enum constants, hand-mirrored struct
+   layouts).
+
+So "blanket `-fbounds-safety`" is reachable only in the hollow sense that every
+TU compiles with the flag; the GPU TU would check nothing. And there is nothing
+to check there: the backend forwards already-bounds-checked vertices and pixels
+straight to Metal as `void*`; all the CPU buffer logic lives in the C core,
+which is already fully covered.
+
+The principled conclusion — and the design we keep — is a 100% bounds-safe C
+core with a small, explicit, **isolated** Objective-C boundary (one ~190-line
+`.m` file). That isolation is not a limitation to apologise for; it's where the
+unsafe platform edge belongs, named and contained. `-fbounds-safety`'s value is
+in the code that actually manipulates memory, and that is all in C.
 
 ## Regrets / things we'd reconsider
 
@@ -176,7 +203,6 @@ the next thing we want to find out.
 
 ## Aspirations
 
-- Bring the **whole project** under `-fbounds-safety`, shim included.
 - **Winding-rule fills** (donut holes, self-intersection) via a winding pass or a
   GPU stencil-then-cover path.
 - **Anti-aliasing** (MSAA), miter/round joins, gradients, clipping.

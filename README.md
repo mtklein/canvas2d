@@ -63,10 +63,11 @@ framework. All transform and geometry math happens on the CPU in checked C and
 bakes into pixel-space triangles, so the GPU stays a dumb triangle rasteriser
 and the bounds-safety surface stays in C.
 
-> The shim is still being migrated under `-fbounds-safety` (see the roadmap); as
-> of this writing it is compiled `-std=c23` but without bounds checking, which
-> is sound because `__counted_by`/`__single` pointers have the ABI of a plain C
-> pointer.
+> The shim is the project's only translation unit *not* under `-fbounds-safety`:
+> the flag is C-only and rejects Objective-C. That's sound because
+> `__counted_by`/`__single` pointers share the plain-C-pointer ABI, so `gpu.h` is
+> identical on both sides. See [docs/bounds-safety.md](docs/bounds-safety.md) for
+> why we don't route around the limitation.
 
 ## Public API (subset of Canvas 2D, snake_case)
 
@@ -114,8 +115,10 @@ rationale in [configure.py](configure.py):
 
 ## Roadmap
 
-- **Now:** extend `-fbounds-safety` to the Metal shim for a blanket, whole-project
-  demonstration (and to learn how it meets Objective-C + platform headers).
+- ~~Blanket `-fbounds-safety` including the Metal shim~~ — investigated and
+  rejected: the flag is C-only, and routing Metal through the Objective-C runtime
+  forces an all-`__unsafe_indexable` TU (no ARC, no real checking). The boundary
+  stays an isolated ObjC shim; see [docs/bounds-safety.md](docs/bounds-safety.md).
 - Winding-rule fills; anti-aliasing (MSAA); miter/round joins.
 - A benchmark (tessellate + stroke N paths) for the "compete with Rust" number.
 - Gradients, clipping, then images/text.
