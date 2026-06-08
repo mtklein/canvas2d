@@ -27,10 +27,40 @@ static char const compositor_metal_src[] = {
 @property (nonatomic, strong) id<MTLRenderPipelineState> clearPipe;
 @property (nonatomic) int width;
 @property (nonatomic) int height;
+// Open render pass that consecutive ops batch into; flushed before a clip
+// change or readback.  The command buffer retains the per-op tile textures
+// until it completes, so they stay alive across the deferred commit.
+@property (nonatomic, strong) id<MTLCommandBuffer> batchCB;
+@property (nonatomic, strong) id<MTLRenderCommandEncoder> batchEnc;
 @end
 
 @implementation CmpImpl
 @end
+
+// Lazily open (or reuse) the render pass that consecutive ops batch into.
+static id<MTLRenderCommandEncoder> open_batch(CmpImpl *o) {
+    if (o.batchEnc) {
+        return o.batchEnc;
+    }
+    MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+    rp.colorAttachments[0].texture = o.target;
+    rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    o.batchCB = [o.queue commandBuffer];
+    o.batchEnc = [o.batchCB renderCommandEncoderWithDescriptor:rp];
+    return o.batchEnc;
+}
+
+static void flush_batch(CmpImpl *o) {
+    if (!o.batchEnc) {
+        return;
+    }
+    [o.batchEnc endEncoding];
+    [o.batchCB commit];
+    [o.batchCB waitUntilCompleted];
+    o.batchEnc = nil;
+    o.batchCB = nil;
+}
 
 typedef enum { TILE_BLEND, TILE_REPLACE, TILE_CLEAR } tile_mode;
 
@@ -159,7 +189,8 @@ compositor *compositor_create(int width, int height) {
 void compositor_destroy(compositor *c) {
     if (c) {
         CmpImpl *o = (__bridge_transfer CmpImpl *)c;
-        (void)o;  // ARC releases at scope end
+        flush_batch(o);  // drain any open batch before the encoder is released
+        // ARC releases at scope end.
     }
 }
 
@@ -172,6 +203,7 @@ void compositor_set_clip(compositor *c, uint8_t const *mask, int len) {
         if (mask && len < o.width * o.height) {
             return;
         }
+        flush_batch(o);  // pending blends must use the old clip before it changes
         set_clip_bytes(o, mask);
     }
 }
@@ -188,13 +220,7 @@ static void draw_tile(CmpImpl *o, id<MTLRenderPipelineState> pipe,
     float viewport[2] = { (float)o.width, (float)o.height };
     float origin[2] = { fx, fy };
 
-    MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-    rp.colorAttachments[0].texture = o.target;
-    rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
-    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-
-    id<MTLCommandBuffer> cb = [o.queue commandBuffer];
-    id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rp];
+    id<MTLRenderCommandEncoder> enc = open_batch(o);
     [enc setRenderPipelineState:pipe];
     [enc setVertexBuffer:vbuf offset:0 atIndex:0];
     [enc setVertexBytes:viewport length:sizeof(viewport) atIndex:1];
@@ -204,9 +230,6 @@ static void draw_tile(CmpImpl *o, id<MTLRenderPipelineState> pipe,
     }
     [enc setFragmentTexture:o.clip atIndex:1];
     [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
-    [enc endEncoding];
-    [cb commit];
-    [cb waitUntilCompleted];
 }
 
 // Upload an RGBA8 tile to a sampleable texture.
@@ -273,6 +296,7 @@ void compositor_read_rgba(compositor *c, uint8_t *out, int len) {
     if (len < o.width * o.height * 4) {
         return;
     }
+    flush_batch(o);  // execute pending ops so the readback sees them
     [o.target getBytes:out
            bytesPerRow:(NSUInteger)o.width * 4
             fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
