@@ -1,7 +1,7 @@
 #pragma once
 
-// Shared helpers for the benchmarks.  Marked [[maybe_unused]] (C23) so each
-// bench TU can include this and use only what it needs under -Weverything.
+// Shared helpers for the benchmarks.  static inline so each bench TU can include
+// this and use only what it needs -- an unused static inline is warning-free.
 
 #include "cnvs_math.h"
 #include "cnvs_path.h"
@@ -9,20 +9,20 @@
 #include <math.h>
 #include <stdint.h>
 
-[[maybe_unused]] static uint64_t bench_rng = 0x9E3779B97F4A7C15ULL;
-
-// Deterministic LCG in [0, 1).
-[[maybe_unused]] static float bench_frand(void) {
-    bench_rng = bench_rng * 6364136223846793005ULL + 1442695040888963407ULL;
-    return (float)(uint32_t)(bench_rng >> 32) / 4294967296.0f;
+// Deterministic LCG in [0, 1).  The state is a function-local static, so there
+// is no file-scope variable to leave unused.
+static inline float bench_frand(void) {
+    static uint64_t state = 0x9E3779B97F4A7C15ULL;
+    state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+    return (float)(uint32_t)(state >> 32) / 4294967296.0f;
 }
 
-[[maybe_unused]] static cnvs_vec2 bench_rpt(float w, float h) {
+static inline cnvs_vec2 bench_rpt(float w, float h) {
     return (cnvs_vec2){ .x = bench_frand() * w, .y = bench_frand() * h };
 }
 
 // Append `count` concave star polygons (5..19 spikes each) over a w x h area.
-[[maybe_unused]] static void bench_stars(cnvs_path *path, int count, float w, float h) {
+static inline void bench_stars(cnvs_path *path, int count, float w, float h) {
     for (int k = 0; k < count; k++) {
         float cx = bench_frand() * w;
         float cy = bench_frand() * h;
