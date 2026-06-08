@@ -30,6 +30,7 @@ struct canvas_state {
     int stroke_is_gradient;  // 0 = solid `stroke`; 1 = `stroke_grad`
     cnvs_gradient stroke_grad;
     float global_alpha;
+    compositor_blend_mode composite;  // globalCompositeOperation
     float line_width;
     cnvs_fill_rule fill_rule;
     cnvs_line_join line_join;
@@ -91,6 +92,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.stroke = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 1.0f);
     cv->cur.stroke_is_gradient = 0;
     cv->cur.global_alpha = 1.0f;
+    cv->cur.composite = COMPOSITOR_SRC_OVER;
     cv->cur.line_width = 1.0f;
     cv->cur.fill_rule = CNVS_NONZERO;
     cv->cur.line_join = CNVS_JOIN_MITER;
@@ -278,6 +280,16 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha) {
     cv->cur.global_alpha = alpha;
 }
 
+// canvas_composite_op mirrors compositor_blend_mode value-for-value (canvas.h
+// notes the coupling), so the validated cast is the whole mapping.
+void canvas_set_global_composite_operation(canvas *__single cv,
+                                           canvas_composite_op op) {
+    if ((int)op < 0 || (int)op >= COMPOSITOR_MODE_COUNT) {
+        return;
+    }
+    cv->cur.composite = (compositor_blend_mode)op;
+}
+
 static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
     return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
 }
@@ -387,7 +399,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             cv->tile[i * 4 + 3] = f16c(a * covf);
         }
     }
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) {
@@ -863,7 +875,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
             cv->tile[i * 4 + 3] = f16c(s[3] * ga * covf);
         }
     }
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
 void canvas_draw_image(canvas *__single cv,

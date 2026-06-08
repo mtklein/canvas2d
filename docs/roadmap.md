@@ -13,13 +13,19 @@ say, over features that are mostly plumbing or string parsing.
 
 ## Near-term plan
 
-Both chosen because their kernels are exactly the kind of dense, per-pixel,
+Chosen because their kernels are exactly the kind of dense, per-pixel,
 indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
 
-1. **`globalCompositeOperation`** — today the compositor does source-over only.
-   The Porter-Duff operators and separable blend modes (`multiply`, `screen`,
-   `overlay`, `darken`, …) are per-pixel math over two checked tile buffers.
-2. **Shadows / `filter` blur** — a separable Gaussian (or box) convolution: a
+1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes). It currently runs
+   in the Metal backend: source-over on fixed-function blend, the rest in a
+   framebuffer-fetch shader. The blend *math* isn't in checked C yet — that's the
+   next item.
+2. **A software compositor backend** — `compositor_cpu.c`, a checked-C
+   implementation of the same `compositor.h` ABI, with all 26 composite/blend
+   modes as one per-pixel `blend(src, dst, mode)` over two `__counted_by` tiles.
+   This is the bounds-safety showcase (and makes a GPU-free build/test path real);
+   it's where the blend kernel finally lives in checked C.
+3. **Shadows / `filter` blur** — a separable Gaussian (or box) convolution: a
    horizontal then vertical pass over a coverage/colour buffer, every tap an
    indexed read against a `__counted_by` row. The canonical stencil loop.
 
@@ -51,11 +57,6 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
 ## Missing entirely
 
 - **`strokeRect`** — we have `fillRect`/`clearRect` but not this one.
-- **`globalCompositeOperation`** — source-over only. None of the Porter-Duff modes
-  (`copy`, `destination-over/in/out/atop`, `source-in/out/atop`, `xor`, `lighter`)
-  nor the blend modes (`multiply`, `screen`, `overlay`, `darken`, `lighten`,
-  `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`,
-  `exclusion`, `hue`, `saturation`, `color`, `luminosity`).
 - **Shadows** — `shadowColor`, `shadowBlur`, `shadowOffsetX`, `shadowOffsetY`.
 - **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
   `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).

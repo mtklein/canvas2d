@@ -74,6 +74,12 @@ one `fill_text` mixes Latin and Chinese (UTF-8):
 
 ![text](gallery/text.png)
 
+`globalCompositeOperation` — the same two discs over a gradient under six modes
+(`source-over` is the GPU's fixed-function blend; the rest run the W3C
+composite+blend formula in a framebuffer-fetch shader):
+
+![blend](gallery/blend.png)
+
 ## Quick start
 
 ```sh
@@ -155,6 +161,7 @@ canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under
 canvas_save / canvas_restore
 canvas_translate / scale / rotate / transform / set_transform / reset_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
+canvas_set_global_composite_operation                        // 26 GCO modes
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
 canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / add_stroke_color_stop
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
@@ -190,7 +197,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware | ◑ RGBA8 source only, always bilinear |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform | ◑ no align/baseline/family, `measureText` is width-only |
-| Compositing | ◑ source-over only — no `globalCompositeOperation` |
+| Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Shadows, `filter`, patterns, conic gradients, `Path2D`, hit-testing | ❌ see [roadmap](docs/roadmap.md) |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 

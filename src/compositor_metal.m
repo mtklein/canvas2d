@@ -1,7 +1,9 @@
-// Metal backend for compositor.h: source-over / replace / erase of RGBA8 tiles
-// onto a single-sample target, masked by a clip-coverage texture.  All the
-// interesting rendering work happens in the C core; this just blends tiles.  Not
-// under -fbounds-safety (it is Objective-C); the ABI uses plain-C pointers.
+// Metal backend for compositor.h: composite / replace / erase of tiles onto a
+// single-sample target, masked by a clip-coverage texture.  source-over uses
+// fixed-function blending; the other globalCompositeOperation modes use a
+// framebuffer-fetch fragment shader.  All the interesting rendering work happens
+// in the C core; this just composites finished tiles.  Not under -fbounds-safety
+// (it is Objective-C); the ABI uses plain-C pointers.
 
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
@@ -22,7 +24,8 @@ static char const compositor_metal_src[] = {
 @property (nonatomic, strong) id<MTLCommandQueue> queue;
 @property (nonatomic, strong) id<MTLTexture> target;   // 1x RGBA8, readback
 @property (nonatomic, strong) id<MTLTexture> clip;      // R8 coverage, 255 = open
-@property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;
+@property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;     // source-over
+@property (nonatomic, strong) id<MTLRenderPipelineState> compositePipe;  // other GCO modes
 @property (nonatomic, strong) id<MTLRenderPipelineState> replacePipe;
 @property (nonatomic, strong) id<MTLRenderPipelineState> clearPipe;
 @property (nonatomic) int width;
@@ -62,18 +65,22 @@ static void flush_batch(CmpImpl *o) {
     o.batchCB = nil;
 }
 
-typedef enum { TILE_BLEND, TILE_REPLACE, TILE_CLEAR } tile_mode;
+typedef enum { TILE_BLEND, TILE_COMPOSITE, TILE_REPLACE, TILE_CLEAR } tile_mode;
 
 static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
                                                 id<MTLLibrary> lib,
                                                 tile_mode mode) {
+    NSString *fn = mode == TILE_BLEND     ? @"tile_blend_fs"
+                 : mode == TILE_COMPOSITE ? @"tile_composite_fs"
+                 : mode == TILE_REPLACE   ? @"tile_replace_fs"
+                                          : @"clear_fs";
     MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
     pd.vertexFunction = [lib newFunctionWithName:@"tile_vs"];
-    pd.fragmentFunction = [lib newFunctionWithName:mode == TILE_BLEND ? @"tile_blend_fs"
-                                            : mode == TILE_REPLACE ? @"tile_replace_fs"
-                                                                   : @"clear_fs"];
+    pd.fragmentFunction = [lib newFunctionWithName:fn];
     MTLRenderPipelineColorAttachmentDescriptor *ca = pd.colorAttachments[0];
     ca.pixelFormat = MTLPixelFormatRGBA16Float;
+    // TILE_COMPOSITE reads the backdrop via framebuffer fetch and writes the
+    // finished colour, so it leaves fixed-function blending disabled.
     if (mode == TILE_BLEND) {
         ca.blendingEnabled = YES;
         ca.rgbBlendOperation = MTLBlendOperationAdd;
@@ -161,12 +168,13 @@ compositor *compositor_create(int width, int height) {
         o.target = [device newTextureWithDescriptor:td];
         o.clip = [device newTextureWithDescriptor:cd];
         o.blendPipe = make_pipeline(device, lib, TILE_BLEND);
+        o.compositePipe = make_pipeline(device, lib, TILE_COMPOSITE);
         o.replacePipe = make_pipeline(device, lib, TILE_REPLACE);
         o.clearPipe = make_pipeline(device, lib, TILE_CLEAR);
         o.width = width;
         o.height = height;
         if (!o.queue || !o.target || !o.clip || !o.blendPipe ||
-            !o.replacePipe || !o.clearPipe) {
+            !o.compositePipe || !o.replacePipe || !o.clearPipe) {
             return NULL;
         }
         set_clip_bytes(o, NULL);  // open clip
@@ -210,8 +218,10 @@ void compositor_set_clip(compositor *c, uint8_t const *mask, int len) {
 
 // Draw a quad over [x,x+w] x [y,y+h] with the given pipeline.  `tile` (if any) is
 // bound at texture 0 and sampled relative to (x,y); the clip is always at 1.
+// `mode >= 0` binds a blend-mode uniform at fragment buffer 1 (for the composite
+// shader); pass -1 for pipelines that don't take one.
 static void draw_tile(CmpImpl *o, id<MTLRenderPipelineState> pipe,
-                      int x, int y, int w, int h, id<MTLTexture> tile) {
+                      int x, int y, int w, int h, id<MTLTexture> tile, int mode) {
     float fx = (float)x, fy = (float)y, fx1 = (float)(x + w), fy1 = (float)(y + h);
     float quad[12] = { fx, fy, fx1, fy, fx1, fy1, fx, fy, fx1, fy1, fx, fy1 };
     id<MTLBuffer> vbuf =
@@ -225,6 +235,10 @@ static void draw_tile(CmpImpl *o, id<MTLRenderPipelineState> pipe,
     [enc setVertexBuffer:vbuf offset:0 atIndex:0];
     [enc setVertexBytes:viewport length:sizeof(viewport) atIndex:1];
     [enc setFragmentBytes:origin length:sizeof(origin) atIndex:0];
+    if (mode >= 0) {
+        uint32_t m = (uint32_t)mode;
+        [enc setFragmentBytes:&m length:sizeof(m) atIndex:1];
+    }
     if (tile) {
         [enc setFragmentTexture:tile atIndex:0];
     }
@@ -250,7 +264,8 @@ static id<MTLTexture> upload_tile(CmpImpl *o, MTLPixelFormat fmt, int w, int h,
     return tex;
 }
 
-void compositor_blend(compositor *c, int x, int y, int w, int h, _Float16 const *tile) {
+void compositor_blend(compositor *c, int x, int y, int w, int h,
+                      _Float16 const *tile, compositor_blend_mode mode) {
     if (!c || !tile || w <= 0 || h <= 0) {
         return;
     }
@@ -261,7 +276,13 @@ void compositor_blend(compositor *c, int x, int y, int w, int h, _Float16 const 
         }
         id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA16Float, w, h, tile,
                                          (NSUInteger)w * 4 * sizeof(_Float16));
-        draw_tile(o, o.blendPipe, x, y, w, h, tex);
+        // Source-over takes the fixed-function fast path; every other mode goes
+        // through the framebuffer-fetch composite shader with a mode uniform.
+        if (mode == COMPOSITOR_SRC_OVER) {
+            draw_tile(o, o.blendPipe, x, y, w, h, tex, -1);
+        } else {
+            draw_tile(o, o.compositePipe, x, y, w, h, tex, (int)mode);
+        }
     }
 }
 
@@ -276,7 +297,7 @@ void compositor_replace(compositor *c, int x, int y, int w, int h, uint8_t const
         }
         id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA8Unorm, w, h, tile,
                                          (NSUInteger)w * 4);
-        draw_tile(o, o.replacePipe, x, y, w, h, tex);
+        draw_tile(o, o.replacePipe, x, y, w, h, tex, -1);
     }
 }
 
@@ -289,7 +310,7 @@ void compositor_clear(compositor *c, int x, int y, int w, int h) {
         if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
             return;
         }
-        draw_tile(o, o.clearPipe, x, y, w, h, nil);
+        draw_tile(o, o.clearPipe, x, y, w, h, nil, -1);
     }
 }
 

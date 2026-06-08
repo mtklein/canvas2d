@@ -473,6 +473,56 @@ static void text(void) {
     save(c, "gallery/text.png");
 }
 
+// globalCompositeOperation: the same two overlapping discs over a gradient, under
+// a range of blend modes.  source-over composites on the GPU's fixed-function
+// blend; every other mode runs the W3C composite+blend formula in a
+// framebuffer-fetch shader (the eventual software backend will do it in checked C).
+static void blend(void) {
+    struct { canvas_composite_op op; char const *name; } cell[6] = {
+        { CANVAS_OP_MULTIPLY, "multiply" },   { CANVAS_OP_SCREEN, "screen" },
+        { CANVAS_OP_OVERLAY, "overlay" },     { CANVAS_OP_DIFFERENCE, "difference" },
+        { CANVAS_OP_HUE, "hue" },             { CANVAS_OP_LUMINOSITY, "luminosity" },
+    };
+    int const cw = 120, n = 6;
+    canvas *__single c = canvas_create(cw * n, 150);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)(cw * n), 150.0f);
+
+    for (int i = 0; i < n; i++) {
+        float ox = (float)(i * cw);
+        // Backdrop: a diagonal gradient block (always source-over).
+        canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
+        canvas_set_fill_linear_gradient(c, ox + 12.0f, 18.0f, ox + 108.0f, 112.0f);
+        canvas_add_fill_color_stop(c, 0.0f, 0.20f, 0.65f, 0.95f, 1.0f);
+        canvas_add_fill_color_stop(c, 1.0f, 0.98f, 0.85f, 0.30f, 1.0f);
+        canvas_begin_path(c);
+        canvas_round_rect(c, ox + 12.0f, 18.0f, 96.0f, 94.0f, 12.0f);
+        canvas_fill(c);
+
+        // Two overlapping discs under this cell's blend mode.
+        canvas_set_global_composite_operation(c, cell[i].op);
+        canvas_set_fill_rgba(c, 0.92f, 0.26f, 0.21f, 1.0f);
+        canvas_begin_path(c);
+        canvas_arc(c, ox + 48.0f, 56.0f, 28.0f, 0.0f, TAU, false);
+        canvas_fill(c);
+        canvas_set_fill_rgba(c, 0.18f, 0.85f, 0.42f, 1.0f);
+        canvas_begin_path(c);
+        canvas_arc(c, ox + 72.0f, 78.0f, 28.0f, 0.0f, TAU, false);
+        canvas_fill(c);
+
+        // Label.
+        canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
+        canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
+        canvas_set_font_size(c, 15.0f);
+        canvas_fill_text(c, cell[i].name, ox + 12.0f, 134.0f);
+    }
+
+    save(c, "gallery/blend.png");
+}
+
 int main(void) {
     shapes();
     winding();
@@ -485,5 +535,6 @@ int main(void) {
     batching();
     drawimage();
     text();
+    blend();
     return 0;
 }

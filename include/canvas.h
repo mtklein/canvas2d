@@ -12,6 +12,21 @@ typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
 typedef enum { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL } canvas_line_join;
 typedef enum { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE } canvas_line_cap;
 
+// globalCompositeOperation.  Order mirrors compositor_blend_mode (src/compositor.h)
+// value-for-value; the first 11 are Porter-Duff operators, then the separable
+// blend modes, then the four non-separable ones.
+typedef enum {
+    CANVAS_OP_SOURCE_OVER, CANVAS_OP_SOURCE_IN, CANVAS_OP_SOURCE_OUT,
+    CANVAS_OP_SOURCE_ATOP, CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
+    CANVAS_OP_DESTINATION_OUT, CANVAS_OP_DESTINATION_ATOP, CANVAS_OP_XOR,
+    CANVAS_OP_LIGHTER, CANVAS_OP_COPY,
+    CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN, CANVAS_OP_OVERLAY, CANVAS_OP_DARKEN,
+    CANVAS_OP_LIGHTEN, CANVAS_OP_COLOR_DODGE, CANVAS_OP_COLOR_BURN,
+    CANVAS_OP_HARD_LIGHT, CANVAS_OP_SOFT_LIGHT, CANVAS_OP_DIFFERENCE,
+    CANVAS_OP_EXCLUSION,
+    CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
+} canvas_composite_op;
+
 // NULL on failure; the canvas starts transparent black.
 canvas *__single canvas_create(int width, int height);
 void canvas_destroy(canvas *__single cv);
@@ -30,6 +45,11 @@ void canvas_reset_transform(canvas *__single cv);
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_global_alpha(canvas *__single cv, float alpha);
+// globalCompositeOperation: how subsequent fills/strokes/text/images combine with
+// what's already there (default source-over).  Applies to every painted op except
+// clear_rect and put_image_data.
+void canvas_set_global_composite_operation(canvas *__single cv,
+                                           canvas_composite_op op);
 
 // Set the fill paint to a gradient and clear its colour stops; subsequent
 // fill() calls paint with it until the next canvas_set_fill_rgba.  Coordinates

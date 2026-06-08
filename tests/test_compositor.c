@@ -56,7 +56,7 @@ int main(void) {
     // Blend an opaque red tile over a 4x4 region.
     _Float16 *red = make_tile16(4, 4, 1.0f, 0.0f, 0.0f, 1.0f);
     if (red) {
-        compositor_blend(c, 2, 2, 4, 4, red);
+        compositor_blend(c, 2, 2, 4, 4, red, COMPOSITOR_SRC_OVER);
         compositor_read_rgba(c, px, len);
         CHECK(px_near(pixel_at(px, len, w, 3, 3), 255, 0, 0, 255, 1));  // painted
         CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 0));      // outside
@@ -89,7 +89,7 @@ int main(void) {
         compositor_set_clip(c, mask, w * h);
         _Float16 *green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 1.0f);
         if (green) {
-            compositor_blend(c, 0, 0, w, h, green);
+            compositor_blend(c, 0, 0, w, h, green, COMPOSITOR_SRC_OVER);
             compositor_read_rgba(c, px, len);
             CHECK(px_near(pixel_at(px, len, w, 4, 8), 0, 255, 0, 255, 1));  // clip open
             CHECK(px_near(pixel_at(px, len, w, 12, 8), 0, 0, 0, 0, 1));     // clip closed
@@ -104,8 +104,8 @@ int main(void) {
     _Float16 *opaque_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 1.0f);
     _Float16 *half_green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 0.5f);
     if (opaque_red && half_green) {
-        compositor_blend(c, 0, 0, w, h, opaque_red);
-        compositor_blend(c, 0, 0, w, h, half_green);
+        compositor_blend(c, 0, 0, w, h, opaque_red, COMPOSITOR_SRC_OVER);
+        compositor_blend(c, 0, 0, w, h, half_green, COMPOSITOR_SRC_OVER);
         compositor_read_rgba(c, px, len);
         struct px4 m = pixel_at(px, len, w, 8, 8);
         CHECK(m.r > 110 && m.r < 145);  // ~half red survives
