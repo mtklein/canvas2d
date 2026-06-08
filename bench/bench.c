@@ -1,14 +1,14 @@
-// End-to-end CPU benchmark (no GPU): flatten, tessellate, stroke, encode.  The
+// End-to-end CPU benchmark (no GPU): flatten, fill, stroke, encode.  The
 // bench_*.c files isolate each phase.  release vs unsafe differ only in
 // -fbounds-safety, so `ninja benchcmp` measures what the bounds checks cost.
 
 #include "bench_util.h"
 
+#include "cnvs_fill.h"
 #include "cnvs_geom.h"
 #include "cnvs_path.h"
 #include "cnvs_png.h"
 #include "cnvs_stroke.h"
-#include "cnvs_tess.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,10 +17,11 @@ int main(void) {
     cnvs_path path;
     cnvs_path_init(&path);
     cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
-    cnvs_ints ring = { .data = NULL, .len = 0, .cap = 0 };
+    cnvs_edges edges = { .data = NULL, .len = 0, .cap = 0 };
+    cnvs_xings xings = { .data = NULL, .len = 0, .cap = 0 };
 
     double sink = 0.0;
-    int const frames = 400;
+    int const frames = 100;
     float const w = 512.0f;
     float const h = 512.0f;
 
@@ -38,14 +39,7 @@ int main(void) {
         }
 
         cnvs_verts_reset(&verts);
-        for (int s = 0; s < path.sp_len; s++) {
-            cnvs_subpath sp = path.subs[s];
-            if (sp.count < 3) {
-                continue;
-            }
-            cnvs_vec2 *poly = path.pts + sp.start;
-            cnvs_tess_polygon(poly, sp.count, &verts, &ring);
-        }
+        cnvs_fill_path(&path, CNVS_NONZERO, (int)w, (int)h, &verts, &edges, &xings);
         sink += (double)verts.len;
 
         cnvs_verts_reset(&verts);
@@ -81,7 +75,8 @@ int main(void) {
 
     cnvs_path_free(&path);
     cnvs_verts_free(&verts);
-    cnvs_ints_free(&ring);
+    cnvs_edges_free(&edges);
+    cnvs_xings_free(&xings);
 
     fprintf(stderr, "sink=%.0f\n", sink);  // defeat dead-code elimination
     return 0;

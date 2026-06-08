@@ -1,12 +1,12 @@
 #include "canvas.h"
 
+#include "cnvs_fill.h"
 #include "cnvs_geom.h"
 #include "cnvs_math.h"
 #include "cnvs_mem.h"
 #include "cnvs_path.h"
 #include "cnvs_png.h"
 #include "cnvs_stroke.h"
-#include "cnvs_tess.h"
 #include "gpu.h"
 
 #include <math.h>
@@ -22,6 +22,7 @@ struct canvas_state {
     gpu_rgba stroke;
     float global_alpha;
     float line_width;
+    cnvs_fill_rule fill_rule;
 };
 
 struct canvas {
@@ -34,7 +35,8 @@ struct canvas {
     int stack_cap;
     cnvs_path path;
     cnvs_verts scratch_verts;
-    cnvs_ints scratch_ints;
+    cnvs_edges scratch_edges;
+    cnvs_xings scratch_xings;
 };
 
 canvas *__single canvas_create(int width, int height) {
@@ -58,6 +60,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.stroke = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
+    cv->cur.fill_rule = CNVS_NONZERO;
     cv->stack = NULL;
     cv->stack_len = 0;
     cv->stack_cap = 0;
@@ -73,7 +76,8 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->stack);
     cnvs_path_free(&cv->path);
     cnvs_verts_free(&cv->scratch_verts);
-    cnvs_ints_free(&cv->scratch_ints);
+    cnvs_edges_free(&cv->scratch_edges);
+    cnvs_xings_free(&cv->scratch_xings);
     free(cv);
 }
 
@@ -243,18 +247,16 @@ void canvas_close_path(canvas *__single cv) {
     cnvs_path_close(&cv->path);
 }
 
+void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
+    cv->cur.fill_rule = (rule == CANVAS_EVENODD) ? CNVS_EVENODD : CNVS_NONZERO;
+}
+
 void canvas_fill(canvas *__single cv) {
     cnvs_verts_reset(&cv->scratch_verts);
-    for (int s = 0; s < cv->path.sp_len; s++) {
-        cnvs_subpath sp = cv->path.subs[s];
-        if (sp.count < 3) {
-            continue;
-        }
-        cnvs_vec2 *poly = cv->path.pts + sp.start;
-        if (!cnvs_tess_polygon(poly, sp.count, &cv->scratch_verts,
-                               &cv->scratch_ints)) {
-            return;
-        }
+    if (!cnvs_fill_path(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
+                        &cv->scratch_verts, &cv->scratch_edges,
+                        &cv->scratch_xings)) {
+        return;
     }
     if (cv->scratch_verts.len > 0) {
         gpu_rgba color = cv->cur.fill;

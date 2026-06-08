@@ -8,6 +8,8 @@
 
 typedef struct canvas canvas;
 
+typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
+
 // NULL on failure; the canvas starts transparent black.
 canvas *__single canvas_create(int width, int height);
 void canvas_destroy(canvas *__single cv);
@@ -43,7 +45,9 @@ void canvas_arc(canvas *__single cv, float x, float y, float radius,
                 float start_angle, float end_angle, bool anticlockwise);
 void canvas_close_path(canvas *__single cv);
 
-// Fills each subpath independently -- no winding-rule holes yet.
+// Fill the current path under the current fill rule (default nonzero); handles
+// holes and self-intersection.
+void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule);
 void canvas_fill(canvas *__single cv);
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);

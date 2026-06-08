@@ -132,6 +132,18 @@ didn't anticipate. Our own tests carry the `__single` annotations as a result.
 cascade of parse errors, rather than a clear "you forgot an include." Bit us once
 when a header pulled in only `cnvs_math.h`.
 
+**Sorting a `__counted_by` array: the generic-callback gap.** The scanline fill
+sorts its edge table. `qsort(edges->data, len, sizeof, cmp)` *works* — the counted
+pointer converts to the `void *` the SDK wants (always allowed) — but the bounds
+evaporate inside the comparator, which receives bare `const void *` arguments;
+you `__unsafe_forge_single` each back to a `cnvs_edge const *`. qsort's own element
+swaps are unchecked too (you're trusting `nmemb`). So the array is checked
+everywhere *except the sort itself*. By contrast the per-scanline crossings use a
+hand-rolled insertion sort over the `__counted_by` array, where every
+`data[j]`/`data[j+1]` stays checked. The lesson: any generic callback API
+(`qsort`, `bsearch`, …) is a hole exactly at the callback boundary — for the small,
+hot ones, writing your own keeps the checking end to end.
+
 **Allocation needs the `void*` conversion.** `T *p = malloc(...)` assigns a
 `void*` to a typed pointer; `-Weverything` flags that under
 `-Wimplicit-void-ptr-cast` (a C++-compat lint). Either cast explicitly or, as we
@@ -148,20 +160,21 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
 | phase | overhead |
 |---|---|
-| cubic-Bézier flattening | 1.07× |
-| stroke expansion | 1.21× |
+| cubic-Bézier flattening | 1.08× |
+| stroke expansion | 1.22× |
 | PNG encode | 1.25× |
-| ear-clip tessellation | **1.41×** |
-| end-to-end | 1.28× |
+| scanline fill | **1.63×** |
+| end-to-end | 1.26× |
 
-The isolation matters. The end-to-end 1.28× is a blend that hides a 6× spread
-between phases — and a regression in tessellation could disappear into it. What
-the spread shows:
+The isolation matters. The end-to-end 1.26× is a blend that hides an ~8× spread
+between phases — and a regression in the fill could disappear into it. What the
+spread shows:
 
-- **Tessellation pays the most (~41%)** because it is almost nothing *but* checked
-  indexing: an `O(n²)` loop doing point-in-triangle tests against the polygon and
-  the working ring. There's no other work to amortise the bounds checks against.
-- **Flattening is nearly free (~7%)**: lots of float arithmetic (de Casteljau
+- **The scanline fill pays the most (~63%)** because it is almost nothing *but*
+  checked indexing: gather edge crossings per row, sort them, walk them
+  accumulating winding, emit spans — buffer accesses with negligible arithmetic
+  between them.
+- **Flattening is nearly free (~8%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.
 - Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety is
@@ -216,7 +229,7 @@ in the code that actually manipulates memory, and that is all in C.
   (the GPU ABI) are both `{float x, y;}`. Keeping them separate avoids coupling
   the math layer to the rendering ABI, but it costs a few trivial conversions.
   Defensible, mildly annoying.
-- **Hand-rolled per-type vectors.** `cnvs_verts` and `cnvs_ints` are
+- **Hand-rolled per-type vectors.** `cnvs_verts`, `cnvs_edges`, `cnvs_xings` are
   copy-paste-shaped. A generic macro would remove the duplication, but generic
   containers interact awkwardly with `-fbounds-safety` (you can't take the
   address of a `__counted_by` field and pass it around as `void**` without
@@ -224,19 +237,20 @@ in the code that actually manipulates memory, and that is all in C.
   containers risk `-Wunused-macros` noise. Concrete types stayed clearer.
 - **Correctness-first GPU submission.** One command buffer per draw with
   `waitUntilCompleted` is simple and obviously correct, and useless for
-  throughput. The perf story needs batching before any benchmark is meaningful.
-- **Fill and stroke shortcuts.** `fill()` triangulates each subpath
-  independently (no winding-rule holes or self-intersection) and `stroke()` does
-  bevel joins / butt caps with inner-side double-cover. Both are honest M1 scope
-  cuts, documented in the headers, not bugs.
+  throughput. The perf story needs batching.
+- **The fill is geometry-heavy.** The scanline rasterizer emits roughly
+  `rows × spans` quads rather than a minimal triangulation — correct for every
+  winding case, but a lot of triangles. Span coalescing across rows, or an
+  incremental active-edge table, would cut both the geometry and the per-row work.
+- **Stroke shortcuts.** `stroke()` does bevel joins / butt caps with inner-side
+  double-cover — an honest scope cut, documented in the header, not a bug.
 
 ## Aspirations
 
-- **Winding-rule fills** (donut holes, self-intersection) via a winding pass or a
-  GPU stencil-then-cover path.
 - **Anti-aliasing** (MSAA), miter/round joins, gradients, clipping.
-- A **benchmark** that tessellates and strokes thousands of paths, batched, to
-  put a number next to the safety story.
+- **Batched GPU submission** — one command buffer per frame instead of per draw.
+- Images: `drawImage` / `getImageData` (2D strided blits — the next rich
+  bounds-safety target).
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 
@@ -250,3 +264,5 @@ in the code that actually manipulates memory, and that is all in C.
    you).
 6. `#include <ptrcheck.h>` in every header that uses the macros.
 7. The unsafe boundary should be small, named, and obvious — one `.m` file here.
+8. Generic callback APIs (`qsort`, `bsearch`) lose the bounds at the callback —
+   forge inside, or hand-roll the small hot ones to stay checked end to end.

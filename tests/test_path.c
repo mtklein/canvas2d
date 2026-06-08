@@ -53,6 +53,50 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 20, 20), 0, 0, 255, 255, 1));  // interior
     CHECK(px_near(pixel_at(px, len, w, 50, 50), 0, 0, 0, 0, 1));      // outside
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+
+    // Donut: outer rect plus a reversed inner rect -> nonzero cancels in the hole.
+    canvas_set_fill_rule(cv, CANVAS_NONZERO);
+    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 0.0f, 1.0f);
+    canvas_begin_path(cv);
+    canvas_rect(cv, 8.0f, 8.0f, 48.0f, 48.0f);
+    canvas_move_to(cv, 40.0f, 24.0f);
+    canvas_line_to(cv, 24.0f, 24.0f);
+    canvas_line_to(cv, 24.0f, 40.0f);
+    canvas_line_to(cv, 40.0f, 40.0f);
+    canvas_close_path(cv);
+    canvas_fill(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 0, 0, 1));        // hole
+    CHECK(px_near(pixel_at(px, len, w, 12, 32), 255, 255, 0, 255, 1));  // ring
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+
+    // Self-intersecting pentagram: nonzero fills the centre, even-odd empties it.
+    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 1.0f, 1.0f);
+    canvas_begin_path(cv);
+    for (int i = 0; i < 5; i++) {
+        float a = -(float)M_PI * 0.5f + (float)i * (4.0f * (float)M_PI / 5.0f);
+        float sx = 32.0f + 28.0f * cosf(a);
+        float sy = 32.0f + 28.0f * sinf(a);
+        if (i == 0) {
+            canvas_move_to(cv, sx, sy);
+        } else {
+            canvas_line_to(cv, sx, sy);
+        }
+    }
+    canvas_close_path(cv);
+
+    canvas_set_fill_rule(cv, CANVAS_NONZERO);
+    canvas_fill(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 255, 255, 1));  // nonzero: centre
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+
+    canvas_set_fill_rule(cv, CANVAS_EVENODD);
+    canvas_fill(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 0, 0, 1));        // even-odd: hole
+    CHECK(px_near(pixel_at(px, len, w, 32, 10), 255, 0, 255, 255, 1));  // arm still filled
 
     canvas_destroy(cv);
     free(px);

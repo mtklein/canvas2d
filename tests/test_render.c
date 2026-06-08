@@ -5,6 +5,19 @@
 #include <math.h>
 #include <stdlib.h>
 
+static void star(canvas *__single cv, float cx, float cy, float r) {
+    canvas_begin_path(cv);
+    for (int i = 0; i < 5; i++) {
+        float a = -(float)M_PI * 0.5f + (float)i * (4.0f * (float)M_PI / 5.0f);
+        if (i == 0) {
+            canvas_move_to(cv, cx + r * cosf(a), cy + r * sinf(a));
+        } else {
+            canvas_line_to(cv, cx + r * cosf(a), cy + r * sinf(a));
+        }
+    }
+    canvas_close_path(cv);
+}
+
 int main(void) {
     int const w = 8;
     int const h = 8;
@@ -114,6 +127,38 @@ int main(void) {
 
         CHECK(canvas_write_png(demo, "build/m1_demo.png"));
         canvas_destroy(demo);
+    }
+
+    // Winding-rule showcase: a donut (nonzero hole) and a pentagram filled both
+    // ways -- nonzero keeps the centre, even-odd cuts it out.
+    canvas *__single wind = canvas_create(300, 120);
+    if (wind) {
+        canvas_set_fill_rgba(wind, 0.10f, 0.11f, 0.14f, 1.0f);
+        canvas_fill_rect(wind, 0.0f, 0.0f, 300.0f, 120.0f);
+
+        canvas_set_fill_rule(wind, CANVAS_NONZERO);
+        canvas_set_fill_rgba(wind, 0.95f, 0.80f, 0.25f, 1.0f);
+        canvas_begin_path(wind);
+        canvas_rect(wind, 20.0f, 20.0f, 80.0f, 80.0f);
+        canvas_move_to(wind, 85.0f, 35.0f);
+        canvas_line_to(wind, 35.0f, 35.0f);
+        canvas_line_to(wind, 35.0f, 85.0f);
+        canvas_line_to(wind, 85.0f, 85.0f);
+        canvas_close_path(wind);
+        canvas_fill(wind);
+
+        star(wind, 160.0f, 60.0f, 40.0f);
+        canvas_set_fill_rule(wind, CANVAS_NONZERO);
+        canvas_set_fill_rgba(wind, 0.90f, 0.30f, 0.40f, 1.0f);
+        canvas_fill(wind);
+
+        star(wind, 250.0f, 60.0f, 40.0f);
+        canvas_set_fill_rule(wind, CANVAS_EVENODD);
+        canvas_set_fill_rgba(wind, 0.30f, 0.75f, 0.95f, 1.0f);
+        canvas_fill(wind);
+
+        CHECK(canvas_write_png(wind, "build/fill_demo.png"));
+        canvas_destroy(wind);
     }
 
     return TEST_REPORT();

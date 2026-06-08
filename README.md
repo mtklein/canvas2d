@@ -96,9 +96,8 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | Transforms, save/restore, alpha blending | ✅ |
 | `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ |
 | Paths: lines, rects, quadratic/cubic Béziers, arcs | ✅ |
-| `fill()` — concave **simple** polygons (ear clipping) | ✅ |
+| `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ scanline rasterizer |
 | `stroke()` — width (CTM-scaled), bevel joins, butt caps | ✅ |
-| Winding-rule fills (donut holes, self-intersection) | ❌ each subpath filled independently (needs a winding pass / GPU stencil) |
 | Miter / round joins, round caps | ❌ bevel + butt only |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
 | Gradients, clipping, images, text | ❌ not yet |
@@ -132,16 +131,17 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_flatten` — cubic-Bézier flattening | 116 ms | 108 ms | **1.07×** |
-| `bench_stroke` — stroke expansion | 43 ms | 36 ms | **1.21×** |
-| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 106 ms | 85 ms | **1.25×** |
-| `bench_tess` — ear-clip tessellation | 42 ms | 30 ms | **1.41×** |
-| `bench` — end-to-end | 120 ms | 93 ms | **1.28×** |
+| `bench_flatten` — cubic-Bézier flattening | 118 ms | 109 ms | **1.08×** |
+| `bench_stroke` — stroke expansion | 44 ms | 36 ms | **1.22×** |
+| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 108 ms | 86 ms | **1.25×** |
+| `bench_fill` — scanline fill (edge gather, crossing sort, winding walk) | 121 ms | 74 ms | **1.63×** |
+| `bench` — end-to-end | 194 ms | 154 ms | **1.26×** |
 
-The spread is the point: tessellation — an `O(n²)` loop of almost nothing *but*
-checked point-in-triangle indexing — pays **41%**, while flattening (lots of float
-math between a few indexed writes) is nearly free at **7%**. The end-to-end 1.28×
-is a blend that, on its own, would mask both. Real canvas rendering is GPU-bound,
+The spread is the point: the scanline fill — wall-to-wall checked indexing (edge
+gather, per-row crossing sort, winding walk, span emission) — pays the most at
+**63%**, while flattening (lots of float math between a few indexed writes) is
+nearly free at **8%**. The end-to-end 1.26× is a blend that, on its own, would
+mask both. Real canvas rendering is GPU-bound,
 so the end-to-end cost of safety is smaller still — but these are the honest prices
 on the hottest pure-C kernels, one command to re-measure.
 
@@ -153,7 +153,9 @@ on the hottest pure-C kernels, one command to re-measure.
   stays an isolated ObjC shim; see [docs/bounds-safety.md](docs/bounds-safety.md).
 - ~~A `release`-vs-`unsafe` benchmark for the cost of `-fbounds-safety`~~ — done
   (`ninja benchcmp`); see above.
-- Winding-rule fills; anti-aliasing (MSAA); miter/round joins.
+- ~~Winding-rule fills (holes, self-intersection)~~ — done; scanline rasterizer
+  ([cnvs_fill.c](src/cnvs_fill.c)) with nonzero + even-odd.
+- Anti-aliasing (MSAA); miter/round joins; batched GPU submission.
 - Gradients, clipping, then images/text.
 
 ## Layout
