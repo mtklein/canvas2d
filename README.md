@@ -197,24 +197,30 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 73 ms | 70 ms | **1.04×** |
-| `bench_flatten` — cubic-Bézier flattening | 120 ms | 113 ms | **1.07×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 56 ms | 51 ms | **1.10×** |
-| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 114 ms | 90 ms | **1.27×** |
-| `bench_fill` — analytic coverage fill (signed-area accumulate + resolve) | 32 ms | 25 ms | **1.30×** |
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 121 ms | 50 ms | **2.44×** |
-| `bench` — end-to-end | 131 ms | 103 ms | **1.27×** |
+| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 82 ms | 82 ms | **1.00×** |
+| `bench_flatten` — cubic-Bézier flattening | 118 ms | 110 ms | **1.07×** |
+| `bench_png` — PNG encode (memcpy copies + SIMD adler32 + CRC) | 44 ms | 41 ms | **1.08×** |
+| `bench` — end-to-end | 84 ms | 76 ms | **1.10×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 53 ms | 48 ms | **1.11×** |
+| `bench_fill` — analytic coverage fill (signed-area accumulate + resolve) | 27 ms | 24 ms | **1.16×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 125 ms | 49 ms | **2.55×** |
 
 The spread is the point: the 2D blit — four bounds-checked byte loads and stores
 per pixel across two buffers, with no arithmetic to amortize them — pays the most
-at **~2.4×**, while gradient evaluation and flattening (lots of float math between
-a few indexed reads) are nearly free at **4–7%**. The end-to-end 1.27× is a blend
-that, on its own, would mask both. The analytic coverage fill is also the *fastest*
-fill the project has had — replacing the scanline rasterizer (edge sort + per-row
-crossing sort) with a sort-free accumulation buffer cut its release time to a third
-and its overhead from 1.48× to 1.30×. Real canvas rendering is GPU-bound, so the
-end-to-end cost of safety is smaller still — but these are the honest prices on the
-hottest pure-C kernels, one command to re-measure.
+at **~2.5×**, while gradient evaluation and flattening (lots of float math between
+a few indexed reads) are essentially free (**0–7%**).
+
+These numbers are post-profiling: a `sample` of the e2e run (see
+[docs/bounds-safety.md](docs/bounds-safety.md)) showed PNG encoding dominated by
+byte-at-a-time copies and adler32's per-byte `% 65521`. Switching the copies to
+`memcpy` and vectorizing adler32 with `ext_vector_type` cut `bench_png` from
+~114 ms to ~44 ms **and** dropped its safety overhead from 1.27× to 1.08× — the
+checks that hurt were per-byte, so amortizing the byte loops amortized the checks
+too. (The bulk ops stay checked: the compiler treats `memcpy`/`memset` as
+`__sized_by`, and a `memcpy`-spelled vector load is bounds-checked.) Real canvas
+rendering is GPU-bound, so the end-to-end cost of safety is smaller still — but
+these are the honest prices on the hottest pure-C kernels, one command to
+re-measure.
 
 ## Roadmap
 

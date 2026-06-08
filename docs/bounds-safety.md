@@ -93,6 +93,19 @@ encoder — which writes every byte through one `buf[at]` cursor sized up front 
 is a good demonstration: if the size computation were ever wrong, it traps
 instead of corrupting the heap.
 
+**SIMD (`ext_vector_type`) and bulk `mem*` cooperate cleanly.** We profiled the
+e2e benchmark with `sample`, found adler32's per-byte `% 65521` hot, and
+vectorized it 16-wide: `ext_vector_type`, `__builtin_convertvector`, and
+`__builtin_reduce_add` all compile under `-Weverything`/`-fbounds-safety` with no
+friction. The one question — how a vector *load* reads a `__counted_by` buffer —
+has a clean answer: spell it `memcpy(&v, p + i, sizeof v)`. `memcpy`/`memset` are
+`__sized_by`, so that stays bounds-checked (it traps on overrun) *and* the
+compiler lowers it to one unaligned vector load. A direct `*(u8x16 *)(p + i)`
+reinterpret instead trips `-Wcast-align` — an alignment/UB warning, orthogonal to
+bounds-safety, and the reason the `memcpy` spelling is preferable anyway. Net: the
+checks that cost the most are per-element, so the same bulk/SIMD rewrites that
+speed a kernel up *also* shrink its safety overhead (PNG encode went 1.27× → 1.08×).
+
 ## What fought back
 
 **`__counted_by` *locals* are surprisingly restricted.** This is the biggest
@@ -291,11 +304,11 @@ were superseded by the analytic coverage rasterizer.
 ## Aspirations
 
 - Text (glyph rasterization / an atlas — the remaining Canvas 2D pillar).
-- Vectorizing the hot kernels with `ext_vector_type` to see how SIMD and
-  `-fbounds-safety` get along.
 
-(`drawImage` was on this list — now done; its bilinear sampler is noted above as
-the canonical checked-2D-sampling case, and it cost nothing.)
+(`drawImage` and the `ext_vector_type` SIMD experiment were both on this list —
+now done; the bilinear sampler is the canonical checked-2D-sampling case above,
+and the adler32 vectorization showed SIMD and bounds-safety cooperate cleanly.
+Both cost nothing.)
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 
