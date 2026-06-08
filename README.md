@@ -16,6 +16,28 @@ The point of the project is twofold:
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
 
+## Gallery
+
+Every image below is rendered by the C core on the GPU and written by the in-tree
+PNG encoder ([examples/gallery.c](examples/gallery.c)); regenerate with `ninja images`.
+
+Transforms, `save`/`restore`, global alpha, filled Béziers and arcs, strokes:
+
+![shapes](gallery/shapes.png)
+
+Winding rules — a donut (nonzero hole), then a self-intersecting pentagram filled
+nonzero (solid centre) vs even-odd (hollow centre):
+
+![winding](gallery/winding.png)
+
+Line dashing — `setLineDash` patterns and a dashed arc:
+
+![dashes](gallery/dashes.png)
+
+`getImageData` captures the leftmost motif; `putImageData` stamps the copies:
+
+![imagedata](gallery/imagedata.png)
+
 ## Quick start
 
 ```sh
@@ -23,6 +45,7 @@ python3 configure.py     # generate build.ninja
 ninja                    # build the release + debug variants
 ninja test               # build + run every test in both variants
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
+ninja images             # regenerate the gallery/*.png shown above
 ```
 
 Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
@@ -171,5 +194,7 @@ src/                     C core + the ObjC Metal shim
 shaders/canvas.metal     vertex+fragment shaders (embedded via #embed)
 tests/                   unit + GPU pixel tests + a bounds-safety trap test
 bench/bench.c            CPU-only benchmark (release vs unsafe)
+examples/gallery.c       renders the gallery PNGs (ninja images)
+gallery/                 committed showcase PNGs
 docs/bounds-safety.md    the write-up
 ```

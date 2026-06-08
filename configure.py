@@ -81,6 +81,7 @@ def main():
     shim_m = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.m")))
     tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c")))
     benches = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "bench", "*.c")))
+    examples = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "examples", "*.c")))
 
     n = []
     w = n.append
@@ -127,6 +128,10 @@ def main():
     w("  pool = console")
     w("  description = benchmark: cost of -fbounds-safety (per phase + e2e)")
     w("")
+    w("rule run_gallery")
+    w("  command = $bin")
+    w("  description = render gallery PNGs")
+    w("")
 
     # Bench stems, e2e "bench" sorted last; variants that build benches.
     bench_stems = sorted((os.path.splitext(os.path.basename(b))[0] for b in benches),
@@ -167,6 +172,14 @@ def main():
                 w(f"build {o}: cc_{variant} {b}")
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
                 produced.append(exe)
+        if variant == "release":
+            for e in examples:
+                stem = os.path.splitext(os.path.basename(e))[0]
+                o = obj(variant, e)
+                exe = os.path.join("build", variant, stem)
+                w(f"build {o}: cc_{variant} {e}")
+                w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
+                produced.append(exe)
         w("")
         w(f"build {variant}: phony {' '.join(produced)}")
         w("")
@@ -184,6 +197,9 @@ def main():
 
     w(f"build test: phony {' '.join(test_stamps)}")
     w(f"build bench: phony {' '.join(bench_exes)}")
+    # `images` regenerates the committed gallery PNGs (always reruns; not in `all`).
+    w("build images: run_gallery build/release/gallery")
+    w("  bin = ./build/release/gallery")
     # `benchcmp` names a file that is never created, so ninja always reruns it
     # (after building the binaries it depends on).
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
