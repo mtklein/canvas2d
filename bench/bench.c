@@ -14,6 +14,14 @@
 #include <stdlib.h>
 
 int main(void) {
+    // Repeat the whole e2e workload BENCH_REPS times (default 1, so benchcmp is
+    // unchanged) -- crank it up to give `sample` something long enough to profile.
+    char const *__null_terminated rep_env = getenv("BENCH_REPS");
+    int reps = rep_env ? atoi(rep_env) : 1;
+    if (reps < 1) {
+        reps = 1;
+    }
+
     cnvs_path path;
     cnvs_path_init(&path);
     cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
@@ -25,39 +33,39 @@ int main(void) {
     double sink = 0.0;
     int const frames = 100;
 
-    for (int f = 0; f < frames && cov; f++) {
-        cnvs_path_reset(&path);
+    for (int rep = 0; rep < reps; rep++) {
+        for (int f = 0; f < frames && cov; f++) {
+            cnvs_path_reset(&path);
 
-        // Concave, self-intersecting star polygons -> stress the fill rasterizer.
-        bench_stars(&path, 40, (float)w, (float)h);
+            // Concave, self-intersecting star polygons -> stress the fill rasterizer.
+            bench_stars(&path, 40, (float)w, (float)h);
 
-        // Cubic Beziers -> stress adaptive de Casteljau flattening.
-        for (int k = 0; k < 40; k++) {
-            cnvs_path_move_to(&path, bench_rpt((float)w, (float)h));
-            cnvs_path_cubic_to(&path, bench_rpt((float)w, (float)h),
-                               bench_rpt((float)w, (float)h),
-                               bench_rpt((float)w, (float)h), 0.25f);
-        }
-
-        bench_cover_path(&cover, w, h, &path);
-        cnvs_cover_resolve(&cover, w, h, CNVS_NONZERO, cov);
-        sink += (double)cov[(h / 2) * w + w / 2];
-
-        cnvs_verts_reset(&verts);
-        for (int s = 0; s < path.sp_len; s++) {
-            cnvs_subpath sp = path.subs[s];
-            if (sp.count < 2) {
-                continue;
+            // Cubic Beziers -> stress adaptive de Casteljau flattening.
+            for (int k = 0; k < 40; k++) {
+                cnvs_path_move_to(&path, bench_rpt((float)w, (float)h));
+                cnvs_path_cubic_to(&path, bench_rpt((float)w, (float)h),
+                                   bench_rpt((float)w, (float)h),
+                                   bench_rpt((float)w, (float)h), 0.25f);
             }
-            cnvs_vec2 *poly = path.pts + sp.start;
-            cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
-                                 CNVS_JOIN_MITER, CNVS_CAP_BUTT, 10.0f, &verts);
-        }
-        sink += (double)verts.len;
-    }
 
-    // /dev/null keeps disk I/O out of the timing; the encode still runs in full.
-    {
+            bench_cover_path(&cover, w, h, &path);
+            cnvs_cover_resolve(&cover, w, h, CNVS_NONZERO, cov);
+            sink += (double)cov[(h / 2) * w + w / 2];
+
+            cnvs_verts_reset(&verts);
+            for (int s = 0; s < path.sp_len; s++) {
+                cnvs_subpath sp = path.subs[s];
+                if (sp.count < 2) {
+                    continue;
+                }
+                cnvs_vec2 *poly = path.pts + sp.start;
+                cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
+                                     CNVS_JOIN_MITER, CNVS_CAP_BUTT, 10.0f, &verts);
+            }
+            sink += (double)verts.len;
+        }
+
+        // /dev/null keeps disk I/O out of the timing; the encode still runs in full.
         int const iw = 256;
         int const ih = 256;
         int const len = iw * ih * 4;
