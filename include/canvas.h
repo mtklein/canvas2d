@@ -114,12 +114,12 @@ void canvas_draw_image_subrect(canvas *__single cv,
                                float sww, float shh, float dx, float dy,
                                float dw, float dh);
 
-// Text.  The typeface is fixed to Comic Sans MS (reproducible across machines);
-// size is user-space px (default 10).  fill_text/stroke_text lay out ASCII `text`
-// with its baseline origin at (x, y), advance +x, and paint the glyph outlines
-// exactly like fill()/stroke() -- transform, clip, gradient and global alpha all
-// apply.  measure_text returns the advance width in user px (Canvas
-// measureText().width).
+// Text.  The typeface is fixed to Libian TC -- a clerical-script (隶书) face, so
+// the same call renders Latin and Chinese.  Size is user-space px (default 10).
+// fill_text/stroke_text lay out `text` (UTF-8) with its baseline origin at (x, y),
+// advance +x, and paint the glyph outlines exactly like fill()/stroke() --
+// transform, clip, gradient and global alpha all apply.  measure_text returns the
+// advance width in user px (Canvas measureText().width).
 void canvas_set_font_size(canvas *__single cv, float px);
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text);
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,

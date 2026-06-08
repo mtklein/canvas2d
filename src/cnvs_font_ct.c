@@ -14,6 +14,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreText/CoreText.h>
 
+#include <stdint.h>
 #include <stdlib.h>
 
 struct cnvs_font {
@@ -87,13 +88,54 @@ static void emit(void *info, CGPathElement const *e) {
     }
 }
 
+// Decode one UTF-8 sequence at *p (NUL-terminated) and advance *p past it.
+// Malformed bytes decode as U+FFFD; the scan never reads past the terminator.
+static uint32_t utf8_next(unsigned char const **p) {
+    unsigned char const *s = *p;
+    uint32_t c = s[0];
+    if (c < 0x80) {
+        *p = s + 1;
+        return c;
+    }
+    int n;
+    uint32_t cp;
+    if ((c & 0xE0) == 0xC0) { n = 1; cp = c & 0x1F; }
+    else if ((c & 0xF0) == 0xE0) { n = 2; cp = c & 0x0F; }
+    else if ((c & 0xF8) == 0xF0) { n = 3; cp = c & 0x07; }
+    else { *p = s + 1; return 0xFFFD; }
+    for (int i = 1; i <= n; i++) {
+        if ((s[i] & 0xC0) != 0x80) {  // truncated or invalid (stops at the NUL)
+            *p = s + i;
+            return 0xFFFD;
+        }
+        cp = (cp << 6) | (s[i] & 0x3Fu);
+    }
+    *p = s + n + 1;
+    return cp;
+}
+
+// Map a Unicode code point to a glyph, composing a surrogate pair for astral
+// code points (CJK is in the BMP, so the single-unit path covers it).
+static CGGlyph glyph_for_cp(CTFontRef font, uint32_t cp) {
+    if (cp > 0xFFFF) {
+        cp -= 0x10000;
+        UniChar pair[2] = { (UniChar)(0xD800 + (cp >> 10)),
+                            (UniChar)(0xDC00 + (cp & 0x3FF)) };
+        CGGlyph g[2] = { 0, 0 };
+        CTFontGetGlyphsForCharacters(font, pair, g, 2);
+        return g[0];
+    }
+    UniChar uc = (UniChar)cp;
+    CGGlyph g = 0;
+    CTFontGetGlyphsForCharacters(font, &uc, &g, 1);
+    return g;
+}
+
 float cnvs_font_outline(cnvs_font *f, char const *text, float ox, float oy,
                         cnvs_mat to_device, float tol, cnvs_path *out) {
     float pen = 0.0f;
-    for (unsigned char const *s = (unsigned char const *)text; *s; s++) {
-        UniChar uc = *s;  // ASCII / Latin-1: one byte -> one BMP code unit
-        CGGlyph g = 0;
-        CTFontGetGlyphsForCharacters(f->font, &uc, &g, 1);
+    for (unsigned char const *s = (unsigned char const *)text; *s;) {
+        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s));
 
         CGPathRef path = CTFontCreatePathForGlyph(f->font, g, NULL);  // NULL for blanks
         if (path) {
@@ -112,10 +154,8 @@ float cnvs_font_outline(cnvs_font *f, char const *text, float ox, float oy,
 
 float cnvs_font_advance(cnvs_font *f, char const *text) {
     float pen = 0.0f;
-    for (unsigned char const *s = (unsigned char const *)text; *s; s++) {
-        UniChar uc = *s;
-        CGGlyph g = 0;
-        CTFontGetGlyphsForCharacters(f->font, &uc, &g, 1);
+    for (unsigned char const *s = (unsigned char const *)text; *s;) {
+        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s));
         CGSize adv = { 0.0, 0.0 };
         CTFontGetAdvancesForGlyphs(f->font, kCTFontOrientationHorizontal, &g, &adv, 1);
         pen += (float)adv.width;

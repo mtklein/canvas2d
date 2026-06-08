@@ -54,6 +54,16 @@ int main(void) {
     long ink = ink_count(px, len, n, 128);
     CHECK(ink > 200);
 
+    // UTF-8: a Chinese string (3-byte code points) maps to glyphs, measures wider
+    // than empty, and renders ink -- Libian TC carries both scripts.
+    CHECK(canvas_measure_text(cv, "\xe4\xbd\xa0\xe5\xa5\xbd") > 1.0f);  // 你好
+    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_text(cv, "\xe4\xbd\xa0\xe5\xa5\xbd\xe4\xb8\x96\xe7\x95\x8c", 10.0f, 55.0f);  // 你好世界
+    canvas_read_rgba(cv, px, len);
+    CHECK(ink_count(px, len, n, 128) > 200);
+
     // Empty string draws nothing.
     canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);

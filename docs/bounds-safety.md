@@ -346,8 +346,9 @@ nothing.
 
 ## Aspirations
 
-- Richer text — UTF-8 (only ASCII/Latin-1 maps today), a glyph cache (outlines
-  are re-fetched per `fill_text`), and text alignment/baselines beyond the default.
+- Richer text — complex shaping (we map code point → glyph 1:1, so no ligatures,
+  contextual forms, or bidi), a glyph cache (outlines are re-fetched per
+  `fill_text`), and text alignment/baselines beyond the default.
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 

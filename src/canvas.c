@@ -748,7 +748,7 @@ void canvas_stroke(canvas *__single cv) {
 static cnvs_font *__single ensure_font(canvas *__single cv) {
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
         cnvs_font_destroy(cv->font);
-        cv->font = cnvs_font_create("Comic Sans MS", cv->cur.font_size);
+        cv->font = cnvs_font_create("Libian TC", cv->cur.font_size);
         cv->font_built_size = cv->cur.font_size;
     }
     return cv->font;

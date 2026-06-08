@@ -67,9 +67,10 @@ and scaled + rotated (AA quad edges from the coverage rasterizer):
 
 ![imagedata](gallery/imagedata.png)
 
-Text — `fillText`/`strokeText` in Comic Sans (glyph outlines from Core Text),
-rasterized by the same analytic-coverage fill as everything else, so they take a
-gradient fill, a stroke, and the transform (the rotated *wheee!*):
+Text — `fillText`/`strokeText` in Libian TC (隶书, a clerical-script face), glyph
+outlines from Core Text, rasterized by the same analytic-coverage fill as
+everything else, so they take a gradient fill, a stroke, and the transform — and
+one `fill_text` mixes Latin and Chinese (UTF-8):
 
 ![text](gallery/text.png)
 
@@ -164,7 +165,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
 canvas_fill / canvas_stroke / canvas_clip
 canvas_get_image_data / put_image_data / read_rgba / write_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
-canvas_set_font_size / measure_text / fill_text / stroke_text  // Comic Sans
+canvas_set_font_size / measure_text / fill_text / stroke_text  // Libian TC, UTF-8
 canvas_destroy(cv);
 ```
 
@@ -184,7 +185,7 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ exact per-pixel |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — RGBA8 source, bilinear, transform/clip/alpha-aware | ✅ |
-| Text — `fillText`/`strokeText`, Comic Sans, gradient/stroke/transform-aware | ✅ via Core Text shim |
+| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform-aware | ✅ via Core Text shim |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
@@ -238,9 +239,9 @@ hottest pure-C kernels, one command to re-measure.
 The capability table above is the current state. What's left and what we
 deliberately won't do:
 
-- **Not yet:** UTF-8 text (only ASCII/Latin-1 is mapped today), text alignment /
-  baselines beyond the default, and a glyph cache (each `fill_text` re-fetches
-  outlines).
+- **Not yet:** complex text shaping (we map code point → glyph 1:1, so no
+  ligatures, contextual forms, or bidi), text alignment / baselines beyond the
+  default, and a glyph cache (each `fill_text` re-fetches outlines).
 - **Rejected — forcing `-fbounds-safety` onto the two system-framework shims.**
   The Metal one *can't* take the flag (it's C-only, and ARC/Objective-C is
   required to drive Metal). The Core Text one *could*, but its headers carry no

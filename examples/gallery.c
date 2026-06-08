@@ -433,40 +433,41 @@ static void drawimage(void) {
     save(c, "gallery/drawimage.png");
 }
 
-// Text: Comic Sans glyph outlines from Core Text, rasterized by the same
-// analytic-coverage fill as everything else -- so they take gradients, strokes,
-// transforms, and alpha.  The glyphs arrive as ordinary device-space paths from
-// the one unchecked C shim (cnvs_font_ct.c); nothing else gives up checking.
+// Text: Libian TC (clerical-script 隶书) glyph outlines from Core Text, rasterized
+// by the same analytic-coverage fill as everything else -- so they take gradients,
+// strokes, transforms, and alpha, and one fill_text mixes Latin and Chinese (UTF-8).
+// The glyphs arrive as ordinary device-space paths from the unchecked C shim
+// (cnvs_font_ct.c); nothing else gives up checking.
 static void text(void) {
-    canvas *__single c = canvas_create(360, 150);
+    canvas *__single c = canvas_create(420, 170);
     if (!c) {
         return;
     }
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 360.0f, 150.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 420.0f, 170.0f);
 
-    // Gradient-filled headline.
-    canvas_set_fill_linear_gradient(c, 16.0f, 0.0f, 330.0f, 0.0f);
+    // Gradient-filled headline: Latin + Chinese in a single fill_text.
+    canvas_set_fill_linear_gradient(c, 20.0f, 0.0f, 390.0f, 0.0f);
     canvas_add_fill_color_stop(c, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
     canvas_add_fill_color_stop(c, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
-    canvas_set_font_size(c, 56.0f);
-    canvas_fill_text(c, "canvas2d", 16.0f, 66.0f);
+    canvas_set_font_size(c, 52.0f);
+    canvas_fill_text(c, "canvas2d 画布", 20.0f, 70.0f);
 
-    // Stroked subtitle.
+    // Stroked subtitle, also mixing scripts.
     canvas_set_stroke_rgba(c, 0.85f, 0.88f, 0.95f, 1.0f);
-    canvas_set_line_width(c, 1.3f);
+    canvas_set_line_width(c, 1.2f);
     canvas_set_line_join(c, CANVAS_JOIN_ROUND);
-    canvas_set_font_size(c, 22.0f);
-    canvas_stroke_text(c, "Comic Sans, in C", 18.0f, 104.0f);
+    canvas_set_font_size(c, 26.0f);
+    canvas_stroke_text(c, "隶书 · Libian TC, in C", 22.0f, 116.0f);
 
     // Transformed (rotated) text shows the CTM applies to glyphs too.
     canvas_save(c);
-    canvas_translate(c, 298.0f, 134.0f);
-    canvas_rotate(c, -0.35f);
+    canvas_translate(c, 352.0f, 152.0f);
+    canvas_rotate(c, -0.32f);
     canvas_set_fill_rgba(c, 0.45f, 0.85f, 0.55f, 1.0f);
-    canvas_set_font_size(c, 20.0f);
-    canvas_fill_text(c, "wheee!", 0.0f, 0.0f);
+    canvas_set_font_size(c, 26.0f);
+    canvas_fill_text(c, "你好!", 0.0f, 0.0f);
     canvas_restore(c);
 
     save(c, "gallery/text.png");
