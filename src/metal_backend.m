@@ -17,16 +17,19 @@ static char const canvas_metal_src[] = {
 };
 
 static MTLPixelFormat const kStencilFormat = MTLPixelFormatStencil8;
+static NSUInteger const kSampleCount = 4;  // MSAA: draws antialias at 4x, resolve to target
 
 @interface GpuImpl : NSObject
 @property (nonatomic, strong) id<MTLDevice> device;
 @property (nonatomic, strong) id<MTLCommandQueue> queue;
-@property (nonatomic, strong) id<MTLTexture> target;
-@property (nonatomic, strong) id<MTLTexture> stencil;
+@property (nonatomic, strong) id<MTLTexture> target;     // 1x resolve dest + readback
+@property (nonatomic, strong) id<MTLTexture> msaaColor;  // 4x colour, resolves to target
+@property (nonatomic, strong) id<MTLTexture> stencil;    // 4x, matches msaaColor
 @property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;
 @property (nonatomic, strong) id<MTLRenderPipelineState> replacePipe;
 @property (nonatomic, strong) id<MTLRenderPipelineState> clipPipe;
 @property (nonatomic, strong) id<MTLRenderPipelineState> gradPipe;   // per-vertex colour
+@property (nonatomic, strong) id<MTLRenderPipelineState> imgPipe;    // putImageData blit
 @property (nonatomic, strong) id<MTLDepthStencilState> dsClip;       // incr where ==ref
 @property (nonatomic, strong) id<MTLDepthStencilState> dsDrawClip;   // pass where ==ref
 @property (nonatomic) int width;
@@ -54,6 +57,7 @@ static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
     MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
     pd.vertexFunction = [lib newFunctionWithName:vs];
     pd.fragmentFunction = [lib newFunctionWithName:fs];
+    pd.rasterSampleCount = kSampleCount;  // render into the 4x attachments
     pd.stencilAttachmentPixelFormat = kStencilFormat;
     MTLRenderPipelineColorAttachmentDescriptor *ca = pd.colorAttachments[0];
     ca.pixelFormat = MTLPixelFormatRGBA8Unorm;
@@ -96,16 +100,17 @@ static id<MTLDepthStencilState> make_stencil_state(id<MTLDevice> device,
 }
 
 // Lazily open (or reuse) the render pass that consecutive colour draws batch
-// into.  loadAction=Load preserves whatever the target/stencil already hold, so
-// many draws accumulate into one command buffer.
+// into.  loadAction=Load preserves the multisample colour/stencil across batches;
+// each flush resolves the 4x colour down into the 1x target for readback.
 static id<MTLRenderCommandEncoder> open_batch(GpuImpl *o) {
     if (o.batchEnc) {
         return o.batchEnc;
     }
     MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-    rp.colorAttachments[0].texture = o.target;
+    rp.colorAttachments[0].texture = o.msaaColor;
+    rp.colorAttachments[0].resolveTexture = o.target;
     rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
-    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    rp.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
     rp.stencilAttachment.texture = o.stencil;
     rp.stencilAttachment.loadAction = MTLLoadActionLoad;
     rp.stencilAttachment.storeAction = MTLStoreActionStore;
@@ -148,6 +153,7 @@ gpu *gpu_create(int width, int height) {
             return NULL;
         }
 
+        // 1x readback/resolve target.
         MTLTextureDescriptor *td =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
                                                                width:(NSUInteger)width
@@ -156,11 +162,24 @@ gpu *gpu_create(int width, int height) {
         td.usage = MTLTextureUsageRenderTarget;
         td.storageMode = MTLStorageModeShared;
 
+        // 4x multisample colour + stencil that draws render into.
+        MTLTextureDescriptor *md =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                               width:(NSUInteger)width
+                                                              height:(NSUInteger)height
+                                                           mipmapped:NO];
+        md.textureType = MTLTextureType2DMultisample;
+        md.sampleCount = kSampleCount;
+        md.usage = MTLTextureUsageRenderTarget;
+        md.storageMode = MTLStorageModePrivate;
+
         MTLTextureDescriptor *sd =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:kStencilFormat
                                                                width:(NSUInteger)width
                                                               height:(NSUInteger)height
                                                            mipmapped:NO];
+        sd.textureType = MTLTextureType2DMultisample;
+        sd.sampleCount = kSampleCount;
         sd.usage = MTLTextureUsageRenderTarget;
         sd.storageMode = MTLStorageModePrivate;
 
@@ -168,20 +187,42 @@ gpu *gpu_create(int width, int height) {
         o.device = device;
         o.queue = [device newCommandQueue];
         o.target = [device newTextureWithDescriptor:td];
+        o.msaaColor = [device newTextureWithDescriptor:md];
         o.stencil = [device newTextureWithDescriptor:sd];
         o.blendPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", PIPE_BLEND);
         o.replacePipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", PIPE_REPLACE);
         o.clipPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", PIPE_CLIP);
         o.gradPipe = make_pipeline(device, lib, @"grad_vs", @"grad_fs", PIPE_BLEND);
+        o.imgPipe = make_pipeline(device, lib, @"solid_vs", @"img_fs", PIPE_REPLACE);
         o.dsClip = make_stencil_state(device, MTLStencilOperationIncrementClamp);
         o.dsDrawClip = make_stencil_state(device, MTLStencilOperationKeep);
         o.width = width;
         o.height = height;
         o.clipLevel = 0;
-        if (!o.queue || !o.target || !o.stencil || !o.blendPipe ||
-            !o.replacePipe || !o.clipPipe || !o.gradPipe || !o.dsClip ||
-            !o.dsDrawClip) {
+        if (!o.queue || !o.target || !o.msaaColor || !o.stencil || !o.blendPipe ||
+            !o.replacePipe || !o.clipPipe || !o.gradPipe || !o.imgPipe ||
+            !o.dsClip || !o.dsDrawClip) {
             return NULL;
+        }
+
+        // Clear the multisample colour to transparent (and resolve it through to
+        // target so a readback before any draw sees transparent black) and zero
+        // the stencil.
+        @autoreleasepool {
+            MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+            rp.colorAttachments[0].texture = o.msaaColor;
+            rp.colorAttachments[0].resolveTexture = o.target;
+            rp.colorAttachments[0].loadAction = MTLLoadActionClear;
+            rp.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0);
+            rp.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+            rp.stencilAttachment.texture = o.stencil;
+            rp.stencilAttachment.loadAction = MTLLoadActionClear;
+            rp.stencilAttachment.clearStencil = 0;
+            rp.stencilAttachment.storeAction = MTLStoreActionStore;
+            id<MTLCommandBuffer> cb = [o.queue commandBuffer];
+            [[cb renderCommandEncoderWithDescriptor:rp] endEncoding];
+            [cb commit];
+            [cb waitUntilCompleted];
         }
         return (__bridge_retained gpu *)o;
     }
@@ -263,7 +304,7 @@ void gpu_clip_reset(gpu *g) {
         GpuImpl *o = (__bridge GpuImpl *)g;
         flush_batch(o);  // pending draws must use the old clip before it resets
         MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-        rp.colorAttachments[0].texture = o.target;
+        rp.colorAttachments[0].texture = o.msaaColor;
         rp.colorAttachments[0].loadAction = MTLLoadActionLoad;  // keep the image
         rp.colorAttachments[0].storeAction = MTLStoreActionStore;
         rp.stencilAttachment.texture = o.stencil;
@@ -295,7 +336,7 @@ void gpu_clip_add(gpu *g, gpu_vert const *verts, int count) {
 
             MTLRenderPassDescriptor *rp =
                 [MTLRenderPassDescriptor renderPassDescriptor];
-            rp.colorAttachments[0].texture = o.target;
+            rp.colorAttachments[0].texture = o.msaaColor;
             rp.colorAttachments[0].loadAction = MTLLoadActionLoad;  // no colour write
             rp.colorAttachments[0].storeAction = MTLStoreActionStore;
             rp.stencilAttachment.texture = o.stencil;
@@ -349,14 +390,63 @@ void gpu_write_region(gpu *g, int x, int y, int w, int h, uint8_t const *pixels)
     if (!g || !pixels || w <= 0 || h <= 0) {
         return;
     }
-    GpuImpl *o = (__bridge GpuImpl *)g;
-    if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
-        return;  // caller must clip to the target
+    @autoreleasepool {
+        GpuImpl *o = (__bridge GpuImpl *)g;
+        if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
+            return;  // caller must clip to the target
+        }
+        flush_batch(o);  // the region write must land after pending draws
+
+        // Upload the pixels to a sampleable texture, then overwrite the
+        // pixel-aligned region in the multisample colour and resolve through to
+        // target.  This goes through MSAA like every other draw, but because the
+        // quad covers whole pixels the samples are identical -- the bytes survive
+        // the resolve exactly.  putImageData ignores the clip, so the default
+        // (always-pass) stencil state is used, not dsDrawClip.
+        MTLTextureDescriptor *itd =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                               width:(NSUInteger)w
+                                                              height:(NSUInteger)h
+                                                           mipmapped:NO];
+        itd.usage = MTLTextureUsageShaderRead;
+        itd.storageMode = MTLStorageModeShared;
+        id<MTLTexture> img = [o.device newTextureWithDescriptor:itd];
+        [img replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)w, (NSUInteger)h)
+               mipmapLevel:0
+                 withBytes:pixels
+               bytesPerRow:(NSUInteger)w * 4];
+
+        MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        rp.colorAttachments[0].texture = o.msaaColor;
+        rp.colorAttachments[0].resolveTexture = o.target;
+        rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
+        rp.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+        rp.stencilAttachment.texture = o.stencil;
+        rp.stencilAttachment.loadAction = MTLLoadActionLoad;
+        rp.stencilAttachment.storeAction = MTLStoreActionStore;
+
+        float fx = (float)x, fy = (float)y;
+        float fx1 = (float)(x + w), fy1 = (float)(y + h);
+        gpu_vert quad[6] = {
+            { fx, fy }, { fx1, fy }, { fx1, fy1 },
+            { fx, fy }, { fx1, fy1 }, { fx, fy1 },
+        };
+        id<MTLBuffer> vbuf =
+            [o.device newBufferWithBytes:quad length:sizeof(quad)
+                                 options:MTLResourceStorageModeShared];
+        float viewport[2] = { (float)o.width, (float)o.height };
+        float origin[2] = { fx, fy };
+
+        id<MTLCommandBuffer> cb = [o.queue commandBuffer];
+        id<MTLRenderCommandEncoder> enc = [cb renderCommandEncoderWithDescriptor:rp];
+        [enc setRenderPipelineState:o.imgPipe];
+        [enc setVertexBuffer:vbuf offset:0 atIndex:0];
+        [enc setVertexBytes:viewport length:sizeof(viewport) atIndex:1];
+        [enc setFragmentBytes:origin length:sizeof(origin) atIndex:0];
+        [enc setFragmentTexture:img atIndex:0];
+        [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+        [enc endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
     }
-    flush_batch(o);  // the region write must land after pending draws
-    [o.target replaceRegion:MTLRegionMake2D((NSUInteger)x, (NSUInteger)y,
-                                            (NSUInteger)w, (NSUInteger)h)
-                mipmapLevel:0
-                  withBytes:pixels
-                bytesPerRow:(NSUInteger)w * 4];
 }

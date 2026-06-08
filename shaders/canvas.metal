@@ -43,3 +43,13 @@ vertex grad_io grad_vs(uint vid [[vertex_id]],
 fragment float4 grad_fs(grad_io in [[stage_in]]) {
     return in.color;
 }
+
+// putImageData: overwrite each pixel with the matching texel of an uploaded
+// image (framebuffer position minus the destination origin).  Drawn with the
+// solid vertex shader over a pixel-aligned quad, so every covered pixel is fully
+// covered -- its MSAA samples are identical and resolve back to the exact byte.
+fragment float4 img_fs(float4 pos [[position]],
+                       float2 constant &origin [[buffer(0)]],
+                       texture2d<float> img [[texture(0)]]) {
+    return img.read(uint2(pos.xy) - uint2(origin));
+}

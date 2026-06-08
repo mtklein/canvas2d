@@ -105,8 +105,8 @@ Three variants are produced from one source tree:
       │  └── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
       │
       ▼   gpu.h  (C ABI: opaque gpu*, gpu_vert, gpu_rgba)
-   metal_backend.m  ── the ONE unsafe boundary: device, pipelines, offscreen
-                        RGBA8 target, batched draws, stencil clip, readback
+   metal_backend.m  ── the ONE unsafe boundary: device, pipelines, 4x MSAA
+                        target, batched draws, stencil clip, readback
                         (ObjC + ARC)
 ```
 
@@ -155,7 +155,7 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ GPU stencil |
 | Gradients — linear + radial, fills *and* strokes, multi-stop, CPU-evaluated | ✅ Gouraud |
-| Anti-aliasing | ❌ hard edges (MSAA planned) |
+| Anti-aliasing | ✅ 4× MSAA (full on strokes; span-edge on scan-converted fills) |
 | `drawImage`, text | ❌ not yet |
 | Batched GPU submission | ✅ consecutive draws share one command buffer |
 
@@ -222,7 +222,11 @@ on the hottest pure-C kernels, one command to re-measure.
 - ~~Batched GPU submission~~ — done; consecutive draws share one command buffer,
   flushed only at a readback, clip change, or region write
   ([metal_backend.m](src/metal_backend.m), `open_batch`/`flush_batch`).
-- Anti-aliasing (MSAA); `drawImage`, text.
+- ~~Anti-aliasing (MSAA)~~ — done; 4× multisample colour + stencil resolving to
+  the readback target ([metal_backend.m](src/metal_backend.m)).  Strokes (real
+  triangles) antialias fully; scan-converted fills/clips antialias along their
+  span edges (near-horizontal edges keep ~1px stepping).
+- `drawImage`, text.
 
 ## Layout
 
