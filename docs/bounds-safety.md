@@ -227,7 +227,7 @@ plain-pointer ABI, the C core and the Objective-C Metal shim share `compositor.h
 verbatim. The shim is (currently) compiled without `-fbounds-safety`, so the
 annotations there expand to nothing — and that's *sound*, not a fudge, precisely
 because the representations match. `compositor_blend(compositor*, int x, int y,
-int w, int h, uint8_t const *__counted_by(w*h*4) tile)` is a checked call on the C
+int w, int h, _Float16 const *__counted_by(w*h*4) tile)` is a checked call on the C
 side and an ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
 
 ### Can the boundary itself be bounds-safe? No — and that's fine
@@ -251,7 +251,7 @@ We tried. Two findings, both verified:
 
 So "blanket `-fbounds-safety`" is reachable only in the hollow sense that every
 TU compiles with the flag; the GPU TU would check nothing. And there is nothing
-to check there: the compositor forwards already-rendered RGBA8 tiles straight to
+to check there: the compositor forwards already-rendered RGBA16F tiles straight to
 Metal as `void*`; all the geometry, coverage, gradient, and clip logic lives in
 the C core, which is already fully covered.
 

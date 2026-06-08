@@ -104,7 +104,7 @@ Three variants are produced from one source tree:
       │  ├── cnvs_geom     growable vertex/int buffers
       │  └── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
       │
-      ▼   compositor.h  (C ABI: opaque compositor*, RGBA8 tiles + a clip mask)
+      ▼   compositor.h  (C ABI: opaque compositor*, RGBA16F tiles + a clip mask)
    compositor_metal.m  ── the ONE unsafe boundary: blend / replace / clear of
                           tiles onto a single-sample target, masked by a clip
                           coverage texture, batched + read back  (ObjC + ARC)
@@ -114,9 +114,10 @@ Everything above `compositor.h` is pure C23 under `-fbounds-safety`. The
 [Metal compositor](src/compositor_metal.m) is the single boundary to a system
 framework — and it is *just* a compositor: all geometry, **analytic
 antialiasing**, gradient evaluation, and clipping happen on the CPU in checked C
-and bake into finished RGBA8 tiles, so the GPU never rasterizes or masks and the
-bounds-safety surface stays in C. Nothing in the ABI is GPU-specific; a CPU
-backend could implement `compositor.h` identically.
+and bake into finished `_Float16` RGBA16F tiles (colour's lingua franca here —
+native on this hardware, 8-bit only at the spec-mandated edges), so the GPU never
+rasterizes or masks and the bounds-safety surface stays in C. Nothing in the ABI
+is GPU-specific; a CPU backend could implement `compositor.h` identically.
 
 > The shim is the project's only translation unit *not* under `-fbounds-safety`:
 > the flag is C-only and rejects Objective-C. That's sound because
