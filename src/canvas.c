@@ -2,6 +2,7 @@
 
 #include "compositor.h"
 #include "cnvs_cover.h"
+#include "cnvs_font.h"
 #include "cnvs_geom.h"
 #include "cnvs_gradient.h"
 #include "cnvs_image.h"
@@ -37,6 +38,7 @@ struct canvas_state {
     float dash[CANVAS_MAX_DASH];
     int dash_count;
     float dash_offset;
+    float font_size;  // text size in user px (Canvas default 10px)
     // Clip coverage, one byte per canvas pixel (NULL = open).  Held by value in
     // the state, so save() snapshots it and restore() brings it back; clip()
     // intersects the current path's coverage into it.
@@ -53,6 +55,9 @@ struct canvas {
     int stack_len;
     int stack_cap;
     cnvs_path path;
+    cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
+    cnvs_font *__single font;  // cached for cur.font_size; rebuilt when it changes
+    float font_built_size;
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
     cnvs_verts scratch_verts;  // stroke triangle output, fed to the coverage rasterizer
     cnvs_cover cover;
@@ -93,12 +98,16 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.miter_limit = 10.0f;
     cv->cur.dash_count = 0;
     cv->cur.dash_offset = 0.0f;
+    cv->cur.font_size = 10.0f;
     cv->cur.clip_mask = NULL;
     cv->cur.clip_len = 0;
     cv->stack = NULL;
     cv->stack_len = 0;
     cv->stack_cap = 0;
     cnvs_path_init(&cv->path);
+    cnvs_path_init(&cv->text_path);
+    cv->font = NULL;
+    cv->font_built_size = 0.0f;
     return cv;
 }
 
@@ -112,7 +121,9 @@ void canvas_destroy(canvas *__single cv) {
     }
     free(cv->stack);
     free(cv->cur.clip_mask);
+    cnvs_font_destroy(cv->font);
     cnvs_path_free(&cv->path);
+    cnvs_path_free(&cv->text_path);
     cnvs_verts_free(&cv->scratch_verts);
     cnvs_cover_free(&cv->cover);
     free(cv->cov);
@@ -574,15 +585,23 @@ void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
     cv->cur.fill_rule = (rule == CANVAS_EVENODD) ? CNVS_EVENODD : CNVS_NONZERO;
 }
 
-void canvas_fill(canvas *__single cv) {
-    cbbox b = points_bbox(cv, cv->path.pts, cv->path.pt_len);
+// Rasterize a device-space path under `rule` and paint it over its clamped bbox.
+static void fill_device_path(canvas *__single cv, cnvs_path const *p,
+                             cnvs_fill_rule rule, int is_grad,
+                             cnvs_gradient const *gr, cnvs_rgba solid) {
+    cbbox b = points_bbox(cv, p->pts, p->pt_len);
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
     }
-    cover_path_edges(cv, b, &cv->path);
-    cnvs_cover_resolve(&cv->cover, b.w, b.h, cv->cur.fill_rule, cv->cov);
-    paint_tile(cv, b, cv->cur.fill_is_gradient, &cv->cur.fill_grad, cv->cur.fill);
+    cover_path_edges(cv, b, p);
+    cnvs_cover_resolve(&cv->cover, b.w, b.h, rule, cv->cov);
+    paint_tile(cv, b, is_grad, gr, solid);
+}
+
+void canvas_fill(canvas *__single cv) {
+    fill_device_path(cv, &cv->path, cv->cur.fill_rule, cv->cur.fill_is_gradient,
+                     &cv->cur.fill_grad, cv->cur.fill);
 }
 
 void canvas_clip(canvas *__single cv) {
@@ -662,7 +681,7 @@ void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
     cv->cur.dash_offset = offset;
 }
 
-void canvas_stroke(canvas *__single cv) {
+static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
     cnvs_verts_reset(&cv->scratch_verts);
     // Line width and dash lengths are in user units; bake the CTM scale in.
     float scale = ctm_scale(cv->cur.ctm);
@@ -675,12 +694,12 @@ void canvas_stroke(canvas *__single cv) {
     }
     float soff = cv->cur.dash_offset * scale;
 
-    for (int s = 0; s < cv->path.sp_len; s++) {
-        cnvs_subpath sp = cv->path.subs[s];
+    for (int s = 0; s < p->sp_len; s++) {
+        cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
             continue;
         }
-        cnvs_vec2 *poly = cv->path.pts + sp.start;
+        cnvs_vec2 *poly = p->pts + sp.start;
         bool ok = dashed
                       ? cnvs_stroke_dashed(poly, sp.count, sp.closed, hw, sdash,
                                            cv->cur.dash_count, soff,
@@ -719,6 +738,53 @@ void canvas_stroke(canvas *__single cv) {
     }
     cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
     paint_tile(cv, b, cv->cur.stroke_is_gradient, &cv->cur.stroke_grad, cv->cur.stroke);
+}
+
+void canvas_stroke(canvas *__single cv) {
+    stroke_device_path(cv, &cv->path);
+}
+
+// Rebuild the cached font when the requested size changes; NULL on failure.
+static cnvs_font *__single ensure_font(canvas *__single cv) {
+    if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
+        cnvs_font_destroy(cv->font);
+        cv->font = cnvs_font_create("Comic Sans MS", cv->cur.font_size);
+        cv->font_built_size = cv->cur.font_size;
+    }
+    return cv->font;
+}
+
+void canvas_set_font_size(canvas *__single cv, float px) {
+    cv->cur.font_size = px > 0.0f ? px : 0.0f;
+}
+
+float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
+    cnvs_font *__single f = ensure_font(cv);
+    return f ? cnvs_font_advance(f, text) : 0.0f;
+}
+
+void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
+                      float x, float y) {
+    cnvs_font *__single f = ensure_font(cv);
+    if (!f) {
+        return;
+    }
+    cnvs_path_reset(&cv->text_path);
+    cnvs_font_outline(f, text, x, y, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
+    // Glyph outlines use nonzero winding (overlapping contours fill solid).
+    fill_device_path(cv, &cv->text_path, CNVS_NONZERO, cv->cur.fill_is_gradient,
+                     &cv->cur.fill_grad, cv->cur.fill);
+}
+
+void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
+                        float x, float y) {
+    cnvs_font *__single f = ensure_font(cv);
+    if (!f) {
+        return;
+    }
+    cnvs_path_reset(&cv->text_path);
+    cnvs_font_outline(f, text, x, y, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
+    stroke_device_path(cv, &cv->text_path);
 }
 
 // Bilinear sample of an RGBA8 source at source-pixel coords (fx,fy), straight

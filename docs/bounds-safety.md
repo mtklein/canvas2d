@@ -263,6 +263,70 @@ apologise for; it's where the unsafe platform edge belongs, named and contained.
 `-fbounds-safety`'s value is in the code that actually manipulates memory, and
 that is all in C.
 
+## Binding a *C* system library (Core Text): the adoption asymmetry
+
+Text outlines come from Core Text — a pure-C framework (`CTFontCreatePathForGlyph`,
+`CGPathApply`, `CFRelease`). So the Objective-C objection above doesn't apply, and
+the interesting question becomes: can a checked `.c` bind it cleanly? We profiled
+the seam empirically before deciding, and the result is a sharper version of the
+qsort gotcha.
+
+**Why `qsort` is clean but `CGPathApply` isn't — and it's *not* that one is "in
+our code."** Both take a callback we define. The difference is **header
+adoption**. `<stdlib.h>` opts into bounds-safety with a region pragma
+(`_LIBC_SINGLE_BY_DEFAULT()` → `__ptrcheck_abi_assume_single()`), so from our TU
+the comparator type is `int (*)(const void *__single, const void *__single)` — the
+*same* `__single` default our own code emits, so it matches and compiles with no
+cast. (And it's genuinely enforcing: spell the comparator's params
+`__unsafe_indexable` or `__bidi_indexable` and it *does* warn.) `CGPath.h` has no
+such pragma, so `CGPathApplierFunction`'s parameters are *attribute-free* — a state
+distinct from every explicit flavor. Under `-Weverything`'s strict
+function-pointer check, the callback we write (whose params the flag *forces* to
+`__single`) can't match an attribute-free type, and **no spelling fixes it** — we
+tried `__single`, `__unsafe_indexable`, `__bidi_indexable`, `__indexable`, all four
+mismatch. The clean resolutions are a scoped
+`#pragma clang diagnostic ignored "-Wincompatible-function-pointer-types-strict"`
+around the one call, or an `__unsafe_forge`-style cast.
+
+This is the honest framing of the strict fn-ptr warnings: they predate the bounds
+model and lack a *compatibility lattice* for it. They parse and compare the
+qualifiers (good — `__single`/`__unsafe_indexable` are thin, same ABI;
+`__bidi_indexable` is fat, a real ABI break), but they collapse to demanding exact
+textual identity, so against an un-adopted callback they're unsatisfiable from
+inside a checked TU.
+
+**Adopting the header *from our side* doesn't reach it either.** The obvious
+move — wrap the `#include`s in `__ptrcheck_abi_assume_single()` to do for Core Text
+what `<stdlib.h>` does for libc — we measured (regional *and* blanket whole-TU),
+and it changes nothing for our two friction points:
+
+- Opaque handles (`CTFontRef`, `CGPathRef`) are pointers to **incomplete** types;
+  `assume_single` only re-defaults pointers to *complete* types, so they stay
+  `__unsafe_indexable` and still need `__unsafe_forge_single`.
+- The callback lives in a **function-pointer typedef**, and `assume_single`
+  doesn't descend into a typedef's parameter list (verified: `CGPathApplierFunction`
+  prints attribute-free even with the pragma immediately above the `#include`).
+- The framework umbrellas carry their *own* region pragmas anyway; pragma regions
+  *set* rather than stack, so an included header resets the ambient state.
+
+So checked binding costs about two forges plus one scoped pragma — and crucially
+buys **no real safety**, because the only buffer that grows (the output
+`cnvs_path`) is owned by checked code regardless; the one genuinely unbounded read
+is `CGPathElement.points`, whose length is encoded in a sibling enum
+(`type` → 0–3 points) that `__counted_by` can't even name.
+
+**The design we chose** mirrors the Metal boundary: an unchecked C shim
+([cnvs_font_ct.c](../src/cnvs_font_ct.c)) behind a bounds-safe ABI
+([cnvs_font.h](../src/cnvs_font.h)). With the flag off, the FFI is natural C — no
+forges, no pragma, no fight — and the glyphs flow back as ordinary device-space
+`cnvs_path`s the existing coverage rasterizer fills. One refinement over the `.m`:
+a C shim still takes the debug sanitizers, so that unbounded `points[i]` read is
+**ASan-instrumented in debug** — the boundary is unchecked at compile time but not
+at run time. The forges-in-checked-code alternative was viable and is arguably the
+tighter "C matches Rust" story (the forges *are* C's `unsafe { ffi() }`); we went
+with the shim for boundary consistency and because, here, it cedes essentially
+nothing.
+
 ## Regrets / things we'd reconsider
 
 - **Hand-rolled per-type vectors.** `cnvs_verts` and the `cnvs_cover`/clip-mask
@@ -282,7 +346,8 @@ that is all in C.
 
 ## Aspirations
 
-- Text — glyph rasterization and an atlas, the remaining Canvas 2D pillar.
+- Richer text — UTF-8 (only ASCII/Latin-1 maps today), a glyph cache (outlines
+  are re-fetched per `fill_text`), and text alignment/baselines beyond the default.
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 
@@ -295,6 +360,11 @@ that is all in C.
 5. Annotate handles to incomplete types as `__single` (the compiler will remind
    you).
 6. `#include <ptrcheck.h>` in every header that uses the macros.
-7. The unsafe boundary should be small, named, and obvious — one `.m` file here.
+7. The unsafe boundary should be small, named, and obvious — here, two shims (a
+   Metal `.m`, a Core Text `.c`), each behind a bounds-safe C ABI.
 8. Generic callback APIs (`qsort`, `bsearch`) lose the bounds at the callback —
    forge inside, or hand-roll the small hot ones to stay checked end to end.
+9. Binding an un-adopted system header from checked code fights the strict
+   function-pointer check on its callbacks (no spelling matches an attribute-free
+   typedef); when the gain is only cosmetic, an isolated unchecked shim is cleaner
+   than scattering forges. A C shim keeps the debug sanitizers; an ObjC one can't.

@@ -16,10 +16,14 @@ flag. `ninja benchcmp` runs hyperfine over the two.
 The C core is compiled `-std=c23 -Werror -Weverything` (plus -fbounds-safety for
 release/debug); only the handful of warnings below are disabled, each justified.
 
-The Objective-C Metal shim (src/*.m) is the platform boundary. -fbounds-safety is
-C-only and cannot apply to it; it is built -std=c23 with -Wall -Wextra, under the
-sanitizers in debug. The shader is embedded with C23 #embed (--embed-dir=shaders)
-and compiled at runtime; -MMD tracks the embed dependency.
+Two source files are platform boundaries, built -std=c23 with -Wall -Wextra
+(not -Weverything) and without -fbounds-safety, under the sanitizers in debug:
+the Objective-C Metal shim (src/*.m) -- the flag is C-only and cannot apply to it
+-- and the Core Text font shim (the BOUNDARY_C list), a C file that talks to the
+un-annotated system framework headers (see docs/bounds-safety.md). Both sit
+behind a bounds-safe C ABI; everything else is checked C. The shader is embedded
+with C23 #embed (--embed-dir=shaders) and compiled at runtime; -MMD tracks the
+embed dependency.
 """
 
 import os
@@ -60,7 +64,13 @@ CWARN = "-Werror -Weverything " + " ".join(
 
 CINC = "-Iinclude -Isrc"
 OBJCWARN = "-Wall -Wextra"
-FRAMEWORKS = "-framework Metal -framework Foundation"
+FRAMEWORKS = ("-framework Metal -framework Foundation "
+              "-framework CoreText -framework CoreGraphics -framework CoreFoundation")
+
+# C sources that are platform boundaries: built without -fbounds-safety and at
+# -Wall -Wextra (like the .m shim), because they bind un-annotated system
+# framework headers.  They expose a bounds-safe C ABI to the checked core.
+BOUNDARY_C = {"cnvs_font_ct.c"}
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?)
 VARIANTS = {
@@ -108,6 +118,15 @@ def main():
         w("  deps = gcc")
         w(f"  description = CC({variant}) $out")
         w("")
+        # Boundary C: no -fbounds-safety, -Wall -Wextra (system-FFI seam), but the
+        # debug sanitizers still apply -- so the unchecked shim is still ASan/UBSan
+        # instrumented in debug, unlike the ObjC one.
+        w(f"rule cc_boundary_{variant}")
+        w(f"  command = clang $cstd $objcwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
+        w("  depfile = $out.d")
+        w("  deps = gcc")
+        w(f"  description = CC-boundary({variant}) $out")
+        w("")
         w(f"rule objc_{variant}")
         w(f"  command = clang $cstd -fobjc-arc $objcwarn $cinc --embed-dir=shaders {opt} -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
@@ -143,7 +162,8 @@ def main():
         lib_objs = []
         for c in core_c:
             o = obj(variant, c)
-            w(f"build {o}: cc_{variant} {c}")
+            ccrule = "cc_boundary" if os.path.basename(c) in BOUNDARY_C else "cc"
+            w(f"build {o}: {ccrule}_{variant} {c}")
             lib_objs.append(o)
         for m in shim_m:
             o = obj(variant, m)

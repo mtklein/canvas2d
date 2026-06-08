@@ -433,6 +433,45 @@ static void drawimage(void) {
     save(c, "gallery/drawimage.png");
 }
 
+// Text: Comic Sans glyph outlines from Core Text, rasterized by the same
+// analytic-coverage fill as everything else -- so they take gradients, strokes,
+// transforms, and alpha.  The glyphs arrive as ordinary device-space paths from
+// the one unchecked C shim (cnvs_font_ct.c); nothing else gives up checking.
+static void text(void) {
+    canvas *__single c = canvas_create(360, 150);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 360.0f, 150.0f);
+
+    // Gradient-filled headline.
+    canvas_set_fill_linear_gradient(c, 16.0f, 0.0f, 330.0f, 0.0f);
+    canvas_add_fill_color_stop(c, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_set_font_size(c, 56.0f);
+    canvas_fill_text(c, "canvas2d", 16.0f, 66.0f);
+
+    // Stroked subtitle.
+    canvas_set_stroke_rgba(c, 0.85f, 0.88f, 0.95f, 1.0f);
+    canvas_set_line_width(c, 1.3f);
+    canvas_set_line_join(c, CANVAS_JOIN_ROUND);
+    canvas_set_font_size(c, 22.0f);
+    canvas_stroke_text(c, "Comic Sans, in C", 18.0f, 104.0f);
+
+    // Transformed (rotated) text shows the CTM applies to glyphs too.
+    canvas_save(c);
+    canvas_translate(c, 298.0f, 134.0f);
+    canvas_rotate(c, -0.35f);
+    canvas_set_fill_rgba(c, 0.45f, 0.85f, 0.55f, 1.0f);
+    canvas_set_font_size(c, 20.0f);
+    canvas_fill_text(c, "wheee!", 0.0f, 0.0f);
+    canvas_restore(c);
+
+    save(c, "gallery/text.png");
+}
+
 int main(void) {
     shapes();
     winding();
@@ -444,5 +483,6 @@ int main(void) {
     gradients();
     batching();
     drawimage();
+    text();
     return 0;
 }

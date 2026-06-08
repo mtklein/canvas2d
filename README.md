@@ -67,6 +67,12 @@ and scaled + rotated (AA quad edges from the coverage rasterizer):
 
 ![imagedata](gallery/imagedata.png)
 
+Text — `fillText`/`strokeText` in Comic Sans (glyph outlines from Core Text),
+rasterized by the same analytic-coverage fill as everything else, so they take a
+gradient fill, a stroke, and the transform (the rotated *wheee!*):
+
+![text](gallery/text.png)
+
 ## Quick start
 
 ```sh
@@ -107,28 +113,39 @@ Three variants are produced from one source tree:
       │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
       │  ├── cnvs_geom     growable vertex/int buffers
-      │  └── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
+      │  ├── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
+      │  │
+      │  ▼   cnvs_font.h   (C ABI: opaque cnvs_font*, glyph outlines → a cnvs_path)
+      │  cnvs_font_ct.c  ── unsafe boundary #2: Core Text glyph outlines (C, no ARC)
       │
       ▼   compositor.h  (C ABI: opaque compositor*, RGBA16F tiles + a clip mask)
-   compositor_metal.m  ── the ONE unsafe boundary: blend / replace / clear of
+   compositor_metal.m  ── unsafe boundary #1: blend / replace / clear of
                           tiles onto a single-sample target, masked by a clip
                           coverage texture, batched + read back  (ObjC + ARC)
 ```
 
-Everything above `compositor.h` is pure C23 under `-fbounds-safety`. The
-[Metal compositor](src/compositor_metal.m) is the single boundary to a system
-framework — and it is *just* a compositor: all geometry, **analytic
-antialiasing**, gradient evaluation, and clipping happen on the CPU in checked C
-and bake into finished `_Float16` RGBA16F tiles (colour's lingua franca here —
-native on this hardware, 8-bit only at the spec-mandated edges), so the GPU never
-rasterizes or masks and the bounds-safety surface stays in C. Nothing in the ABI
-is GPU-specific; a CPU backend could implement `compositor.h` identically.
+Everything above the two ABI lines is pure C23 under `-fbounds-safety`. There are
+exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
 
-> The shim is the project's only translation unit *not* under `-fbounds-safety`:
-> the flag is C-only and rejects Objective-C. That's sound because
-> `__counted_by`/`__single` pointers share the plain-C-pointer ABI, so
-> `compositor.h` is identical on both sides. See
-> [docs/bounds-safety.md](docs/bounds-safety.md) for why we don't route around it.
+- The [Metal compositor](src/compositor_metal.m) is *just* a compositor — all
+  geometry, **analytic antialiasing**, gradient evaluation, and clipping happen on
+  the CPU in checked C and bake into finished `_Float16` RGBA16F tiles (colour's
+  lingua franca here — native on this hardware, 8-bit only at the spec-mandated
+  edges), so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific;
+  a CPU backend could implement `compositor.h` identically.
+- The [Core Text font shim](src/cnvs_font_ct.c) turns a system typeface into
+  ordinary device-space `cnvs_path` outlines, which the *same* coverage rasterizer
+  then fills/strokes — so text gets gradients, transforms, clips and AA for free.
+
+> These two `.c`/`.m` files are the only translation units *not* under
+> `-fbounds-safety`. The Metal one *can't* be — the flag is C-only and rejects
+> Objective-C. The font one *could* be, but the Core Text headers predate the flag
+> and carry no bounds attributes, so binding them from checked code means forging
+> every opaque handle and a scoped cast for `CGPathApply`'s callback; isolating
+> that in one unchecked C TU (still ASan/UBSan-instrumented in debug) keeps the
+> rest of the core uniformly checked. It's sound because `__counted_by`/`__single`
+> pointers share the plain-C-pointer ABI, so each interface header is identical on
+> both sides. See [docs/bounds-safety.md](docs/bounds-safety.md) for the full why.
 
 ## Public API (subset of Canvas 2D, snake_case)
 
@@ -147,6 +164,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
 canvas_fill / canvas_stroke / canvas_clip
 canvas_get_image_data / put_image_data / read_rgba / write_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
+canvas_set_font_size / measure_text / fill_text / stroke_text  // Comic Sans
 canvas_destroy(cv);
 ```
 
@@ -166,7 +184,7 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ exact per-pixel |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — RGBA8 source, bilinear, transform/clip/alpha-aware | ✅ |
-| Text | ❌ not yet |
+| Text — `fillText`/`strokeText`, Comic Sans, gradient/stroke/transform-aware | ✅ via Core Text shim |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
@@ -220,18 +238,23 @@ hottest pure-C kernels, one command to re-measure.
 The capability table above is the current state. What's left and what we
 deliberately won't do:
 
-- **Not yet:** text (glyph rasterization + an atlas).
-- **Rejected — blanket `-fbounds-safety` over the Metal shim.** The flag is
-  C-only, and driving Metal from C through the Objective-C runtime forces an
-  all-`__unsafe_indexable` TU (no ARC, no real checking), so the boundary stays an
-  isolated ObjC shim. See [docs/bounds-safety.md](docs/bounds-safety.md).
+- **Not yet:** UTF-8 text (only ASCII/Latin-1 is mapped today), text alignment /
+  baselines beyond the default, and a glyph cache (each `fill_text` re-fetches
+  outlines).
+- **Rejected — forcing `-fbounds-safety` onto the two system-framework shims.**
+  The Metal one *can't* take the flag (it's C-only, and ARC/Objective-C is
+  required to drive Metal). The Core Text one *could*, but its headers carry no
+  bounds attributes, so checked binding means forging every opaque handle plus a
+  scoped cast for `CGPathApply` — net zero real safety, since the output buffers
+  are checked-owned regardless. Both stay isolated boundary shims behind a
+  bounds-safe C ABI. See [docs/bounds-safety.md](docs/bounds-safety.md).
 
 ## Layout
 
 ```
 configure.py             generates build.ninja (release, debug, unsafe)
 include/canvas.h         public API
-src/                     C core + the ObjC Metal compositor shim
+src/                     C core + two boundary shims (Metal .m, Core Text .c)
 shaders/compositor.metal tile vertex+fragment shaders (embedded via #embed)
 tests/                   unit + pixel tests + a bounds-safety trap test
 bench/bench.c            CPU-only benchmark (release vs unsafe)
