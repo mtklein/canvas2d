@@ -4,6 +4,7 @@
 #include "canvas.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -355,6 +356,42 @@ static void gradients(void) {
     save(c, "gallery/gradients.png");
 }
 
+// Batching: a dense field of translucent discs.  Every disc is its own
+// canvas_fill -- hundreds of draws that batch into a single GPU command buffer,
+// flushed once at write_png.  The alpha overlap also shows source-over ordering
+// survives the batch.
+static uint32_t batch_rng = 0x1234567u;
+
+static float batch_rand(void) {
+    batch_rng = batch_rng * 1664525u + 1013904223u;
+    return (float)(batch_rng >> 8) / 16777216.0f;  // [0,1)
+}
+
+static void batching(void) {
+    canvas *__single c = canvas_create(300, 120);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.07f, 0.08f, 0.10f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
+
+    canvas_set_global_alpha(c, 0.55f);
+    for (int i = 0; i < 320; i++) {
+        float x = batch_rand() * 300.0f;
+        float y = batch_rand() * 120.0f;
+        float r = 3.0f + batch_rand() * 9.0f;
+        float t = batch_rand();
+        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+        canvas_begin_path(c);
+        canvas_arc(c, x, y, r, 0.0f, TAU, false);
+        canvas_fill(c);
+    }
+
+    save(c, "gallery/batch.png");
+}
+
 int main(void) {
     shapes();
     winding();
@@ -364,5 +401,6 @@ int main(void) {
     paths();
     clipping();
     gradients();
+    batching();
     return 0;
 }

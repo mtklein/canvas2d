@@ -32,6 +32,11 @@ static MTLPixelFormat const kStencilFormat = MTLPixelFormatStencil8;
 @property (nonatomic) int width;
 @property (nonatomic) int height;
 @property (nonatomic) int clipLevel;  // 0 = no clip; else draws must match stencil==clipLevel
+// Open render pass that consecutive draws batch into; nil when none.  The
+// command buffer retains the vertex buffers its draws reference until it
+// completes (Metal's default), so deferred buffers stay alive until flush.
+@property (nonatomic, strong) id<MTLCommandBuffer> batchCB;
+@property (nonatomic, strong) id<MTLRenderCommandEncoder> batchEnc;
 @end
 
 @implementation GpuImpl
@@ -85,6 +90,39 @@ static id<MTLDepthStencilState> make_stencil_state(id<MTLDevice> device,
     dd.frontFaceStencil = sd;
     dd.backFaceStencil = sd;
     return [device newDepthStencilStateWithDescriptor:dd];
+}
+
+// Lazily open (or reuse) the render pass that consecutive colour draws batch
+// into.  loadAction=Load preserves whatever the target/stencil already hold, so
+// many draws accumulate into one command buffer.
+static id<MTLRenderCommandEncoder> open_batch(GpuImpl *o) {
+    if (o.batchEnc) {
+        return o.batchEnc;
+    }
+    MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+    rp.colorAttachments[0].texture = o.target;
+    rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    rp.stencilAttachment.texture = o.stencil;
+    rp.stencilAttachment.loadAction = MTLLoadActionLoad;
+    rp.stencilAttachment.storeAction = MTLStoreActionStore;
+    o.batchCB = [o.queue commandBuffer];
+    o.batchEnc = [o.batchCB renderCommandEncoderWithDescriptor:rp];
+    return o.batchEnc;
+}
+
+// Submit the open batch (if any) and block until it finishes.  Called before any
+// operation that must observe prior draws -- a readback, a region write, or a
+// stencil/clip change that can't be expressed inside the open pass.
+static void flush_batch(GpuImpl *o) {
+    if (!o.batchEnc) {
+        return;
+    }
+    [o.batchEnc endEncoding];
+    [o.batchCB commit];
+    [o.batchCB waitUntilCompleted];
+    o.batchEnc = nil;
+    o.batchCB = nil;
 }
 
 gpu *gpu_create(int width, int height) {
@@ -149,7 +187,8 @@ gpu *gpu_create(int width, int height) {
 void gpu_destroy(gpu *g) {
     if (g) {
         GpuImpl *o = (__bridge_transfer GpuImpl *)g;
-        (void)o;  // ARC releases the transferred reference at scope end
+        flush_batch(o);  // drain any open batch before the encoder is released
+        // ARC releases the transferred reference at scope end.
     }
 }
 
@@ -159,6 +198,7 @@ void gpu_clear(gpu *g, gpu_rgba color) {
     }
     @autoreleasepool {
         GpuImpl *o = (__bridge GpuImpl *)g;
+        flush_batch(o);  // the clear must land after any pending draws
         MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
         rp.colorAttachments[0].texture = o.target;
         rp.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -187,17 +227,7 @@ void gpu_draw_solid(gpu *g, gpu_vert const *verts, int count,
                                   length:(NSUInteger)count * sizeof(gpu_vert)
                                  options:MTLResourceStorageModeShared];
 
-        MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-        rp.colorAttachments[0].texture = o.target;
-        rp.colorAttachments[0].loadAction = MTLLoadActionLoad;  // preserve existing
-        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-        rp.stencilAttachment.texture = o.stencil;
-        rp.stencilAttachment.loadAction = MTLLoadActionLoad;
-        rp.stencilAttachment.storeAction = MTLStoreActionStore;
-
-        id<MTLCommandBuffer> cb = [o.queue commandBuffer];
-        id<MTLRenderCommandEncoder> enc =
-            [cb renderCommandEncoderWithDescriptor:rp];
+        id<MTLRenderCommandEncoder> enc = open_batch(o);
         [enc setRenderPipelineState:blend ? o.blendPipe : o.replacePipe];
         if (o.clipLevel > 0) {
             [enc setDepthStencilState:o.dsDrawClip];
@@ -213,9 +243,6 @@ void gpu_draw_solid(gpu *g, gpu_vert const *verts, int count,
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:(NSUInteger)count];
-        [enc endEncoding];
-        [cb commit];
-        [cb waitUntilCompleted];
     }
 }
 
@@ -231,17 +258,7 @@ void gpu_draw_verts(gpu *g, gpu_cvert const *verts, int count) {
                                   length:(NSUInteger)count * sizeof(gpu_cvert)
                                  options:MTLResourceStorageModeShared];
 
-        MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
-        rp.colorAttachments[0].texture = o.target;
-        rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
-        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-        rp.stencilAttachment.texture = o.stencil;
-        rp.stencilAttachment.loadAction = MTLLoadActionLoad;
-        rp.stencilAttachment.storeAction = MTLStoreActionStore;
-
-        id<MTLCommandBuffer> cb = [o.queue commandBuffer];
-        id<MTLRenderCommandEncoder> enc =
-            [cb renderCommandEncoderWithDescriptor:rp];
+        id<MTLRenderCommandEncoder> enc = open_batch(o);
         [enc setRenderPipelineState:o.gradPipe];
         if (o.clipLevel > 0) {
             [enc setDepthStencilState:o.dsDrawClip];
@@ -254,9 +271,6 @@ void gpu_draw_verts(gpu *g, gpu_cvert const *verts, int count) {
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:(NSUInteger)count];
-        [enc endEncoding];
-        [cb commit];
-        [cb waitUntilCompleted];
     }
 }
 
@@ -266,6 +280,7 @@ void gpu_clip_reset(gpu *g) {
     }
     @autoreleasepool {
         GpuImpl *o = (__bridge GpuImpl *)g;
+        flush_batch(o);  // pending draws must use the old clip before it resets
         MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
         rp.colorAttachments[0].texture = o.target;
         rp.colorAttachments[0].loadAction = MTLLoadActionLoad;  // keep the image
@@ -290,6 +305,7 @@ void gpu_clip_add(gpu *g, gpu_vert const *verts, int count) {
     }
     @autoreleasepool {
         GpuImpl *o = (__bridge GpuImpl *)g;
+        flush_batch(o);  // pending draws must use the old clip before it tightens
         if (count > 0 && verts) {
             id<MTLBuffer> vbuf =
                 [o.device newBufferWithBytes:verts
@@ -341,6 +357,7 @@ void gpu_read_rgba(gpu *g, uint8_t *out, int len) {
     if (len < need) {
         return;
     }
+    flush_batch(o);  // execute pending draws so the readback sees them
     [o.target getBytes:out
            bytesPerRow:(NSUInteger)o.width * 4
             fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
@@ -355,6 +372,7 @@ void gpu_write_region(gpu *g, int x, int y, int w, int h, uint8_t const *pixels)
     if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
         return;  // caller must clip to the target
     }
+    flush_batch(o);  // the region write must land after pending draws
     [o.target replaceRegion:MTLRegionMake2D((NSUInteger)x, (NSUInteger)y,
                                             (NSUInteger)w, (NSUInteger)h)
                 mipmapLevel:0

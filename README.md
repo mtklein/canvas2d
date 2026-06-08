@@ -52,6 +52,11 @@ multi-stop rainbow ramp (evaluated on the CPU, Gouraud-interpolated):
 
 ![gradients](gallery/gradients.png)
 
+Batching — 320 translucent discs, each its own `fill()`, all submitted in a
+single GPU command buffer (the alpha overlap shows ordering is preserved):
+
+![batch](gallery/batch.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
@@ -100,7 +105,8 @@ Three variants are produced from one source tree:
       │
       ▼   gpu.h  (C ABI: opaque gpu*, gpu_vert, gpu_rgba)
    metal_backend.m  ── the ONE unsafe boundary: device, pipelines, offscreen
-                        RGBA8 target, draw, stencil clip, readback  (ObjC + ARC)
+                        RGBA8 target, batched draws, stencil clip, readback
+                        (ObjC + ARC)
 ```
 
 Everything above `gpu.h` is pure C23 under `-fbounds-safety`. The
@@ -149,7 +155,7 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | Gradients — linear + radial fills, multi-stop, CPU-evaluated | ✅ Gouraud |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
 | `drawImage`, text | ❌ not yet |
-| Batched GPU submission | ❌ one command buffer per draw (correctness first) |
+| Batched GPU submission | ✅ consecutive draws share one command buffer |
 
 ## Warning policy
 
@@ -211,8 +217,10 @@ on the hottest pure-C kernels, one command to re-measure.
   stencil mask ([metal_backend.m](src/metal_backend.m), `gpu_clip_add`).
 - ~~Gradients~~ — done; linear + radial, multi-stop, evaluated on the CPU
   ([cnvs_gradient.c](src/cnvs_gradient.c)) and Gouraud-interpolated on the GPU.
-- Anti-aliasing (MSAA); batched GPU submission.
-- `drawImage`, text.
+- ~~Batched GPU submission~~ — done; consecutive draws share one command buffer,
+  flushed only at a readback, clip change, or region write
+  ([metal_backend.m](src/metal_backend.m), `open_batch`/`flush_batch`).
+- Anti-aliasing (MSAA); `drawImage`, text.
 
 ## Layout
 
