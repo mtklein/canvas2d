@@ -42,21 +42,24 @@ static MTLPixelFormat const kStencilFormat = MTLPixelFormatStencil8;
 @implementation GpuImpl
 @end
 
-// `blend` selects source-over vs overwrite; `clip` makes a stencil-only pipeline
-// (no colour write) used to build the clip mask.
+// The three colour-attachment behaviours a pipeline can have: overwrite the
+// target, composite source-over, or write only the stencil (the clip-mask pass,
+// no colour) -- mutually exclusive, hence one enum rather than two bools.
+typedef enum { PIPE_REPLACE, PIPE_BLEND, PIPE_CLIP } pipe_mode;
+
 static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
                                                 id<MTLLibrary> lib,
                                                 NSString *vs, NSString *fs,
-                                                bool blend, bool clip) {
+                                                pipe_mode mode) {
     MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
     pd.vertexFunction = [lib newFunctionWithName:vs];
     pd.fragmentFunction = [lib newFunctionWithName:fs];
     pd.stencilAttachmentPixelFormat = kStencilFormat;
     MTLRenderPipelineColorAttachmentDescriptor *ca = pd.colorAttachments[0];
     ca.pixelFormat = MTLPixelFormatRGBA8Unorm;
-    if (clip) {
+    if (mode == PIPE_CLIP) {
         ca.writeMask = MTLColorWriteMaskNone;  // stencil only
-    } else if (blend) {
+    } else if (mode == PIPE_BLEND) {
         ca.blendingEnabled = YES;
         ca.rgbBlendOperation = MTLBlendOperationAdd;
         ca.alphaBlendOperation = MTLBlendOperationAdd;
@@ -166,10 +169,10 @@ gpu *gpu_create(int width, int height) {
         o.queue = [device newCommandQueue];
         o.target = [device newTextureWithDescriptor:td];
         o.stencil = [device newTextureWithDescriptor:sd];
-        o.blendPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", true, false);
-        o.replacePipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", false, false);
-        o.clipPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", false, true);
-        o.gradPipe = make_pipeline(device, lib, @"grad_vs", @"grad_fs", true, false);
+        o.blendPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", PIPE_BLEND);
+        o.replacePipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", PIPE_REPLACE);
+        o.clipPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", PIPE_CLIP);
+        o.gradPipe = make_pipeline(device, lib, @"grad_vs", @"grad_fs", PIPE_BLEND);
         o.dsClip = make_stencil_state(device, MTLStencilOperationIncrementClamp);
         o.dsDrawClip = make_stencil_state(device, MTLStencilOperationKeep);
         o.width = width;
