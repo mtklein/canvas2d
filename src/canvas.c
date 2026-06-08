@@ -17,6 +17,7 @@
 
 // Maximum chord deviation (device pixels) when flattening curves.
 #define CANVAS_FLATTEN_TOL 0.25f
+#define CANVAS_MAX_DASH 16
 
 struct canvas_state {
     cnvs_mat ctm;
@@ -25,6 +26,9 @@ struct canvas_state {
     float global_alpha;
     float line_width;
     cnvs_fill_rule fill_rule;
+    float dash[CANVAS_MAX_DASH];
+    int dash_count;
+    float dash_offset;
 };
 
 struct canvas {
@@ -63,6 +67,8 @@ canvas *__single canvas_create(int width, int height) {
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
     cv->cur.fill_rule = CNVS_NONZERO;
+    cv->cur.dash_count = 0;
+    cv->cur.dash_offset = 0.0f;
     cv->stack = NULL;
     cv->stack_len = 0;
     cv->stack_cap = 0;
@@ -276,21 +282,52 @@ void canvas_set_line_width(canvas *__single cv, float width) {
     cv->cur.line_width = width;
 }
 
+void canvas_set_line_dash(canvas *__single cv,
+                          float const *__counted_by(count) pattern, int count) {
+    // Clamp into a separate variable: mutating `count` would desync the
+    // __counted_by(count) bound on `pattern`.
+    int m = count < 0 ? 0 : count;
+    if (m > CANVAS_MAX_DASH) {
+        m = CANVAS_MAX_DASH;
+    }
+    for (int i = 0; i < m; i++) {
+        cv->cur.dash[i] = pattern[i];
+    }
+    cv->cur.dash_count = m;
+}
+
+void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
+    cv->cur.dash_offset = offset;
+}
+
 void canvas_stroke(canvas *__single cv) {
     cnvs_verts_reset(&cv->scratch_verts);
-    // Line width is in user units; bake the CTM scale into device space.
+    // Line width and dash lengths are in user units; bake the CTM scale in.
     cnvs_mat m = cv->cur.ctm;
     float det = m.a * m.d - m.b * m.c;
     float scale = sqrtf(fabsf(det));
     float hw = cv->cur.line_width * 0.5f * scale;
+
+    bool dashed = cv->cur.dash_count > 0;
+    float sdash[CANVAS_MAX_DASH];
+    for (int i = 0; i < cv->cur.dash_count; i++) {
+        sdash[i] = cv->cur.dash[i] * scale;
+    }
+    float soff = cv->cur.dash_offset * scale;
+
     for (int s = 0; s < cv->path.sp_len; s++) {
         cnvs_subpath sp = cv->path.subs[s];
         if (sp.count < 2) {
             continue;
         }
         cnvs_vec2 *poly = cv->path.pts + sp.start;
-        if (!cnvs_stroke_polyline(poly, sp.count, sp.closed, hw,
-                                  &cv->scratch_verts)) {
+        bool ok = dashed
+                      ? cnvs_stroke_dashed(poly, sp.count, sp.closed, hw, sdash,
+                                           cv->cur.dash_count, soff,
+                                           &cv->scratch_verts)
+                      : cnvs_stroke_polyline(poly, sp.count, sp.closed, hw,
+                                             &cv->scratch_verts);
+        if (!ok) {
             return;
         }
     }

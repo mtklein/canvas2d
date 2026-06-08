@@ -97,7 +97,7 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ |
 | Paths: lines, rects, quadratic/cubic Béziers, arcs | ✅ |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ scanline rasterizer |
-| `stroke()` — width (CTM-scaled), bevel joins, butt caps | ✅ |
+| `stroke()` — width (CTM-scaled), bevel joins, butt caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
 | Miter / round joins, round caps | ❌ bevel + butt only |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |

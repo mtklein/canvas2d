@@ -77,3 +77,75 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n,
     }
     return true;
 }
+
+bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
+                        float half_width, float const *__counted_by(ndash) dash,
+                        int ndash, float dash_offset, cnvs_verts *out) {
+    if (n < 2 || half_width <= 0.0f || ndash <= 0) {
+        return true;
+    }
+    float total = 0.0f;
+    for (int i = 0; i < ndash; i++) {
+        total += dash[i];
+    }
+    if (!(total > 0.0f)) {
+        return true;
+    }
+
+    // Place the dash cursor at the offset: index `di`, `remain` left in it, on/off.
+    float phase = fmodf(dash_offset, total);
+    if (phase < 0.0f) {
+        phase += total;
+    }
+    int di = 0;
+    while (di < ndash && phase >= dash[di]) {
+        phase -= dash[di];
+        di += 1;
+    }
+    if (di >= ndash) {
+        di = ndash - 1;
+    }
+    float remain = dash[di] - phase;
+    bool on = (di % 2) == 0;
+
+    int nseg = closed ? n : n - 1;
+    for (int s = 0; s < nseg; s++) {
+        cnvs_vec2 a = pts[s];
+        cnvs_vec2 b = pts[(s + 1) % n];
+        float dx = b.x - a.x;
+        float dy = b.y - a.y;
+        float seglen = sqrtf(dx * dx + dy * dy);
+        if (seglen < 1e-6f) {
+            continue;
+        }
+        float inv = 1.0f / seglen;
+        cnvs_vec2 dir = { .x = dx * inv, .y = dy * inv };
+        cnvs_vec2 nrm = { .x = -dir.y * half_width, .y = dir.x * half_width };
+
+        float pos = 0.0f;
+        while (pos < seglen) {
+            float step = remain;
+            if (step > seglen - pos) {
+                step = seglen - pos;
+            }
+            if (on) {
+                cnvs_vec2 p0 = { .x = a.x + dir.x * pos, .y = a.y + dir.y * pos };
+                cnvs_vec2 p1 = { .x = a.x + dir.x * (pos + step),
+                                 .y = a.y + dir.y * (pos + step) };
+                if (!emit_quad(out, p0, p1, nrm)) {
+                    return false;
+                }
+            }
+            pos += step;
+            remain -= step;
+            if (remain <= 1e-6f) {
+                do {
+                    di = (di + 1) % ndash;
+                    remain = dash[di];
+                    on = !on;
+                } while (remain <= 0.0f);  // skip zero-length entries (total > 0)
+            }
+        }
+    }
+    return true;
+}

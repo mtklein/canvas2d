@@ -52,6 +52,10 @@ void canvas_fill(canvas *__single cv);
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_line_width(canvas *__single cv, float width);
+// `pattern` lists alternating on/off lengths (user units); count 0 = solid.
+void canvas_set_line_dash(canvas *__single cv,
+                          float const *__counted_by(count) pattern, int count);
+void canvas_set_line_dash_offset(canvas *__single cv, float offset);
 void canvas_stroke(canvas *__single cv);
 
 // Tightly packed RGBA8, top row first; len must be width*height*4.
