@@ -38,6 +38,10 @@ Line joins (miter / round / bevel) and caps (butt / round / square):
 
 ![joins](gallery/joins.png)
 
+Path primitives — a filled ellipse and a rounded rectangle (filled + outlined):
+
+![paths](gallery/paths.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)

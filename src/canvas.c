@@ -219,8 +219,9 @@ void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
                        xf(cv, x, y), CANVAS_FLATTEN_TOL);
 }
 
-void canvas_arc(canvas *__single cv, float x, float y, float radius,
-                float start_angle, float end_angle, bool anticlockwise) {
+void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
+                    float rotation, float start_angle, float end_angle,
+                    bool anticlockwise) {
     float two_pi = 2.0f * (float)M_PI;
     float sweep = end_angle - start_angle;
     if (!anticlockwise) {
@@ -232,8 +233,10 @@ void canvas_arc(canvas *__single cv, float x, float y, float radius,
             sweep -= two_pi;
         }
     }
-    float r = radius < 0.0f ? -radius : radius;
-    float rr = r > CANVAS_FLATTEN_TOL ? r : CANVAS_FLATTEN_TOL;
+    float arx = rx < 0.0f ? -rx : rx;
+    float ary = ry < 0.0f ? -ry : ry;
+    float rmax = arx > ary ? arx : ary;
+    float rr = rmax > CANVAS_FLATTEN_TOL ? rmax : CANVAS_FLATTEN_TOL;
     float dstep = 2.0f * acosf(fmaxf(-1.0f, 1.0f - CANVAS_FLATTEN_TOL / rr));
     if (!(dstep > 1e-4f)) {
         dstep = 1e-4f;  // guard against tiny/NaN step
@@ -246,15 +249,45 @@ void canvas_arc(canvas *__single cv, float x, float y, float radius,
     if (segs > 4096) {
         segs = 4096;
     }
+    float cosr = cosf(rotation);
+    float sinr = sinf(rotation);
     for (int i = 0; i <= segs; i++) {
         float t = start_angle + sweep * ((float)i / (float)segs);
-        cnvs_vec2 p = xf(cv, x + r * cosf(t), y + r * sinf(t));
+        float ex = rx * cosf(t);
+        float ey = ry * sinf(t);
+        cnvs_vec2 p = xf(cv, x + ex * cosr - ey * sinr, y + ex * sinr + ey * cosr);
         if (i == 0 && !cv->path.has_cur) {
             cnvs_path_move_to(&cv->path, p);
         } else {
             cnvs_path_line_to(&cv->path, p);
         }
     }
+}
+
+void canvas_arc(canvas *__single cv, float x, float y, float radius,
+                float start_angle, float end_angle, bool anticlockwise) {
+    canvas_ellipse(cv, x, y, radius, radius, 0.0f, start_angle, end_angle,
+                   anticlockwise);
+}
+
+void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
+                       float radius) {
+    float r = radius < 0.0f ? 0.0f : radius;
+    float rmax = (w < h ? w : h) * 0.5f;
+    if (rmax < 0.0f) {
+        rmax = 0.0f;
+    }
+    if (r > rmax) {
+        r = rmax;
+    }
+    float q = (float)M_PI * 0.5f;
+    float pi = (float)M_PI;
+    canvas_move_to(cv, x + r, y);
+    canvas_arc(cv, x + w - r, y + r, r, -q, 0.0f, false);     // top-right
+    canvas_arc(cv, x + w - r, y + h - r, r, 0.0f, q, false);  // bottom-right
+    canvas_arc(cv, x + r, y + h - r, r, q, pi, false);        // bottom-left
+    canvas_arc(cv, x + r, y + r, r, pi, pi + q, false);       // top-left
+    canvas_close_path(cv);
 }
 
 void canvas_close_path(canvas *__single cv) {

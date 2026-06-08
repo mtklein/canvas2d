@@ -98,6 +98,27 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 0, 0, 1));        // even-odd: hole
     CHECK(px_near(pixel_at(px, len, w, 32, 10), 255, 0, 255, 255, 1));  // arm still filled
 
+    // Rounded rect: corners are clipped off by the radius.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_fill_rule(cv, CANVAS_NONZERO);
+    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_begin_path(cv);
+    canvas_round_rect(cv, 8.0f, 8.0f, 48.0f, 48.0f, 12.0f);
+    canvas_fill(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 1));  // interior
+    CHECK(px_near(pixel_at(px, len, w, 10, 10), 0, 0, 0, 0, 1));      // rounded corner
+
+    // Wide ellipse: filled along the long axis, empty past the short one.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_begin_path(cv);
+    canvas_ellipse(cv, 32.0f, 32.0f, 24.0f, 12.0f, 0.0f, 0.0f, 2.0f * (float)M_PI, false);
+    canvas_fill(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 52, 32), 0, 0, 255, 255, 1));  // inside long axis
+    CHECK(px_near(pixel_at(px, len, w, 32, 46), 0, 0, 0, 0, 1));      // past short axis
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

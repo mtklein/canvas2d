@@ -45,6 +45,11 @@ void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
                             float c2x, float c2y, float x, float y);
 void canvas_arc(canvas *__single cv, float x, float y, float radius,
                 float start_angle, float end_angle, bool anticlockwise);
+void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
+                    float rotation, float start_angle, float end_angle,
+                    bool anticlockwise);
+void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
+                       float radius);
 void canvas_close_path(canvas *__single cv);
 
 // Fill the current path under the current fill rule (default nonzero); handles
