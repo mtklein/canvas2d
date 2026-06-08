@@ -1,0 +1,83 @@
+# Canvas 2D coverage: the honest gap list
+
+The README's capability table shows what works. This is the complement: a sweep of
+the full [`CanvasRenderingContext2D`](https://html.spec.whatwg.org/multipage/canvas.html#canvasrenderingcontext2d)
+surface against what we actually implement, splitting **partial** (we have it, but
+narrower than spec) from **missing entirely**, plus the handful that are genuinely
+out of scope for a headless C library.
+
+This project isn't chasing spec completeness for its own sake — it's a vehicle for
+learning `-fbounds-safety`. So the selection is biased: we prioritize features
+whose hot path is *indexed-buffer-dense*, where bounds checking has something to
+say, over features that are mostly plumbing or string parsing.
+
+## Near-term plan
+
+Both chosen because their kernels are exactly the kind of dense, per-pixel,
+indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
+
+1. **`globalCompositeOperation`** — today the compositor does source-over only.
+   The Porter-Duff operators and separable blend modes (`multiply`, `screen`,
+   `overlay`, `darken`, …) are per-pixel math over two checked tile buffers.
+2. **Shadows / `filter` blur** — a separable Gaussian (or box) convolution: a
+   horizontal then vertical pass over a coverage/colour buffer, every tap an
+   indexed read against a `__counted_by` row. The canonical stencil loop.
+
+## Partial — implemented but narrower than spec
+
+- **`measureText`** returns only `.width`. The real `TextMetrics` also carries
+  `actualBoundingBoxLeft/Right/Ascent/Descent`, `fontBoundingBoxAscent/Descent`,
+  `emHeightAscent/Descent`, and the baseline offsets.
+- **Text styling** is `set_font_size` only. No font-family selection (pinned to
+  Libian TC), weight, style, or the CSS `font` shorthand; and none of
+  `textAlign`, `textBaseline`, `direction`, `letterSpacing`, `wordSpacing`,
+  `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
+- **`fillText`/`strokeText`** take no `maxWidth` (no auto-condense).
+- **Text shaping** maps code point → glyph 1:1: no ligatures, contextual forms, or
+  bidi, and only the BMP path is exercised (CJK works; emoji/astral untested).
+- **`roundRect`** takes a single uniform scalar radius; the spec allows 1–4 radii,
+  per-corner, and elliptical (x/y) corners.
+- **`fill`/`stroke`/`clip`** have no `Path2D` overload, and the fill rule is taken
+  from state rather than an explicit argument.
+- **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color
+  strings) plus linear/radial gradients — and the gradients are state setters, not
+  reusable first-class objects.
+- **`putImageData`** has no dirty-rectangle overload (`dirtyX/Y/Width/Height`).
+- **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
+- **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source),
+  and always samples bilinearly.
+- **Glyph outlines** are re-fetched from Core Text on every `fill_text` — no cache.
+
+## Missing entirely
+
+- **`strokeRect`** — we have `fillRect`/`clearRect` but not this one.
+- **`globalCompositeOperation`** — source-over only. None of the Porter-Duff modes
+  (`copy`, `destination-over/in/out/atop`, `source-in/out/atop`, `xor`, `lighter`)
+  nor the blend modes (`multiply`, `screen`, `overlay`, `darken`, `lighten`,
+  `color-dodge`, `color-burn`, `hard-light`, `soft-light`, `difference`,
+  `exclusion`, `hue`, `saturation`, `color`, `luminosity`).
+- **Shadows** — `shadowColor`, `shadowBlur`, `shadowOffsetX`, `shadowOffsetY`.
+- **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
+  `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).
+- **`createPattern`** (image patterns + `repeat`/`repeat-x`/`repeat-y`/`no-repeat`)
+  and **`createConicGradient`**.
+- **`Path2D`** — no constructible path object, no `addPath`, no SVG path-data
+  string, and none of the `fill/stroke/clip/isPointIn*` overloads that take one.
+- **Hit testing** — `isPointInPath`, `isPointInStroke`.
+- **State/readback** — `getTransform`, `getLineDash`, `reset`, `isContextLost`.
+- **Image smoothing** — `imageSmoothingEnabled` (no nearest-neighbour) and
+  `imageSmoothingQuality`.
+- **`createImageData`** — allocate a blank ImageData.
+- **Canvas resize** — width/height are fixed at create (the spec's resize also
+  clears the bitmap and resets state).
+
+## Out of scope for a headless renderer
+
+Listed for completeness; these have no meaning without a document/host, so we don't
+intend to implement them:
+
+- `drawFocusIfNeeded`, `scrollPathIntoView` — accessibility / DOM focus.
+- Context attributes (`alpha`, `desynchronized`, `willReadFrequently`,
+  `colorSpace`) and the context-loss machinery.
+- Non-buffer `drawImage` sources tied to the DOM (`HTMLVideoElement`, `VideoFrame`,
+  `ImageBitmap`, …). "Canvas-as-source" is the one genuine gap here, noted above.

@@ -173,19 +173,25 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 
 ## Capabilities and limitations
 
+This table is what works; it is a *subset* of the Canvas 2D API, and several rows
+are partial relative to the full spec. [docs/roadmap.md](docs/roadmap.md) is the
+complete, honest gap inventory (missing + partial + what's next).
+
 | Area | Status |
 |---|---|
-| Transforms, save/restore, alpha blending | ✅ |
-| `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ |
-| Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ |
+| Transforms, save/restore, alpha blending | ✅ (no `getTransform`) |
+| `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ (no `strokeRect`) |
+| Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: one scalar radius) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
-| `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
+| `getImageData` / `putImageData` (clipped 2D blits) | ◑ no dirty-rect / colorSpace |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ exact per-pixel |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage` — RGBA8 source, bilinear, transform/clip/alpha-aware | ✅ |
-| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform-aware | ✅ via Core Text shim |
+| `drawImage` — transform/clip/alpha-aware | ◑ RGBA8 source only, always bilinear |
+| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform | ◑ no align/baseline/family, `measureText` is width-only |
+| Compositing | ◑ source-over only — no `globalCompositeOperation` |
+| Shadows, `filter`, patterns, conic gradients, `Path2D`, hit-testing | ❌ see [roadmap](docs/roadmap.md) |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
@@ -236,19 +242,25 @@ hottest pure-C kernels, one command to re-measure.
 
 ## Roadmap
 
-The capability table above is the current state. What's left and what we
-deliberately won't do:
+[docs/roadmap.md](docs/roadmap.md) is the full gap inventory. Because the project
+exists to exercise `-fbounds-safety`, the near-term picks are the ones whose hot
+path is dense indexed-buffer work, where bounds checking actually has something to
+say (and which vectorize well):
 
-- **Not yet:** complex text shaping (we map code point → glyph 1:1, so no
-  ligatures, contextual forms, or bidi), text alignment / baselines beyond the
-  default, and a glyph cache (each `fill_text` re-fetches outlines).
-- **Rejected — forcing `-fbounds-safety` onto the two system-framework shims.**
-  The Metal one *can't* take the flag (it's C-only, and ARC/Objective-C is
-  required to drive Metal). The Core Text one *could*, but its headers carry no
-  bounds attributes, so checked binding means forging every opaque handle plus a
-  scoped cast for `CGPathApply` — net zero real safety, since the output buffers
-  are checked-owned regardless. Both stay isolated boundary shims behind a
-  bounds-safe C ABI. See [docs/bounds-safety.md](docs/bounds-safety.md).
+- **`globalCompositeOperation`** — per-pixel Porter-Duff + blend-mode math over two
+  checked tile buffers (today: source-over only).
+- **Shadows / `filter` blur** — a separable convolution, the canonical stencil
+  loop: every tap an indexed read against a `__counted_by` row.
+
+What we deliberately **won't** do:
+
+- **Force `-fbounds-safety` onto the two system-framework shims.** The Metal one
+  *can't* take the flag (it's C-only, and ARC/Objective-C is required to drive
+  Metal). The Core Text one *could*, but its headers carry no bounds attributes, so
+  checked binding means forging every opaque handle plus a scoped cast for
+  `CGPathApply` — net zero real safety, since the output buffers are checked-owned
+  regardless. Both stay isolated boundary shims behind a bounds-safe C ABI. See
+  [docs/bounds-safety.md](docs/bounds-safety.md).
 
 ## Layout
 
@@ -262,4 +274,5 @@ bench/bench.c            CPU-only benchmark (release vs unsafe)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs
 docs/bounds-safety.md    the write-up
+docs/roadmap.md          Canvas 2D gap inventory (missing + partial + what's next)
 ```
