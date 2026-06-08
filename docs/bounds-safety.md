@@ -40,11 +40,11 @@ the annotation just makes the relationship checkable. Our PNG encoder's
 loop body needs nothing special — indexing is checked against `n` automatically.
 
 **Slicing converts cleanly.** The single nicest surprise: to hand one subpath to
-the tessellator we write
+the stroker we write
 
 ```c
 cnvs_vec2 *poly = cv->path.pts + sp.start;          // pts is __counted_by(pt_cap)
-cnvs_tess_polygon(poly, sp.count, ...);             // param is __counted_by(n)
+cnvs_stroke_polyline(poly, sp.count, ...);          // param is __counted_by(n)
 ```
 
 `pts + sp.start` decays the counted pointer to a `__bidi_indexable` that *keeps*

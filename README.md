@@ -10,8 +10,8 @@ The point of the project is twofold:
 2. **Show that C can play with the modern big boys (Rust).** The whole codebase
    compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only five
    warnings disabled (each documented), and the interesting work — path math,
-   curve flattening, tessellation, stroking, a PNG encoder — lives in
-   bounds-checked C. Metal is just a triangle rasteriser.
+   curve flattening, scanline fills, stroking, gradients, a PNG encoder — lives
+   in bounds-checked C. Metal is just a triangle rasteriser.
 
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
