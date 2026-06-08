@@ -1,7 +1,7 @@
 # canvas2d
 
 A C23 implementation of (a growing subset of) the HTML **Canvas 2D API**,
-rasterised on the GPU via **Metal**, built with **ninja**.
+antialiased in C and composited on the GPU via **Metal**, built with **ninja**.
 
 The point of the project is twofold:
 
@@ -10,15 +10,15 @@ The point of the project is twofold:
 2. **Show that C can play with the modern big boys (Rust).** The whole codebase
    compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only five
    warnings disabled (each documented), and the interesting work — path math,
-   curve flattening, scanline fills, stroking, gradients, a PNG encoder — lives
-   in bounds-checked C. Metal is just a triangle rasteriser.
+   curve flattening, analytic-coverage antialiasing, stroking, gradients, a PNG
+   encoder — lives in bounds-checked C. Metal is just a tile compositor.
 
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
 
 ## Gallery
 
-Every image below is rendered by the C core on the GPU and written by the in-tree
+Every image below is rendered by the C core, composited on the GPU, and written by the in-tree
 PNG encoder ([examples/gallery.c](examples/gallery.c)); regenerate with `ninja images`.
 
 Transforms, `save`/`restore`, global alpha, filled Béziers and arcs, strokes:
@@ -43,18 +43,18 @@ Path primitives — a filled ellipse and a rounded rectangle (filled + outlined)
 ![paths](gallery/paths.png)
 
 Clipping — a circular window, the intersection of two discs, and a
-self-intersecting star, each masking the same flood of stripes (GPU stencil):
+self-intersecting star, each masking the same flood of stripes (coverage mask):
 
 ![clip](gallery/clip.png)
 
 Gradients — a diagonal linear fill (outlined with a cyan→yellow gradient
 *stroke*), an off-centre radial "sphere", and a multi-stop rainbow ramp
-(evaluated on the CPU, Gouraud-interpolated):
+(evaluated exactly per pixel on the CPU):
 
 ![gradients](gallery/gradients.png)
 
 Batching — 320 translucent discs, each its own `fill()`, all submitted in a
-single GPU command buffer (the alpha overlap shows ordering is preserved):
+single compositor command buffer (the alpha overlap shows ordering is preserved):
 
 ![batch](gallery/batch.png)
 
@@ -93,34 +93,36 @@ Three variants are produced from one source tree:
 ```
         public API (include/canvas.h)
                   │
-   canvas.c  ── state stack, CTM, styles; orchestrates the pipeline
+   canvas.c  ── state stack, CTM, styles; rasterizes coverage, builds tiles
       │  │
       │  ├── cnvs_math     2x3 affine transforms
       │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
-      │  ├── cnvs_fill     scanline rasterizer → spans (winding rules)
-      │  ├── cnvs_gradient linear/radial ramp eval → per-vertex colours
+      │  ├── cnvs_cover     analytic (signed-area) coverage → per-pixel alpha
+      │  ├── cnvs_gradient linear/radial ramp, evaluated per pixel into a tile
       │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
       │  ├── cnvs_geom     growable vertex/int buffers
       │  └── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
       │
-      ▼   gpu.h  (C ABI: opaque gpu*, gpu_vert, gpu_rgba)
-   metal_backend.m  ── the ONE unsafe boundary: device, pipelines, 4x MSAA
-                        target, batched draws, stencil clip, readback
-                        (ObjC + ARC)
+      ▼   compositor.h  (C ABI: opaque compositor*, RGBA8 tiles + a clip mask)
+   compositor_metal.m  ── the ONE unsafe boundary: blend / replace / clear of
+                          tiles onto a single-sample target, masked by a clip
+                          coverage texture, batched + read back  (ObjC + ARC)
 ```
 
-Everything above `gpu.h` is pure C23 under `-fbounds-safety`. The
-[Metal backend](src/metal_backend.m) is the single boundary to a system
-framework. All transform and geometry math happens on the CPU in checked C and
-bakes into pixel-space triangles, so the GPU stays a dumb triangle rasteriser
-and the bounds-safety surface stays in C.
+Everything above `compositor.h` is pure C23 under `-fbounds-safety`. The
+[Metal compositor](src/compositor_metal.m) is the single boundary to a system
+framework — and it is *just* a compositor: all geometry, **analytic
+antialiasing**, gradient evaluation, and clipping happen on the CPU in checked C
+and bake into finished RGBA8 tiles, so the GPU never rasterizes or masks and the
+bounds-safety surface stays in C. Nothing in the ABI is GPU-specific; a CPU
+backend could implement `compositor.h` identically.
 
 > The shim is the project's only translation unit *not* under `-fbounds-safety`:
 > the flag is C-only and rejects Objective-C. That's sound because
-> `__counted_by`/`__single` pointers share the plain-C-pointer ABI, so `gpu.h` is
-> identical on both sides. See [docs/bounds-safety.md](docs/bounds-safety.md) for
-> why we don't route around the limitation.
+> `__counted_by`/`__single` pointers share the plain-C-pointer ABI, so
+> `compositor.h` is identical on both sides. See
+> [docs/bounds-safety.md](docs/bounds-safety.md) for why we don't route around it.
 
 ## Public API (subset of Canvas 2D, snake_case)
 
@@ -150,14 +152,14 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | Transforms, save/restore, alpha blending | ✅ |
 | `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ |
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ |
-| `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ scanline rasterizer |
+| `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
-| `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ GPU stencil |
-| Gradients — linear + radial, fills *and* strokes, multi-stop, CPU-evaluated | ✅ Gouraud |
-| Anti-aliasing | ✅ 4× MSAA (full on strokes; span-edge on scan-converted fills) |
+| `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
+| Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ exact per-pixel |
+| Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage`, text | ❌ not yet |
-| Batched GPU submission | ✅ consecutive draws share one command buffer |
+| Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
 
@@ -187,21 +189,24 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 69 ms | 67 ms | **1.02×** |
-| `bench_flatten` — cubic-Bézier flattening | 118 ms | 110 ms | **1.07×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 54 ms | 49 ms | **1.10×** |
-| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 109 ms | 87 ms | **1.26×** |
-| `bench_fill` — scanline fill (edge gather, crossing sort, winding walk) | 110 ms | 74 ms | **1.48×** |
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 118 ms | 48 ms | **2.44×** |
-| `bench` — end-to-end | 198 ms | 157 ms | **1.27×** |
+| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 73 ms | 70 ms | **1.04×** |
+| `bench_flatten` — cubic-Bézier flattening | 120 ms | 113 ms | **1.07×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 56 ms | 51 ms | **1.10×** |
+| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 114 ms | 90 ms | **1.27×** |
+| `bench_fill` — analytic coverage fill (signed-area accumulate + resolve) | 32 ms | 25 ms | **1.30×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 121 ms | 50 ms | **2.44×** |
+| `bench` — end-to-end | 131 ms | 103 ms | **1.27×** |
 
 The spread is the point: the 2D blit — four bounds-checked byte loads and stores
 per pixel across two buffers, with no arithmetic to amortize them — pays the most
 at **~2.4×**, while gradient evaluation and flattening (lots of float math between
-a few indexed reads) are nearly free at **2–7%**. The end-to-end 1.27× is a blend
-that, on its own, would mask both. Real canvas rendering is GPU-bound,
-so the end-to-end cost of safety is smaller still — but these are the honest prices
-on the hottest pure-C kernels, one command to re-measure.
+a few indexed reads) are nearly free at **4–7%**. The end-to-end 1.27× is a blend
+that, on its own, would mask both. The analytic coverage fill is also the *fastest*
+fill the project has had — replacing the scanline rasterizer (edge sort + per-row
+crossing sort) with a sort-free accumulation buffer cut its release time to a third
+and its overhead from 1.48× to 1.30×. Real canvas rendering is GPU-bound, so the
+end-to-end cost of safety is smaller still — but these are the honest prices on the
+hottest pure-C kernels, one command to re-measure.
 
 ## Roadmap
 
@@ -211,31 +216,31 @@ on the hottest pure-C kernels, one command to re-measure.
   stays an isolated ObjC shim; see [docs/bounds-safety.md](docs/bounds-safety.md).
 - ~~A `release`-vs-`unsafe` benchmark for the cost of `-fbounds-safety`~~ — done
   (`ninja benchcmp`); see above.
-- ~~Winding-rule fills (holes, self-intersection)~~ — done; scanline rasterizer
-  ([cnvs_fill.c](src/cnvs_fill.c)) with nonzero + even-odd.
+- ~~Winding-rule fills (holes, self-intersection)~~ — done; nonzero + even-odd,
+  now via the analytic coverage rasterizer ([cnvs_cover.c](src/cnvs_cover.c)).
 - ~~`getImageData` / `putImageData`~~ — done; clipped 2D blits
   ([cnvs_image.c](src/cnvs_image.c)).
-- ~~`clip()`~~ — done; the scanline fill's non-overlapping spans drive a GPU
-  stencil mask ([metal_backend.m](src/metal_backend.m), `gpu_clip_add`).
-- ~~Gradients~~ — done; linear + radial, multi-stop, evaluated on the CPU
-  ([cnvs_gradient.c](src/cnvs_gradient.c)) and Gouraud-interpolated on the GPU.
-- ~~Batched GPU submission~~ — done; consecutive draws share one command buffer,
-  flushed only at a readback, clip change, or region write
-  ([metal_backend.m](src/metal_backend.m), `open_batch`/`flush_batch`).
-- ~~Anti-aliasing (MSAA)~~ — done; 4× multisample colour + stencil resolving to
-  the readback target ([metal_backend.m](src/metal_backend.m)).  Strokes (real
-  triangles) antialias fully; scan-converted fills/clips antialias along their
-  span edges (near-horizontal edges keep ~1px stepping).
+- ~~`clip()`~~ — done; a per-pixel coverage mask the compositor multiplies into
+  every blend ([canvas.c](src/canvas.c) `canvas_clip`).
+- ~~Gradients~~ — done; linear + radial, multi-stop, evaluated exactly per pixel
+  into the tile ([cnvs_gradient.c](src/cnvs_gradient.c)).
+- ~~Batched compositor submission~~ — done; consecutive ops share one command
+  buffer, flushed only at a readback or clip change
+  ([compositor_metal.m](src/compositor_metal.m), `open_batch`/`flush_batch`).
+- ~~Anti-aliasing~~ — done, and the big one: analytic (signed-area) coverage in
+  checked C ([cnvs_cover.c](src/cnvs_cover.c)) antialiases fills, strokes, and
+  clip edges in **both** axes; the GPU is now a pure tile compositor with no
+  MSAA. See the AA discussion in [docs/bounds-safety.md](docs/bounds-safety.md).
 - `drawImage`, text.
 
 ## Layout
 
 ```
-configure.py            generates build.ninja (release, debug, unsafe)
+configure.py             generates build.ninja (release, debug, unsafe)
 include/canvas.h         public API
-src/                     C core + the ObjC Metal shim
-shaders/canvas.metal     vertex+fragment shaders (embedded via #embed)
-tests/                   unit + GPU pixel tests + a bounds-safety trap test
+src/                     C core + the ObjC Metal compositor shim
+shaders/compositor.metal tile vertex+fragment shaders (embedded via #embed)
+tests/                   unit + pixel tests + a bounds-safety trap test
 bench/bench.c            CPU-only benchmark (release vs unsafe)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs

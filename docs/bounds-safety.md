@@ -1,6 +1,6 @@
 # Building with `-fbounds-safety`: what worked, what fought back
 
-This is a field report from writing the `canvas2d` core — ~1.3k lines of C23 —
+This is a field report from writing the `canvas2d` core — ~2k lines of C23 —
 entirely under `-std=c23 -fbounds-safety -Werror -Weverything`. It's opinionated
 and specific; the goal is to capture what we actually learned, including the
 sharp edges, while it's fresh.
@@ -132,17 +132,19 @@ didn't anticipate. Our own tests carry the `__single` annotations as a result.
 cascade of parse errors, rather than a clear "you forgot an include." Bit us once
 when a header pulled in only `cnvs_math.h`.
 
-**Sorting a `__counted_by` array: the generic-callback gap.** The scanline fill
-sorts its edge table. `qsort(edges->data, len, sizeof, cmp)` *works* — the counted
-pointer converts to the `void *` the SDK wants (always allowed) — but the bounds
-evaporate inside the comparator, which receives bare `const void *` arguments;
-you `__unsafe_forge_single` each back to a `cnvs_edge const *`. qsort's own element
-swaps are unchecked too (you're trusting `nmemb`). So the array is checked
-everywhere *except the sort itself*. By contrast the per-scanline crossings use a
-hand-rolled insertion sort over the `__counted_by` array, where every
-`data[j]`/`data[j+1]` stays checked. The lesson: any generic callback API
-(`qsort`, `bsearch`, …) is a hole exactly at the callback boundary — for the small,
-hot ones, writing your own keeps the checking end to end.
+**Sorting a `__counted_by` array: the generic-callback gap.** An earlier scanline
+rasterizer sorted its edge table with `qsort(edges->data, len, sizeof, cmp)`. It
+*works* — the counted pointer converts to the `void *` the SDK wants (always
+allowed) — but the bounds evaporate inside the comparator, which receives bare
+`const void *` arguments; you `__unsafe_forge_single` each back to a typed pointer,
+and qsort's own element swaps are unchecked too (you're trusting `nmemb`). So the
+array was checked everywhere *except the sort itself*. The lesson stands for any
+generic callback API (`qsort`, `bsearch`, …): it's a hole exactly at the callback
+boundary, and for the small hot ones, hand-rolling keeps the checking end to end.
+The coda is the happier resolution: the analytic coverage rasterizer that
+[replaced the scanline fill](#the-analytic-aa-redesign-the-strongest-demonstration)
+sorts *nothing* — it accumulates signed area into a per-pixel buffer and resolves
+with a prefix sum — so the gap simply stopped applying to our hottest path.
 
 **Allocation needs the `void*` conversion.** `T *p = malloc(...)` assigns a
 `void*` to a typed pointer; `-Weverything` flags that under
@@ -152,6 +154,40 @@ bounds-safety hole: assigning an undersized allocation to a `__counted_by(n)`
 target still traps at runtime (we verified — exit 133). The size check is
 independent of the cast diagnostic.
 
+## The analytic-AA redesign: the strongest demonstration
+
+The project's most pointed `-fbounds-safety` argument came out of chasing
+antialiasing quality. The first cut used **4× MSAA** on the GPU. It looked
+mediocre on round and near-horizontal edges, and the reason is instructive: MSAA
+only antialiases the geometry the GPU actually rasterizes, and we were handing it
+a *staircase*. The scanline fill scan-converted each shape on the CPU into 1px-tall
+axis-aligned span rectangles; MSAA then antialiased those rectangles' left/right
+ends but nothing vertically (adjacent rows abut at integer y), so a circle's top
+and bottom stepped in whole pixels regardless of sample count. More samples could
+not fix it — the sub-pixel shape was already gone before the GPU saw anything.
+
+The fix moved antialiasing entirely into C: an **analytic, signed-area coverage
+rasterizer** ([cnvs_cover.c](../src/cnvs_cover.c)). Each edge deposits the exact
+fractional area it leaves to its right into a per-pixel accumulation buffer; a
+per-row prefix sum turns that into winding-weighted coverage that the fill rule
+folds to `[0,1]`. The result is exact coverage in *both* axes, and it feeds a tile
+the GPU merely composites. Clipping became a per-pixel coverage mask, gradients are
+evaluated per pixel into the tile, and the Metal backend collapsed from a
+stencil-and-MSAA rasterizer into [a tile compositor](../src/compositor_metal.m)
+with three blend modes.
+
+Why this is the headline for a memory-safety story: **the thing a 2D renderer is
+judged on — edge quality — now lives entirely in bounds-checked C.** The hot loop
+is dense indexed-buffer work (`acc[base + col] += ...` per edge per row, every
+index guarded against the `__counted_by(cap)` accumulation buffer; a prefix-sum
+resolve; clip-mask intersection; per-pixel tile assembly) — exactly the code
+`-fbounds-safety` exists to protect, and it compiled and ran with zero annotation
+friction. The GPU does no rasterization, no masking, no antialiasing. And the
+analytic rasterizer is *faster* than the scanline one it replaced (no edge sort,
+no per-row crossing sort): its release time dropped to a third and its
+bounds-safety overhead from 1.48× to 1.30×. Higher quality, less code on the GPU,
+and a lower safety tax — all at once.
+
 ## What it costs
 
 We measure this directly: the `release` and `unsafe` builds are identical `-Os`
@@ -160,11 +196,12 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
 | phase | overhead |
 |---|---|
+| gradient eval | 1.04× |
 | cubic-Bézier flattening | 1.07× |
-| stroke expansion | 1.22× |
+| stroke expansion | 1.10× |
 | PNG encode | 1.27× |
-| scanline fill | 1.47× |
-| 2D RGBA8 blit | **2.43×** |
+| analytic coverage fill | 1.30× |
+| 2D RGBA8 blit | **2.44×** |
 | end-to-end | 1.27× |
 
 The isolation matters. The end-to-end 1.27× is a blend that hides a wide spread
@@ -186,12 +223,12 @@ the spread shows:
 ## ABI and the C ↔ Objective-C boundary
 
 The most important practical property: because `__counted_by`/`__single` have
-plain-pointer ABI, the C core and the Objective-C Metal shim share `gpu.h`
+plain-pointer ABI, the C core and the Objective-C Metal shim share `compositor.h`
 verbatim. The shim is (currently) compiled without `-fbounds-safety`, so the
 annotations there expand to nothing — and that's *sound*, not a fudge, precisely
-because the representations match. `gpu_draw_solid(gpu*, gpu_vert const
-*__counted_by(count), int count, ...)` is a checked call on the C side and an
-ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
+because the representations match. `compositor_blend(compositor*, int x, int y,
+int w, int h, uint8_t const *__counted_by(w*h*4) tile)` is a checked call on the C
+side and an ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
 
 ### Can the boundary itself be bounds-safe? No — and that's fine
 
@@ -214,44 +251,43 @@ We tried. Two findings, both verified:
 
 So "blanket `-fbounds-safety`" is reachable only in the hollow sense that every
 TU compiles with the flag; the GPU TU would check nothing. And there is nothing
-to check there: the backend forwards already-bounds-checked vertices and pixels
-straight to Metal as `void*`; all the CPU buffer logic lives in the C core,
-which is already fully covered.
+to check there: the compositor forwards already-rendered RGBA8 tiles straight to
+Metal as `void*`; all the geometry, coverage, gradient, and clip logic lives in
+the C core, which is already fully covered.
 
 The principled conclusion — and the design we keep — is a 100% bounds-safe C
-core with a small, explicit, **isolated** Objective-C boundary (one ~190-line
-`.m` file). That isolation is not a limitation to apologise for; it's where the
-unsafe platform edge belongs, named and contained. `-fbounds-safety`'s value is
-in the code that actually manipulates memory, and that is all in C.
+core with a small, explicit, **isolated** Objective-C boundary (one `.m` file
+that does nothing but blend tiles). That isolation is not a limitation to
+apologise for; it's where the unsafe platform edge belongs, named and contained.
+`-fbounds-safety`'s value is in the code that actually manipulates memory, and
+that is all in C.
 
 ## Regrets / things we'd reconsider
 
-- **Two nearly identical 2D point types.** `cnvs_vec2` (math) and `gpu_vert`
-  (the GPU ABI) are both `{float x, y;}`. Keeping them separate avoids coupling
-  the math layer to the rendering ABI, but it costs a few trivial conversions.
-  Defensible, mildly annoying.
-- **Hand-rolled per-type vectors.** `cnvs_verts`, `cnvs_edges`, `cnvs_xings` are
-  copy-paste-shaped. A generic macro would remove the duplication, but generic
-  containers interact awkwardly with `-fbounds-safety` (you can't take the
-  address of a `__counted_by` field and pass it around as `void**` without
-  breaking the pointer/count coupling the compiler enforces), and macro-defined
-  containers risk `-Wunused-macros` noise. Concrete types stayed clearer.
-- **Correctness-first GPU submission.** One command buffer per draw with
-  `waitUntilCompleted` is simple and obviously correct, and useless for
-  throughput. The perf story needs batching.
-- **The fill is geometry-heavy.** The scanline rasterizer emits roughly
-  `rows × spans` quads rather than a minimal triangulation — correct for every
-  winding case, but a lot of triangles. Span coalescing across rows, or an
-  incremental active-edge table, would cut both the geometry and the per-row work.
-- **Stroke shortcuts.** `stroke()` does bevel joins / butt caps with inner-side
-  double-cover — an honest scope cut, documented in the header, not a bug.
+- **Hand-rolled per-type vectors.** `cnvs_verts` and the `cnvs_cover`/clip-mask
+  buffers are copy-paste-shaped growable arrays. A generic macro would remove the
+  duplication, but generic containers interact awkwardly with `-fbounds-safety`
+  (you can't take the address of a `__counted_by` field and pass it around as
+  `void**` without breaking the pointer/count coupling the compiler enforces), and
+  macro-defined containers risk `-Wunused-macros` noise. Concrete types stayed
+  clearer.
+- **Full-canvas clip masks.** A clip is one coverage byte per canvas pixel, and
+  `save()` deep-copies it. Correct and simple, but heavier than a bounding-box or
+  reference-counted mask would be. Fine at the scales here.
+- **Coverage rasterized over the whole bbox.** Even a thin shape allocates and
+  resolves a full bounding-box coverage tile. A run-based or active-edge variant
+  would touch fewer pixels; the accumulation approach was chosen for clarity and
+  for being sort-free.
+
+Several earlier regrets are now resolved: the duplicate `cnvs_vec2`/`gpu_vert`
+point types collapsed into one when the GPU ABI went away; per-draw submission
+gained batching; and the geometry-heavy scanline fill and its stroke/AA shortcuts
+were superseded by the analytic coverage rasterizer.
 
 ## Aspirations
 
-- **Anti-aliasing** (MSAA), miter/round joins, gradients, clipping.
-- **Batched GPU submission** — one command buffer per frame instead of per draw.
-- Images: `drawImage` / `getImageData` (2D strided blits — the next rich
-  bounds-safety target).
+- `drawImage` (image sampling — likely CPU bilinear, another rich bounds-safety
+  target) and text.
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 
