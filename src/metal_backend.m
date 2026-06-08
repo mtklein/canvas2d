@@ -15,7 +15,7 @@
 
 // The Metal shader source, embedded at build time (C23 #embed) and compiled at
 // runtime -- so the build needs no offline Metal toolchain component.
-static const char canvas_metal_src[] = {
+static char const canvas_metal_src[] = {
 #embed <canvas.metal>
     , 0  // NUL-terminate to form a valid C string
 };
@@ -133,7 +133,7 @@ void gpu_clear(gpu *g, gpu_rgba color) {
     }
 }
 
-void gpu_draw_solid(gpu *g, const gpu_vert *verts, int count,
+void gpu_draw_solid(gpu *g, gpu_vert const *verts, int count,
                     gpu_rgba color, bool blend) {
     if (!g || count <= 0 || !verts) {
         return;

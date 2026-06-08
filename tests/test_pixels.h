@@ -12,7 +12,7 @@ struct px4 {
     uint8_t r, g, b, a;
 };
 
-static inline struct px4 pixel_at(const uint8_t *__counted_by(len) px, int len,
+static inline struct px4 pixel_at(uint8_t const *__counted_by(len) px, int len,
                                   int w, int x, int y) {
     (void)len;
     int o = (y * w + x) * 4;

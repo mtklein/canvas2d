@@ -64,4 +64,4 @@ void canvas_stroke(canvas *__single cv);
 // `len` must equal width*height*4.
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);
 
-bool canvas_write_png(canvas *__single cv, const char *__null_terminated path);
+bool canvas_write_png(canvas *__single cv, char const *__null_terminated path);

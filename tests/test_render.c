@@ -6,9 +6,9 @@
 #include <stdlib.h>
 
 int main(void) {
-    const int w = 8;
-    const int h = 8;
-    const int len = w * h * 4;
+    int const w = 8;
+    int const h = 8;
+    int const len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
     CHECK(px != NULL);
     if (!px) {

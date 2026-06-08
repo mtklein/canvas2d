@@ -25,9 +25,9 @@ int main(void) {
     cnvs_ints ring = { .data = NULL, .len = 0, .cap = 0 };
 
     double sink = 0.0;
-    const int frames = 400;
-    const float w = 512.0f;
-    const float h = 512.0f;
+    int const frames = 400;
+    float const w = 512.0f;
+    float const h = 512.0f;
 
     for (int f = 0; f < frames; f++) {
         cnvs_path_reset(&path);
@@ -70,9 +70,9 @@ int main(void) {
     // PNG encoding -> stress the per-byte bounds-checked output cursor plus the
     // CRC32/Adler32 loops.  Output goes to /dev/null so disk I/O isn't timed.
     {
-        const int iw = 256;
-        const int ih = 256;
-        const int len = iw * ih * 4;
+        int const iw = 256;
+        int const ih = 256;
+        int const len = iw * ih * 4;
         uint8_t *px = malloc((size_t)len);
         if (px) {
             for (int i = 0; i < len; i++) {

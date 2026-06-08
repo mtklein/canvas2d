@@ -36,7 +36,7 @@ exists mostly as an intermediate the compiler threads through expressions.
 **`__counted_by` on function parameters is frictionless and expressive.**
 Passing `(pointer, count)` pairs is exactly how careful C already gets written;
 the annotation just makes the relationship checkable. Our PNG encoder's
-`adler32(const uint8_t *__counted_by(n) data, size_t n)` reads naturally and the
+`adler32(uint8_t const *__counted_by(n) data, size_t n)` reads naturally and the
 loop body needs nothing special — indexing is checked against `n` automatically.
 
 **Slicing converts cleanly.** The single nicest surprise: to hand one subpath to
@@ -106,7 +106,7 @@ fails differently: `argument of '__counted_by' attribute cannot refer to
 declaration of a different lifetime`. The rules that actually hold:
 
 - A counted local works if its count is a **`const`** declared immediately
-  adjacent (`const int n = ...; int *__counted_by(n) p = ...;`). We use exactly
+  adjacent (`int const n = ...; int *__counted_by(n) p = ...;`). We use exactly
   this in `canvas_write_png` and the PNG buffer.
 - A *mutable* counted local drags its pointer along on every assignment to the
   count — usable but fiddly, so we just don't. Capacity math is done on a plain
@@ -175,7 +175,7 @@ The most important practical property: because `__counted_by`/`__single` have
 plain-pointer ABI, the C core and the Objective-C Metal shim share `gpu.h`
 verbatim. The shim is (currently) compiled without `-fbounds-safety`, so the
 annotations there expand to nothing — and that's *sound*, not a fudge, precisely
-because the representations match. `gpu_draw_solid(gpu*, const gpu_vert
+because the representations match. `gpu_draw_solid(gpu*, gpu_vert const
 *__counted_by(count), int count, ...)` is a checked call on the C side and an
 ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
 

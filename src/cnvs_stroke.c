@@ -38,7 +38,7 @@ static bool emit_join(cnvs_verts *out, cnvs_vec2 v,
            cnvs_verts_tri(out, vsub(v, n_prev), c, vsub(v, n_next));
 }
 
-bool cnvs_stroke_polyline(const cnvs_vec2 *__counted_by(n) pts, int n,
+bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n,
                           bool closed, float half_width, cnvs_verts *out) {
     if (n < 2 || half_width <= 0.0f) {
         return true;

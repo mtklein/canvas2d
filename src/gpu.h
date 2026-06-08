@@ -33,7 +33,7 @@ void gpu_clear(gpu *__single g, gpu_rgba color);
 // `blend` is true the triangles composite with source-over alpha blending;
 // when false they overwrite the target (used to implement clearRect).
 void gpu_draw_solid(gpu *__single g,
-                    const gpu_vert *__counted_by(count) verts, int count,
+                    gpu_vert const *__counted_by(count) verts, int count,
                     gpu_rgba color, bool blend);
 
 // Copy the rendered image into `out` as tightly packed RGBA8, top row first.

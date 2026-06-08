@@ -12,5 +12,5 @@
 
 #include <ptrcheck.h>
 
-bool cnvs_stroke_polyline(const cnvs_vec2 *__counted_by(n) pts, int n,
+bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n,
                           bool closed, float half_width, cnvs_verts *out);

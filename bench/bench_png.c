@@ -12,9 +12,9 @@
 #define DIM 256
 
 int main(void) {
-    const int w = DIM;
-    const int h = DIM;
-    const int len = w * h * 4;
+    int const w = DIM;
+    int const h = DIM;
+    int const len = w * h * 4;
     uint8_t *px = malloc((size_t)len);
     if (!px) {
         return 1;

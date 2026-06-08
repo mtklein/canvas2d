@@ -305,8 +305,8 @@ void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int l
     gpu_read_rgba(cv->g, out, len);
 }
 
-bool canvas_write_png(canvas *__single cv, const char *__null_terminated path) {
-    const int len = cv->width * cv->height * 4;
+bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
+    int const len = cv->width * cv->height * 4;
     uint8_t *__counted_by(len) out = malloc((size_t)len);
     if (!out) {
         return false;

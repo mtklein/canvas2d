@@ -4,16 +4,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static uint32_t rd32be(const uint8_t *__counted_by(n) b, int n, int off) {
+static uint32_t rd32be(uint8_t const *__counted_by(n) b, int n, int off) {
     (void)n;
     return ((uint32_t)b[off] << 24) | ((uint32_t)b[off + 1] << 16) |
            ((uint32_t)b[off + 2] << 8) | (uint32_t)b[off + 3];
 }
 
 int main(void) {
-    const int w = 4;
-    const int h = 3;
-    const int len = w * h * 4;
+    int const w = 4;
+    int const h = 3;
+    int const len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
     CHECK(px != NULL);
     if (!px) {
@@ -23,7 +23,7 @@ int main(void) {
         px[i] = (uint8_t)(i * 7 + 3);
     }
 
-    const char *__null_terminated path = "build/test_png_out.png";
+    char const *__null_terminated path = "build/test_png_out.png";
     CHECK(cnvs_png_write(path, px, w, h));
     free(px);
 
@@ -36,7 +36,7 @@ int main(void) {
     long sz_l = ftell(f);
     (void)fseek(f, 0, SEEK_SET);
     CHECK(sz_l > 33);
-    const int sz = (int)sz_l;
+    int const sz = (int)sz_l;
     uint8_t *__counted_by(sz) buf = malloc((size_t)sz);
     CHECK(buf != NULL);
     if (!buf) {
@@ -47,7 +47,7 @@ int main(void) {
     (void)fclose(f);
     CHECK(got == (size_t)sz);
 
-    static const uint8_t sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+    static uint8_t const sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
     for (int i = 0; i < 8; i++) {
         CHECK(buf[i] == sig[i]);
     }

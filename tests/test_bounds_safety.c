@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 static void out_of_bounds_write(int idx) {
-    const int n = 8;
+    int const n = 8;
     int *__counted_by(n) a = calloc((size_t)n, sizeof(int));
     if (!a) {
         _exit(2);

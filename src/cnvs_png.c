@@ -46,7 +46,7 @@ static void crc_init(void) {
 }
 
 // CRC32 over the already-written bytes in [start, end) of the output.
-static uint32_t crc32_range(const struct writer *w, size_t start, size_t end) {
+static uint32_t crc32_range(struct writer const *w, size_t start, size_t end) {
     if (!g_crc_ready) {
         crc_init();
     }
@@ -60,7 +60,7 @@ static uint32_t crc32_range(const struct writer *w, size_t start, size_t end) {
 
 // --- zlib stream (stored/uncompressed deflate blocks) ----------------------
 
-static uint32_t adler32(const uint8_t *__counted_by(n) data, size_t n) {
+static uint32_t adler32(uint8_t const *__counted_by(n) data, size_t n) {
     uint32_t s1 = 1, s2 = 0;
     for (size_t i = 0; i < n; i++) {
         s1 = (s1 + data[i]) % 65521u;
@@ -70,7 +70,7 @@ static uint32_t adler32(const uint8_t *__counted_by(n) data, size_t n) {
 }
 
 static void emit_zlib(struct writer *w,
-                      const uint8_t *__counted_by(rawlen) raw, size_t rawlen) {
+                      uint8_t const *__counted_by(rawlen) raw, size_t rawlen) {
     put8(w, 0x78);  // zlib header: CM=deflate, CINFO=7 ...
     put8(w, 0x01);  // ... FLEVEL=0, FCHECK makes 0x7801 a multiple of 31.
     size_t off = 0;
@@ -93,8 +93,8 @@ static void emit_zlib(struct writer *w,
 
 // ---------------------------------------------------------------------------
 
-bool cnvs_png_write(const char *__null_terminated path,
-                    const uint8_t *__counted_by(width * height * 4) pixels,
+bool cnvs_png_write(char const *__null_terminated path,
+                    uint8_t const *__counted_by(width * height * 4) pixels,
                     int width, int height) {
     // Bound the size so the integer arithmetic below cannot overflow.
     if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
@@ -102,7 +102,7 @@ bool cnvs_png_write(const char *__null_terminated path,
     }
 
     int stride = width * 4;
-    const size_t rawlen = (size_t)height * (size_t)(stride + 1);
+    size_t const rawlen = (size_t)height * (size_t)(stride + 1);
 
     // Build the filtered raw stream: each row is prefixed with filter byte 0.
     uint8_t *__counted_by(rawlen) raw = malloc(rawlen);
@@ -125,7 +125,7 @@ bool cnvs_png_write(const char *__null_terminated path,
     // Pre-compute the exact output size.
     size_t nseg = (rawlen + 65534u) / 65535u;
     size_t zlib_len = 2u + 5u * nseg + rawlen + 4u;
-    const size_t total = 8u                       // PNG signature
+    size_t const total = 8u                       // PNG signature
                        + (12u + 13u)              // IHDR
                        + (12u + zlib_len)          // IDAT
                        + 12u;                      // IEND
@@ -138,7 +138,7 @@ bool cnvs_png_write(const char *__null_terminated path,
     struct writer w = { .buf = out, .cap = total, .at = 0 };
 
     // Signature.
-    static const uint8_t sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
+    static uint8_t const sig[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
     for (int i = 0; i < 8; i++) {
         put8(&w, sig[i]);
     }

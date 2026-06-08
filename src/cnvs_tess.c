@@ -20,7 +20,7 @@ static bool in_tri(cnvs_vec2 pt, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
     return !(any_neg && any_pos);
 }
 
-static float poly_area2(const cnvs_vec2 *__counted_by(n) poly, int n) {
+static float poly_area2(cnvs_vec2 const *__counted_by(n) poly, int n) {
     float s = 0.0f;
     for (int i = 0; i < n; i++) {
         cnvs_vec2 a = poly[i];
@@ -30,7 +30,7 @@ static float poly_area2(const cnvs_vec2 *__counted_by(n) poly, int n) {
     return s;
 }
 
-bool cnvs_tess_polygon(const cnvs_vec2 *__counted_by(n) poly, int n,
+bool cnvs_tess_polygon(cnvs_vec2 const *__counted_by(n) poly, int n,
                        cnvs_verts *out, cnvs_ints *scratch) {
     if (n < 3) {
         return true;

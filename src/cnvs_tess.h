@@ -14,5 +14,5 @@
 // Triangulate `poly` (n points) into `out` as gpu_vert triples.  `scratch` is a
 // caller-owned working buffer reused across calls.  Returns false only on
 // allocation failure.
-bool cnvs_tess_polygon(const cnvs_vec2 *__counted_by(n) poly, int n,
+bool cnvs_tess_polygon(cnvs_vec2 const *__counted_by(n) poly, int n,
                        cnvs_verts *out, cnvs_ints *scratch);
