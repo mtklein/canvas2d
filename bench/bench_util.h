@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cnvs_cover.h"
 #include "cnvs_math.h"
 #include "cnvs_path.h"
 
@@ -37,5 +38,23 @@ static inline void bench_stars(cnvs_path *path, int count, float w, float h) {
             }
         }
         cnvs_path_close(path);
+    }
+}
+
+// Accumulate every subpath edge of `p` into a w*h coverage raster (each subpath
+// implicitly closed).  The shared fill hot path for the benchmarks.
+static inline void bench_cover_path(cnvs_cover *cov, int w, int h,
+                                    cnvs_path const *p) {
+    cnvs_cover_reset(cov, w, h);
+    for (int s = 0; s < p->sp_len; s++) {
+        cnvs_subpath sp = p->subs[s];
+        if (sp.count < 2) {
+            continue;
+        }
+        for (int k = 0; k < sp.count; k++) {
+            cnvs_vec2 a = p->pts[sp.start + k];
+            cnvs_vec2 b = p->pts[sp.start + (k + 1) % sp.count];
+            cnvs_cover_add_edge(cov, w, h, a.x, a.y, b.x, b.y);
+        }
     }
 }

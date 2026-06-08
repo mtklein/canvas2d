@@ -4,7 +4,7 @@
 
 #include "bench_util.h"
 
-#include "cnvs_fill.h"
+#include "cnvs_cover.h"
 #include "cnvs_geom.h"
 #include "cnvs_path.h"
 #include "cnvs_png.h"
@@ -17,32 +17,31 @@ int main(void) {
     cnvs_path path;
     cnvs_path_init(&path);
     cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
-    cnvs_edges edges = { .data = NULL, .len = 0, .cap = 0 };
-    cnvs_xings xings = { .data = NULL, .len = 0, .cap = 0 };
-    cnvs_spans spans = { .data = NULL, .len = 0, .cap = 0 };
+    cnvs_cover cover = { .acc = NULL, .cap = 0 };
 
+    int const w = 512;
+    int const h = 512;
+    uint8_t *cov = malloc((size_t)(w * h));
     double sink = 0.0;
     int const frames = 100;
-    float const w = 512.0f;
-    float const h = 512.0f;
 
-    for (int f = 0; f < frames; f++) {
+    for (int f = 0; f < frames && cov; f++) {
         cnvs_path_reset(&path);
 
-        // Concave, self-intersecting star polygons -> stress scanline fill.
-        bench_stars(&path, 40, w, h);
+        // Concave, self-intersecting star polygons -> stress the fill rasterizer.
+        bench_stars(&path, 40, (float)w, (float)h);
 
         // Cubic Beziers -> stress adaptive de Casteljau flattening.
         for (int k = 0; k < 40; k++) {
-            cnvs_path_move_to(&path, bench_rpt(w, h));
-            cnvs_path_cubic_to(&path, bench_rpt(w, h), bench_rpt(w, h),
-                               bench_rpt(w, h), 0.25f);
+            cnvs_path_move_to(&path, bench_rpt((float)w, (float)h));
+            cnvs_path_cubic_to(&path, bench_rpt((float)w, (float)h),
+                               bench_rpt((float)w, (float)h),
+                               bench_rpt((float)w, (float)h), 0.25f);
         }
 
-        cnvs_verts_reset(&verts);
-        cnvs_fill_path(&path, CNVS_NONZERO, (int)w, (int)h, &verts, &edges, &xings,
-                       &spans);
-        sink += (double)verts.len;
+        bench_cover_path(&cover, w, h, &path);
+        cnvs_cover_resolve(&cover, w, h, CNVS_NONZERO, cov);
+        sink += (double)cov[(h / 2) * w + w / 2];
 
         cnvs_verts_reset(&verts);
         for (int s = 0; s < path.sp_len; s++) {
@@ -78,9 +77,8 @@ int main(void) {
 
     cnvs_path_free(&path);
     cnvs_verts_free(&verts);
-    cnvs_edges_free(&edges);
-    cnvs_xings_free(&xings);
-    cnvs_spans_free(&spans);
+    cnvs_cover_free(&cover);
+    free(cov);
 
     fprintf(stderr, "sink=%.0f\n", sink);  // defeat dead-code elimination
     return 0;

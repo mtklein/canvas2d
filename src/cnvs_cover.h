@@ -10,10 +10,10 @@
 // right prefix sum per row turns that into running winding-weighted coverage,
 // which the fill rule folds to [0,1].
 
-#include "cnvs_fill.h"  // cnvs_fill_rule
-
 #include <ptrcheck.h>
 #include <stdint.h>
+
+typedef enum { CNVS_NONZERO, CNVS_EVENODD } cnvs_fill_rule;
 
 typedef struct {
     float *__counted_by(cap) acc;  // w*h signed-area accumulation, reused across calls
