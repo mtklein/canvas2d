@@ -1,0 +1,132 @@
+# canvas2d
+
+A C23 implementation of (a growing subset of) the HTML **Canvas 2D API**,
+rasterised on the GPU via **Metal**, built with **ninja**.
+
+The point of the project is twofold:
+
+1. **Learn `-fbounds-safety`** — Clang's spatial-memory-safety extension — by
+   building something real with it.
+2. **Show that C can play with the modern big boys (Rust).** The whole codebase
+   compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only five
+   warnings disabled (each documented), and the interesting work — path math,
+   curve flattening, tessellation, stroking, a PNG encoder — lives in
+   bounds-checked C. Metal is just a triangle rasteriser.
+
+If you want the reflective version — what worked, what fought back, what we'd do
+differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
+
+## Quick start
+
+```sh
+python3 configure.py     # generate build.ninja
+ninja                    # build both variants (release + debug)
+ninja test               # build + run every test in both variants
+```
+
+Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
+`#embed`, and a Metal device), and ninja. No offline Metal toolchain component
+is needed — the shader is embedded with `#embed` and compiled at runtime.
+
+Two build variants are produced from one source tree:
+
+| Variant | Flags | Story |
+|---|---|---|
+| `release` | `-Os` | performance; bounds checks still trap |
+| `debug` | `-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all` | safety; any sanitizer finding is fatal |
+
+`ninja test` runs all test binaries in **both** variants. The PNGs land in
+`build/` (e.g. `build/m1_demo.png`).
+
+## Architecture
+
+```
+        public API (include/canvas.h)
+                  │
+   canvas.c  ── state stack, CTM, styles; orchestrates the pipeline
+      │  │
+      │  ├── cnvs_math     2x3 affine transforms
+      │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
+      │  ├── cnvs_tess     ear-clipping fill triangulation
+      │  ├── cnvs_stroke   polyline → stroke triangles (bevel joins, butt caps)
+      │  ├── cnvs_geom     growable vertex/int buffers
+      │  └── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
+      │
+      ▼   gpu.h  (C ABI: opaque gpu*, gpu_vert, gpu_rgba)
+   metal_backend.m  ── the ONE unsafe boundary: device, pipelines, offscreen
+                        RGBA8 target, draw, readback   (Objective-C + ARC)
+```
+
+Everything above `gpu.h` is pure C23 under `-fbounds-safety`. The
+[Metal backend](src/metal_backend.m) is the single boundary to a system
+framework. All transform and geometry math happens on the CPU in checked C and
+bakes into pixel-space triangles, so the GPU stays a dumb triangle rasteriser
+and the bounds-safety surface stays in C.
+
+> The shim is still being migrated under `-fbounds-safety` (see the roadmap); as
+> of this writing it is compiled `-std=c23` but without bounds checking, which
+> is sound because `__counted_by`/`__single` pointers have the ABI of a plain C
+> pointer.
+
+## Public API (subset of Canvas 2D, snake_case)
+
+```c
+canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under -fbounds-safety)
+canvas_save / canvas_restore
+canvas_translate / scale / rotate / transform / set_transform / reset_transform
+canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_line_width
+canvas_clear_rect / fill_rect
+canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
+    bezier_curve_to / arc / close_path
+canvas_fill / canvas_stroke
+canvas_read_rgba / canvas_write_png
+canvas_destroy(cv);
+```
+
+Coordinates are pixels, origin top-left, +y down — matching the web platform.
+
+## Capabilities and limitations
+
+| Area | Status |
+|---|---|
+| Transforms, save/restore, alpha blending | ✅ |
+| `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ |
+| Paths: lines, rects, quadratic/cubic Béziers, arcs | ✅ |
+| `fill()` — concave **simple** polygons (ear clipping) | ✅ |
+| `stroke()` — width (CTM-scaled), bevel joins, butt caps | ✅ |
+| Winding-rule fills (donut holes, self-intersection) | ❌ each subpath filled independently (needs a winding pass / GPU stencil) |
+| Miter / round joins, round caps | ❌ bevel + butt only |
+| Anti-aliasing | ❌ hard edges (MSAA planned) |
+| Gradients, clipping, images, text | ❌ not yet |
+| Batched GPU submission | ❌ one command buffer per draw (correctness first) |
+
+## Warning policy
+
+Built with `-Weverything -Werror`; only these are disabled, each with a one-line
+rationale in [configure.py](configure.py):
+
+- `-Wno-poison-system-directories` — env/cross-compile artifact, not our code
+- `-Wno-declaration-after-statement` — we use C23 declare-at-use style
+- `-Wno-padded` — struct padding isn't a correctness signal
+- `-Wno-pre-c23-compat` — we deliberately target C23
+- `-Wno-implicit-void-ptr-cast` — C-only project; the idiomatic `calloc` cast
+  (it does not weaken `-fbounds-safety`, which still traps undersized allocs)
+
+## Roadmap
+
+- **Now:** extend `-fbounds-safety` to the Metal shim for a blanket, whole-project
+  demonstration (and to learn how it meets Objective-C + platform headers).
+- Winding-rule fills; anti-aliasing (MSAA); miter/round joins.
+- A benchmark (tessellate + stroke N paths) for the "compete with Rust" number.
+- Gradients, clipping, then images/text.
+
+## Layout
+
+```
+configure.py            generates build.ninja (release + debug)
+include/canvas.h         public API
+src/                     C core + the ObjC Metal shim
+shaders/canvas.metal     vertex+fragment shaders (embedded via #embed)
+tests/                   unit + GPU pixel tests + a bounds-safety trap test
+docs/bounds-safety.md    the write-up
+```
