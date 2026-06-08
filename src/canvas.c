@@ -43,6 +43,7 @@ struct canvas {
     int stack_len;
     int stack_cap;
     cnvs_path path;
+    cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
     cnvs_verts scratch_verts;
     cnvs_edges scratch_edges;
     cnvs_xings scratch_xings;
@@ -196,27 +197,32 @@ void canvas_begin_path(canvas *__single cv) {
 
 void canvas_move_to(canvas *__single cv, float x, float y) {
     cnvs_path_move_to(&cv->path, xf(cv, x, y));
+    cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_line_to(canvas *__single cv, float x, float y) {
     cnvs_path_line_to(&cv->path, xf(cv, x, y));
+    cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_rect(canvas *__single cv, float x, float y, float w, float h) {
     cnvs_path_rect(&cv->path, xf(cv, x, y), xf(cv, x + w, y),
                    xf(cv, x + w, y + h), xf(cv, x, y + h));
+    cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_quadratic_curve_to(canvas *__single cv,
                                float cpx, float cpy, float x, float y) {
     cnvs_path_quad_to(&cv->path, xf(cv, cpx, cpy), xf(cv, x, y),
                       CANVAS_FLATTEN_TOL);
+    cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
                             float c2x, float c2y, float x, float y) {
     cnvs_path_cubic_to(&cv->path, xf(cv, c1x, c1y), xf(cv, c2x, c2y),
                        xf(cv, x, y), CANVAS_FLATTEN_TOL);
+    cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
@@ -262,6 +268,11 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
             cnvs_path_line_to(&cv->path, p);
         }
     }
+    float te = start_angle + sweep;
+    cv->cur_user = (cnvs_vec2){
+        .x = x + rx * cosf(te) * cosr - ry * sinf(te) * sinr,
+        .y = y + rx * cosf(te) * sinr + ry * sinf(te) * cosr,
+    };
 }
 
 void canvas_arc(canvas *__single cv, float x, float y, float radius,
@@ -288,6 +299,58 @@ void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
     canvas_arc(cv, x + r, y + h - r, r, q, pi, false);        // bottom-left
     canvas_arc(cv, x + r, y + r, r, pi, pi + q, false);       // top-left
     canvas_close_path(cv);
+}
+
+void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
+                   float radius) {
+    if (!cv->path.has_cur) {
+        canvas_move_to(cv, x1, y1);
+        return;
+    }
+    // Work in user space using the user-space current point.
+    float u0x = cv->cur_user.x - x1;
+    float u0y = cv->cur_user.y - y1;
+    float u2x = x2 - x1;
+    float u2y = y2 - y1;
+    float l0 = sqrtf(u0x * u0x + u0y * u0y);
+    float l2 = sqrtf(u2x * u2x + u2y * u2y);
+    if (l0 < 1e-6f || l2 < 1e-6f || radius <= 0.0f) {
+        canvas_line_to(cv, x1, y1);
+        return;
+    }
+    u0x /= l0;
+    u0y /= l0;
+    u2x /= l2;
+    u2y /= l2;
+    float cosang = u0x * u2x + u0y * u2y;
+    if (cosang > 1.0f) {
+        cosang = 1.0f;
+    }
+    if (cosang < -1.0f) {
+        cosang = -1.0f;
+    }
+    float ang = acosf(cosang);
+    if (ang < 1e-3f || (float)M_PI - ang < 1e-3f) {
+        canvas_line_to(cv, x1, y1);  // collinear: no arc
+        return;
+    }
+    float td = radius / tanf(ang * 0.5f);   // P1 -> tangent point distance
+    float bx = u0x + u2x;
+    float by = u0y + u2y;
+    float bl = sqrtf(bx * bx + by * by);
+    float cdist = radius / sinf(ang * 0.5f);  // P1 -> arc centre distance
+    float cx = x1 + bx / bl * cdist;
+    float cy = y1 + by / bl * cdist;
+    float t1x = x1 + u0x * td;
+    float t1y = y1 + u0y * td;
+    float t2x = x1 + u2x * td;
+    float t2y = y1 + u2y * td;
+    float sa = atan2f(t1y - cy, t1x - cx);
+    float ea = atan2f(t2y - cy, t2x - cx);
+    bool ccw = (u0x * u2y - u0y * u2x) > 0.0f;
+    canvas_line_to(cv, t1x, t1y);
+    canvas_arc(cv, cx, cy, radius, sa, ea, ccw);
+    cv->cur_user = (cnvs_vec2){ .x = t2x, .y = t2y };
 }
 
 void canvas_close_path(canvas *__single cv) {

@@ -50,6 +50,8 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
                     bool anticlockwise);
 void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
                        float radius);
+void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
+                   float radius);
 void canvas_close_path(canvas *__single cv);
 
 // Fill the current path under the current fill rule (default nonzero); handles

@@ -119,6 +119,22 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 52, 32), 0, 0, 255, 255, 1));  // inside long axis
     CHECK(px_near(pixel_at(px, len, w, 32, 46), 0, 0, 0, 0, 1));      // past short axis
 
+    // arcTo fillets the corner at (48,40): the tangent segments and the arc are
+    // stroked, but the sharp corner is cut away.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_line_width(cv, 4.0f);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 8.0f, 40.0f);
+    canvas_arc_to(cv, 48.0f, 40.0f, 48.0f, 8.0f, 16.0f);
+    canvas_line_to(cv, 48.0f, 8.0f);
+    canvas_stroke(cv);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 20, 40), 255, 0, 0, 255, 1));  // bottom segment
+    CHECK(px_near(pixel_at(px, len, w, 48, 16), 255, 0, 0, 255, 1));  // right segment
+    CHECK(px_near(pixel_at(px, len, w, 43, 35), 255, 0, 0, 255, 1));  // fillet arc
+    CHECK(px_near(pixel_at(px, len, w, 48, 40), 0, 0, 0, 0, 1));      // corner cut away
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

@@ -232,28 +232,37 @@ static void joinscaps(void) {
     save(c, "gallery/joins.png");
 }
 
-// Path primitives: a filled ellipse and a rounded rectangle (filled + outlined).
+// Path primitives: a filled ellipse, a rounded rectangle, and an arcTo fillet.
 static void paths(void) {
-    canvas *__single c = canvas_create(260, 130);
+    canvas *__single c = canvas_create(280, 170);
     if (!c) {
         return;
     }
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 260.0f, 130.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 170.0f);
 
     canvas_set_fill_rgba(c, 0.40f, 0.65f, 0.95f, 1.0f);
     canvas_begin_path(c);
-    canvas_ellipse(c, 70.0f, 65.0f, 52.0f, 32.0f, 0.0f, 0.0f, TAU, false);
+    canvas_ellipse(c, 72.0f, 52.0f, 52.0f, 28.0f, 0.0f, 0.0f, TAU, false);
     canvas_fill(c);
 
     canvas_set_fill_rgba(c, 0.55f, 0.85f, 0.45f, 1.0f);
     canvas_begin_path(c);
-    canvas_round_rect(c, 150.0f, 25.0f, 90.0f, 80.0f, 22.0f);
+    canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
     canvas_fill(c);
     canvas_set_stroke_rgba(c, 0.95f, 0.60f, 0.20f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
-    canvas_round_rect(c, 150.0f, 25.0f, 90.0f, 80.0f, 22.0f);
+    canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
+    canvas_stroke(c);
+
+    canvas_set_stroke_rgba(c, 0.85f, 0.45f, 0.90f, 1.0f);
+    canvas_set_line_width(c, 6.0f);
+    canvas_set_line_cap(c, CANVAS_CAP_ROUND);
+    canvas_begin_path(c);
+    canvas_move_to(c, 30.0f, 150.0f);
+    canvas_arc_to(c, 150.0f, 150.0f, 150.0f, 105.0f, 30.0f);
+    canvas_line_to(c, 150.0f, 105.0f);
     canvas_stroke(c);
 
     save(c, "gallery/paths.png");
