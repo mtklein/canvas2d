@@ -109,12 +109,14 @@ and the bounds-safety surface stays in C.
 canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under -fbounds-safety)
 canvas_save / canvas_restore
 canvas_translate / scale / rotate / transform / set_transform / reset_transform
-canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_line_width
+canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
+canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
+canvas_set_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
-    bezier_curve_to / arc / close_path
+    bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path
 canvas_fill / canvas_stroke
-canvas_read_rgba / canvas_write_png
+canvas_get_image_data / put_image_data / read_rgba / write_png
 canvas_destroy(cv);
 ```
 
@@ -126,11 +128,10 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 |---|---|
 | Transforms, save/restore, alpha blending | ✅ |
 | `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ |
-| Paths: lines, rects, quadratic/cubic Béziers, arcs | ✅ |
+| Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ scanline rasterizer |
-| `stroke()` — width (CTM-scaled), bevel joins, butt caps, line dash | ✅ |
+| `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
-| Miter / round joins, round caps | ❌ bevel + butt only |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
 | Gradients, clipping, `drawImage`, text | ❌ not yet |
 | Batched GPU submission | ❌ one command buffer per draw (correctness first) |
