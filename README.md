@@ -20,22 +20,25 @@ differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
 
 ```sh
 python3 configure.py     # generate build.ninja
-ninja                    # build both variants (release + debug)
+ninja                    # build the release + debug variants
 ninja test               # build + run every test in both variants
+ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ```
 
 Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
-`#embed`, and a Metal device), and ninja. No offline Metal toolchain component
-is needed — the shader is embedded with `#embed` and compiled at runtime.
+`#embed`, and a Metal device), and ninja. `ninja benchcmp` also needs
+[hyperfine](https://github.com/sharkdp/hyperfine). No offline Metal toolchain
+component is needed — the shader is embedded with `#embed` and compiled at runtime.
 
-Two build variants are produced from one source tree:
+Three variants are produced from one source tree:
 
 | Variant | Flags | Story |
 |---|---|---|
-| `release` | `-Os` | performance; bounds checks still trap |
-| `debug` | `-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all` | safety; any sanitizer finding is fatal |
+| `release` | `-Os -fbounds-safety` | the shipping build; bounds checks still trap |
+| `debug` | `-O0 -g -fbounds-safety -fsanitize=address,integer,undefined -fno-sanitize-recover=all` | any sanitizer finding is fatal |
+| `unsafe` | `-Os` | identical to release minus `-fbounds-safety`; the benchmark baseline |
 
-`ninja test` runs all test binaries in **both** variants. The PNGs land in
+`ninja test` runs all test binaries in `release` and `debug`. The PNGs land in
 `build/` (e.g. `build/m1_demo.png`).
 
 ## Architecture
@@ -113,23 +116,52 @@ rationale in [configure.py](configure.py):
 - `-Wno-implicit-void-ptr-cast` — C-only project; the idiomatic `calloc` cast
   (it does not weaken `-fbounds-safety`, which still traps undersized allocs)
 
+## Benchmarking — what does `-fbounds-safety` cost?
+
+The natural question isn't "how fast vs. Rust" but "how much does the safety cost
+*us*" — the same code, same `-Os`, with and without the flag. That's the `release`
+vs `unsafe` comparison:
+
+```sh
+ninja benchcmp     # hyperfine ./build/release/bench vs ./build/unsafe/bench
+```
+
+[bench/bench.c](bench/bench.c) is a CPU-only workload (no GPU) that pounds the
+checked hot paths: cubic-Bézier flattening, ear-clip tessellation of concave
+polygons, stroke expansion, and PNG encoding. On an Apple Silicon laptop a recent
+run was:
+
+```
+release (-fbounds-safety):  118.3 ms ± 1.0
+unsafe  (no bounds safety):  92.5 ms ± 0.4
+  → unsafe is 1.28× faster  (≈28% bounds-safety overhead)
+```
+
+Read that as a **worst case**: this microbenchmark is almost nothing *but*
+bounds-checked indexing (ear clipping is `O(n²)` of point-in-triangle tests; the
+PNG encoder writes every byte through a checked cursor). Real canvas rendering is
+GPU-bound, so the end-to-end cost is far smaller — but ~28% is the honest price on
+the hottest pure-C kernels, and now it's one command to re-measure.
+
 ## Roadmap
 
 - ~~Blanket `-fbounds-safety` including the Metal shim~~ — investigated and
   rejected: the flag is C-only, and routing Metal through the Objective-C runtime
   forces an all-`__unsafe_indexable` TU (no ARC, no real checking). The boundary
   stays an isolated ObjC shim; see [docs/bounds-safety.md](docs/bounds-safety.md).
+- ~~A `release`-vs-`unsafe` benchmark for the cost of `-fbounds-safety`~~ — done
+  (`ninja benchcmp`); see above.
 - Winding-rule fills; anti-aliasing (MSAA); miter/round joins.
-- A benchmark (tessellate + stroke N paths) for the "compete with Rust" number.
 - Gradients, clipping, then images/text.
 
 ## Layout
 
 ```
-configure.py            generates build.ninja (release + debug)
+configure.py            generates build.ninja (release, debug, unsafe)
 include/canvas.h         public API
 src/                     C core + the ObjC Metal shim
 shaders/canvas.metal     vertex+fragment shaders (embedded via #embed)
 tests/                   unit + GPU pixel tests + a bounds-safety trap test
+bench/bench.c            CPU-only benchmark (release vs unsafe)
 docs/bounds-safety.md    the write-up
 ```

@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """Generate build.ninja for the canvas2d project.
 
-Two variants are produced from one source tree:
+Three build variants are produced from one source tree:
 
-  release : -Os                         (optimized; the perf story)
-  debug   : -O0 -g -fsanitize=...        (address,integer,undefined; the safety story)
+  release : -Os -fbounds-safety                       (the shipping build)
+  debug   : -O0 -g -fbounds-safety -fsanitize=...       (address,integer,undefined)
+  unsafe  : -Os                                         (same as release, minus
+                                                         -fbounds-safety -- the
+                                                         benchmark baseline)
 
-The C core is compiled with -std=c23 -fbounds-safety -Werror -Weverything.  Only
-the handful of warnings below are disabled, each for a concrete reason; everything
-else in -Weverything stays on (that strictness is the whole point of the project).
+`release` vs `unsafe` is an apples-to-apples measurement of what -fbounds-safety
+costs: identical sources and optimisation, differing only in the bounds-safety
+flag. `ninja benchcmp` runs hyperfine over the two.
 
-The Objective-C Metal shim (src/*.m) is the boundary to a system framework, so it is
-NOT compiled with -fbounds-safety/-Weverything -- just -Wall -Wextra.  It is still
-built under the sanitizers in the debug variant.
+The C core is compiled `-std=c23 -Werror -Weverything` (plus -fbounds-safety for
+release/debug); only the handful of warnings below are disabled, each justified.
 
-The Metal shader is embedded with C23 #embed (the shim is built with -std=c23 and
---embed-dir=shaders) and compiled at runtime, so the build needs no offline Metal
-toolchain component.  #embed dependencies are tracked automatically via -MMD.
+The Objective-C Metal shim (src/*.m) is the platform boundary. -fbounds-safety is
+C-only and cannot apply to it; it is built -std=c23 with -Wall -Wextra, under the
+sanitizers in debug. The shader is embedded with C23 #embed (--embed-dir=shaders)
+and compiled at runtime; -MMD tracks the embed dependency.
 """
 
 import os
@@ -31,7 +34,8 @@ def rel(p):
 
 # --- flag groups -----------------------------------------------------------
 
-CSTD = "-std=c23 -fbounds-safety"
+CSTD = "-std=c23"
+BOUNDS = "-fbounds-safety"
 
 # Disabled warnings.  Keep this list short and justified.
 CWARN_DISABLED = [
@@ -48,8 +52,7 @@ CWARN_DISABLED = [
     ("pre-c23-compat", "we deliberately target C23"),
     # This warning only exists to keep code compilable as C++.  This project is
     # C-only, where implicit void*<->T* conversion is idiomatic (the calloc/
-    # realloc idiom); it does NOT weaken -fbounds-safety's runtime size checks
-    # (an undersized allocation still traps).
+    # realloc idiom); it does NOT weaken -fbounds-safety's runtime size checks.
     ("implicit-void-ptr-cast", "C-only project; idiomatic void* conversion"),
 ]
 
@@ -61,20 +64,25 @@ CINC = "-Iinclude -Isrc"
 OBJCWARN = "-Wall -Wextra"
 FRAMEWORKS = "-framework Metal -framework Foundation"
 
-REL_OPT = "-Os"
-DBG_OPT = "-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all"
-
+# variant -> (opt flags, bounds-safety?, build tests?, build bench?)
 VARIANTS = {
-    "release": REL_OPT,
-    "debug": DBG_OPT,
+    "release": ("-Os", True, True, True),
+    "debug": ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all",
+              True, True, False),
+    "unsafe": ("-Os", False, False, True),
 }
+
+
+def obj(variant, src):
+    return os.path.join("build", variant, "obj",
+                        os.path.splitext(os.path.basename(src))[0] + ".o")
 
 
 def main():
     core_c = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.c")))
     shim_m = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.m")))
-    shaders = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "shaders", "*.metal")))
     tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c")))
+    benches = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "bench", "*.c")))
 
     n = []
     w = n.append
@@ -93,16 +101,16 @@ def main():
         w(f"#   -Wno-{name}: {why}")
     w("")
 
-    # Per-variant compile/link rules.
-    for variant, opt in VARIANTS.items():
+    for variant, (opt, bounds, _tests, _bench) in VARIANTS.items():
+        bflag = (BOUNDS + " ") if bounds else ""
         w(f"rule cc_{variant}")
-        w(f"  command = clang $cstd $cwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
+        w(f"  command = clang $cstd {bflag}$cwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
         w("  deps = gcc")
         w(f"  description = CC({variant}) $out")
         w("")
         w(f"rule objc_{variant}")
-        w(f"  command = clang -std=c23 -fobjc-arc $objcwarn $cinc --embed-dir=shaders {opt} -MMD -MF $out.d -c $in -o $out")
+        w(f"  command = clang $cstd -fobjc-arc $objcwarn $cinc --embed-dir=shaders {opt} -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
         w("  deps = gcc")
         w(f"  description = OBJC({variant}) $out")
@@ -116,45 +124,58 @@ def main():
     w("  command = $bin && touch $out")
     w("  description = TEST $bin")
     w("")
+    w("rule benchcmp")
+    w("  command = hyperfine --warmup 3 -N ./build/release/bench ./build/unsafe/bench")
+    w("  pool = console")
+    w("  description = hyperfine release vs unsafe")
+    w("")
 
-    # Per-variant objects + test executables.
-    variant_exes = {}
-    for variant in VARIANTS:
-        objdir = os.path.join("build", variant, "obj")
+    test_stamps = []
+    bench_exes = []
+    for variant, (_opt, _bounds, do_tests, do_bench) in VARIANTS.items():
         lib_objs = []
         for c in core_c:
-            o = os.path.join(objdir, os.path.splitext(os.path.basename(c))[0] + ".o")
+            o = obj(variant, c)
             w(f"build {o}: cc_{variant} {c}")
             lib_objs.append(o)
         for m in shim_m:
-            o = os.path.join(objdir, os.path.splitext(os.path.basename(m))[0] + ".o")
+            o = obj(variant, m)
             w(f"build {o}: objc_{variant} {m}")
             lib_objs.append(o)
         w("")
 
-        exes = []
-        for t in tests:
-            stem = os.path.splitext(os.path.basename(t))[0]
-            o = os.path.join(objdir, stem + ".o")
-            exe = os.path.join("build", variant, stem)
-            w(f"build {o}: cc_{variant} {t}")
-            w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
-            exes.append(exe)
+        produced = []
+        if do_tests:
+            for t in tests:
+                stem = os.path.splitext(os.path.basename(t))[0]
+                o = obj(variant, t)
+                exe = os.path.join("build", variant, stem)
+                stamp = exe + ".runok"
+                w(f"build {o}: cc_{variant} {t}")
+                w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
+                w(f"build {stamp}: run {exe}")
+                w(f"  bin = {exe}")
+                produced.append(exe)
+                test_stamps.append(stamp)
+        if do_bench:
+            for b in benches:
+                stem = os.path.splitext(os.path.basename(b))[0]
+                o = obj(variant, b)
+                exe = os.path.join("build", variant, stem)
+                w(f"build {o}: cc_{variant} {b}")
+                w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
+                produced.append(exe)
+                if stem == "bench":
+                    bench_exes.append(exe)
         w("")
-        variant_exes[variant] = exes
-        w(f"build {variant}: phony {' '.join(exes)}")
+        w(f"build {variant}: phony {' '.join(produced)}")
         w("")
 
-    # `test` runs every executable in both variants.
-    stamps = []
-    for variant, exes in variant_exes.items():
-        for exe in exes:
-            stamp = exe + ".runok"
-            w(f"build {stamp}: run {exe}")
-            w(f"  bin = {exe}")
-            stamps.append(stamp)
-    w("")
-    w(f"build test: phony {' '.join(stamps)}")
+    w(f"build test: phony {' '.join(test_stamps)}")
+    w(f"build bench: phony {' '.join(bench_exes)}")
+    # `benchcmp` names a file that is never created, so ninja always reruns it
+    # (after building the two binaries it depends on).
+    w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w("build all: phony release debug")
     w("default all")
     w("")
@@ -162,7 +183,7 @@ def main():
     with open(os.path.join(HERE, "build.ninja"), "w") as f:
         f.write("\n".join(n))
     print(f"wrote build.ninja: {len(core_c)} core .c, {len(shim_m)} shim .m, "
-          f"{len(shaders)} shader(s), {len(tests)} test(s)")
+          f"{len(tests)} test(s), {len(benches)} bench(es)")
 
 
 if __name__ == "__main__":

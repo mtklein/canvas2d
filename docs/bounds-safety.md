@@ -140,6 +140,25 @@ bounds-safety hole: assigning an undersized allocation to a `__counted_by(n)`
 target still traps at runtime (we verified — exit 133). The size check is
 independent of the cast diagnostic.
 
+## What it costs
+
+We measure this directly: the `release` and `unsafe` builds are identical `-Os`
+sources differing only in `-fbounds-safety`, and `ninja benchcmp` runs hyperfine
+over both. On a CPU-only workload that does almost nothing but checked indexing —
+ear-clip tessellation (`O(n²)` point-in-triangle tests), Bézier flattening, stroke
+expansion, and PNG encoding through a per-byte cursor — the overhead was about
+**28%** (`release` ~118 ms vs `unsafe` ~92 ms).
+
+Two honest framings of that number:
+
+- It's a **worst case**. This microbenchmark is wall-to-wall bounds checks in
+  tight loops; there's little real work to amortise them against. Code that does
+  arithmetic or memory traffic between accesses sees far less.
+- Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety here is
+  much smaller than 28% — but the hottest pure-C kernels do pay, and it's worth
+  knowing by how much rather than hand-waving "negligible." The compiler still
+  elides checks it can prove redundant; 28% is what's left on code it can't.
+
 ## ABI and the C ↔ Objective-C boundary
 
 The most important practical property: because `__counted_by`/`__single` have
