@@ -433,7 +433,7 @@ static void drawimage(void) {
     save(c, "gallery/drawimage.png");
 }
 
-// Text: Libian TC (clerical-script 隶书) glyph outlines from Core Text, rasterized
+// Text: Libian TC (clerical-script 隸書) glyph outlines from Core Text, rasterized
 // by the same analytic-coverage fill as everything else -- so they take gradients,
 // strokes, transforms, and alpha, and one fill_text mixes Latin and Chinese (UTF-8).
 // The glyphs arrive as ordinary device-space paths from the unchecked C shim
@@ -452,14 +452,14 @@ static void text(void) {
     canvas_add_fill_color_stop(c, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
     canvas_add_fill_color_stop(c, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 52.0f);
-    canvas_fill_text(c, "canvas2d 画布", 20.0f, 70.0f);
+    canvas_fill_text(c, "canvas2d 畫布", 20.0f, 70.0f);
 
     // Stroked subtitle, also mixing scripts.
     canvas_set_stroke_rgba(c, 0.85f, 0.88f, 0.95f, 1.0f);
     canvas_set_line_width(c, 1.2f);
     canvas_set_line_join(c, CANVAS_JOIN_ROUND);
     canvas_set_font_size(c, 26.0f);
-    canvas_stroke_text(c, "隶书 · Libian TC, in C", 22.0f, 116.0f);
+    canvas_stroke_text(c, "隸書 · Libian TC, in C", 22.0f, 116.0f);
 
     // Transformed (rotated) text shows the CTM applies to glyphs too.
     canvas_save(c);

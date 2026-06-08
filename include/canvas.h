@@ -114,7 +114,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
                                float sww, float shh, float dx, float dy,
                                float dw, float dh);
 
-// Text.  The typeface is fixed to Libian TC -- a clerical-script (隶书) face, so
+// Text.  The typeface is fixed to Libian TC -- a clerical-script (隸書) face, so
 // the same call renders Latin and Chinese.  Size is user-space px (default 10).
 // fill_text/stroke_text lay out `text` (UTF-8) with its baseline origin at (x, y),
 // advance +x, and paint the glyph outlines exactly like fill()/stroke() --
