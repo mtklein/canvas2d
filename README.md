@@ -47,6 +47,11 @@ self-intersecting star, each masking the same flood of stripes (GPU stencil):
 
 ![clip](gallery/clip.png)
 
+Gradients — a diagonal linear fill, an off-centre radial "sphere", and a
+multi-stop rainbow ramp (evaluated on the CPU, Gouraud-interpolated):
+
+![gradients](gallery/gradients.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
@@ -86,7 +91,8 @@ Three variants are produced from one source tree:
       │  │
       │  ├── cnvs_math     2x3 affine transforms
       │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
-      │  ├── cnvs_fill     scanline rasterizer → span quads (winding rules)
+      │  ├── cnvs_fill     scanline rasterizer → spans (winding rules)
+      │  ├── cnvs_gradient linear/radial ramp eval → per-vertex colours
       │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
       │  ├── cnvs_geom     growable vertex/int buffers
@@ -116,6 +122,7 @@ canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under
 canvas_save / canvas_restore
 canvas_translate / scale / rotate / transform / set_transform / reset_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
+canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
 canvas_set_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect
@@ -139,8 +146,9 @@ Coordinates are pixels, origin top-left, +y down — matching the web platform.
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ✅ |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ GPU stencil |
+| Gradients — linear + radial fills, multi-stop, CPU-evaluated | ✅ Gouraud |
 | Anti-aliasing | ❌ hard edges (MSAA planned) |
-| Gradients, `drawImage`, text | ❌ not yet |
+| `drawImage`, text | ❌ not yet |
 | Batched GPU submission | ❌ one command buffer per draw (correctness first) |
 
 ## Warning policy
@@ -171,18 +179,19 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_flatten` — cubic-Bézier flattening | 120 ms | 111 ms | **1.07×** |
-| `bench_stroke` — stroke expansion | 45 ms | 37 ms | **1.22×** |
-| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 110 ms | 87 ms | **1.27×** |
-| `bench_fill` — scanline fill (edge gather, crossing sort, winding walk) | 110 ms | 75 ms | **1.47×** |
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 127 ms | 52 ms | **2.43×** |
-| `bench` — end-to-end | 199 ms | 159 ms | **1.27×** |
+| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 69 ms | 67 ms | **1.02×** |
+| `bench_flatten` — cubic-Bézier flattening | 118 ms | 110 ms | **1.07×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 54 ms | 49 ms | **1.10×** |
+| `bench_png` — PNG encode (per-byte cursor + CRC/Adler) | 109 ms | 87 ms | **1.26×** |
+| `bench_fill` — scanline fill (edge gather, crossing sort, winding walk) | 110 ms | 74 ms | **1.48×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 118 ms | 48 ms | **2.44×** |
+| `bench` — end-to-end | 198 ms | 157 ms | **1.27×** |
 
 The spread is the point: the 2D blit — four bounds-checked byte loads and stores
 per pixel across two buffers, with no arithmetic to amortize them — pays the most
-at **~2.4×**, while flattening (lots of float math between a few indexed writes)
-is nearly free at **7%**. The end-to-end 1.27× is a blend that, on its own, would
-mask both. Real canvas rendering is GPU-bound,
+at **~2.4×**, while gradient evaluation and flattening (lots of float math between
+a few indexed reads) are nearly free at **2–7%**. The end-to-end 1.27× is a blend
+that, on its own, would mask both. Real canvas rendering is GPU-bound,
 so the end-to-end cost of safety is smaller still — but these are the honest prices
 on the hottest pure-C kernels, one command to re-measure.
 
@@ -200,8 +209,10 @@ on the hottest pure-C kernels, one command to re-measure.
   ([cnvs_image.c](src/cnvs_image.c)).
 - ~~`clip()`~~ — done; the scanline fill's non-overlapping spans drive a GPU
   stencil mask ([metal_backend.m](src/metal_backend.m), `gpu_clip_add`).
+- ~~Gradients~~ — done; linear + radial, multi-stop, evaluated on the CPU
+  ([cnvs_gradient.c](src/cnvs_gradient.c)) and Gouraud-interpolated on the GPU.
 - Anti-aliasing (MSAA); batched GPU submission.
-- Gradients, `drawImage`, text.
+- `drawImage`, text.
 
 ## Layout
 

@@ -28,3 +28,13 @@ bool cnvs_ints_push(cnvs_ints *v, int value);
 void cnvs_ints_remove(cnvs_ints *v, int index);
 void cnvs_ints_reset(cnvs_ints *v);
 void cnvs_ints_free(cnvs_ints *v);
+
+typedef struct {
+    gpu_cvert *__counted_by(cap) data;
+    int len;
+    int cap;
+} cnvs_cverts;
+
+bool cnvs_cverts_tri(cnvs_cverts *v, gpu_cvert a, gpu_cvert b, gpu_cvert c);
+void cnvs_cverts_reset(cnvs_cverts *v);
+void cnvs_cverts_free(cnvs_cverts *v);

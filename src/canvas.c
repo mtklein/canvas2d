@@ -2,6 +2,7 @@
 
 #include "cnvs_fill.h"
 #include "cnvs_geom.h"
+#include "cnvs_gradient.h"
 #include "cnvs_image.h"
 #include "cnvs_math.h"
 #include "cnvs_mem.h"
@@ -22,6 +23,8 @@
 struct canvas_state {
     cnvs_mat ctm;
     gpu_rgba fill;
+    int fill_is_gradient;  // 0 = solid `fill`; 1 = `fill_grad`
+    cnvs_gradient fill_grad;
     gpu_rgba stroke;
     float global_alpha;
     float line_width;
@@ -46,8 +49,10 @@ struct canvas {
     cnvs_path path;
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
     cnvs_verts scratch_verts;
+    cnvs_cverts scratch_cverts;
     cnvs_edges scratch_edges;
     cnvs_xings scratch_xings;
+    cnvs_spans scratch_spans;
     // Clip stack: one triangle set per active clip; their intersection is the
     // mask.  clip_len tracks the live count; entries past it stay allocated for
     // reuse.  cur.clip_depth records how many were live at each save().
@@ -57,6 +62,7 @@ struct canvas {
 };
 
 static void clip_rebuild(canvas *__single cv);
+static cnvs_vec2 xf(canvas *__single cv, float x, float y);
 
 canvas *__single canvas_create(int width, int height) {
     if (width <= 0 || height <= 0) {
@@ -76,6 +82,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->height = height;
     cv->cur.ctm = cnvs_mat_identity();
     cv->cur.fill = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
+    cv->cur.fill_is_gradient = 0;
     cv->cur.stroke = (gpu_rgba){ .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f };
     cv->cur.global_alpha = 1.0f;
     cv->cur.line_width = 1.0f;
@@ -108,8 +115,10 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->clip_tris);
     cnvs_path_free(&cv->path);
     cnvs_verts_free(&cv->scratch_verts);
+    cnvs_cverts_free(&cv->scratch_cverts);
     cnvs_edges_free(&cv->scratch_edges);
     cnvs_xings_free(&cv->scratch_xings);
+    cnvs_spans_free(&cv->scratch_spans);
     free(cv);
 }
 
@@ -176,6 +185,44 @@ void canvas_reset_transform(canvas *__single cv) {
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
     cv->cur.fill = (gpu_rgba){ .r = r, .g = g, .b = b, .a = a };
+    cv->cur.fill_is_gradient = 0;
+}
+
+// Average CTM scale, used to bake user-space radii into device space.
+static float ctm_scale(cnvs_mat m) {
+    float det = m.a * m.d - m.b * m.c;
+    return sqrtf(fabsf(det));
+}
+
+void canvas_set_fill_linear_gradient(canvas *__single cv,
+                                     float x0, float y0, float x1, float y1) {
+    cnvs_gradient *gr = &cv->cur.fill_grad;
+    gr->kind = CNVS_GRAD_LINEAR;
+    gr->p0 = xf(cv, x0, y0);
+    gr->p1 = xf(cv, x1, y1);
+    gr->r0 = 0.0f;
+    gr->r1 = 0.0f;
+    gr->stop_count = 0;
+    cv->cur.fill_is_gradient = 1;
+}
+
+void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
+                                     float r0, float x1, float y1, float r1) {
+    float s = ctm_scale(cv->cur.ctm);
+    cnvs_gradient *gr = &cv->cur.fill_grad;
+    gr->kind = CNVS_GRAD_RADIAL;
+    gr->p0 = xf(cv, x0, y0);
+    gr->p1 = xf(cv, x1, y1);
+    gr->r0 = r0 * s;
+    gr->r1 = r1 * s;
+    gr->stop_count = 0;
+    cv->cur.fill_is_gradient = 1;
+}
+
+void canvas_add_fill_color_stop(canvas *__single cv, float offset,
+                                float r, float g, float b, float a) {
+    cnvs_gradient_add_stop(&cv->cur.fill_grad, offset,
+                           (gpu_rgba){ .r = r, .g = g, .b = b, .a = a });
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
@@ -414,7 +461,8 @@ void canvas_clip(canvas *__single cv) {
     cnvs_verts *slot = &cv->clip_tris[cv->clip_len];
     cnvs_verts_reset(slot);
     if (!cnvs_fill_path(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
-                        slot, &cv->scratch_edges, &cv->scratch_xings)) {
+                        slot, &cv->scratch_edges, &cv->scratch_xings,
+                        &cv->scratch_spans)) {
         return;
     }
     cv->clip_len += 1;
@@ -422,11 +470,64 @@ void canvas_clip(canvas *__single cv) {
     clip_rebuild(cv);
 }
 
+static gpu_cvert cvert(float x, float y, gpu_rgba c) {
+    return (gpu_cvert){ .x = x, .y = y, .r = c.r, .g = c.g, .b = c.b, .a = c.a };
+}
+
+// Colour each fill span with the gradient, subdividing along x so the linear
+// per-vertex interpolation tracks the ramp (exact between stops for linear
+// gradients; a close approximation for radial, whose parameter curves in x).
+static void fill_gradient(canvas *__single cv) {
+    float const step = 8.0f;
+    cnvs_gradient const *gr = &cv->cur.fill_grad;
+    float alpha = cv->cur.global_alpha;
+    cnvs_cverts_reset(&cv->scratch_cverts);
+    for (int i = 0; i < cv->scratch_spans.len; i++) {
+        cnvs_span s = cv->scratch_spans.data[i];
+        float y0 = (float)s.row;
+        float y1 = (float)(s.row + 1);
+        float yc = y0 + 0.5f;
+        float x = s.xl;
+        gpu_rgba cl = cnvs_gradient_sample(gr, (cnvs_vec2){ .x = x, .y = yc }, alpha);
+        while (x < s.xr) {
+            float xn = x + step;
+            if (xn > s.xr) {
+                xn = s.xr;
+            }
+            gpu_rgba cr =
+                cnvs_gradient_sample(gr, (cnvs_vec2){ .x = xn, .y = yc }, alpha);
+            gpu_cvert a = cvert(x, y0, cl);
+            gpu_cvert b = cvert(xn, y0, cr);
+            gpu_cvert c = cvert(xn, y1, cr);
+            gpu_cvert d = cvert(x, y1, cl);
+            if (!cnvs_cverts_tri(&cv->scratch_cverts, a, b, c) ||
+                !cnvs_cverts_tri(&cv->scratch_cverts, a, c, d)) {
+                return;
+            }
+            x = xn;
+            cl = cr;
+        }
+    }
+    if (cv->scratch_cverts.len > 0) {
+        gpu_draw_verts(cv->g, cv->scratch_cverts.data, cv->scratch_cverts.len);
+    }
+}
+
 void canvas_fill(canvas *__single cv) {
+    if (cv->cur.fill_is_gradient) {
+        cv->scratch_spans.len = 0;
+        if (!cnvs_fill_spans(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
+                             &cv->scratch_spans, &cv->scratch_edges,
+                             &cv->scratch_xings)) {
+            return;
+        }
+        fill_gradient(cv);
+        return;
+    }
     cnvs_verts_reset(&cv->scratch_verts);
     if (!cnvs_fill_path(&cv->path, cv->cur.fill_rule, cv->width, cv->height,
                         &cv->scratch_verts, &cv->scratch_edges,
-                        &cv->scratch_xings)) {
+                        &cv->scratch_xings, &cv->scratch_spans)) {
         return;
     }
     if (cv->scratch_verts.len > 0) {

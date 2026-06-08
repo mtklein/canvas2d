@@ -34,12 +34,34 @@ typedef struct {
     int cap;
 } cnvs_xings;
 
+// One filled interval [xl, xr) on scanline `row`, already clamped to the canvas.
+typedef struct {
+    float xl, xr;
+    int row;
+} cnvs_span;
+
+typedef struct {
+    cnvs_span *__counted_by(cap) data;
+    int len;
+    int cap;
+} cnvs_spans;
+
 void cnvs_edges_free(cnvs_edges *e);
 void cnvs_xings_free(cnvs_xings *x);
+void cnvs_spans_free(cnvs_spans *s);
 
-// Each subpath of `path` is implicitly closed.  Span quads (gpu_vert triples)
-// are appended to `out`, clipped to [0,width) x [0,height).  `edges`/`xings` are
-// caller-owned scratch reused across calls.  False only on allocation failure.
+// Scan-convert all subpaths of `path` (each implicitly closed) under `rule` into
+// inside-spans, clipped to [0,width) x [0,height); appended to `out`.  This is
+// the shared core: callers turn spans into geometry (solid quads, or per-vertex
+// gradient colours).  `edges`/`xings` are caller-owned scratch reused across
+// calls.  False only on allocation failure.
+bool cnvs_fill_spans(cnvs_path const *path, cnvs_fill_rule rule,
+                     int width, int height, cnvs_spans *out,
+                     cnvs_edges *edges, cnvs_xings *xings);
+
+// Convenience over cnvs_fill_spans: emit each span as a solid quad (gpu_vert
+// triples) into `out`.  `spans` is caller-owned scratch.  Used for plain fills
+// and for building clip masks.
 bool cnvs_fill_path(cnvs_path const *path, cnvs_fill_rule rule,
                     int width, int height, cnvs_verts *out,
-                    cnvs_edges *edges, cnvs_xings *xings);
+                    cnvs_edges *edges, cnvs_xings *xings, cnvs_spans *spans);

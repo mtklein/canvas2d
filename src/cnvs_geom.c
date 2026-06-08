@@ -92,3 +92,39 @@ void cnvs_ints_free(cnvs_ints *v) {
     v->len = 0;
     v->cap = 0;
 }
+
+static bool cverts_reserve(cnvs_cverts *v, int need) {
+    if (need <= v->cap) {
+        return true;
+    }
+    int newcap = cnvs_grow_cap(v->cap, need);
+    gpu_cvert *nd = realloc(v->data, (size_t)newcap * sizeof *nd);
+    if (!nd) {
+        return false;
+    }
+    v->data = nd;
+    v->cap = newcap;
+    return true;
+}
+
+bool cnvs_cverts_tri(cnvs_cverts *v, gpu_cvert a, gpu_cvert b, gpu_cvert c) {
+    if (!cverts_reserve(v, v->len + 3)) {
+        return false;
+    }
+    v->data[v->len] = a;
+    v->data[v->len + 1] = b;
+    v->data[v->len + 2] = c;
+    v->len += 3;
+    return true;
+}
+
+void cnvs_cverts_reset(cnvs_cverts *v) {
+    v->len = 0;
+}
+
+void cnvs_cverts_free(cnvs_cverts *v) {
+    free(v->data);
+    v->data = NULL;
+    v->len = 0;
+    v->cap = 0;
+}

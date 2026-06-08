@@ -19,6 +19,7 @@ int main(void) {
     cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
     cnvs_edges edges = { .data = NULL, .len = 0, .cap = 0 };
     cnvs_xings xings = { .data = NULL, .len = 0, .cap = 0 };
+    cnvs_spans spans = { .data = NULL, .len = 0, .cap = 0 };
 
     double sink = 0.0;
     int const frames = 100;
@@ -28,7 +29,7 @@ int main(void) {
     for (int f = 0; f < frames; f++) {
         cnvs_path_reset(&path);
 
-        // Concave star polygons -> stress ear clipping.
+        // Concave, self-intersecting star polygons -> stress scanline fill.
         bench_stars(&path, 40, w, h);
 
         // Cubic Beziers -> stress adaptive de Casteljau flattening.
@@ -39,7 +40,8 @@ int main(void) {
         }
 
         cnvs_verts_reset(&verts);
-        cnvs_fill_path(&path, CNVS_NONZERO, (int)w, (int)h, &verts, &edges, &xings);
+        cnvs_fill_path(&path, CNVS_NONZERO, (int)w, (int)h, &verts, &edges, &xings,
+                       &spans);
         sink += (double)verts.len;
 
         cnvs_verts_reset(&verts);
@@ -78,6 +80,7 @@ int main(void) {
     cnvs_verts_free(&verts);
     cnvs_edges_free(&edges);
     cnvs_xings_free(&xings);
+    cnvs_spans_free(&spans);
 
     fprintf(stderr, "sink=%.0f\n", sink);  // defeat dead-code elimination
     return 0;

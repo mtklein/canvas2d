@@ -35,6 +35,21 @@ static bool xings_push(cnvs_xings *x, cnvs_xing xing) {
     return true;
 }
 
+static bool spans_push(cnvs_spans *s, cnvs_span span) {
+    if (s->len >= s->cap) {
+        int newcap = cnvs_grow_cap(s->cap, s->len + 1);
+        cnvs_span *nd = realloc(s->data, (size_t)newcap * sizeof *nd);
+        if (!nd) {
+            return false;
+        }
+        s->data = nd;
+        s->cap = newcap;
+    }
+    s->data[s->len] = span;
+    s->len += 1;
+    return true;
+}
+
 void cnvs_edges_free(cnvs_edges *e) {
     free(e->data);
     e->data = NULL;
@@ -47,6 +62,13 @@ void cnvs_xings_free(cnvs_xings *x) {
     x->data = NULL;
     x->len = 0;
     x->cap = 0;
+}
+
+void cnvs_spans_free(cnvs_spans *s) {
+    free(s->data);
+    s->data = NULL;
+    s->len = 0;
+    s->cap = 0;
 }
 
 static bool add_edge(cnvs_edges *edges, cnvs_vec2 p0, cnvs_vec2 p1) {
@@ -96,7 +118,7 @@ static void xings_sort(cnvs_xings *x) {
     }
 }
 
-static bool emit_span(cnvs_verts *out, float xl, float xr, int row, int width) {
+static bool emit_span(cnvs_spans *out, float xl, float xr, int row, int width) {
     if (xl < 0.0f) {
         xl = 0.0f;
     }
@@ -106,18 +128,12 @@ static bool emit_span(cnvs_verts *out, float xl, float xr, int row, int width) {
     if (xr <= xl) {
         return true;
     }
-    float y0 = (float)row;
-    float y1 = (float)(row + 1);
-    gpu_vert a = { .x = xl, .y = y0 };
-    gpu_vert b = { .x = xr, .y = y0 };
-    gpu_vert c = { .x = xr, .y = y1 };
-    gpu_vert d = { .x = xl, .y = y1 };
-    return cnvs_verts_tri(out, a, b, c) && cnvs_verts_tri(out, a, c, d);
+    return spans_push(out, (cnvs_span){ .xl = xl, .xr = xr, .row = row });
 }
 
-bool cnvs_fill_path(cnvs_path const *path, cnvs_fill_rule rule,
-                    int width, int height, cnvs_verts *out,
-                    cnvs_edges *edges, cnvs_xings *xings) {
+bool cnvs_fill_spans(cnvs_path const *path, cnvs_fill_rule rule,
+                     int width, int height, cnvs_spans *out,
+                     cnvs_edges *edges, cnvs_xings *xings) {
     edges->len = 0;
     for (int s = 0; s < path->sp_len; s++) {
         cnvs_subpath sp = path->subs[s];
@@ -194,6 +210,28 @@ bool cnvs_fill_path(cnvs_path const *path, cnvs_fill_rule rule,
                     return false;
                 }
             }
+        }
+    }
+    return true;
+}
+
+bool cnvs_fill_path(cnvs_path const *path, cnvs_fill_rule rule,
+                    int width, int height, cnvs_verts *out,
+                    cnvs_edges *edges, cnvs_xings *xings, cnvs_spans *spans) {
+    spans->len = 0;
+    if (!cnvs_fill_spans(path, rule, width, height, spans, edges, xings)) {
+        return false;
+    }
+    for (int i = 0; i < spans->len; i++) {
+        cnvs_span s = spans->data[i];
+        float y0 = (float)s.row;
+        float y1 = (float)(s.row + 1);
+        gpu_vert a = { .x = s.xl, .y = y0 };
+        gpu_vert b = { .x = s.xr, .y = y0 };
+        gpu_vert c = { .x = s.xr, .y = y1 };
+        gpu_vert d = { .x = s.xl, .y = y1 };
+        if (!cnvs_verts_tri(out, a, b, c) || !cnvs_verts_tri(out, a, c, d)) {
+            return false;
         }
     }
     return true;

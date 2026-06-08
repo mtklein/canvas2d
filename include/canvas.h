@@ -31,6 +31,18 @@ void canvas_reset_transform(canvas *__single cv);
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_global_alpha(canvas *__single cv, float alpha);
 
+// Set the fill paint to a gradient and clear its colour stops; subsequent
+// fill() calls paint with it until the next canvas_set_fill_rgba.  Coordinates
+// are in the current user space (the transform is baked in now), matching how
+// path points are transformed when added.  Add at least two stops with
+// canvas_add_fill_color_stop; offsets are clamped to [0,1].
+void canvas_set_fill_linear_gradient(canvas *__single cv,
+                                     float x0, float y0, float x1, float y1);
+void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
+                                     float r0, float x1, float y1, float r1);
+void canvas_add_fill_color_stop(canvas *__single cv, float offset,
+                                float r, float g, float b, float a);
+
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h);
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h);
 

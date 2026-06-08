@@ -26,6 +26,7 @@ static MTLPixelFormat const kStencilFormat = MTLPixelFormatStencil8;
 @property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;
 @property (nonatomic, strong) id<MTLRenderPipelineState> replacePipe;
 @property (nonatomic, strong) id<MTLRenderPipelineState> clipPipe;
+@property (nonatomic, strong) id<MTLRenderPipelineState> gradPipe;   // per-vertex colour
 @property (nonatomic, strong) id<MTLDepthStencilState> dsClip;       // incr where ==ref
 @property (nonatomic, strong) id<MTLDepthStencilState> dsDrawClip;   // pass where ==ref
 @property (nonatomic) int width;
@@ -40,10 +41,11 @@ static MTLPixelFormat const kStencilFormat = MTLPixelFormatStencil8;
 // (no colour write) used to build the clip mask.
 static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
                                                 id<MTLLibrary> lib,
+                                                NSString *vs, NSString *fs,
                                                 bool blend, bool clip) {
     MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
-    pd.vertexFunction = [lib newFunctionWithName:@"solid_vs"];
-    pd.fragmentFunction = [lib newFunctionWithName:@"solid_fs"];
+    pd.vertexFunction = [lib newFunctionWithName:vs];
+    pd.fragmentFunction = [lib newFunctionWithName:fs];
     pd.stencilAttachmentPixelFormat = kStencilFormat;
     MTLRenderPipelineColorAttachmentDescriptor *ca = pd.colorAttachments[0];
     ca.pixelFormat = MTLPixelFormatRGBA8Unorm;
@@ -126,16 +128,18 @@ gpu *gpu_create(int width, int height) {
         o.queue = [device newCommandQueue];
         o.target = [device newTextureWithDescriptor:td];
         o.stencil = [device newTextureWithDescriptor:sd];
-        o.blendPipe = make_pipeline(device, lib, true, false);
-        o.replacePipe = make_pipeline(device, lib, false, false);
-        o.clipPipe = make_pipeline(device, lib, false, true);
+        o.blendPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", true, false);
+        o.replacePipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", false, false);
+        o.clipPipe = make_pipeline(device, lib, @"solid_vs", @"solid_fs", false, true);
+        o.gradPipe = make_pipeline(device, lib, @"grad_vs", @"grad_fs", true, false);
         o.dsClip = make_stencil_state(device, MTLStencilOperationIncrementClamp);
         o.dsDrawClip = make_stencil_state(device, MTLStencilOperationKeep);
         o.width = width;
         o.height = height;
         o.clipLevel = 0;
         if (!o.queue || !o.target || !o.stencil || !o.blendPipe ||
-            !o.replacePipe || !o.clipPipe || !o.dsClip || !o.dsDrawClip) {
+            !o.replacePipe || !o.clipPipe || !o.gradPipe || !o.dsClip ||
+            !o.dsDrawClip) {
             return NULL;
         }
         return (__bridge_retained gpu *)o;
@@ -206,6 +210,47 @@ void gpu_draw_solid(gpu *g, gpu_vert const *verts, int count,
         [enc setVertexBuffer:vbuf offset:0 atIndex:0];
         [enc setVertexBytes:viewport length:sizeof(viewport) atIndex:1];
         [enc setFragmentBytes:col length:sizeof(col) atIndex:0];
+        [enc drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:(NSUInteger)count];
+        [enc endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+    }
+}
+
+void gpu_draw_verts(gpu *g, gpu_cvert const *verts, int count) {
+    if (!g || count <= 0 || !verts) {
+        return;
+    }
+    @autoreleasepool {
+        GpuImpl *o = (__bridge GpuImpl *)g;
+
+        id<MTLBuffer> vbuf =
+            [o.device newBufferWithBytes:verts
+                                  length:(NSUInteger)count * sizeof(gpu_cvert)
+                                 options:MTLResourceStorageModeShared];
+
+        MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        rp.colorAttachments[0].texture = o.target;
+        rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
+        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+        rp.stencilAttachment.texture = o.stencil;
+        rp.stencilAttachment.loadAction = MTLLoadActionLoad;
+        rp.stencilAttachment.storeAction = MTLStoreActionStore;
+
+        id<MTLCommandBuffer> cb = [o.queue commandBuffer];
+        id<MTLRenderCommandEncoder> enc =
+            [cb renderCommandEncoderWithDescriptor:rp];
+        [enc setRenderPipelineState:o.gradPipe];
+        if (o.clipLevel > 0) {
+            [enc setDepthStencilState:o.dsDrawClip];
+            [enc setStencilReferenceValue:(uint32_t)o.clipLevel];
+        }
+
+        float viewport[2] = { (float)o.width, (float)o.height };
+        [enc setVertexBuffer:vbuf offset:0 atIndex:0];
+        [enc setVertexBytes:viewport length:sizeof(viewport) atIndex:1];
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:(NSUInteger)count];

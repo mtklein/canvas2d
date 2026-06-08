@@ -18,6 +18,13 @@ typedef struct {
     float r, g, b, a;
 } gpu_rgba;
 
+// Position + per-vertex straight-alpha colour, for Gouraud-shaded draws.  Field
+// order/layout matches the MSL `packed_float2 pos; packed_float4 color;` vertex.
+typedef struct {
+    float x, y;
+    float r, g, b, a;
+} gpu_cvert;
+
 // NULL on failure; the target starts transparent black.
 gpu *__single gpu_create(int width, int height);
 void gpu_destroy(gpu *__single g);
@@ -29,6 +36,12 @@ void gpu_clear(gpu *__single g, gpu_rgba color);
 void gpu_draw_solid(gpu *__single g,
                     gpu_vert const *__counted_by(count) verts, int count,
                     gpu_rgba color, bool blend);
+
+// Gouraud-shaded triangle list (every 3 vertices = 1 triangle), composited
+// source-over and masked by the current clip.  Used for gradient fills/strokes:
+// colour is interpolated per-pixel across each triangle.
+void gpu_draw_verts(gpu *__single g,
+                    gpu_cvert const *__counted_by(count) verts, int count);
 
 // Clip stack via the stencil buffer.  gpu_clip_reset clears it (no clip);
 // gpu_clip_add intersects the triangles (which must be non-overlapping, e.g. the
