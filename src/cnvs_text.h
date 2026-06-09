@@ -101,19 +101,16 @@ void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
                        float *__single x1, float *__single y1);
 
 // A primary font handle: a system typeface at a size, for the cheap font-wide
-// metrics (ascent/descent) and the single-font measureText path.  NULL on failure.
+// metrics (ascent/descent) and as the reference font for measureText's font-wide
+// box and baselines.  NULL on failure.
 typedef struct cnvs_font cnvs_font;
 cnvs_font *__single cnvs_font_create(char const *__null_terminated name, float size_px);
 void cnvs_font_destroy(cnvs_font *__single f);
 
-// `text` is `len` bytes of UTF-8 and need not be NUL-terminated: every walker here
-// is length-bounded (it stops at `text + len`, never at a terminator), so a caller
-// can hand a slice of a larger buffer directly -- which also hardens the unchecked
-// shim against over-reading a missing terminator.  See docs/bounds-safety.md.
-
-// Advance width of `text` in user px (Canvas measureText().width).
-float cnvs_font_advance(cnvs_font *__single f, char const *__counted_by(len) text,
-                        int len);
+// Font vertical metrics in user px: ascent and descent, both positive magnitudes
+// from the baseline.  Cheap (no glyph walk) -- for textBaseline positioning.
+void cnvs_font_vmetrics(cnvs_font *__single f, float *__single ascent,
+                        float *__single descent);
 
 // Full text metrics, all in user px, baseline-relative and laid out from a pen
 // origin at x = 0 (the Canvas measureText() defaults: textAlign start / left,
@@ -129,10 +126,9 @@ typedef struct {
     float hanging_baseline, ideographic_baseline;
 } cnvs_text_metrics;
 
-void cnvs_font_measure(cnvs_font *__single f, char const *__counted_by(len) text,
-                       int len, cnvs_text_metrics *__single out);
-
-// Font vertical metrics in user px: ascent and descent, both positive magnitudes
-// from the baseline.  Cheap (no glyph walk) -- for textBaseline positioning.
-void cnvs_font_vmetrics(cnvs_font *__single f, float *__single ascent,
-                        float *__single descent);
+// Full TextMetrics for a shaped line, fallback-aware: width and the actual (ink)
+// box come from the shaped runs (each glyph measured in its own fallback font); the
+// font-wide metrics (ascent/descent/em/baselines) come from `primary`.  Boundary
+// helper -- it reads the run glyphs the shaper handed back.
+void cnvs_shaped_metrics(cnvs_shaped const *__single s, cnvs_font *__single primary,
+                         cnvs_text_metrics *__single out);

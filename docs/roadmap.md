@@ -43,13 +43,14 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   font-family selection (pinned to Libian TC), weight, style, or the CSS `font`
   shorthand; and none of `direction`, `letterSpacing`, `wordSpacing`,
   `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
-- **Text shaping**: `fillText`/`strokeText` *render* through Core Text shaping
-  (`cnvs_shape`) with font fallback, so code points Libian TC lacks now draw — color
-  emoji as RGBA8 bitmaps (`cnvs_glyph_draw`, composited like `drawImage`), other
-  fallback runs as outlines. `measureText` and text alignment still use the older
-  single-font, 1:1 code-point→glyph path, so their metrics ignore fallback/shaping;
-  unifying measurement onto the shaper (and exercising the ligature/contextual/bidi
-  layout the shaper already produces) is the remaining text-shaping work.
+- **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
+  `maxWidth` all go through Core Text shaping (`cnvs_shape`) with font fallback — so
+  code points Libian TC lacks now both draw and measure (color emoji as RGBA8
+  bitmaps via `cnvs_glyph_draw`, other fallback runs as outlines), and a string
+  measures the way it draws. What the shaper produces but the renderer doesn't yet
+  exploit is *complex layout*: ligatures, contextual forms, and bidi reordering are
+  carried in the runs (and exercised by `test_shape`) but not yet surfaced as a
+  layout the public text API lays out — that's the remaining text-shaping work.
 - **`fill`/`stroke`/`clip`** on the *current* path take the fill rule from state,
   not an explicit argument (the `Path2D` overloads — `fill_path`/`stroke_path`/
   `clip_path` — do take an explicit rule).

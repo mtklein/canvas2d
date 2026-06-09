@@ -1602,36 +1602,21 @@ static float text_baseline_offset(canvas *__single cv, cnvs_font *__single f) {
     return 0.0f;  // unreachable for a valid enum
 }
 
-// Pen origin (alphabetic baseline, user space) for the no-maxWidth path: shift x
-// by the alignment fraction of the advance (measured only when not left/start),
-// y by the baseline offset.
-static void text_origin(canvas *__single cv, cnvs_font *__single f,
-                        char const *__counted_by(len) text, int len,
-                        float x, float y, float *__single ox, float *__single oy) {
-    float frac = text_align_frac(cv->cur.text_align);
-    *ox = frac != 0.0f ? x - frac * cnvs_font_advance(f, text, len) : x;
-    *oy = y + text_baseline_offset(cv, f);
-}
-
-// Layout for the maxWidth path: when the advance exceeds a finite positive
-// max_width, condense by scaling x by max_width/advance about the alignment
-// anchor.  Writes the pen origin and returns the device-space layout matrix (the
-// CTM with the condense folded in).
-static cnvs_mat text_layout_max(canvas *__single cv, cnvs_font *__single f,
-                                char const *__counted_by(len) text, int len,
-                                float x, float y, float max_width,
-                                float *__single ox, float *__single oy) {
-    float advance = cnvs_font_advance(f, text, len);
-    float sx = 1.0f;
-    if (isfinite(max_width) && max_width > 0.0f && advance > max_width) {
-        sx = max_width / advance;
+// Shape `text` (UTF-8, `len` bytes) with the current font/size.  NULL on failure;
+// the caller frees the result with cnvs_shaped_free.  cnvs_shape wants a
+// NUL-terminated string, so copy into one (the public API takes a byte slice).
+static cnvs_shaped *__single shape_text(canvas *__single cv,
+                                        char const *__counted_by(len) text, int len) {
+    char *tz = malloc((size_t)len + 1);
+    if (!tz) {
+        return NULL;
     }
-    *ox = x - text_align_frac(cv->cur.text_align) * advance * sx;
-    *oy = y + text_baseline_offset(cv, f);
-    // Scale x by sx about the anchor: X' = sx*X + ox*(1-sx), Y' = Y; then the CTM.
-    cnvs_mat cond = { .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
-                      .e = *ox * (1.0f - sx), .f = 0.0f };
-    return cnvs_mat_mul(cv->cur.ctm, cond);
+    memcpy(tz, text, (size_t)len);
+    tz[len] = '\0';
+    cnvs_shaped *__single s = cnvs_shape("Libian TC", cv->cur.font_size,
+                                         __unsafe_null_terminated_from_indexable(tz));
+    free(tz);
+    return s;
 }
 
 // Render one color (emoji) glyph as a bitmap: ask the boundary for its ink box,
@@ -1681,23 +1666,11 @@ static void draw_color_glyph(canvas *__single cv, void *__single font,
     free(buf);
 }
 
-// Lay out `text` with the shaper (so Core Text font fallback and color emoji work)
-// from the pen origin through `to_device`: accumulate outline glyphs into one path
-// (filled or stroked), and composite color-glyph runs (emoji) as bitmaps.
-static void paint_text(canvas *__single cv, char const *__counted_by(len) text,
-                       int len, float ox, float oy, cnvs_mat to_device, bool stroke) {
-    char *tz = malloc((size_t)len + 1);
-    if (!tz) {
-        return;
-    }
-    memcpy(tz, text, (size_t)len);
-    tz[len] = '\0';
-    cnvs_shaped *__single s = cnvs_shape("Libian TC", cv->cur.font_size,
-                                         __unsafe_null_terminated_from_indexable(tz));
-    free(tz);
-    if (!s) {
-        return;
-    }
+// Paint a shaped line from pen origin (ox, oy) through `to_device`: accumulate the
+// outline glyphs into one path (filled or stroked), and composite color-glyph runs
+// (emoji) as bitmaps.  Core Text font fallback already happened during shaping.
+static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
+                         float ox, float oy, cnvs_mat to_device, bool stroke) {
     cnvs_path_reset(&cv->text_path);
     float pen = ox;
     for (int r = 0; r < s->nruns; r++) {
@@ -1713,7 +1686,6 @@ static void paint_text(canvas *__single cv, char const *__counted_by(len) text,
             pen += run.xadv[i];
         }
     }
-    cnvs_shaped_free(s);
     if (stroke) {
         stroke_device_path(cv, &cv->text_path);
     } else {
@@ -1721,38 +1693,60 @@ static void paint_text(canvas *__single cv, char const *__counted_by(len) text,
     }
 }
 
-// Lay out `text` from the pen origin through `to_device` and fill the glyph
-// outlines (nonzero winding: overlapping contours fill solid).
-static void fill_text_at(canvas *__single cv, char const *__counted_by(len) text,
-                         int len, float ox, float oy, cnvs_mat to_device) {
-    paint_text(cv, text, len, ox, oy, to_device, false);
-}
-
-static void stroke_text_at(canvas *__single cv, char const *__counted_by(len) text,
-                           int len, float ox, float oy, cnvs_mat to_device) {
-    paint_text(cv, text, len, ox, oy, to_device, true);
+// Shape once, place by textAlign/textBaseline (condensing to max_width if finite and
+// positive), and paint.  One shaped line drives both the alignment advance and the
+// glyphs, so emoji and fallback runs are measured the same way they are drawn.
+static void do_text(canvas *__single cv, char const *__counted_by(len) text, int len,
+                    float x, float y, float max_width, bool stroke) {
+    cnvs_font *__single f = ensure_font(cv);
+    if (!f) {
+        return;
+    }
+    cnvs_shaped *__single s = shape_text(cv, text, len);
+    if (!s) {
+        return;
+    }
+    float advance = cnvs_shaped_width(s);
+    float sx = 1.0f;
+    if (isfinite(max_width) && max_width > 0.0f && advance > max_width) {
+        sx = max_width / advance;  // condense in x to fit
+    }
+    float ox = x - text_align_frac(cv->cur.text_align) * advance * sx;
+    float oy = y + text_baseline_offset(cv, f);
+    cnvs_mat td = cv->cur.ctm;
+    if (sx != 1.0f) {
+        // Scale x by sx about the anchor: X' = sx*X + ox*(1-sx), Y' = Y; then the CTM.
+        cnvs_mat cond = { .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
+                          .e = ox * (1.0f - sx), .f = 0.0f };
+        td = cnvs_mat_mul(cv->cur.ctm, cond);
+    }
+    paint_shaped(cv, s, ox, oy, td, stroke);
+    cnvs_shaped_free(s);
 }
 
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
-    cnvs_font *__single f = ensure_font(cv);
-    if (!f) {
-        return 0.0f;
-    }
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    return cnvs_font_advance(f, t, len);
+    cnvs_shaped *__single s = shape_text(cv, t, len);
+    if (!s) {
+        return 0.0f;
+    }
+    float w = cnvs_shaped_width(s);
+    cnvs_shaped_free(s);
+    return w;
 }
 
 canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
                                              char const *__null_terminated text) {
     canvas_text_metrics m;
-    memset(&m, 0, sizeof m);  // all-zero if the font can't be built
+    memset(&m, 0, sizeof m);  // all-zero if the font/shaping can't be built
     cnvs_font *__single f = ensure_font(cv);
-    if (f) {
-        int len = (int)strlen(text);
-        char const *__counted_by(len) t = __null_terminated_to_indexable(text);
+    int len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
+    cnvs_shaped *__single s = shape_text(cv, t, len);
+    if (f && s) {
         cnvs_text_metrics tm;
-        cnvs_font_measure(f, t, len, &tm);
+        cnvs_shaped_metrics(s, f, &tm);  // fallback-aware: each glyph in its run's font
         m.width = tm.width;
         m.actual_bounding_box_left = tm.actual_left;
         m.actual_bounding_box_right = tm.actual_right;
@@ -1766,19 +1760,16 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
         m.hanging_baseline = tm.hanging_baseline;
         m.ideographic_baseline = tm.ideographic_baseline;
     }
+    if (s) {
+        cnvs_shaped_free(s);
+    }
     return m;
 }
 
 void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
                         int len, float x, float y) {
     if (cv->rec) { cnvs_rec_text(cv->rec, "fill_text", x, y, text, len); }
-    cnvs_font *__single f = ensure_font(cv);
-    if (!f) {
-        return;
-    }
-    float ox, oy;
-    text_origin(cv, f, text, len, x, y, &ox, &oy);
-    fill_text_at(cv, text, len, ox, oy, cv->cur.ctm);
+    do_text(cv, text, len, x, y, -1.0f, false);
 }
 
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
@@ -1790,27 +1781,15 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
 
 void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
                           float x, float y, float max_width) {
-    cnvs_font *__single f = ensure_font(cv);
-    if (!f) {
-        return;
-    }
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    float ox, oy;
-    cnvs_mat td = text_layout_max(cv, f, t, len, x, y, max_width, &ox, &oy);
-    fill_text_at(cv, t, len, ox, oy, td);
+    do_text(cv, t, len, x, y, max_width, false);
 }
 
 void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,
                           int len, float x, float y) {
     if (cv->rec) { cnvs_rec_text(cv->rec, "stroke_text", x, y, text, len); }
-    cnvs_font *__single f = ensure_font(cv);
-    if (!f) {
-        return;
-    }
-    float ox, oy;
-    text_origin(cv, f, text, len, x, y, &ox, &oy);
-    stroke_text_at(cv, text, len, ox, oy, cv->cur.ctm);
+    do_text(cv, text, len, x, y, -1.0f, true);
 }
 
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
@@ -1822,15 +1801,9 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
 
 void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
                             float x, float y, float max_width) {
-    cnvs_font *__single f = ensure_font(cv);
-    if (!f) {
-        return;
-    }
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    float ox, oy;
-    cnvs_mat td = text_layout_max(cv, f, t, len, x, y, max_width, &ox, &oy);
-    stroke_text_at(cv, t, len, ox, oy, td);
+    do_text(cv, t, len, x, y, max_width, true);
 }
 
 // Bilinear sample of an RGBA8 source at source-pixel (fx, fy), unpremultiplied,

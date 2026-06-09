@@ -189,9 +189,12 @@ buffer and composited through the CTM by the very same code as `drawImage` — s
 emoji takes the transform, clip, global alpha, and shadow like any other image.
 (`CGBitmapContext` hands back premultiplied, top-row-first RGBA, so the core only
 unpremultiplies before that hand-off — no row flip; an early version added one and
-rendered every emoji upside down.)  Alignment and `measureText` still run on the
-older single-font outline path, so their metrics don't yet see fallback or color
-runs.
+rendered every emoji upside down.)  Measurement is unified onto the same path:
+`measureText`, the advance used for `textAlign`, and the `maxWidth` condense all read
+the shaped line (`cnvs_shaped_metrics` measures each glyph in its own fallback font),
+so a string measures the way it draws.  Only the font-wide metrics
+(ascent/descent/em/baselines) still come from the primary font handle — cheap, and
+text-independent.
 
 ## Bidi caret and selection: the intricate part adds no boundary at all
 
