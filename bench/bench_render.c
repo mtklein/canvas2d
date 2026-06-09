@@ -4,6 +4,7 @@
 // -> compositor blend -> premultiply/unpremultiply conversions) the way actual
 // rendering does, not isolated kernels.  Built on BOTH compositor backends; compare
 // the two with `ninja rendercmp`, or profile a backend with `sample`.
+#include "bench_gpu.h"
 #include "bench_reps.h"
 
 #include "canvas.h"
@@ -110,6 +111,7 @@ int main(void) {
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
 
+    bench_report_gpu_timing(cv);  // Metal GPU profile when CANVAS_GPU_TIMING is set
     free(px);
     canvas_destroy(cv);
     fprintf(stderr, "sink=%.0f\n", sink);

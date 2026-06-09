@@ -224,6 +224,11 @@ def main():
     w("  pool = console")
     w("  description = real-pipeline render: metal vs cpu compositor (both shipping)")
     w("")
+    w("rule gputime")
+    w("  command = $cmd")
+    w("  pool = console")
+    w("  description = Metal GPU execution time (ns total, us/dispatch)")
+    w("")
     w("rule run_gallery")
     w("  command = $bin")
     w("")
@@ -425,6 +430,20 @@ def main():
         f'-n "large cpu (1 readback)" "BENCH_READBACK=end ./{lgc}"')
     w(f"build rendercmp: rendercmp {sm} {smc} {lg} {lgc}")
     w(f"  cmd = {rendercmp_cmd}")
+    # `gputime` reports the Metal backend's own GPU execution time -- `sample` only
+    # sees CPU PCs and is blind to the GPU, so this is the complementary view.  Each
+    # render bench under CANVAS_GPU_TIMING prints ns total / dispatch count /
+    # us-per-dispatch; we run both the small and large bench in both readback shapes.
+    # Per-frame readback gives one dispatch per frame (the GPU per-draw cost); the
+    # one-readback-at-the-end shape collapses every frame into a single batched
+    # dispatch (maximally pipelined).  Metal-only; the cpu backend reports nothing.
+    gputime_cmd = (
+        f'echo "# small, per-frame readback" ; CANVAS_GPU_TIMING=1 ./{sm} ; '
+        f'echo "# small, 1 readback (batched)" ; CANVAS_GPU_TIMING=1 BENCH_READBACK=end ./{sm} ; '
+        f'echo "# large, per-frame readback" ; CANVAS_GPU_TIMING=1 ./{lg} ; '
+        f'echo "# large, 1 readback (batched)" ; CANVAS_GPU_TIMING=1 BENCH_READBACK=end ./{lg}')
+    w(f"build gputime: gputime {sm} {lg}")
+    w(f"  cmd = {gputime_cmd}")
     # `analyze` runs the static analyzer over the checked C (core + the cpu backend;
     # the ObjC Metal shim is out of scope).  One stamp per TU so it's incremental
     # and parallel; gated by -analyzer-werror in the rule.

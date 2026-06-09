@@ -5,6 +5,7 @@
 // the Metal compositor is expected to cross over ahead of the in-process software
 // one (which pays a per-pixel blend).  Built on BOTH backends; `ninja rendercmp`
 // runs it alongside the small bench.  BENCH_READBACK=end reads once at the end.
+#include "bench_gpu.h"
 #include "bench_reps.h"
 
 #include "canvas.h"
@@ -85,6 +86,7 @@ int main(void) {
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
 
+    bench_report_gpu_timing(cv);  // Metal GPU profile when CANVAS_GPU_TIMING is set
     free(px);
     canvas_destroy(cv);
     fprintf(stderr, "sink=%.0f\n", sink);

@@ -69,3 +69,13 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
 // Read the premultiplied target back, row-major top-first; len must be
 // width*height (pixels).  Conversion to unpremultiplied RGBA8 is the caller's job.
 void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out, int len);
+
+// Coarse GPU profiling: the total GPU execution time accumulated across every
+// command buffer committed since creation (nanoseconds), and the number of those
+// command buffers (dispatches).  ns/dispatch = total_ns/dispatches.  The CPU
+// backend does no GPU work and reports 0/0.  The Metal backend collects this only
+// when the CANVAS_GPU_TIMING environment variable is set at compositor_create time
+// -- otherwise it skips the per-command-buffer instrumentation and also reports
+// 0/0.  Either output pointer may be NULL.
+void compositor_gpu_timing(compositor *__single c,
+                           double *__single total_ns, long *__single dispatches);

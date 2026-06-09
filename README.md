@@ -181,6 +181,8 @@ ninja test               # just the tests (subset of the default build)
 ninja images             # just (re)render the gallery PNGs (subset of default)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
+ninja rendercmp          # hyperfine: real-pipeline render, metal vs cpu compositor
+ninja gputime            # Metal GPU execution time (ns total, us/dispatch)
 ninja coverage           # refresh docs/coverage.md (llvm-cov over src/, all tests)
 ```
 

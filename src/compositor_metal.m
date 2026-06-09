@@ -8,6 +8,7 @@
 
 #include "compositor.h"
 
+#include <os/lock.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,10 +38,43 @@ static char const compositor_metal_src[] = {
 @property (nonatomic, strong) id<MTLCommandBuffer> batchCB;
 @property (nonatomic, strong) id<MTLRenderCommandEncoder> batchEnc;
 @property (nonatomic, strong) id<MTLCommandBuffer> lastCB;  // most recent commit, for the readback wait
+@property (nonatomic) bool timing;  // CANVAS_GPU_TIMING set: accumulate GPU time per command buffer
+@end
+
+// GPU-time accumulators, updated by completion handlers from an internal Metal
+// queue and read by compositor_gpu_timing -- @public so the file-scope C helpers can
+// reach them via ->.  Zero-initialised, which is os_unfair_lock's unlocked state.
+// waitUntilCompleted returns only after a buffer's completion handlers have run, so
+// a drain_batch makes the totals final.
+@interface CmpImpl () {
+@public
+    os_unfair_lock _timingLock;
+    double _gpuNs;       // sum of (GPUEndTime - GPUStartTime) over committed buffers, ns
+    long _dispatches;    // number of timed command buffers
+}
 @end
 
 @implementation CmpImpl
 @end
+
+// Commit `cb`, first registering a completion handler that folds its GPU execution
+// time into the accumulators when timing is on.  GPUStartTime/GPUEndTime are valid
+// once the buffer completes; the handler runs before the matching waitUntilCompleted
+// returns, so the totals are settled after any drain.  The block retains `o`, but
+// `o` outlives every command buffer (compositor_destroy drains first), so there is
+// no use-after-free and the transient retain clears when the buffer is released.
+static void commit_timed(CmpImpl *o, id<MTLCommandBuffer> cb) {
+    if (o.timing) {
+        [cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
+            double ns = (done.GPUEndTime - done.GPUStartTime) * 1e9;
+            os_unfair_lock_lock(&o->_timingLock);
+            o->_gpuNs += ns;
+            o->_dispatches += 1;
+            os_unfair_lock_unlock(&o->_timingLock);
+        }];
+    }
+    [cb commit];
+}
 
 // Lazily open (or reuse) the render pass that consecutive ops batch into.
 static id<MTLRenderCommandEncoder> open_batch(CmpImpl *o) {
@@ -65,7 +99,7 @@ static void submit_batch(CmpImpl *o) {
         return;
     }
     [o.batchEnc endEncoding];
-    [o.batchCB commit];
+    commit_timed(o, o.batchCB);
     o.lastCB = o.batchCB;
     o.batchEnc = nil;
     o.batchCB = nil;
@@ -199,6 +233,7 @@ compositor *compositor_create(int width, int height) {
         o.compositePipe = make_pipeline(device, lib, TILE_COMPOSITE);
         o.width = width;
         o.height = height;
+        o.timing = getenv("CANVAS_GPU_TIMING") != NULL;
         if (!o.queue || !o.targetBuffer || !o.target || !o.clip ||
             !o.blendPipe || !o.compositePipe) {
             return NULL;
@@ -341,5 +376,23 @@ void compositor_read(compositor *c, cnvs_premul *out, int len) {
                        base + (NSUInteger)row * o.targetRowBytes, tight);
             }
         }
+    }
+}
+
+void compositor_gpu_timing(compositor *c, double *total_ns, long *dispatches) {
+    double ns = 0.0;
+    long d = 0;
+    if (c) {
+        CmpImpl *o = (__bridge CmpImpl *)c;
+        os_unfair_lock_lock(&o->_timingLock);
+        ns = o->_gpuNs;
+        d = o->_dispatches;
+        os_unfair_lock_unlock(&o->_timingLock);
+    }
+    if (total_ns) {
+        *total_ns = ns;
+    }
+    if (dispatches) {
+        *dispatches = d;
     }
 }

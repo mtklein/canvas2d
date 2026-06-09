@@ -345,3 +345,15 @@ void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out,
     }
     memcpy(out, c->target, (size_t)(c->width * c->height) * sizeof *out);
 }
+
+// No GPU here: the software compositor reports an empty profile.
+void compositor_gpu_timing(compositor *__single c,
+                           double *__single total_ns, long *__single dispatches) {
+    (void)c;
+    if (total_ns) {
+        *total_ns = 0.0;
+    }
+    if (dispatches) {
+        *dispatches = 0;
+    }
+}
