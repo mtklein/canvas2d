@@ -96,8 +96,8 @@ static void check_backend(int threaded) {
     free(cov);
 }
 
-// Design C runs a fixed source-over pipeline; it must agree with the A/B program.
-static void check_pipe(void) {
+// Designs C and D run a fixed source-over pipeline; both must agree with A/B.
+static void check_pipe(int checked) {
     int const m = 50;
     int const mlen = m * 4;
     uint8_t *__counted_by(mlen) px = malloc((size_t)mlen);
@@ -108,14 +108,14 @@ static void check_pipe(void) {
             px[i * 4] = 0; px[i * 4 + 1] = 0; px[i * 4 + 2] = 255; px[i * 4 + 3] = 255;
             cov[i] = 255;
         }
-        pixvm_run_pipe(px, cov, m);
+        if (checked) { pixvm_run_pipe_checked(px, cov, m); } else { pixvm_run_pipe(px, cov, m); }
         CHECK(px[0] == 0 && px[1] == 128 && px[2] == 128 && px[3] == 255);
         CHECK(px[(m - 1) * 4 + 1] == 128 && px[(m - 1) * 4 + 2] == 128);
 
         for (int i = 0; i < m; i++) {
             px[i * 4] = 0; px[i * 4 + 1] = 0; px[i * 4 + 2] = 255; px[i * 4 + 3] = 255;
         }
-        pixvm_run_pipe(px, NULL, m);  // NULL coverage == fully opaque
+        if (checked) { pixvm_run_pipe_checked(px, NULL, m); } else { pixvm_run_pipe(px, NULL, m); }
         CHECK(px[1] == 128 && px[2] == 128 && px[3] == 255);
     }
     free(px);
@@ -144,7 +144,8 @@ static int run_in_child(int threaded, pixop prog0) {
 int main(void) {
     check_backend(0);  // switch
     check_backend(1);  // threaded
-    check_pipe();      // SkRasterPipeline-style
+    check_pipe(0);     // SkRasterPipeline-style (unsafe program ptr + forged ctx)
+    check_pipe(1);     // fully bounds-checked pipeline
 
     // An out-of-range register operand traps in both backends: STORE reads
     // reg[20..23] of a 16-register file and writes the result to dst, so the OOB
