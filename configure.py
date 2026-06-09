@@ -67,6 +67,18 @@ CWARN = "-Werror -Weverything " + " ".join(
 CINC = "-Iinclude -Isrc"
 OBJCWARN = "-Wall -Wextra"
 
+# `ninja analyze` runs the Clang Static Analyzer over the checked C: path-sensitive
+# use-after-free / double-free / leak detection (the unix.Malloc checker), the
+# nearest thing to *static* temporal-safety checking to complement -fbounds-safety's
+# spatial guarantee (Clang has no temporal equivalent for C -- its lifetime analysis
+# is C++-only; see docs/bounds-safety.md).  -analyzer-werror gates the build on any
+# finding; the dead-store style checker is dropped (not a memory-safety signal).
+# In `all` (a bare `ninja` runs everything): the scope is kept to memory-safety
+# checkers so the path-sensitive analyzer is unlikely to false-positive and break
+# the build; widen it only if that holds up.
+ANALYZE = ("--analyze -Xclang -analyzer-output=text -Xclang -analyzer-werror "
+           "-Xclang -analyzer-disable-checker -Xclang deadcode.DeadStores")
+
 # Frameworks every variant needs (the Core Text font shim).
 BASE_FRAMEWORKS = "-framework CoreText -framework CoreGraphics -framework CoreFoundation"
 
@@ -83,7 +95,13 @@ BACKEND_SRCS = {os.path.basename(src) for src, _fw in BACKENDS.values()}
 # the .m shim) because they bind un-annotated system headers, behind a bounds-safe ABI.
 BOUNDARY_C = {"cnvs_font_ct.c"}
 
-_DEBUG = "-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all"
+# The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
+# (stack use-after-scope and use-after-return) -- the class -fbounds-safety
+# doesn't address.  detect_leaks is deliberately NOT enabled: LeakSanitizer is
+# broken on Apple-Silicon macOS (libobjc false positives); the macOS `leaks` tool
+# covers leaks instead (see the leakcheck test).
+_DEBUG = ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all "
+          "-fsanitize-address-use-after-scope -fsanitize-address-use-after-return=always")
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?, backend).
 # The -cpu variants run the test suite against the software compositor,
@@ -185,6 +203,19 @@ def main():
     w("rule run_gallery")
     w("  command = $bin")
     w("")
+    w("rule analyze")
+    w(f"  command = clang {ANALYZE} $cstd $cinc $in && touch $out")
+    w("  description = ANALYZE $in")
+    w("")
+    # `leakcheck` runs the non-ASan release-cpu build under the macOS `leaks` tool
+    # (LeakSanitizer is broken on Apple-Silicon macOS).  `leaks` exits non-zero if
+    # any allocation is unreachable at exit, so it gates.  The stamp makes it
+    # idempotent -- it reruns only when its binary changes -- so it can live in `all`.
+    w("rule leakcheck")
+    w("  command = leaks --atExit -- $bin && touch $out")
+    w("  pool = console")
+    w("  description = leakcheck $bin")
+    w("")
 
     # Bench stems, e2e "bench" sorted last; variants that build benches.
     bench_stems = sorted((os.path.splitext(os.path.basename(b))[0] for b in benches),
@@ -282,16 +313,31 @@ def main():
     # `profile` samples the release benches in place (no output file, always reruns).
     release_bench_exes = [f"build/release/{s}" for s in bench_stems]
     w(f"build profile: profile {' '.join(release_bench_exes)}")
+    # `analyze` runs the static analyzer over the checked C (core + the cpu backend;
+    # the ObjC Metal shim is out of scope).  One stamp per TU so it's incremental
+    # and parallel; gated by -analyzer-werror in the rule.
+    analyze_srcs = core_c + [BACKENDS["cpu"][0]]
+    analyze_stamps = []
+    for c in analyze_srcs:
+        stem = os.path.splitext(os.path.basename(c))[0]
+        stamp = os.path.join("build", "analyze", stem + ".stamp")
+        w(f"build {stamp}: analyze {c}")
+        analyze_stamps.append(stamp)
+    w(f"build analyze: phony {' '.join(analyze_stamps)}")
+    # leakcheck stamp regenerates only when the release-cpu test_leak binary changes.
+    w("build build/release-cpu/test_leak.leakok: leakcheck build/release-cpu/test_leak")
+    w("  bin = ./build/release-cpu/test_leak")
+    w("build leakcheck: phony build/release-cpu/test_leak.leakok")
     # The default `all` builds every variant's executables -- tests, benches and
     # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
-    # (`images`) so they track the renderer in lockstep, and replays the fuzz
-    # corpus (`fuzzcorpus`).  Listing all five variant phonies covers every
-    # buildable artifact (release/unsafe carry the benches; release/release-cpu
-    # carry the examples).  A passing build is silent, so a green `ninja` shows
-    # only its progress -- a rendering change instead surfaces as a dirtied
-    # gallery/*.png.  The always-rerun measurement targets (benchcmp, profile)
-    # stay opt-in -- not in `all`.
-    all_targets = "release debug unsafe release-cpu debug-cpu test images"
+    # (`images`) so they track the renderer in lockstep, replays the fuzz corpus
+    # (`fuzzcorpus`), and runs the security gates `analyze` (static UAF/double-free/
+    # leak) and `leakcheck` (the macOS `leaks` tool).  A bare `ninja` is meant to do
+    # everything, so all of these gate it; the gates are idempotent (stamps), so a
+    # clean tree is still "no work to do".  Only the always-rerun measurement
+    # targets (benchcmp, profile) stay opt-in.
+    all_targets = ("release debug unsafe release-cpu debug-cpu test images "
+                   "analyze leakcheck")
     if fuzz_corpus:
         all_targets += " fuzzcorpus"
     w(f"build all: phony {all_targets}")

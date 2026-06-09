@@ -298,3 +298,40 @@ harness #1.
 ninja build/release-cpu/test_png build/debug-cpu/test_png   # builds the -cpu core objects
 # then compile overflow_poc.c against build/{release,debug}-cpu/obj/*.o  (see PoC header)
 ```
+
+## 5. Temporal safety: tooling and review
+
+`-fbounds-safety` is spatial-only; there is **no temporal analog for C**. Clang's
+Lifetime Safety analysis is the nearest effort but it is C++-only and experimental
+([LifetimeSafety.html](https://clang.llvm.org/docs/LifetimeSafety.html)). With no
+threading yet, TSan is out of scope. So temporal safety here is *assembled* from
+detection + discipline, not enforced by a type system. What we added:
+
+- **`ninja analyze`** — the Clang Static Analyzer (`unix.Malloc`: path-sensitive
+  use-after-free / double-free / leak) over the checked C, `-analyzer-werror` to
+  gate. The closest thing to *static* temporal checking. Scoped to memory-safety
+  checkers (dead-store style noise dropped). **0 findings** across the core.
+- **Strengthened debug ASan** — added `-fsanitize-address-use-after-scope` and
+  `-fsanitize-address-use-after-return=always` to widen *temporal* dynamic
+  coverage (stack use-after-scope/return), paired with the existing fuzzing.
+- **`ninja leakcheck`** — runs the non-ASan `release-cpu` build under the macOS
+  `leaks` tool, because **LeakSanitizer is broken on Apple-Silicon macOS**
+  (libobjc false positives; `detect_leaks` unusable —
+  [llvm#115992](https://github.com/llvm/llvm-project/issues/115992)). `tests/test_leak.c`
+  churns the ownership-transfer paths (save/restore clip-mask copies, gradients,
+  image-data round-trips, the font cache). **0 leaks.**
+
+All three are in `all`, so a bare `ninja` runs them; both new gates are idempotent.
+
+**Review (interprocedural, which the analyzer can't follow):** clip-mask
+save→restore→destroy (deep-copies, no alias, no double-free) and the font cache
+(`ensure_font`: destroy-then-recreate, NULL-safe, callers guard NULL) are clean.
+
+**Limitation found — `__attribute__((cleanup))` does not compose with
+`-fbounds-safety`.** The RAII-lite scope-bound-free idiom (a standard C
+temporal-safety mechanism) needs `&local`, and the address of a *checked* local
+pointer has a flavor (`T *__bidi_indexable *…`) that no `cleanup` function
+signature can match — every spelling mismatches. So that prevention technique is
+unavailable under the flag; temporal hygiene rests on the single-owner / single-
+free discipline plus the `leakcheck` + `analyze` gates. (Same family as the
+`&__counted_by` friction noted in docs/bounds-safety.md.)
