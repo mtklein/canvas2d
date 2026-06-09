@@ -175,3 +175,28 @@ So the whole text path — shape, fall back, lay out, outline or draw — keeps 
 index-heavy logic on the checked side and its irreducibly-CT work (shaping, glyph
 paths, glyph rasterization) on the unsafe side, with every crossing a plain
 `(pointer, count)` and not one forge among them.
+
+## Bidi caret and selection: the intricate part adds no boundary at all
+
+Caret placement and selection are the most index-heavy text feature, and they are the
+cleanest result: **they add zero unsafe surface.** `cnvs_shaped_x_at_index` (logical
+index → visual x) and `cnvs_shaped_selection` (logical range → visual spans) are pure
+cross-indexing over the cluster map the boundary already handed across — no CT call,
+no new crossing.
+
+The bidi behaviour falls out of the index logic. A *full* selection stays one span
+over the whole line; a logical range that straddles the LTR↔RTL boundary maps to
+*non-contiguous* visual positions and splits — selecting logical `[1,5)` of
+`"Hi שלום!"` yields two spans (the `"i "` piece on the left and a Hebrew sub-piece
+further right), because the selected glyphs are interrupted in visual order by
+unselected ones. The "selected?" toggle walking visual order produces the split for
+free.
+
+Every piece of that is checked: each `cluster[i]` read against the run count, each
+`out[n++]` against the `__counted_by(max)` output buffer (the span count is capped, so
+a pathological input can't overflow the caller's array), the cluster value
+range-validated before it's trusted as a source index. **No forge, no CT, all
+checked.** The thesis the whole exploration kept hitting lands hardest here: put the
+indexed data in a `(pointer, count)` form once at the boundary, and even the most
+intricate downstream logic — bidi — is ordinary bounds-checked C. The unsafe surface
+of real text never grew past shape + outline + draw.
