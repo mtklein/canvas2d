@@ -82,6 +82,55 @@ static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
     return ok;
 }
 
+// Glyph-outline walk (same shape as cnvs_font_ct.c): Core Text glyph space is y-up,
+// baseline-relative; flip y, place at the pen origin, map user->device.
+struct walk {
+    cnvs_path *out;
+    cnvs_mat to_device;
+    float ox, oy;
+    float tol;
+};
+
+static cnvs_vec2 gpt(struct walk const *w, CGPoint p) {
+    cnvs_vec2 u = { w->ox + (float)p.x, w->oy - (float)p.y };
+    return cnvs_mat_apply(w->to_device, u);
+}
+
+static void emit(void *info, CGPathElement const *e) {
+    struct walk *w = info;
+    switch (e->type) {
+        case kCGPathElementMoveToPoint:
+            cnvs_path_move_to(w->out, gpt(w, e->points[0]));
+            break;
+        case kCGPathElementAddLineToPoint:
+            cnvs_path_line_to(w->out, gpt(w, e->points[0]));
+            break;
+        case kCGPathElementAddQuadCurveToPoint:
+            cnvs_path_quad_to(w->out, gpt(w, e->points[0]), gpt(w, e->points[1]), w->tol);
+            break;
+        case kCGPathElementAddCurveToPoint:
+            cnvs_path_cubic_to(w->out, gpt(w, e->points[0]), gpt(w, e->points[1]),
+                               gpt(w, e->points[2]), w->tol);
+            break;
+        case kCGPathElementCloseSubpath:
+            cnvs_path_close(w->out);
+            break;
+    }
+}
+
+void cnvs_glyph_outline(void *font, uint16_t glyph, float ox, float oy,
+                        cnvs_mat to_device, float tol, cnvs_path *out) {
+    if (!font) {
+        return;
+    }
+    CGPathRef path = CTFontCreatePathForGlyph((CTFontRef)font, (CGGlyph)glyph, NULL);
+    if (path) {  // NULL for blanks and for color glyphs (emoji) -- no outline
+        struct walk w = { .out = out, .to_device = to_device, .ox = ox, .oy = oy, .tol = tol };
+        CGPathApply(path, &w, emit);
+        CGPathRelease(path);
+    }
+}
+
 cnvs_shaped *cnvs_shape(char const *name, float size_px, char const *text) {
     CFStringRef cfname = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
     CFStringRef str = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);

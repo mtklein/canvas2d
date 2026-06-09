@@ -76,11 +76,41 @@ static void check_fallback(void) {
     cnvs_shaped_free(s);
 }
 
+// Positioned outlines: shaping + layout (checked) + per-glyph outline (boundary).
+// Latin text produces geometry; a color-emoji glyph has an advance but NO outline
+// path -- the gap that the bitmap boundary will fill.
+static void check_outline(void) {
+    cnvs_shaped *s = cnvs_shape("Helvetica", 40.0f, "ffi");
+    CHECK(s != NULL);
+    if (s) {
+        cnvs_path p;
+        cnvs_path_init(&p);
+        float w = cnvs_shaped_outline(s, 0.0f, 0.0f, cnvs_mat_identity(), 0.25f, &p);
+        CHECK(w > 0.0f);
+        CHECK(p.pt_len > 0 && p.sp_len > 0);   // "ffi" produced outline geometry
+        cnvs_path_free(&p);
+        cnvs_shaped_free(s);
+    }
+
+    cnvs_shaped *e = cnvs_shape("Helvetica", 40.0f, "\xF0\x9F\x98\x80");  // lone emoji
+    CHECK(e != NULL);
+    if (e) {
+        cnvs_path p;
+        cnvs_path_init(&p);
+        float w = cnvs_shaped_outline(e, 0.0f, 0.0f, cnvs_mat_identity(), 0.25f, &p);
+        CHECK(w > 0.0f);          // it has an advance (occupies space)
+        CHECK(p.pt_len == 0);     // but a color glyph has no outline path
+        cnvs_path_free(&p);
+        cnvs_shaped_free(e);
+    }
+}
+
 int main(void) {
     check_shape("ffi waffle", false);             // Latin with ligatures (cluster gaps)
     check_shape("a\xF0\x9F\x98\x80""b", false);   // a + U+1F600 emoji + b (multi-run)
     check_shape("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D", true);  // Hebrew "shalom" (RTL)
     check_shape("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!", true);  // mixed bidi
     check_fallback();
+    check_outline();
     return TEST_REPORT();
 }

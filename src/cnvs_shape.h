@@ -12,6 +12,9 @@
 // the arrays; a bad cluster *value* is caught by an explicit range check in the core.
 // See docs/text-boundary.md.
 
+#include "cnvs_math.h"
+#include "cnvs_path.h"
+
 #include <ptrcheck.h>
 #include <stdint.h>
 
@@ -48,3 +51,15 @@ int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x);    // hit-te
 // buffer the boundary fills within `cap` comes back.  Used to confirm fallback (a run
 // that fell back to a different font reports a different name).
 int cnvs_run_font_name(void const *__single font, char *__counted_by(cap) buf, int cap);
+
+// Outline a shaped line at pen origin (ox,oy) in user space into `out` (device space,
+// mapped by to_device, curves flattened at `tol` px).  Layout -- the pen advance --
+// runs checked in the core; each glyph's outline is fetched per-glyph by the boundary
+// using its run's font.  Returns the advance width.  Color glyphs (emoji) have no
+// outline path and contribute only their advance.
+float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
+                          cnvs_mat to_device, float tol, cnvs_path *__single out);
+
+// Outline one glyph of the opaque `font` at pen origin (ox,oy).  Boundary helper.
+void cnvs_glyph_outline(void *__single font, uint16_t glyph, float ox, float oy,
+                        cnvs_mat to_device, float tol, cnvs_path *__single out);

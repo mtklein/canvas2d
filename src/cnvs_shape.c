@@ -38,3 +38,19 @@ int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x) {
     }
     return -1;
 }
+
+float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
+                          cnvs_mat to_device, float tol, cnvs_path *__single out) {
+    if (!s) {
+        return 0.0f;
+    }
+    float pen = ox;
+    for (int r = 0; r < s->nruns; r++) {
+        cnvs_glyph_run run = s->run[r];  // visual-order glyphs, so advancing the pen
+        for (int i = 0; i < run.count; i++) {  // left-to-right places RTL runs too
+            cnvs_glyph_outline(run.font, run.glyph[i], pen, oy, to_device, tol, out);
+            pen += run.xadv[i];
+        }
+    }
+    return pen - ox;
+}
