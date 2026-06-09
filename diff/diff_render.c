@@ -119,10 +119,35 @@ static canvas *__single scene_image(void) {
     return c;
 }
 
+// Clipping: a circular clip mask, then translucent fills under it.  Exercises the
+// compositor's clip attenuation -- a path where the CPU and Metal backends apply
+// coverage differently (CPU rounds the attenuated source to _Float16, Metal keeps
+// it in float), so it stresses a distinct source of divergence.
+static canvas *__single scene_clip(void) {
+    int w = 128, h = 128;
+    canvas *__single c = canvas_create(w, h);
+    if (!c) {
+        return NULL;
+    }
+    canvas_set_fill_rgba(c, 0.12f, 0.30f, 0.55f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_begin_path(c);
+    canvas_arc(c, 64.0f, 64.0f, 50.0f, 0.0f, TAU, false);
+    canvas_clip(c);
+    canvas_set_fill_rgba(c, 0.95f, 0.40f, 0.20f, 0.6f);
+    canvas_fill_rect(c, 10.0f, 10.0f, 80.0f, 80.0f);
+    canvas_set_fill_rgba(c, 0.20f, 0.85f, 0.50f, 0.5f);
+    canvas_begin_path(c);
+    canvas_arc(c, 80.0f, 80.0f, 36.0f, 0.0f, TAU, false);
+    canvas_fill(c);
+    return c;
+}
+
 int main(int argc, char **argv) {
     char const *dir = argc > 1 ? argv[1] : ".";
     dump(scene_modes(), dir, "modes", COLS * CELL, ROWS * CELL);
     dump(scene_gradient(), dir, "gradient", 128, 128);
     dump(scene_image(), dir, "image", 128, 128);
+    dump(scene_clip(), dir, "clip", 128, 128);
     return 0;
 }
