@@ -31,6 +31,10 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    horizontal then vertical pass over a coverage/colour buffer, every tap an
    indexed read against a `__counted_by` row. The canonical stencil loop.
 
+Internals (not API features) considered and deferred: a sparse/RLE coverage format
+to skip the transparent ~40–60% of a fill's bbox — analysis and why dense+SIMD stays
+the default in [sparse-coverage.md](sparse-coverage.md).
+
 ## Partial — implemented but narrower than spec
 
 - **`measureText`** returns only `.width`. The real `TextMetrics` also carries
