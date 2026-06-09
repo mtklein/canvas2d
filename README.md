@@ -30,6 +30,13 @@ Transforms, `save`/`restore`, global alpha, filled Béziers and arcs, strokes:
 
 ![shapes](gallery/shapes.png)
 
+`transform` — arbitrary affine matrices beyond translate/rotate/scale: horizontal
+and vertical skew, anisotropic scale, reflection, combined shear. The dashed
+identity footprint sits behind each deformed "F" (chosen because it has no
+symmetry):
+
+![affine](gallery/affine.png)
+
 Winding rules — a donut (nonzero hole), then a self-intersecting pentagram filled
 nonzero (solid centre) vs even-odd (hollow centre):
 

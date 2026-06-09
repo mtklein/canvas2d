@@ -1275,6 +1275,71 @@ static void subrect(void) {
     save(c, "gallery/subrect.png");
 }
 
+// One motif (a teal square with a gold "F") centred at the origin; the caller's
+// transform deforms it.  "F" has no symmetry, so reflection and shear read at a
+// glance.
+static void affine_motif(canvas *__single c) {
+    canvas_set_fill_rgba(c, 0.25f, 0.70f, 0.78f, 0.85f);
+    canvas_fill_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
+    canvas_set_stroke_rgba(c, 0.95f, 0.97f, 1.0f, 0.95f);
+    canvas_set_line_width(c, 2.0f);
+    canvas_stroke_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
+    canvas_set_fill_rgba(c, 0.99f, 0.85f, 0.30f, 1.0f);
+    canvas_set_font_size(c, 54.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_MIDDLE);
+    canvas_fill_text(c, "F", 0.0f, 0.0f);
+}
+
+// canvas_transform: arbitrary affine matrices beyond translate/rotate/scale.  Each
+// cell applies one matrix to the motif (solid), with the identity footprint behind
+// it (dashed), so the shear / scale / reflection is visible.
+static void affine(void) {
+    float const M = 14.0f, cellW = 150.0f, cellH = 122.0f;
+    canvas *__single c = canvas_create(478, 272);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 478.0f, 272.0f);
+
+    struct { float a, b, c, d; char const *name; } const mat[6] = {
+        { 1.0f, 0.0f, 0.0f, 1.0f, "identity" },
+        { 1.0f, 0.0f, 0.5f, 1.0f, "horizontal skew" },
+        { 1.0f, 0.45f, 0.0f, 1.0f, "vertical skew" },
+        { 1.3f, 0.0f, 0.0f, 0.65f, "anisotropic scale" },
+        { -1.0f, 0.0f, 0.0f, 1.0f, "reflect (a = -1)" },
+        { 1.0f, 0.3f, 0.42f, 1.0f, "shear x + y" },
+    };
+    float const dash[2] = { 5.0f, 4.0f }, solid[1] = { 1.0f };
+
+    for (int i = 0; i < 6; i++) {
+        int col = i % 3, row = i / 3;
+        float ox = M + (float)col * cellW, oy = M + (float)row * cellH;
+        canvas_save(c);
+        canvas_translate(c, ox + 75.0f, oy + 52.0f);
+        // Identity footprint (dashed), drawn before the matrix is applied.
+        canvas_set_line_dash(c, dash, 2);
+        canvas_set_line_width(c, 1.2f);
+        canvas_set_stroke_rgba(c, 0.45f, 0.48f, 0.55f, 0.85f);
+        canvas_stroke_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
+        canvas_set_line_dash(c, solid, 0);
+        // Apply the matrix, draw the motif deformed.
+        canvas_transform(c, mat[i].a, mat[i].b, mat[i].c, mat[i].d, 0.0f, 0.0f);
+        affine_motif(c);
+        canvas_restore(c);
+
+        canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_font_size(c, 12.0f);
+        canvas_fill_text(c, mat[i].name, ox + 75.0f, oy + 108.0f);
+    }
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/affine.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1580,6 +1645,7 @@ static void shadows(void) {
 
 int main(void) {
     shapes();
+    affine();
     winding();
     dashes();
     imagedata();
