@@ -337,6 +337,78 @@ static void roundrect(void) {
     save(c, "gallery/roundrect.png");
 }
 
+// strokeRect: outline rectangles without disturbing the current path.  A 3x2 grid
+// shows the three joins on a thick outline, a dashed rect, a rotated-CTM quad with
+// a gradient stroke, and the degenerate zero-extent rect (which strokes a line).
+static void strokerect(void) {
+    float const margin = 12.0f, cw = 148.0f, ch = 104.0f;
+    canvas *__single c = canvas_create(468, 232);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 232.0f);
+
+    char const *const labels[6] = { "miter join", "round join", "bevel join",
+                                    "dashed", "rotated quad", "degenerate line" };
+    for (int idx = 0; idx < 6; idx++) {
+        int col = idx % 3, row = idx / 3;
+        float ox = margin + (float)col * cw, oy = margin + (float)row * ch;
+        float rx = ox + 26.0f, ry = oy + 20.0f, rw = 96.0f, rh = 46.0f;
+
+        // Reset all line styles to defaults at the top of every cell.
+        float const solid[1] = { 1.0f };
+        canvas_set_line_dash(c, solid, 0);
+        canvas_set_line_join(c, CANVAS_JOIN_MITER);
+        canvas_set_line_cap(c, CANVAS_CAP_BUTT);
+
+        if (idx == 0 || idx == 1 || idx == 2) {
+            canvas_line_join const j[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
+                                            CANVAS_JOIN_BEVEL };
+            float const col3[3][3] = { { 0.96f, 0.56f, 0.26f },
+                                       { 0.40f, 0.82f, 0.50f },
+                                       { 0.36f, 0.62f, 0.95f } };
+            canvas_set_line_join(c, j[idx]);
+            canvas_set_line_width(c, 14.0f);
+            canvas_set_stroke_rgba(c, col3[idx][0], col3[idx][1], col3[idx][2], 1.0f);
+            canvas_stroke_rect(c, rx, ry, rw, rh);
+        } else if (idx == 3) {
+            float const dash[2] = { 11.0f, 7.0f };
+            canvas_set_line_dash(c, dash, 2);
+            canvas_set_line_width(c, 4.0f);
+            canvas_set_line_cap(c, CANVAS_CAP_ROUND);
+            canvas_set_stroke_rgba(c, 0.95f, 0.82f, 0.30f, 1.0f);
+            canvas_stroke_rect(c, rx, ry, rw, rh);
+        } else if (idx == 4) {
+            // Rotated CTM strokes a rotated quad (corners go through the transform).
+            canvas_save(c);
+            canvas_translate(c, ox + 74.0f, oy + 42.0f);
+            canvas_rotate(c, 0.32f);
+            canvas_set_stroke_linear_gradient(c, -44.0f, 0.0f, 44.0f, 0.0f);
+            canvas_add_stroke_color_stop(c, 0.0f, 0.30f, 0.90f, 0.95f, 1.0f);
+            canvas_add_stroke_color_stop(c, 1.0f, 0.95f, 0.35f, 0.85f, 1.0f);
+            canvas_set_line_width(c, 8.0f);
+            canvas_set_line_join(c, CANVAS_JOIN_ROUND);
+            canvas_stroke_rect(c, -44.0f, -22.0f, 88.0f, 44.0f);
+            canvas_restore(c);
+        } else {
+            // h == 0 and w == 0 degenerate to round-capped lines: a crisp plus.
+            float mx = ox + 74.0f, my = oy + 42.0f;
+            canvas_set_line_width(c, 10.0f);
+            canvas_set_line_cap(c, CANVAS_CAP_ROUND);
+            canvas_set_stroke_rgba(c, 0.95f, 0.45f, 0.55f, 1.0f);
+            canvas_stroke_rect(c, mx - 44.0f, my, 88.0f, 0.0f);
+            canvas_stroke_rect(c, mx, my - 24.0f, 0.0f, 48.0f);
+        }
+
+        canvas_set_fill_rgba(c, 0.78f, 0.82f, 0.90f, 1.0f);
+        canvas_set_font_size(c, 14.0f);
+        canvas_fill_text(c, labels[idx], ox + 26.0f, oy + 92.0f);
+    }
+
+    save(c, "gallery/strokerect.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -593,6 +665,7 @@ int main(void) {
     joinscaps();
     paths();
     roundrect();
+    strokerect();
     clipping();
     gradients();
     batching();

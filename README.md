@@ -53,6 +53,12 @@ oversized radii are scaled down by the CSS overlap rule:
 
 ![roundrect](gallery/roundrect.png)
 
+`strokeRect` — the three joins on a thick outline, a dashed rect, a rotated-CTM
+quad with a gradient stroke, and the degenerate zero-extent rect (which strokes a
+round-capped line):
+
+![strokerect](gallery/strokerect.png)
+
 Clipping — a circular window, the intersection of two discs, and a
 self-intersecting star, each masking the same flood of stripes (coverage mask):
 
