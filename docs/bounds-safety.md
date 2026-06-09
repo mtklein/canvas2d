@@ -450,6 +450,38 @@ Net: `-fbounds-safety` made the *parsing* (the actual attack surface) safe for
 free, and pushed the only real work to the libc string boundary — a small, named,
 auditable set of forges. Fuzzed at ~46k exec/run with nothing found.
 
+### The other direction: the *recorder* is strictly easier (zero forges)
+
+`canvas_record_to()` ([src/cnvs_record.c](../src/cnvs_record.c)) is the write-side
+inverse: it installs a recorder on the canvas, and each recordable public op
+appends its line, so a live session is serialized to the same text format the
+parser reads. Round-tripping is pinned by [tests/test_record.c](../tests/test_record.c)
+two ways — replaying the file is *pixel-identical*, and replaying-while-recording
+reproduces the file *byte-for-byte* (a drift guard on every command's spelling).
+
+The striking thing is the **asymmetry**: writing crosses the same libc seam as
+reading, but in the easy direction, so the recorder needs **no forges at all**.
+Emitting is `__counted_by(n)` float runs (`v[i]`, bounds-checked for free) and
+`__null_terminated` command names / text handed *straight to* `fputs`/`fprintf` —
+and libc's sinks already *want* `__null_terminated`, so the conversion the parser
+had to forge its way *out of* is exactly the direction the writer flows *into*,
+for free. Parsing forces `indexable → __null_terminated` (no safe conversion, hence
+the forges); emitting only ever does `__null_terminated → libc`, which type-checks.
+Producing well-formed text is the safe direction; consuming hostile text is the
+hard one — `-fbounds-safety` makes that split explicit.
+
+The one genuinely interesting bit isn't bounds-safety at all but **re-entrancy**:
+the public API composes (`arc` calls `ellipse`; `round_rect` calls `move_to`/`arc`/
+`close_path`; `arc_to` calls `line_to`/`arc`), so a naive top-of-function hook
+would record an op *and* its expansion and replay it twice. The fix is a
+reference-counted suspend: a compound op writes its own line, then brackets its
+sub-calls with `enter`/`leave` so they don't also record — the file keeps the op
+the caller issued, and replay re-invokes the *same* function (bit-identical),
+rather than relying on a decomposition staying equivalent. `arc_to` has early
+returns, so its body moved to a single-exit `arc_to_impl` and the public wrapper
+guarantees `leave` always balances `enter` (no `__attribute__((cleanup))`, which
+`-fbounds-safety` rejects anyway).
+
 ## Regrets / things we'd reconsider
 
 - **Hand-rolled per-type vectors.** `cnvs_verts` and the `cnvs_cover`/clip-mask

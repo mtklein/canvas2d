@@ -10,6 +10,7 @@
 #include "cnvs_mem.h"
 #include "cnvs_path.h"
 #include "cnvs_png.h"
+#include "cnvs_record.h"
 #include "cnvs_stroke.h"
 
 #include <limits.h>
@@ -118,6 +119,7 @@ struct canvas {
     cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];  // gradient colour ramp, rebuilt per gradient fill
     float *__counted_by(trow_cap) trow;    // one row of gradient parameters (vectorized solve)
     int trow_cap;
+    cnvs_recorder *__single rec;  // NULL unless canvas_record_to is active
 };
 
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
@@ -196,6 +198,7 @@ canvas *__single canvas_create(int width, int height) {
     cnvs_path_init(&cv->text_path);
     cv->font = NULL;
     cv->font_built_size = 0.0f;
+    cv->rec = NULL;
     return cv;
 }
 
@@ -203,6 +206,7 @@ void canvas_destroy(canvas *__single cv) {
     if (!cv) {
         return;
     }
+    cnvs_recorder_close(cv->rec);  // flush and close any active recording
     compositor_destroy(cv->comp);
     for (int i = 0; i < cv->stack_len; i++) {
         free(cv->stack[i].clip_mask);
@@ -218,6 +222,12 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->tile);
     free(cv->trow);
     free(cv);
+}
+
+bool canvas_record_to(canvas *__single cv, char const *__null_terminated path) {
+    cnvs_recorder_close(cv->rec);  // stop any prior recording first
+    cv->rec = cnvs_recorder_open(path);
+    return cv->rec != NULL;
 }
 
 bool canvas_is_context_lost(canvas *__single cv) {
@@ -241,6 +251,7 @@ static bool stack_reserve(canvas *__single cv, int need) {
 }
 
 void canvas_save(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "save"); }
     if (!stack_reserve(cv, cv->stack_len + 1)) {
         return;
     }
@@ -263,6 +274,7 @@ void canvas_save(canvas *__single cv) {
 }
 
 void canvas_restore(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "restore"); }
     if (cv->stack_len > 0) {
         cv->stack_len -= 1;
         free(cv->cur.clip_mask);
@@ -318,29 +330,35 @@ bool canvas_resize(canvas *__single cv, int width, int height) {
 }
 
 void canvas_translate(canvas *__single cv, float tx, float ty) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "translate", (float[]){ tx, ty }, 2); }
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_translate(tx, ty));
 }
 
 void canvas_scale(canvas *__single cv, float sx, float sy) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "scale", (float[]){ sx, sy }, 2); }
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_scale(sx, sy));
 }
 
 void canvas_rotate(canvas *__single cv, float radians) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "rotate", (float[]){ radians }, 1); }
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_rotate(radians));
 }
 
 void canvas_transform(canvas *__single cv,
                       float a, float b, float c, float d, float e, float f) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f }, 6); }
     cnvs_mat m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, m);
 }
 
 void canvas_set_transform(canvas *__single cv,
                           float a, float b, float c, float d, float e, float f) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f }, 6); }
     cv->cur.ctm = (cnvs_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
 }
 
 void canvas_reset_transform(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "reset_transform"); }
     cv->cur.ctm = cnvs_mat_identity();
 }
 
@@ -351,6 +369,7 @@ canvas_matrix canvas_get_transform(canvas *__single cv) {
 }
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.fill = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.fill_kind = CNVS_PAINT_SOLID;
 }
@@ -421,12 +440,14 @@ static void pattern_set(canvas *__single cv, cnvs_pattern *p,
 
 void canvas_set_fill_linear_gradient(canvas *__single cv,
                                      float x0, float y0, float x1, float y1) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_linear_gradient", (float[]){ x0, y0, x1, y1 }, 4); }
     grad_set_linear(cv, &cv->cur.fill_grad, x0, y0, x1, y1);
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
                                      float r0, float x1, float y1, float r1) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_radial_gradient", (float[]){ x0, y0, r0, x1, y1, r1 }, 6); }
     grad_set_radial(cv, &cv->cur.fill_grad, x0, y0, r0, x1, y1, r1);
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
@@ -439,6 +460,7 @@ void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
 
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.fill_grad, clamp01(offset),
                            cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
@@ -455,12 +477,14 @@ void canvas_set_fill_pattern(canvas *__single cv,
 
 void canvas_set_stroke_linear_gradient(canvas *__single cv,
                                        float x0, float y0, float x1, float y1) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_linear_gradient", (float[]){ x0, y0, x1, y1 }, 4); }
     grad_set_linear(cv, &cv->cur.stroke_grad, x0, y0, x1, y1);
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
                                        float r0, float x1, float y1, float r1) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_radial_gradient", (float[]){ x0, y0, r0, x1, y1, r1 }, 6); }
     grad_set_radial(cv, &cv->cur.stroke_grad, x0, y0, r0, x1, y1, r1);
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
@@ -473,6 +497,7 @@ void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
 
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, clamp01(offset),
                            cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
@@ -488,6 +513,7 @@ void canvas_set_stroke_pattern(canvas *__single cv,
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_global_alpha", (float[]){ alpha }, 1); }
     cv->cur.global_alpha = clamp01(alpha);
 }
 
@@ -498,6 +524,7 @@ void canvas_set_global_composite_operation(canvas *__single cv,
     if ((int)op < 0 || (int)op >= COMPOSITOR_MODE_COUNT) {
         return;
     }
+    if (cv->rec) { cnvs_rec_composite(cv->rec, op); }
     cv->cur.composite = (compositor_blend_mode)op;
 }
 
@@ -741,6 +768,7 @@ static void paint_stroke(canvas *__single cv, cbbox b) {
 }
 
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "clear_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
     cbbox b = points_bbox(cv, q, 4);
@@ -757,6 +785,7 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "fill_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
     cbbox b = points_bbox(cv, q, 4);
@@ -773,20 +802,24 @@ void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
 }
 
 void canvas_begin_path(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "begin_path"); }
     cnvs_path_reset(&cv->path);
 }
 
 void canvas_move_to(canvas *__single cv, float x, float y) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "move_to", (float[]){ x, y }, 2); }
     cnvs_path_move_to(&cv->path, xf(cv, x, y));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_line_to(canvas *__single cv, float x, float y) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "line_to", (float[]){ x, y }, 2); }
     cnvs_path_line_to(&cv->path, xf(cv, x, y));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_rect(canvas *__single cv, float x, float y, float w, float h) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "rect", (float[]){ x, y, w, h }, 4); }
     cnvs_path_rect(&cv->path, xf(cv, x, y), xf(cv, x + w, y),
                    xf(cv, x + w, y + h), xf(cv, x, y + h));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
@@ -794,6 +827,7 @@ void canvas_rect(canvas *__single cv, float x, float y, float w, float h) {
 
 void canvas_quadratic_curve_to(canvas *__single cv,
                                float cpx, float cpy, float x, float y) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "quadratic_curve_to", (float[]){ cpx, cpy, x, y }, 4); }
     cnvs_path_quad_to(&cv->path, xf(cv, cpx, cpy), xf(cv, x, y),
                       CANVAS_FLATTEN_TOL);
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
@@ -801,6 +835,7 @@ void canvas_quadratic_curve_to(canvas *__single cv,
 
 void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
                             float c2x, float c2y, float x, float y) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "bezier_curve_to", (float[]){ c1x, c1y, c2x, c2y, x, y }, 6); }
     cnvs_path_cubic_to(&cv->path, xf(cv, c1x, c1y), xf(cv, c2x, c2y),
                        xf(cv, x, y), CANVAS_FLATTEN_TOL);
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
@@ -809,6 +844,11 @@ void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
 void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
                     float rotation, float start_angle, float end_angle,
                     bool anticlockwise) {
+    if (cv->rec) {
+        cnvs_rec_floats_bool(cv->rec, "ellipse",
+                             (float[]){ x, y, rx, ry, rotation, start_angle, end_angle },
+                             7, anticlockwise);
+    }
     float two_pi = 2.0f * (float)M_PI;
     float sweep = end_angle - start_angle;
     if (!isfinite(sweep)) {
@@ -860,12 +900,26 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
 
 void canvas_arc(canvas *__single cv, float x, float y, float radius,
                 float start_angle, float end_angle, bool anticlockwise) {
+    // Record `arc` as itself, then swallow the canvas_ellipse it expands to.
+    if (cv->rec) {
+        cnvs_rec_floats_bool(cv->rec, "arc",
+                             (float[]){ x, y, radius, start_angle, end_angle },
+                             5, anticlockwise);
+        cnvs_rec_enter(cv->rec);
+    }
     canvas_ellipse(cv, x, y, radius, radius, 0.0f, start_angle, end_angle,
                    anticlockwise);
+    cnvs_rec_leave(cv->rec);
 }
 
 void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
                        float radius) {
+    // Record `round_rect` as itself, then swallow the move_to/arc/close_path it
+    // expands to (no early returns between enter and leave).
+    if (cv->rec) {
+        cnvs_rec_floats(cv->rec, "round_rect", (float[]){ x, y, w, h, radius }, 5);
+        cnvs_rec_enter(cv->rec);
+    }
     float r = radius < 0.0f ? 0.0f : radius;
     float rmax = (w < h ? w : h) * 0.5f;
     if (rmax < 0.0f) {
@@ -882,6 +936,7 @@ void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
     canvas_arc(cv, x + r, y + h - r, r, q, pi, false);        // bottom-left
     canvas_arc(cv, x + r, y + r, r, pi, pi + q, false);       // top-left
     canvas_close_path(cv);
+    cnvs_rec_leave(cv->rec);
 }
 
 // CSS border-radius overlap rule: reduce the scale factor `f` so that two radii
@@ -937,8 +992,8 @@ void canvas_round_rect_radii(canvas *__single cv, float x, float y,
     canvas_close_path(cv);
 }
 
-void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
-                   float radius) {
+static void arc_to_impl(canvas *__single cv, float x1, float y1, float x2, float y2,
+                        float radius) {
     if (!cv->path.has_cur) {
         canvas_move_to(cv, x1, y1);
         return;
@@ -989,11 +1044,26 @@ void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
     cv->cur_user = (cnvs_vec2){ .x = t2x, .y = t2y };
 }
 
+void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
+                   float radius) {
+    // Record `arc_to` as itself, then swallow the line_to/arc its impl issues.
+    // The wrapper is single-exit, so leave always balances enter even though the
+    // impl has several early returns.
+    if (cv->rec) {
+        cnvs_rec_floats(cv->rec, "arc_to", (float[]){ x1, y1, x2, y2, radius }, 5);
+        cnvs_rec_enter(cv->rec);
+    }
+    arc_to_impl(cv, x1, y1, x2, y2, radius);
+    cnvs_rec_leave(cv->rec);
+}
+
 void canvas_close_path(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "close_path"); }
     cnvs_path_close(&cv->path);
 }
 
 void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
+    if (cv->rec) { cnvs_rec_fill_rule(cv->rec, rule); }
     switch (rule) {
         case CANVAS_NONZERO: cv->cur.fill_rule = CNVS_NONZERO; break;
         case CANVAS_EVENODD: cv->cur.fill_rule = CNVS_EVENODD; break;
@@ -1015,6 +1085,7 @@ static void fill_device_path(canvas *__single cv, cnvs_path const *p,
 }
 
 void canvas_fill(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "fill"); }
     fill_device_path(cv, &cv->path, cv->cur.fill_rule);
 }
 
@@ -1065,6 +1136,7 @@ bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
 }
 
 void canvas_clip(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "clip"); }
     int n = cv->width * cv->height;
     uint8_t *nm = malloc((size_t)n);
     if (!nm) {
@@ -1099,15 +1171,18 @@ void canvas_clip(canvas *__single cv) {
 }
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.stroke = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
 
 void canvas_set_line_width(canvas *__single cv, float width) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_width", (float[]){ width }, 1); }
     cv->cur.line_width = width;
 }
 
 void canvas_set_line_join(canvas *__single cv, canvas_line_join join) {
+    if (cv->rec) { cnvs_rec_line_join(cv->rec, join); }
     switch (join) {
         case CANVAS_JOIN_MITER: cv->cur.line_join = CNVS_JOIN_MITER; break;
         case CANVAS_JOIN_ROUND: cv->cur.line_join = CNVS_JOIN_ROUND; break;
@@ -1116,6 +1191,7 @@ void canvas_set_line_join(canvas *__single cv, canvas_line_join join) {
 }
 
 void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap) {
+    if (cv->rec) { cnvs_rec_line_cap(cv->rec, cap); }
     switch (cap) {
         case CANVAS_CAP_BUTT:   cv->cur.line_cap = CNVS_CAP_BUTT;   break;
         case CANVAS_CAP_ROUND:  cv->cur.line_cap = CNVS_CAP_ROUND;  break;
@@ -1124,6 +1200,7 @@ void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap) {
 }
 
 void canvas_set_miter_limit(canvas *__single cv, float limit) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_miter_limit", (float[]){ limit }, 1); }
     cv->cur.miter_limit = limit;
 }
 
@@ -1139,6 +1216,9 @@ void canvas_set_line_dash(canvas *__single cv,
         cv->cur.dash[i] = pattern[i];
     }
     cv->cur.dash_count = m;
+    // Record the effective (clamped) pattern, so the line never exceeds the
+    // parser's per-line dash cap and re-clamps to the same state on replay.
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_dash", cv->cur.dash, m); }
 }
 
 int canvas_get_line_dash(canvas *__single cv,
@@ -1154,6 +1234,7 @@ int canvas_get_line_dash(canvas *__single cv,
 }
 
 void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_dash_offset", (float[]){ offset }, 1); }
     cv->cur.dash_offset = offset;
 }
 
@@ -1223,6 +1304,7 @@ static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
 }
 
 void canvas_stroke(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "stroke"); }
     stroke_device_path(cv, &cv->path);
 }
 
@@ -1306,6 +1388,7 @@ static cnvs_font *__single ensure_font(canvas *__single cv) {
 }
 
 void canvas_set_font_size(canvas *__single cv, float px) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_font_size", (float[]){ px }, 1); }
     cv->cur.font_size = px > 0.0f ? px : 0.0f;
 }
 
@@ -1448,6 +1531,7 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
 
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
                       float x, float y) {
+    if (cv->rec) { cnvs_rec_text(cv->rec, "fill_text", x, y, text); }
     cnvs_font *__single f = ensure_font(cv);
     if (!f) {
         return;
@@ -1470,6 +1554,7 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
 
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
                         float x, float y) {
+    if (cv->rec) { cnvs_rec_text(cv->rec, "stroke_text", x, y, text); }
     cnvs_font *__single f = ensure_font(cv);
     if (!f) {
         return;
@@ -1950,7 +2035,11 @@ void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
     p2d_replay(cv, p);
     // canvas_clip reads the current fill rule; honour the explicit one here.
     cv->cur.fill_rule = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    // clip_path is not part of the text format; suppress the nested canvas_clip
+    // so an active recording doesn't emit a bogus `clip` for it.
+    cnvs_rec_enter(cv->rec);
     canvas_clip(cv);
+    cnvs_rec_leave(cv->rec);
     cv->cur.fill_rule = saved_rule;
     cnvs_path_free(&cv->path);
     cv->path = saved;

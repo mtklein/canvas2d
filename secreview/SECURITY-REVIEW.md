@@ -250,6 +250,20 @@ allocation limits) surfaces.
   ([`tests/test_replay.c`](../tests/test_replay.c)). The `-fbounds-safety` ease/
   friction is written up in [docs/bounds-safety.md](../docs/bounds-safety.md).
 
+- **Text-program recorder** ([`cnvs_record.c`](../src/cnvs_record.c), behind the
+  new public `canvas_record_to`): the write-side inverse of the parser — each
+  recordable public op appends its line as it runs. No new *untrusted-input*
+  surface (it emits, it doesn't consume), and notably **zero forges**: emission is
+  `__counted_by(n)` float runs plus `__null_terminated` names/text handed straight
+  to `fputs`/`fprintf`, the easy direction across the libc seam (the parser had to
+  forge its way the other way). The only subtlety is re-entrancy — compound ops
+  (`arc`/`round_rect`/`arc_to`) record themselves and a reference-counted suspend
+  swallows the public sub-calls they make, so the open/close and `enter`/`leave`
+  stay balanced (verified leak-clean). Round-trip is pinned by
+  [`tests/test_record.c`](../tests/test_record.c): replay is pixel-identical and
+  re-recording is byte-identical. Write-up in
+  [docs/bounds-safety.md](../docs/bounds-safety.md).
+
 ---
 
 ## 3. Tooling — what you need, and the catch on this machine

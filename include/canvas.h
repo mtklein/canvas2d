@@ -368,6 +368,23 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // draw_image) are not part of the text format.
 bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path);
 
+// Begin recording subsequent drawing calls to `path` as a text canvas-program in
+// exactly the format canvas_replay_from reads -- the write-side inverse of replay.
+// Each recordable call is appended as one line (the canvas_* name minus the
+// canvas_ prefix, then its arguments); replaying the file onto a fresh canvas of
+// the same size reproduces the same image.  Recording continues until the canvas
+// is destroyed (or record_to is called again, which starts a new file); pass the
+// same `path` again only after the first is closed.  Returns false (recording
+// nothing) if the file cannot be opened.
+//
+// Only the ops the text format covers are recorded -- the same subset
+// replay_from understands.  arc/round_rect/arc_to are written as themselves;
+// calls outside the format (stroke_rect, round_rect_radii, conic gradients,
+// patterns, image smoothing, text align/baseline, fill_text_max, draw_image,
+// get/put_image_data, Path2D fill/stroke/clip, reset, resize) are not recorded,
+// so a session that uses them does not round-trip through the text format.
+bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
+
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh
 // pixels -- the layout get/put_image_data use.  Returns a freshly malloc'd,
 // zeroed buffer of sw*sh*4 bytes (free it with free()) and stores that byte
