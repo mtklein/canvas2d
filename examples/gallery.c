@@ -1733,6 +1733,67 @@ static void shadows(void) {
     save(c, "gallery/shadows.png");
 }
 
+// Color emoji: Core Text falls back to AppleColorEmoji and the run's color glyphs
+// are drawn as RGBA8 bitmaps (the second text boundary), composited like any other
+// paint -- so emoji mix inline with text and take the transform and shadow.
+static void emoji(void) {
+    canvas *__single c = canvas_create(520, 250);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);  // light ground (shows shadows)
+    canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 250.0f);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    // Inline with Latin + Chinese in a single fill_text.
+    canvas_set_fill_rgba(c, 0.16f, 0.17f, 0.22f, 1.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_fill_text(c, "canvas2d 🎨 畫布", 26.0f, 50.0f);
+
+    // A row of color-bitmap emoji.
+    canvas_set_font_size(c, 46.0f);
+    canvas_fill_text(c, "🌈🚀🌸🍕🐙⭐🎉🍎", 26.0f, 122.0f);
+
+    // Emoji take the pipeline: a drop shadow, a rotation, a larger scale.
+    float const cxs[3] = { 95.0f, 260.0f, 425.0f };
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_MIDDLE);
+
+    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.55f);
+    canvas_set_shadow_blur(c, 6.0f);
+    canvas_set_shadow_offset_x(c, 3.0f);
+    canvas_set_shadow_offset_y(c, 4.0f);
+    canvas_set_font_size(c, 52.0f);
+    canvas_fill_text(c, "🎨", cxs[0], 186.0f);
+    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.0f);  // disable
+    canvas_set_shadow_blur(c, 0.0f);
+    canvas_set_shadow_offset_x(c, 0.0f);
+    canvas_set_shadow_offset_y(c, 0.0f);
+
+    canvas_save(c);
+    canvas_translate(c, cxs[1], 186.0f);
+    canvas_rotate(c, -0.38f);
+    canvas_set_font_size(c, 52.0f);
+    canvas_fill_text(c, "🚀", 0.0f, 0.0f);
+    canvas_restore(c);
+
+    canvas_set_font_size(c, 70.0f);
+    canvas_fill_text(c, "🌈", cxs[2], 186.0f);
+
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    char const *const labels[3] = { "shadow", "rotate", "scale" };
+    for (int i = 0; i < 3; i++) {
+        canvas_fill_text(c, labels[i], cxs[i], 232.0f);
+    }
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/emoji.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -1762,6 +1823,7 @@ static void render_all(void) {
     hittest();
     blend();
     shadows();
+    emoji();
 }
 
 int main(void) {

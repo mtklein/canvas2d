@@ -185,6 +185,12 @@ offset, and composited under the shape — all in checked C, so both backends ma
 
 ![shadows](gallery/shadows.png)
 
+Color emoji — Core Text falls back to AppleColorEmoji and the run's color glyphs
+are drawn as RGBA8 bitmaps (the second text boundary), composited like any image,
+so emoji mix inline with Latin + Chinese and take the transform and shadow:
+
+![emoji](gallery/emoji.png)
+
 ## Quick start
 
 ```sh
@@ -331,7 +337,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
-| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
+| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Hit testing — `isPointInPath` / `isPointInStroke` (+ `Path2D` overloads) | ✅ winding + even-odd, transform-aware |
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |
