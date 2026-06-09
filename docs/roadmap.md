@@ -62,7 +62,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 
 ## Missing entirely
 
-- **`strokeRect`** — we have `fillRect`/`clearRect` but not this one.
 - **Shadows** — `shadowColor`, `shadowBlur`, `shadowOffsetX`, `shadowOffsetY`.
 - **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
   `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).

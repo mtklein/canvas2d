@@ -188,7 +188,7 @@ canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
 canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / add_stroke_color_stop
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
 canvas_set_line_dash / set_line_dash_offset
-canvas_clear_rect / fill_rect
+canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path
 canvas_fill / canvas_stroke / canvas_clip
@@ -209,7 +209,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Area | Status |
 |---|---|
 | Transforms, save/restore, alpha blending | ✅ (no `getTransform`) |
-| `fill_rect` / `clear_rect`, solid fills, PNG export | ✅ (no `strokeRect`) |
+| `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export | ✅ |
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: one scalar radius) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |

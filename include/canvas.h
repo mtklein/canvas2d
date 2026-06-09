@@ -63,6 +63,11 @@ void canvas_add_fill_color_stop(canvas *__single cv, float offset,
 
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h);
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h);
+// Stroke the outline of the rectangle with the current stroke style and line
+// styles (width/join/cap/dash), without disturbing the current path.  Corners
+// are transformed by the current transform (a rotated CTM strokes a rotated
+// quad).  A zero-width-or-height rectangle degenerates to a stroked line.
+void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h);
 
 // Path coordinates are transformed by the current transform as they are added.
 void canvas_begin_path(canvas *__single cv);

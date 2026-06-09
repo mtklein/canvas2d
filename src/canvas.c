@@ -835,6 +835,31 @@ void canvas_stroke(canvas *__single cv) {
     stroke_device_path(cv, &cv->path);
 }
 
+void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h) {
+    if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h)) {
+        return;  // Canvas spec: non-finite args paint nothing.
+    }
+    // strokeRect builds and strokes its own rectangle without touching the
+    // current path; the corners go through the CTM exactly as fill_rect's quad.
+    cnvs_path rp;
+    cnvs_path_init(&rp);
+    if (w == 0.0f && h == 0.0f) {
+        // Spec: a single-point subpath.  Our stroker emits nothing for a
+        // zero-length subpath (no caps on a bare point) -- the lone deviation.
+        cnvs_path_move_to(&rp, xf(cv, x, y));
+    } else if (w == 0.0f || h == 0.0f) {
+        // A degenerate rect is a hairline: an open two-point subpath, so caps
+        // (not joins) bracket it.  The far corner coincides for both axes.
+        cnvs_path_move_to(&rp, xf(cv, x, y));
+        cnvs_path_line_to(&rp, xf(cv, x + w, y + h));
+    } else {
+        cnvs_path_rect(&rp, xf(cv, x, y), xf(cv, x + w, y),
+                       xf(cv, x + w, y + h), xf(cv, x, y + h));
+    }
+    stroke_device_path(cv, &rp);
+    cnvs_path_free(&rp);
+}
+
 // Rebuild the cached font when the requested size changes; NULL on failure.
 static cnvs_font *__single ensure_font(canvas *__single cv) {
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
