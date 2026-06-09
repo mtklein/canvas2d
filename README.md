@@ -314,8 +314,10 @@ src/                     C core; compositor backends (Metal .m / software .c); C
 shaders/compositor.metal tile vertex+fragment shaders (embedded via #embed)
 tests/                   unit + pixel tests + a bounds-safety trap test
 bench/bench.c            CPU-only benchmark (release vs unsafe)
+diff/                    backend differential: render on both backends, diff (ninja backenddiff)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs
 docs/bounds-safety.md    the write-up
+docs/backend-differential.md  making the Metal + software backends bit-identical
 docs/roadmap.md          Canvas 2D gap inventory (missing + partial + what's next)
 ```
