@@ -966,8 +966,18 @@ void canvas_draw_image_scaled(canvas *__single cv,
                               dx, dy, dw, dh);
 }
 
+// One pixel's four channels as a vector: a premultiplied cnvs_premul is four
+// contiguous _Float16, so it loads straight into an h4.
+typedef _Float16 h4 __attribute__((ext_vector_type(4)));
+typedef float f4 __attribute__((ext_vector_type(4)));
+typedef uint8_t u8x4 __attribute__((ext_vector_type(4)));
+
 // Read the canvas back as unpremultiplied RGBA8: the compositor returns
 // premultiplied pixels, and the un-premultiply and 8-bit quantize happen here.
+// Vectorized per pixel across the four channels -- one vector divide instead of
+// three scalar divides, branchless clamp+convert instead of four cnvs_f2u8 calls.
+// Bit-identical to the scalar path: a true per-lane divide (not a reciprocal), and
+// the same clamp-then-narrow-to-_Float16 round that cnvs_unpremultiply's clamp16 does.
 static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
@@ -979,11 +989,23 @@ static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, i
     }
     compositor_read(cv->comp, buf, n);
     for (int i = 0; i < n; i++) {
-        cnvs_unpremul s = cnvs_unpremultiply(buf[i]);
-        out[i * 4]     = cnvs_f2u8((float)s.r * 255.0f + 0.5f);
-        out[i * 4 + 1] = cnvs_f2u8((float)s.g * 255.0f + 0.5f);
-        out[i * 4 + 2] = cnvs_f2u8((float)s.b * 255.0f + 0.5f);
-        out[i * 4 + 3] = cnvs_f2u8((float)s.a * 255.0f + 0.5f);
+        h4 ph;
+        memcpy(&ph, &buf[i], sizeof ph);          // load (r,g,b,a) _Float16
+        f4 p = __builtin_convertvector(ph, f4);
+        float a = p[3];
+        u8x4 b;
+        if (a <= 0.0f) {  // fully transparent un-premultiplies to all zero
+            b = (u8x4){ 0, 0, 0, 0 };
+        } else {
+            f4 u = p / (f4)a;  // r/a, g/a, b/a (lane 3 = a/a, overwritten next)
+            u[3] = a;
+            u = __builtin_elementwise_min((f4)1.0f,
+                                          __builtin_elementwise_max((f4)0.0f, u));
+            u = __builtin_convertvector(__builtin_convertvector(u, h4), f4);  // clamp16 round
+            f4 v = u * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating convert rounds
+            b = __builtin_convertvector(v, u8x4);
+        }
+        memcpy(out + i * 4, &b, sizeof b);
     }
     free(buf);
 }
