@@ -43,8 +43,13 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   font-family selection (pinned to Libian TC), weight, style, or the CSS `font`
   shorthand; and none of `direction`, `letterSpacing`, `wordSpacing`,
   `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
-- **Text shaping** maps code point → glyph 1:1: no ligatures, contextual forms, or
-  bidi, and only the BMP path is exercised (CJK works; emoji/astral untested).
+- **Text shaping**: `fillText`/`strokeText` *render* through Core Text shaping
+  (`cnvs_shape`) with font fallback, so code points Libian TC lacks now draw — color
+  emoji as RGBA8 bitmaps (`cnvs_glyph_draw`, composited like `drawImage`), other
+  fallback runs as outlines. `measureText` and text alignment still use the older
+  single-font, 1:1 code-point→glyph path, so their metrics ignore fallback/shaping;
+  unifying measurement onto the shaper (and exercising the ligature/contextual/bidi
+  layout the shaper already produces) is the remaining text-shaping work.
 - **`fill`/`stroke`/`clip`** on the *current* path take the fill rule from state,
   not an explicit argument (the `Path2D` overloads — `fill_path`/`stroke_path`/
   `clip_path` — do take an explicit rule).

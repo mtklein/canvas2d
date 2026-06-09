@@ -176,6 +176,18 @@ index-heavy logic on the checked side and its irreducibly-CT work (shaping, glyp
 paths, glyph rasterization) on the unsafe side, with every crossing a plain
 `(pointer, count)` and not one forge among them.
 
+**Wired into the public API.** `canvas_fill_text`/`stroke_text` now lay out through
+`cnvs_shape`: outline runs accumulate into one device-space path and fill/stroke as
+before (so a fallback run for a missing script renders too, not a `.notdef` box),
+while a *color* run's glyphs are drawn with `cnvs_glyph_draw` into a checked RGBA8
+buffer and composited through the CTM by the very same code as `drawImage` — so an
+emoji takes the transform, clip, global alpha, and shadow like any other image.
+(`CGBitmapContext` hands back premultiplied, top-row-first RGBA, so the core only
+unpremultiplies before that hand-off — no row flip; an early version added one and
+rendered every emoji upside down.)  Alignment and `measureText` still run on the
+older single-font outline path, so their metrics don't yet see fallback or color
+runs.
+
 ## Bidi caret and selection: the intricate part adds no boundary at all
 
 Caret placement and selection are the most index-heavy text feature, and they are the
