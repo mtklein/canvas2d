@@ -139,6 +139,13 @@ void canvas_fill(canvas *__single cv);
 // region is part of the saved state, so save()/restore() brackets a clip.
 void canvas_clip(canvas *__single cv);
 
+// Hit testing: whether the point (x, y) is inside the current path under `rule`.
+// (x, y) is transformed by the current transform before the test -- matching how
+// path points are baked through the CTM as they are added -- so a point given in
+// the same user space as the path hits.  Non-finite coordinates return false.
+bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
+                             canvas_fill_rule rule);
+
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
 // Gradient stroke paint, mirroring the fill gradient calls; stroke() uses it
 // until the next canvas_set_stroke_rgba.  (Coordinates are baked through the

@@ -63,7 +63,7 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   and **`createConicGradient`**.
 - **`Path2D`** — no constructible path object, no `addPath`, no SVG path-data
   string, and none of the `fill/stroke/clip/isPointIn*` overloads that take one.
-- **Hit testing** — `isPointInPath`, `isPointInStroke`.
+- **Hit testing** — `isPointInStroke` (`isPointInPath` is done).
 - **Canvas resize** — width/height are fixed at create (the spec's resize also
   clears the bitmap and resets state).
 

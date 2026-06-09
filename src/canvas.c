@@ -803,6 +803,52 @@ void canvas_fill(canvas *__single cv) {
                      &cv->cur.fill_grad, cv->cur.fill);
 }
 
+// Point-in-path for hit testing.  Each subpath is treated as implicitly closed
+// (as the fill rasterizer does).  Casts a ray in +x from `q` and counts edge
+// crossings: the signed count is the winding number (nonzero rule) and the raw
+// count is the crossing number (even-odd rule).  The half-open vertical test
+// (a.y <= q.y < b.y for an upward edge, and the reverse for downward) counts each
+// shared vertex exactly once.
+static bool path_contains(cnvs_path const *p, cnvs_vec2 q, cnvs_fill_rule rule) {
+    int wn = 0;   // winding number  (nonzero rule)
+    int cn = 0;   // crossing number (even-odd rule)
+    for (int s = 0; s < p->sp_len; s++) {
+        cnvs_subpath sp = p->subs[s];
+        if (sp.count < 2) {
+            continue;
+        }
+        for (int k = 0; k < sp.count; k++) {
+            cnvs_vec2 a = p->pts[sp.start + k];
+            cnvs_vec2 b = p->pts[sp.start + (k + 1) % sp.count];
+            bool up = a.y <= q.y && b.y > q.y;
+            bool down = a.y > q.y && b.y <= q.y;
+            if (!up && !down) {
+                continue;  // edge doesn't straddle the ray's row
+            }
+            // isLeft > 0 means q is left of the directed edge a->b, i.e. the +x
+            // ray from q crosses it.  An upward edge then winds +1, a downward -1.
+            float is_left = (b.x - a.x) * (q.y - a.y) - (q.x - a.x) * (b.y - a.y);
+            if (up && is_left > 0.0f) {
+                wn += 1;
+                cn += 1;
+            } else if (down && is_left < 0.0f) {
+                wn -= 1;
+                cn += 1;
+            }
+        }
+    }
+    return rule == CNVS_EVENODD ? (cn & 1) != 0 : wn != 0;
+}
+
+bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
+                             canvas_fill_rule rule) {
+    if (!isfinite(x) || !isfinite(y)) {
+        return false;
+    }
+    cnvs_fill_rule r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    return path_contains(&cv->path, xf(cv, x, y), r);
+}
+
 void canvas_clip(canvas *__single cv) {
     int n = cv->width * cv->height;
     uint8_t *nm = malloc((size_t)n);
