@@ -50,6 +50,15 @@ int main(void) {
     CHECK(!REPLAY(cv, "arc 1 2 3 4 5 maybe\n"));      // bad bool
     CHECK(!REPLAY(cv, "set_global_composite_operation nope\n"));
 
+    // Numeric edge cases: a huge exponent is a valid number that saturates to
+    // inf/0 (like strtof) -- it must parse without tripping signed-overflow UB in
+    // the exponent accumulator.  Under the debug variant (UBSan), the pre-clamp
+    // code trapped on these; normal exponents still parse.
+    CHECK(REPLAY(cv, "move_to 1e1 2e0\n"));               // ordinary exponents -> (10, 2)
+    CHECK(REPLAY(cv, "move_to 0 1e99999999999\n"));       // saturates to +inf, no overflow
+    CHECK(REPLAY(cv, "line_to 0 1e-99999999999\n"));      // saturates to 0, no overflow
+    CHECK(REPLAY(cv, "set_global_alpha 1e2000000000\n")); // huge exp into a clamped setter
+
     // Empty / comment-only / whitespace programs are valid no-ops.
     CHECK(REPLAY(cv, ""));
     CHECK(REPLAY(cv, "# just a comment\n   \n\t\n"));

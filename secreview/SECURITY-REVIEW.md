@@ -221,6 +221,31 @@ Note (vs. Rust): neither Finding 5 nor Finding 6 is a memory-safety bug, and
 bounds are outside both. They are logic bugs that only fuzzing (or timeouts /
 allocation limits) surfaces.
 
+### Finding 7 — Signed-overflow UB in the replay parser's float exponent (review-found)
+
+**Severity:** UB / potential DoS, not memory-unsafe. **Confidence: verified by
+inspection.** **Status: FIXED.**
+
+The hand float parser added when [`cnvs_replay.c`](../src/cnvs_replay.c) went
+forge-free accumulated the decimal exponent with `eexp = eexp*10 + d` and no
+bound. A numeric token like `1e99999999999` (within the line cap, and accepted by
+the strict whole-token check) overflows `int eexp` — signed-overflow **UB** —
+with follow-on `-eexp` / `-e` UB at `INT_MIN` and, in a non-trapping build, a
+scale loop that can spin up to ~`INT_MAX`. Not a spatial bug (`-fbounds-safety`
+still holds), but it traps under the debug variant's UBSan and is a clean DoS
+vector; it was latent only because nothing exercised it (the corpus never mutated
+a numeric field into that shape). **Fix:** saturate the exponent magnitude during
+accumulation (`if (eexp < 1000) ...`) — any `|exp|` past a few dozen already
+over/underflows float32 to inf/0, so the result is unchanged while the overflow,
+the bad negation, and the unbounded loop all disappear. Covered by a long-exponent
+case in [`tests/test_replay.c`](../tests/test_replay.c) (pinned under UBSan) and
+re-fuzzed clean (~12k execs, ASan+UBSan, with exponent-seeded inputs).
+
+This one *is* a `-fbounds-safety` blind spot worth naming: bounds-safety makes the
+parser spatially sound for free, but arithmetic UB on untrusted numbers is still
+on you — the same class Rust would catch only in debug (overflow panics) and
+silently wrap in release.
+
 ### Non-findings (checked, clean)
 
 - **PNG encoder** ([`cnvs_png.c`](../src/cnvs_png.c)) is the strongest example of

@@ -87,7 +87,14 @@ static bool read_float(char const *__counted_by(le) data, size_t le,
         i++;
         bool eneg = false, eany = false;
         if (i < te && (data[i] == '+' || data[i] == '-')) { eneg = data[i] == '-'; i++; }
-        while (i < te && data[i] >= '0' && data[i] <= '9') { eexp = eexp * 10 + (data[i] - '0'); i++; eany = true; }
+        // Saturate the exponent magnitude as we read it: any |exp| past a few
+        // dozen already over/underflows float32 to inf/0, so capping changes no
+        // result while preventing signed-overflow UB (and an unbounded scale
+        // loop below) on adversarial tokens like "1e99999999999".
+        while (i < te && data[i] >= '0' && data[i] <= '9') {
+            if (eexp < 1000) { eexp = eexp * 10 + (data[i] - '0'); }
+            i++; eany = true;
+        }
         if (!eany) {
             return false;
         }
