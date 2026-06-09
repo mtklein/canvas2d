@@ -694,6 +694,100 @@ static void textgrid(void) {
     save(c, "gallery/textgrid.png");
 }
 
+// measureText: draw a word at the alphabetic origin, then overlay its TextMetrics
+// -- the tight actual bounding box, the looser font bounding box, the advance
+// width, the hanging/alphabetic/ideographic baselines, and the origin point.
+static void textmetrics(void) {
+    canvas *__single c = canvas_create(560, 250);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 560.0f, 250.0f);
+
+    char const *const word = "Graphics";
+    float const x0 = 140.0f, y0 = 150.0f;
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_font_size(c, 62.0f);
+    canvas_text_metrics m = canvas_measure_text_full(c, word);
+
+    // Baselines first (behind everything): horizontal guides across the word.
+    float lx0 = x0 - 16.0f, lx1 = x0 + m.width + 16.0f;
+    float const solid[1] = { 1.0f }, dash[2] = { 5.0f, 4.0f };
+    canvas_set_line_width(c, 1.4f);
+    struct { float y; float r, g, b; char const *name; } base[3] = {
+        { y0 - m.hanging_baseline,     0.95f, 0.85f, 0.35f, "hanging" },
+        { y0,                          0.45f, 0.88f, 0.50f, "alphabetic" },
+        { y0 - m.ideographic_baseline, 0.75f, 0.55f, 0.95f, "ideographic" },
+    };
+    for (int i = 0; i < 3; i++) {
+        canvas_set_line_dash(c, i == 1 ? solid : dash, i == 1 ? 0 : 2);
+        canvas_set_stroke_rgba(c, base[i].r, base[i].g, base[i].b, 0.95f);
+        canvas_begin_path(c);
+        canvas_move_to(c, lx0, base[i].y);
+        canvas_line_to(c, lx1, base[i].y);
+        canvas_stroke(c);
+        canvas_set_fill_rgba(c, base[i].r, base[i].g, base[i].b, 1.0f);
+        canvas_set_font_size(c, 11.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+        canvas_fill_text(c, base[i].name, lx1 + 6.0f, base[i].y + 3.5f);
+    }
+
+    // The glyphs.
+    canvas_set_line_dash(c, solid, 0);
+    canvas_set_font_size(c, 62.0f);
+    canvas_set_fill_rgba(c, 0.90f, 0.91f, 0.96f, 1.0f);
+    canvas_fill_text(c, word, x0, y0);
+
+    // Font bounding box (orange dashed) over the advance width.
+    canvas_set_line_dash(c, dash, 2);
+    canvas_set_line_width(c, 1.5f);
+    canvas_set_stroke_rgba(c, 0.97f, 0.62f, 0.25f, 0.95f);
+    canvas_stroke_rect(c, x0, y0 - m.font_bounding_box_ascent, m.width,
+                       m.font_bounding_box_ascent + m.font_bounding_box_descent);
+    canvas_set_fill_rgba(c, 0.97f, 0.62f, 0.25f, 1.0f);
+    canvas_set_font_size(c, 11.0f);
+    canvas_fill_text(c, "font box", x0 + 3.0f, y0 - m.font_bounding_box_ascent - 4.0f);
+
+    // Actual (ink) bounding box (cyan solid).
+    canvas_set_line_dash(c, solid, 0);
+    canvas_set_line_width(c, 1.8f);
+    canvas_set_stroke_rgba(c, 0.30f, 0.85f, 0.95f, 1.0f);
+    float ab_l = x0 - m.actual_bounding_box_left, ab_t = y0 - m.actual_bounding_box_ascent;
+    canvas_stroke_rect(c, ab_l, ab_t,
+                       m.actual_bounding_box_left + m.actual_bounding_box_right,
+                       m.actual_bounding_box_ascent + m.actual_bounding_box_descent);
+    canvas_set_fill_rgba(c, 0.30f, 0.85f, 0.95f, 1.0f);
+    canvas_fill_text(c, "actual box", ab_l + 2.0f, ab_t - 4.0f);
+
+    // Advance-width measure below, with the measured value.
+    float wy = y0 + m.font_bounding_box_descent + 26.0f;
+    canvas_set_stroke_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_line_width(c, 1.4f);
+    canvas_begin_path(c);
+    canvas_move_to(c, x0, wy - 5.0f);
+    canvas_line_to(c, x0, wy + 5.0f);
+    canvas_move_to(c, x0, wy);
+    canvas_line_to(c, x0 + m.width, wy);
+    canvas_move_to(c, x0 + m.width, wy - 5.0f);
+    canvas_line_to(c, x0 + m.width, wy + 5.0f);
+    canvas_stroke(c);
+    canvas_set_fill_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "advance width", x0 + m.width * 0.5f, wy + 18.0f);
+
+    // Origin point.
+    canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, x0, y0, 4.0f, 0.0f, TAU, false);
+    canvas_fill(c);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    save(c, "gallery/textmetrics.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -960,6 +1054,7 @@ int main(void) {
     smoothing();
     text();
     textgrid();
+    textmetrics();
     blend();
     return 0;
 }

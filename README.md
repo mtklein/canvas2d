@@ -115,6 +115,12 @@ guide so each mode's vertical shift is visible:
 
 ![textgrid](gallery/textgrid.png)
 
+`measureText` — a word at its alphabetic origin with the full `TextMetrics`
+overlaid: the tight actual (ink) box, the looser font box, the advance width, the
+hanging/alphabetic/ideographic baselines, and the origin point:
+
+![textmetrics](gallery/textmetrics.png)
+
 `globalCompositeOperation` — the same two discs over a gradient under six modes
 (`source-over` is the GPU's fixed-function blend; the rest run the W3C
 composite+blend formula in a framebuffer-fetch shader):
