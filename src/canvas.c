@@ -83,6 +83,8 @@ struct canvas {
     cnvs_premul *__counted_by(tile_cap) tile;  // premultiplied tile for the current op's bbox
     int tile_cap;
     cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];  // gradient colour ramp, rebuilt per gradient fill
+    float *__counted_by(trow_cap) trow;    // one row of gradient parameters (vectorized solve)
+    int trow_cap;
 };
 
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
@@ -148,6 +150,7 @@ void canvas_destroy(canvas *__single cv) {
     cnvs_cover_free(&cv->cover);
     free(cv->cov);
     free(cv->tile);
+    free(cv->trow);
     free(cv);
 }
 
@@ -363,6 +366,19 @@ static bool ensure_tile(canvas *__single cv, int npix) {
     return true;
 }
 
+// Row buffer of gradient parameters, one float per column of the current bbox.
+static bool ensure_trow(canvas *__single cv, int w) {
+    if (w > cv->trow_cap) {
+        float *nr = realloc(cv->trow, (size_t)w * sizeof *nr);
+        if (!nr) {
+            return false;
+        }
+        cv->trow = nr;
+        cv->trow_cap = w;
+    }
+    return true;
+}
+
 // Add a path edge to the coverage rasterizer, translated into the tile's frame.
 static void cover_edge(canvas *__single cv, cbbox b, cnvs_vec2 p0, cnvs_vec2 p1) {
     cnvs_cover_add_edge(&cv->cover, b.w, b.h, p0.x - (float)b.x, p0.y - (float)b.y,
@@ -395,17 +411,31 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
     if (use_ramp) {
         cnvs_gradient_build_ramp(gr, cv->ramp, CNVS_GRAD_RAMP_N);
     }
+    // Solve the gradient parameter a row at a time (vectorized); fall back to the
+    // scalar per-pixel solve only if the tiny row buffer can't be grown.
+    bool use_row = is_grad && ensure_trow(cv, b.w);
     for (int py = 0; py < b.h; py++) {
+        if (use_row) {
+            cnvs_gradient_param_row(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
+                                    cv->trow);
+        }
         for (int px = 0; px < b.w; px++) {
             int i = py * b.w + px;
             float covf = (float)cv->cov[i] / 255.0f;
             cnvs_unpremul col;
             if (is_grad) {
-                cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
-                                .y = (float)b.y + (float)py + 0.5f };
                 float t;
-                if (cnvs_gradient_param(gr, p, &t)) {
-                    // t is already clamped to [0,1], so the index is in range.
+                bool inside;
+                if (use_row) {
+                    t = cv->trow[px];        // -1 marks "outside the gradient"
+                    inside = t >= 0.0f;
+                } else {
+                    cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
+                                    .y = (float)b.y + (float)py + 0.5f };
+                    inside = cnvs_gradient_param(gr, p, &t);
+                }
+                if (inside) {
+                    // t is clamped to [0,1], so the ramp index is in range.
                     col = use_ramp
                         ? cv->ramp[(int)(t * (float)(CNVS_GRAD_RAMP_N - 1) + 0.5f)]
                         : cnvs_gradient_color_at(gr, t);

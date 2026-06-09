@@ -40,6 +40,13 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
 // circle in the family passes through it) -- such samples paint transparent.
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t);
 
+// Vectorized parameter solve for a horizontal run of `n` pixel centres
+// (x0 + i + 0.5, y).  Fills t_out[i] with the parameter in [0,1], or -1 where the
+// point has no parameter (radial "outside") so the caller paints transparent.
+// Equivalent to calling cnvs_gradient_param per pixel, 8 wide along the row.
+void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
+                             float *__counted_by(n) t_out);
+
 // Unpremultiplied colour to paint at a device-space point, with `alpha` (global
 // alpha) folded into the result's alpha.
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);

@@ -1,6 +1,7 @@
 #include "cnvs_gradient.h"
 
 #include <math.h>
+#include <string.h>
 
 static float clamp01(float v) {
     if (v < 0.0f) {
@@ -138,4 +139,84 @@ cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float a
     }
     c.a = (_Float16)((float)c.a * alpha);
     return c;
+}
+
+typedef float gradf8 __attribute__((ext_vector_type(8)));
+typedef int gradi8 __attribute__((ext_vector_type(8)));
+
+// Element-wise select (C's ?: collapses a vector condition to scalar, so do it by
+// hand): a where the mask lane is true (-1 from a comparison), else b.
+static gradf8 vsel(gradf8 a, gradf8 b, gradi8 mask) {
+    gradf8 m = -__builtin_convertvector(mask, gradf8);  // 1.0 where true, else 0.0
+    return b + (a - b) * m;
+}
+
+static gradf8 vclamp01(gradf8 v) {
+    v = __builtin_elementwise_max((gradf8)0.0f, v);
+    return __builtin_elementwise_min((gradf8)1.0f, v);
+}
+
+// Parameter solve for a horizontal run of `n` pixel centres
+// (x0 + i + 0.5, y), i in [0, n).  Writes t in [0,1] per pixel, or -1 where the
+// point has no gradient parameter (the radial "outside" case) so the caller paints
+// transparent.  Along a row only x varies, so the per-pixel work vectorizes 8 wide;
+// it agrees with cnvs_gradient_param to <1e-6 in t (a tail handles n % 8 scalar).
+void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
+                             float *__counted_by(n) t_out) {
+    gradf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    float base = (float)x0 + 0.5f - gr->p0.x;
+    int i = 0;
+    if (gr->kind == CNVS_GRAD_LINEAR) {
+        float dx = gr->p1.x - gr->p0.x;
+        float dy = gr->p1.y - gr->p0.y;
+        float denom = dx * dx + dy * dy;
+        float inv = denom > 1e-12f ? 1.0f / denom : 0.0f;  // inv == 0 -> all-zero t
+        float cy = (y - gr->p0.y) * dy;                    // y term constant per row
+        for (; i + 8 <= n; i += 8) {
+            gradf8 px = base + ((float)i + lane);
+            gradf8 v = vclamp01((px * dx + cy) * inv);  // clamp01(((p-p0).d)/|d|^2)
+            memcpy(t_out + i, &v, sizeof v);            // bounds-checked vector store
+        }
+    } else {
+        float cdx = gr->p1.x - gr->p0.x;
+        float cdy = gr->p1.y - gr->p0.y;
+        float dr = gr->r1 - gr->r0;
+        float r0 = gr->r0;
+        float a = cdx * cdx + cdy * cdy - dr * dr;
+        float pdy = y - gr->p0.y;
+        float bconst = cdy * pdy + r0 * dr;  // b = -2*(cdx*pdx + bconst)
+        float cconst = pdy * pdy - r0 * r0;  // c = pdx*pdx + cconst
+        bool a_lin = fabsf(a) < 1e-9f;       // a is constant along the row
+        gradf8 inv2a = (gradf8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
+        for (; i + 8 <= n; i += 8) {
+            gradf8 pdx = base + ((float)i + lane);
+            gradf8 b = -2.0f * (cdx * pdx + bconst);
+            gradf8 c = pdx * pdx + cconst;
+            gradf8 root;
+            gradi8 valid;
+            if (a_lin) {  // degenerate: the t^2 term vanishes -> b t + c = 0
+                root = -c / b;
+                valid = ((b > 1e-12f) | (b < -1e-12f)) & (r0 + root * dr >= 0.0f);
+            } else {
+                gradf8 disc = b * b - 4.0f * a * c;
+                gradf8 sq = __builtin_elementwise_sqrt(
+                    __builtin_elementwise_max((gradf8)0.0f, disc));
+                gradf8 r1_ = (-b + sq) * inv2a;
+                gradf8 r2_ = (-b - sq) * inv2a;
+                gradf8 hi = __builtin_elementwise_max(r1_, r2_);
+                gradf8 lo = __builtin_elementwise_min(r1_, r2_);
+                gradi8 hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
+                gradi8 look = r0 + lo * dr >= 0.0f;
+                root = vsel(hi, vsel(lo, (gradf8)0.0f, look), hiok);
+                valid = (disc >= 0.0f) & (hiok | look);
+            }
+            gradf8 out = vsel(vclamp01(root), (gradf8)-1.0f, valid);
+            memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
+        }
+    }
+    for (; i < n; i++) {  // tail: reuse the scalar solver for n % 8
+        float t;
+        cnvs_vec2 p = { .x = (float)x0 + (float)i + 0.5f, .y = y };
+        t_out[i] = cnvs_gradient_param(gr, p, &t) ? t : -1.0f;
+    }
 }
