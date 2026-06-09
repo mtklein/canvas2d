@@ -30,10 +30,13 @@ probes clip/clamp logic without OOMing on multi-GB allocations.
 ## Build
 
 ```sh
-sh fuzz/build.sh         # -> build/fuzz/fuzz_api (libFuzzer), seeds in fuzz/seeds
+ninja fuzz   # -> build/fuzz/{fuzz_api,fuzz_state,fuzz_text,fuzz_png,fuzz_replay} + seeds in fuzz/seeds
 ```
 
-Requires `brew install llvm` (provides clang + the libFuzzer runtime). No root.
+The libFuzzer build folds into the main ninja graph (configure.py), so `ninja
+fuzz` is the only entry point. It's opt-in (not built by a bare `ninja`) and
+auto-skipped when Homebrew llvm is absent, so the default build never depends on
+it. Requires `brew install llvm` (provides clang + the libFuzzer runtime). No root.
 
 ## Run
 
@@ -94,12 +97,15 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 ## Files
 
 - `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
-- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c` — the harnesses
-  (`LLVMFuzzerTestOneInput` + a file-replay `main` behind `#ifndef FUZZ_NO_MAIN`).
+- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c`, `fuzz_replay.c` — the
+  harnesses (`LLVMFuzzerTestOneInput` + a file-replay `main` behind
+  `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
-- `build.sh` — builds all four libFuzzer targets + the `fuzz_api` seeds.
+
+There's no build script here: `ninja fuzz` builds every harness (Homebrew clang +
+libFuzzer) straight from the main ninja graph — see configure.py's `fuzz` target.
 
 Not yet done: Role B (a strict on-disk format with a bounds-safe validating
 parser, a fuzz target in its own right); adding `fuzz_state`/`fuzz_text`/`fuzz_png`

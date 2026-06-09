@@ -5,7 +5,7 @@
 // taken modulo their range, a short read just ends the program), so a coverage
 // fuzzer drives deep into the renderer instead of bouncing off input validation.
 //
-// Build: fuzz/build.sh.  Two roles for one source:
+// Build: ninja fuzz.  Two roles for one source:
 //   - afl-clang-fast + ASan + UBSan (no -fbounds-safety): the discovery oracle.
 //   - Apple clang + -fbounds-safety: replay a crasher to confirm the feature
 //     converts the would-be corruption into a trap.

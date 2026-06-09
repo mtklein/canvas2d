@@ -427,11 +427,12 @@ def main():
         w(f"build fuzzcorpus: phony {fuzz_stamp}")
 
     # `ninja fuzz`: build the libFuzzer harnesses (opt-in -- needs Homebrew clang;
-    # see homebrew_clang()).  This is the whole fuzz build, folded in from the old
-    # fuzz/build.sh so `ninja` is the single entry point: native per-TU edges (real
-    # incremental + parallel builds, header deps tracked via -MMD), not a serial
-    # shell loop.  Harnesses are globbed (fuzz/fuzz_*.c), so adding one needs no
-    # edit here.  Each links the FUZZ_CORE objects + libFuzzer + ASan/UBSan; the
+    # see homebrew_clang()).  This is the whole fuzz build -- previously a
+    # standalone shell script, now folded in so `ninja` is the single entry point:
+    # native per-TU edges (real incremental + parallel builds, header deps tracked
+    # via -MMD), not a serial shell loop.  Harnesses are globbed (fuzz/fuzz_*.c), so
+    # adding one needs no edit here.  Each links the fuzz core + libFuzzer + ASan/
+    # UBSan (see FUZZ_CORE_EXCLUDE / FUZZ_*_SAN above); the
     # seed generator runs into the gitignored fuzz/seeds/.  Stays opt-in (not in
     # `all`): it's a campaign-prep step needing `brew install llvm`, not a gate --
     # the in-`all` regression is `fuzzcorpus`, which replays the committed corpus
