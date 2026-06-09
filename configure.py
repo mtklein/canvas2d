@@ -224,13 +224,18 @@ def main():
     # configure.py takes effect on the next `ninja` -- no stale-graph builds from
     # forgetting to rerun it by hand.  `generator = 1` marks the output as
     # build-system metadata (ninja won't delete it on interrupt or clean it).
-    # New/removed source files still need a manual rerun: the file lists are
-    # globbed, and ninja only watches declared inputs.
+    # The globbed directories are implicit inputs: a directory's mtime bumps
+    # exactly when an entry is added/removed/renamed (not when a file's contents
+    # change), so creating or deleting a source file also regenerates the graph,
+    # while ordinary edits don't.  Keep this list in sync with the glob.glob
+    # calls (gallery PNGs are rewritten in place by `ninja images`, which leaves
+    # the directory mtime alone, so watching gallery/ does not loop).
     w("rule configure")
     w("  command = python3 configure.py")
     w("  generator = 1")
     w("")
-    w("build build.ninja: configure configure.py")
+    w("build build.ninja: configure configure.py | "
+      "src tests bench examples gallery fuzz fuzz/corpus")
     w("")
 
     for variant, (opt, bounds, _tests, _bench, backend) in VARIANTS.items():
