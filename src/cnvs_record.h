@@ -36,7 +36,7 @@ void cnvs_rec_floats(cnvs_recorder *__single r, char const *__null_terminated na
 void cnvs_rec_floats_bool(cnvs_recorder *__single r, char const *__null_terminated name,
                           float const *__counted_by(n) v, int n, bool flag);
 void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name,
-                   float x, float y, char const *__null_terminated text);
+                   float x, float y, char const *__counted_by(len) text, int len);
 
 // Enum-valued setters, written by name (the spellings the parser accepts).
 void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule);

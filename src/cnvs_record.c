@@ -87,16 +87,19 @@ void cnvs_rec_floats_bool(cnvs_recorder *__single r, char const *__null_terminat
 }
 
 void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name,
-                   float x, float y, char const *__null_terminated text) {
+                   float x, float y, char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0) {
         return;
     }
     fputs(name, r->f);
     fprintf(r->f, " %.9g %.9g ", (double)x, (double)y);
-    // The text is the rest of the line, verbatim (UTF-8).  fillText is single-
-    // line, so this is faithful; a string containing a newline can't be
-    // represented in the line-based format (the parser documents the same).
-    fputs(text, r->f);
+    // The text is the rest of the line, verbatim (UTF-8): exactly `len` bytes,
+    // not NUL-stopped.  fillText is single-line, so this is faithful; a string
+    // containing a newline can't be represented in the line-based format (the
+    // parser documents the same).
+    if (len > 0) {
+        fwrite(text, 1, (size_t)len, r->f);
+    }
     fputc('\n', r->f);
 }
 

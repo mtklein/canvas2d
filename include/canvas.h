@@ -329,6 +329,13 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
                       float x, float y);
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
                         float x, float y);
+// Length-counted variants: `text` is `len` bytes of UTF-8 and need not be
+// NUL-terminated, so a caller can pass a slice of a larger buffer directly.  The
+// NUL-terminated fill_text/stroke_text above are conveniences over these.
+void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
+                        int len, float x, float y);
+void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,
+                          int len, float x, float y);
 // fillText/strokeText with a maxWidth: when the text's advance exceeds a finite,
 // positive `max_width`, it is condensed horizontally (scaled in x about the
 // alignment anchor) to fit.  A non-positive or non-finite `max_width` imposes no

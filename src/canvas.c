@@ -1688,18 +1688,23 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
     return m;
 }
 
-void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
-                      float x, float y) {
-    if (cv->rec) { cnvs_rec_text(cv->rec, "fill_text", x, y, text); }
+void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
+                        int len, float x, float y) {
+    if (cv->rec) { cnvs_rec_text(cv->rec, "fill_text", x, y, text, len); }
     cnvs_font *__single f = ensure_font(cv);
     if (!f) {
         return;
     }
+    float ox, oy;
+    text_origin(cv, f, text, len, x, y, &ox, &oy);
+    fill_text_at(cv, f, text, len, ox, oy, cv->cur.ctm);
+}
+
+void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
+                      float x, float y) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    float ox, oy;
-    text_origin(cv, f, t, len, x, y, &ox, &oy);
-    fill_text_at(cv, f, t, len, ox, oy, cv->cur.ctm);
+    canvas_fill_text_n(cv, t, len, x, y);
 }
 
 void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
@@ -1715,18 +1720,23 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
     fill_text_at(cv, f, t, len, ox, oy, td);
 }
 
-void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
-                        float x, float y) {
-    if (cv->rec) { cnvs_rec_text(cv->rec, "stroke_text", x, y, text); }
+void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,
+                          int len, float x, float y) {
+    if (cv->rec) { cnvs_rec_text(cv->rec, "stroke_text", x, y, text, len); }
     cnvs_font *__single f = ensure_font(cv);
     if (!f) {
         return;
     }
+    float ox, oy;
+    text_origin(cv, f, text, len, x, y, &ox, &oy);
+    stroke_text_at(cv, f, text, len, ox, oy, cv->cur.ctm);
+}
+
+void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
+                        float x, float y) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    float ox, oy;
-    text_origin(cv, f, t, len, x, y, &ox, &oy);
-    stroke_text_at(cv, f, t, len, ox, oy, cv->cur.ctm);
+    canvas_stroke_text_n(cv, t, len, x, y);
 }
 
 void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
