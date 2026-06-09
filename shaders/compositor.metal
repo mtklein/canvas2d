@@ -46,11 +46,19 @@ fragment float4 clear_fs(tile_io in [[stage_in]],
 
 // --- globalCompositeOperation (W3C Compositing and Blending Level 1) ----------
 // Source-over has a fixed-function fast path (tile_blend_fs); every other mode
-// goes through tile_composite_fs below, which reads the backdrop via framebuffer
-// fetch and writes the finished straight-alpha result (pipeline blending off).
-// Mode integers match compositor_blend_mode in compositor.h.
+// goes through tile_composite_fs below, which reads the *premultiplied* backdrop
+// via framebuffer fetch and writes a premultiplied result (pipeline blending off).
+// Everything is premultiplied throughout: the result is
+//     co = s*(1-da) + d*(1-sa) + T,   ao = sa + da*(1-sa)
+// for the blend modes (source-over compositing of the blended colour), where the
+// premultiplied blend term T = sa*da*B(Cb, Cs).  The polynomial separable modes
+// have divide-free premultiplied forms for T; the intrinsically non-linear ones
+// (dodge/burn/soft-light and the HSL set) are *defined* on straight colour, so
+// they un-premultiply with a guarded divide.  Mode integers match
+// compositor_blend_mode in compositor.h.
 
-// Separable blend B(cb, cs), evaluated per channel; cb/cs are straight [0,1].
+// Separable blend B(cb, cs) on straight channels -- used only for the non-linear
+// modes (color-dodge/-burn, soft-light); the rest fold into pm_term below.
 static float blend_sep(uint mode, float cb, float cs) {
     switch (mode) {
         case 11: return cb * cs;                                    // multiply
@@ -111,6 +119,29 @@ static float3 blend_nonsep(uint mode, float3 cb, float3 cs) {
     }
 }
 
+// Premultiplied separable blend term T = sa*da*B(Cb,Cs) for one channel; s,d are
+// premultiplied.  The polynomial modes are divide-free; the non-linear ones reuse
+// the straight B with a single guarded un-premultiply.
+static float pm_term(uint mode, float s, float d, float sa, float da) {
+    switch (mode) {
+        case 11: return s * d;                                  // multiply
+        case 12: return sa * d + da * s - s * d;                // screen
+        case 13: return 2.0 * d <= da ? 2.0 * s * d             // overlay
+                       : sa * da - 2.0 * (da - d) * (sa - s);
+        case 14: return min(s * da, d * sa);                    // darken
+        case 15: return max(s * da, d * sa);                    // lighten
+        case 18: return 2.0 * s <= sa ? 2.0 * s * d             // hard-light
+                       : sa * da - 2.0 * (da - d) * (sa - s);
+        case 20: return abs(s * da - d * sa);                   // difference
+        case 21: return sa * d + da * s - 2.0 * s * d;          // exclusion
+        default: {                                              // dodge/burn/soft-light
+            float cs = sa > 0.0 ? s / sa : 0.0;
+            float cb = da > 0.0 ? d / da : 0.0;
+            return sa * da * blend_sep(mode, cb, cs);
+        }
+    }
+}
+
 fragment float4 tile_composite_fs(tile_io in [[stage_in]],
                                   float4 dst [[color(0)]],
                                   float2 constant &origin [[buffer(0)]],
@@ -118,44 +149,46 @@ fragment float4 tile_composite_fs(tile_io in [[stage_in]],
                                   texture2d<float> tile [[texture(0)]],
                                   texture2d<float> clip [[texture(1)]]) {
     uint2 p = uint2(in.pos.xy);
-    float4 s = tile.read(p - uint2(origin));
-    float as = s.a * clip.read(p).r;                      // source alpha (clip-attenuated)
-    float3 cs = s.a > 0.0 ? s.rgb / s.a : float3(0.0);    // un-premultiply to straight
-    float ab = dst.a;
-    float3 cb = ab > 0.0 ? dst.rgb / ab : float3(0.0);    // backdrop, un-premultiplied
+    float4 sp = tile.read(p - uint2(origin)) * clip.read(p).r;  // premult src, clip-attenuated
+    float3 s = sp.rgb;
+    float sa = sp.a;
+    float3 d = dst.rgb;   // premultiplied backdrop (framebuffer fetch)
+    float da = dst.a;
 
-    // Blend modes (>=11) replace the source colour with the backdrop-mixed blend,
-    // then composite as source-over; Porter-Duff operators use their own factors.
-    float3 csb = cs;
-    if (mode >= 22) {
-        csb = (1.0 - ab) * cs + ab * blend_nonsep(mode, cb, cs);
-    } else if (mode >= 11) {
-        float3 b = float3(blend_sep(mode, cb.r, cs.r),
-                          blend_sep(mode, cb.g, cs.g),
-                          blend_sep(mode, cb.b, cs.b));
-        csb = (1.0 - ab) * cs + ab * b;
+    float3 co;
+    float ao;
+    if (mode <= 10) {
+        // Porter-Duff operators: co = Fa*s + Fb*d, ao = Fa*sa + Fb*da.
+        float fa, fb;
+        switch (mode) {
+            case 1:  fa = da;        fb = 0.0;       break;  // source-in
+            case 2:  fa = 1.0 - da;  fb = 0.0;       break;  // source-out
+            case 3:  fa = da;        fb = 1.0 - sa;  break;  // source-atop
+            case 4:  fa = 1.0 - da;  fb = 1.0;       break;  // destination-over
+            case 5:  fa = 0.0;       fb = sa;        break;  // destination-in
+            case 6:  fa = 0.0;       fb = 1.0 - sa;  break;  // destination-out
+            case 7:  fa = 1.0 - da;  fb = sa;        break;  // destination-atop
+            case 8:  fa = 1.0 - da;  fb = 1.0 - sa;  break;  // xor
+            case 9:  fa = 1.0;       fb = 1.0;       break;  // lighter
+            case 10: fa = 1.0;       fb = 0.0;       break;  // copy
+            default: fa = 1.0;       fb = 1.0 - sa;  break;  // source-over
+        }
+        co = fa * s + fb * d;
+        ao = fa * sa + fb * da;
+    } else {
+        // Blend modes composite as source-over of the blended colour.
+        float3 t = mode <= 21
+                 ? float3(pm_term(mode, s.r, d.r, sa, da),
+                          pm_term(mode, s.g, d.g, sa, da),
+                          pm_term(mode, s.b, d.b, sa, da))
+                 : sa * da * blend_nonsep(mode, da > 0.0 ? d / da : float3(0.0),
+                                                sa > 0.0 ? s / sa : float3(0.0));
+        co = s * (1.0 - da) + d * (1.0 - sa) + t;
+        ao = sa + da * (1.0 - sa);
     }
 
-    // Porter-Duff (Fa, Fb); blend modes composite as source-over.
-    float fa, fb;
-    switch (mode) {
-        case 1:  fa = ab;        fb = 0.0;       break;  // source-in
-        case 2:  fa = 1.0 - ab;  fb = 0.0;       break;  // source-out
-        case 3:  fa = ab;        fb = 1.0 - as;  break;  // source-atop
-        case 4:  fa = 1.0 - ab;  fb = 1.0;       break;  // destination-over
-        case 5:  fa = 0.0;       fb = as;        break;  // destination-in
-        case 6:  fa = 0.0;       fb = 1.0 - as;  break;  // destination-out
-        case 7:  fa = 1.0 - ab;  fb = as;        break;  // destination-atop
-        case 8:  fa = 1.0 - ab;  fb = 1.0 - as;  break;  // xor
-        case 9:  fa = 1.0;       fb = 1.0;       break;  // lighter
-        case 10: fa = 1.0;       fb = 0.0;       break;  // copy
-        default: fa = 1.0;       fb = 1.0 - as;  break;  // source-over & blend modes
-    }
-
-    float ao = as * fa + ab * fb;
-    float3 co = as * fa * csb + ab * fb * cb;     // premultiplied result colour
-    // Clamp alpha to 1 (additive 'lighter' can reach 2) and keep the colour within
-    // [0, alpha] so the stored value is a valid premultiplied pixel.
+    // Clamp alpha to 1 (additive 'lighter' can reach 2) and keep the premultiplied
+    // colour within [0, alpha] so the stored pixel stays valid.
     float aoc = min(ao, 1.0);
     return float4(clamp(co, 0.0, aoc), aoc);
 }

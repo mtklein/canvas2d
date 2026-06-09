@@ -57,6 +57,18 @@ int main(void) {
     // difference: |red - white| = cyan.
     CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_DIFFERENCE,
                         1, 0, 0, 1, 1, 1, 1), 0, 255, 255, 255, t));
+    // color-dodge: 0.5 over 0.5 -> 0.5/(1-0.5) = 1 -> white (exercises the
+    // un-premultiplied path).
+    CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_COLOR_DODGE,
+                        0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 1), 255, 255, 255, 255, t));
+    // soft-light: src 0.25 (<=0.5) over backdrop 0.5 -> 0.5 - 0.5*0.5*0.5 = 0.375.
+    CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_SOFT_LIGHT,
+                        0.5f, 0.5f, 0.5f, 0.25f, 0.25f, 0.25f, 1), 96, 96, 96, 255, 3));
+    // Translucent blend: 50% green screened over opaque red -> (255,128,0).
+    // Exercises the premultiplied s*(1-da)+d*(1-sa)+T assembly, not just the
+    // opaque reduction to B.
+    CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_SCREEN,
+                        1, 0, 0, 0, 1, 0, 0.5f), 255, 128, 0, 255, 3));
     // copy: source replaces backdrop entirely = green.
     CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_COPY,
                         1, 0, 0, 0, 1, 0, 1), 0, 255, 0, 255, t));
