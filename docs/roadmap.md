@@ -72,7 +72,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **Hit testing** — `isPointInPath`, `isPointInStroke`.
 - **Image smoothing** — `imageSmoothingEnabled` (no nearest-neighbour) and
   `imageSmoothingQuality`.
-- **`createImageData`** — allocate a blank ImageData.
 - **Canvas resize** — width/height are fixed at create (the spec's resize also
   clears the bitmap and resets state).
 

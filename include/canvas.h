@@ -201,3 +201,13 @@ void canvas_put_image_data(canvas *__single cv,
 // and image ops (measure_text, read_rgba, write_png, get/put_image_data,
 // draw_image) are not part of the text format.
 bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path);
+
+// createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh
+// pixels -- the layout get/put_image_data use.  Returns a freshly malloc'd,
+// zeroed buffer of sw*sh*4 bytes (free it with free()) and stores that byte
+// length in *len, ready to hand to put_image_data.  On non-positive dimensions,
+// a size that would overflow, or out of memory, returns NULL and stores 0.  The
+// canvas argument is accepted for API symmetry; the image is independent of its
+// contents.
+uint8_t *__counted_by_or_null(*len)
+canvas_create_image_data(canvas *__single cv, int sw, int sh, int *__single len);

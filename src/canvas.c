@@ -1130,6 +1130,24 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     free(buf);
 }
 
+uint8_t *__counted_by_or_null(*len)
+canvas_create_image_data(canvas *__single cv, int sw, int sh, int *__single len) {
+    (void)cv;  // image data is independent of canvas contents (no colorSpace here)
+    if (!rgba8_dims_ok(sw, sh)) {
+        *len = 0;
+        return NULL;
+    }
+    // rgba8_dims_ok guarantees sw*sh*4 fits a positive int, so this is overflow-free.
+    int n = sw * sh * 4;
+    uint8_t *buf = calloc((size_t)n, 1);  // zeroed == transparent black
+    if (!buf) {
+        *len = 0;
+        return NULL;
+    }
+    *len = n;
+    return buf;
+}
+
 void canvas_put_image_data(canvas *__single cv,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy) {

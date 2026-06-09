@@ -193,7 +193,7 @@ canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path
 canvas_fill / canvas_stroke / canvas_clip
-canvas_get_image_data / put_image_data / read_rgba / write_png
+canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_set_font_size / measure_text / fill_text / stroke_text  // Libian TC, UTF-8
 canvas_destroy(cv);
