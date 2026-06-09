@@ -152,6 +152,12 @@ points within a thick ring's stroke band hit):
 
 ![hittest](gallery/hittest.png)
 
+Shadows — a sharp drop shadow, a soft blurred shadow, and a text shadow; each is
+the op's coverage blurred by the in-tree separable box blur (≈ Gaussian), tinted,
+offset, and composited under the shape — all in checked C, so both backends match:
+
+![shadows](gallery/shadows.png)
+
 ## Quick start
 
 ```sh

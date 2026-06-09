@@ -1336,6 +1336,49 @@ static void blend(void) {
     save(c, "gallery/blend.png");
 }
 
+// Shadows: a sharp drop shadow, a soft blurred shadow, and a text shadow.  Each
+// is the op's coverage blurred (the in-tree box blur), tinted, offset, and
+// composited under the shape -- all in checked C, so both backends match.
+static void shadows(void) {
+    canvas *__single c = canvas_create(400, 130);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.96f, 1.0f);  // light ground
+    canvas_fill_rect(c, 0.0f, 0.0f, 400.0f, 130.0f);
+
+    // Sharp offset drop shadow under a rounded rectangle.
+    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.45f);
+    canvas_set_shadow_blur(c, 0.0f);
+    canvas_set_shadow_offset_x(c, 7.0f);
+    canvas_set_shadow_offset_y(c, 7.0f);
+    canvas_set_fill_rgba(c, 0.92f, 0.30f, 0.34f, 1.0f);
+    canvas_begin_path(c);
+    canvas_round_rect(c, 30.0f, 32.0f, 72.0f, 62.0f, 12.0f);
+    canvas_fill(c);
+
+    // Soft, blurred shadow under a disc.
+    canvas_set_shadow_color_rgba(c, 0.10f, 0.20f, 0.45f, 0.8f);
+    canvas_set_shadow_blur(c, 16.0f);
+    canvas_set_shadow_offset_x(c, 0.0f);
+    canvas_set_shadow_offset_y(c, 5.0f);
+    canvas_set_fill_rgba(c, 0.35f, 0.70f, 0.95f, 1.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, 185.0f, 60.0f, 34.0f, 0.0f, TAU, false);
+    canvas_fill(c);
+
+    // Text shadow.
+    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.5f);
+    canvas_set_shadow_blur(c, 3.0f);
+    canvas_set_shadow_offset_x(c, 2.0f);
+    canvas_set_shadow_offset_y(c, 3.0f);
+    canvas_set_fill_rgba(c, 0.15f, 0.55f, 0.35f, 1.0f);
+    canvas_set_font_size(c, 34.0f);
+    canvas_fill_text(c, "shadow", 250.0f, 78.0f);
+
+    save(c, "gallery/shadows.png");
+}
+
 int main(void) {
     shapes();
     winding();
@@ -1360,5 +1403,6 @@ int main(void) {
     textmaxwidth();
     hittest();
     blend();
+    shadows();
     return 0;
 }
