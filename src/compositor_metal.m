@@ -26,11 +26,15 @@ static char const compositor_metal_src[] = {
 @property (nonatomic, strong) id<MTLRenderPipelineState> compositePipe;  // other GCO modes
 @property (nonatomic) int width;
 @property (nonatomic) int height;
-// Open render pass that consecutive ops batch into; flushed before a clip
-// change or readback.  The command buffer retains the per-op tile textures
-// until it completes, so they stay alive across the deferred commit.
+// Open render pass that consecutive ops batch into.  Committed (without a CPU
+// wait) before a clip change, and drained (committed + waited) before a readback.
+// The command buffer retains the per-op tile textures -- and the clip texture in
+// effect when it was encoded -- until it completes, so they stay alive across the
+// deferred commit; a clip change swaps in a fresh clip texture rather than
+// overwriting the old one, so no in-flight batch races it.
 @property (nonatomic, strong) id<MTLCommandBuffer> batchCB;
 @property (nonatomic, strong) id<MTLRenderCommandEncoder> batchEnc;
+@property (nonatomic, strong) id<MTLCommandBuffer> lastCB;  // most recent commit, for the readback wait
 @end
 
 @implementation CmpImpl
@@ -50,15 +54,26 @@ static id<MTLRenderCommandEncoder> open_batch(CmpImpl *o) {
     return o.batchEnc;
 }
 
-static void flush_batch(CmpImpl *o) {
+// Close and commit the open batch WITHOUT blocking the CPU.  Ops stay ordered (the
+// queue runs command buffers in commit order), the GPU pipelines them, and the CPU
+// keeps building the next batch -- so a clip change no longer stalls on the GPU.
+// Only the readback waits (see drain_batch).
+static void submit_batch(CmpImpl *o) {
     if (!o.batchEnc) {
         return;
     }
     [o.batchEnc endEncoding];
     [o.batchCB commit];
-    [o.batchCB waitUntilCompleted];
+    o.lastCB = o.batchCB;
     o.batchEnc = nil;
     o.batchCB = nil;
+}
+
+// Commit the open batch and block until all submitted work has completed -- the one
+// real CPU<->GPU sync, used before reading the target back.
+static void drain_batch(CmpImpl *o) {
+    submit_batch(o);
+    [o.lastCB waitUntilCompleted];
 }
 
 typedef enum { TILE_BLEND, TILE_COMPOSITE } tile_mode;
@@ -95,7 +110,10 @@ static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
     return ps;
 }
 
-// Upload `bytes` (255 everywhere if NULL) into the R8 clip texture.
+// Install a fresh R8 clip texture holding `bytes` (255 everywhere if NULL).  A new
+// texture (not an overwrite of o.clip) because an already-committed batch may still
+// be sampling the previous clip on the GPU; the command buffer keeps that one alive
+// until it completes, while subsequent ops sample this one.
 static void set_clip_bytes(CmpImpl *o, uint8_t const *bytes) {
     int n = o.width * o.height;
     uint8_t *tmp = NULL;
@@ -107,10 +125,19 @@ static void set_clip_bytes(CmpImpl *o, uint8_t const *bytes) {
         memset(tmp, 0xFF, (size_t)n);
         bytes = tmp;
     }
-    [o.clip replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
-              mipmapLevel:0
-                withBytes:bytes
-              bytesPerRow:(NSUInteger)o.width];
+    MTLTextureDescriptor *cd =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
+                                                           width:(NSUInteger)o.width
+                                                          height:(NSUInteger)o.height
+                                                       mipmapped:NO];
+    cd.usage = MTLTextureUsageShaderRead;
+    cd.storageMode = MTLStorageModeShared;
+    id<MTLTexture> clip = [o.device newTextureWithDescriptor:cd];
+    [clip replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
+            mipmapLevel:0
+              withBytes:bytes
+            bytesPerRow:(NSUInteger)o.width];
+    o.clip = clip;
     free(tmp);
 }
 
@@ -181,7 +208,7 @@ compositor *compositor_create(int width, int height) {
 void compositor_destroy(compositor *c) {
     if (c) {
         CmpImpl *o = (__bridge_transfer CmpImpl *)c;
-        flush_batch(o);  // drain any open batch before the encoder is released
+        drain_batch(o);  // finish any in-flight work before resources are released
         // ARC releases at scope end.
     }
 }
@@ -195,7 +222,8 @@ void compositor_set_clip(compositor *c, uint8_t const *mask, int len) {
         if (mask && len < o.width * o.height) {
             return;
         }
-        flush_batch(o);  // pending blends must use the old clip before it changes
+        submit_batch(o);  // commit pending blends (no CPU wait); they keep the old
+                          // clip texture alive while the new one is installed
         set_clip_bytes(o, mask);
     }
 }
@@ -280,7 +308,7 @@ void compositor_read(compositor *c, cnvs_premul *out, int len) {
         if (len < n) {
             return;
         }
-        flush_batch(o);  // execute pending ops so the readback sees them
+        drain_batch(o);  // the one real sync: finish all pending ops before getBytes
         // The target is premultiplied; hand it back verbatim.  Straight-alpha and
         // 8-bit conversion happen on the canvas side.
         [o.target getBytes:out
