@@ -35,6 +35,11 @@ typedef enum {
 canvas *__single canvas_create(int width, int height);
 void canvas_destroy(canvas *__single cv);
 
+// Whether the rendering context has been lost (matching isContextLost).  This
+// headless renderer owns its backing store and never loses it, so it is always
+// false; provided for API parity.
+bool canvas_is_context_lost(canvas *__single cv);
+
 void canvas_save(canvas *__single cv);
 void canvas_restore(canvas *__single cv);
 // Reset the context to its initial state: empty the save/restore stack, restore

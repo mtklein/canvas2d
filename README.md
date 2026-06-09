@@ -180,6 +180,7 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
 
 ```c
 canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under -fbounds-safety)
+canvas_is_context_lost                                        // always false (headless)
 canvas_save / canvas_restore / canvas_reset
 canvas_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule

@@ -177,6 +177,11 @@ void canvas_destroy(canvas *__single cv) {
     free(cv);
 }
 
+bool canvas_is_context_lost(canvas *__single cv) {
+    (void)cv;
+    return false;  // a headless renderer owns its backing store; never lost.
+}
+
 static bool stack_reserve(canvas *__single cv, int need) {
     if (need <= cv->stack_cap) {
         return true;
