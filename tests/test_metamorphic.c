@@ -15,19 +15,29 @@
 
 enum { W = 16, H = 16, LEN = W * H * 4 };
 
+// Composite layer 1 (r1,g1,b1,a1) over layer 2 (r2,g2,b2,a2): paint layer 2 on a
+// cleared canvas, then layer 1 under `op`; return the centre pixel.  Either layer
+// may be translucent.
+static struct px4 over(canvas *__single cv, uint8_t *__counted_by(LEN) px,
+                       canvas_composite_op op,
+                       float r1, float g1, float b1, float a1,
+                       float r2, float g2, float b2, float a2) {
+    canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_set_fill_rgba(cv, r2, g2, b2, a2);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_set_global_composite_operation(cv, op);
+    canvas_set_fill_rgba(cv, r1, g1, b1, a1);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_read_rgba(cv, px, LEN);
+    return pixel_at(px, LEN, W, W / 2, H / 2);
+}
+
 // Opaque backdrop (br,bg,bb), then (sr,sg,sb,sa) under `op`; centre pixel.
 static struct px4 blend(canvas *__single cv, uint8_t *__counted_by(LEN) px,
                         canvas_composite_op op, float br, float bg, float bb,
                         float sr, float sg, float sb, float sa) {
-    canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, br, bg, bb, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_global_composite_operation(cv, op);
-    canvas_set_fill_rgba(cv, sr, sg, sb, sa);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_read_rgba(cv, px, LEN);
-    return pixel_at(px, LEN, W, W / 2, H / 2);
+    return over(cv, px, op, sr, sg, sb, sa, br, bg, bb, 1.0f);
 }
 
 static bool px_eq(struct px4 a, struct px4 b) {
@@ -55,20 +65,35 @@ int main(void) {
         return TEST_REPORT();
     }
 
-    // 1. Symmetric separable blends are order-independent over opaque layers:
-    //    co = B(Cb,Cs) with B(a,b)==B(b,a), so A-over-B == B-over-A, exactly.
+    // 1. Symmetric separable blends are order-independent for ANY two layers, not
+    //    just opaque ones.  The premultiplied composite
+    //        co = (1-ab)*s + (1-as)*d + as*ab*B(Cb,Cs),  ar = as + ab - as*ab
+    //    is invariant under swapping the (colour,alpha) pairs when B(x,y)==B(y,x):
+    //    the two cross terms (1-ab)*as*Cs and (1-as)*ab*Cb just trade places, and B
+    //    is symmetric.  So layer1-over-layer2 == layer2-over-layer1 bit-exactly,
+    //    including when one or both layers are translucent (verified: maxd 0 at
+    //    alpha 1.0/0.5/0.25).  The translucent cases are what exercise the full
+    //    s*(1-da)+d*(1-sa)+T path rather than the opaque T-only reduction.
     canvas_composite_op const SYM[] = {
         CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN, CANVAS_OP_DARKEN,
         CANVAS_OP_LIGHTEN, CANVAS_OP_DIFFERENCE, CANVAS_OP_EXCLUSION,
     };
+    static struct { float c[3]; float a; } const LAYER[] = {
+        { { 0.90f, 0.20f, 0.25f }, 1.00f }, { { 0.20f, 0.75f, 0.40f }, 0.50f },
+        { { 0.25f, 0.45f, 0.95f }, 1.00f }, { { 0.95f, 0.85f, 0.20f }, 0.25f },
+        { { 0.13f, 0.55f, 0.77f }, 0.50f }, { { 0.50f, 0.50f, 0.50f }, 1.00f },
+    };
+    int const NL = (int)(sizeof LAYER / sizeof LAYER[0]);
     for (int m = 0; m < (int)(sizeof SYM / sizeof SYM[0]); m++) {
-        for (int i = 0; i < NCOL; i++) {
-            for (int j = 0; j < NCOL; j++) {
-                struct px4 ab = blend(cv, px, SYM[m], COL[i][0], COL[i][1], COL[i][2],
-                                      COL[j][0], COL[j][1], COL[j][2], 1.0f);
-                struct px4 ba = blend(cv, px, SYM[m], COL[j][0], COL[j][1], COL[j][2],
-                                      COL[i][0], COL[i][1], COL[i][2], 1.0f);
-                CHECK(px_eq(ab, ba));
+        for (int i = 0; i < NL; i++) {
+            for (int j = 0; j < NL; j++) {
+                struct px4 ij = over(cv, px, SYM[m],
+                                     LAYER[i].c[0], LAYER[i].c[1], LAYER[i].c[2], LAYER[i].a,
+                                     LAYER[j].c[0], LAYER[j].c[1], LAYER[j].c[2], LAYER[j].a);
+                struct px4 ji = over(cv, px, SYM[m],
+                                     LAYER[j].c[0], LAYER[j].c[1], LAYER[j].c[2], LAYER[j].a,
+                                     LAYER[i].c[0], LAYER[i].c[1], LAYER[i].c[2], LAYER[i].a);
+                CHECK(px_eq(ij, ji));
             }
         }
     }
