@@ -43,8 +43,9 @@ CFLAGS="-std=c23 -g -O1 -fno-omit-frame-pointer -isysroot $SDKROOT \
 
 # CPU backend only (no Metal/ObjC); pixvm is excluded (unreferenced here, and
 # under active development on another branch).
-CORE="canvas cnvs_cover cnvs_font_ct cnvs_geom cnvs_gradient cnvs_image \
-      cnvs_math cnvs_mem cnvs_path cnvs_replay cnvs_stroke cnvs_png compositor_cpu"
+CORE="blur canvas cnvs_cover cnvs_font_ct cnvs_geom cnvs_gradient cnvs_image \
+      cnvs_math cnvs_mem cnvs_path cnvs_record cnvs_replay cnvs_shape cnvs_shape_ct \
+      cnvs_stroke cnvs_png compositor_cpu"
 FRAMEWORKS="-framework CoreText -framework CoreGraphics -framework CoreFoundation"
 
 echo "[fuzz] compiling core with $CC (libFuzzer + ASan + UBSan, rootless)"
