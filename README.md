@@ -246,7 +246,7 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.8 ms | 9.7 ms | **1.00×** |
 | `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 6.8 ms | 6.8 ms | **1.00×** |
 | `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 83 ms | 87 ms | **1.00×** |
-| `bench_gradient_fill` — gradient fill via a precomputed ramp (radial solve + ramp index) | 23 ms | 23 ms | **1.00×** |
+| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 12 ms | 12 ms | **1.00×** |
 | `bench_stroke` — stroke expansion (joins/caps) | 54 ms | 54 ms | **1.00×** |
 | `bench_flatten` — cubic-Bézier flattening | 120 ms | 118 ms | **1.02×** |
 | `bench` — end-to-end | 65 ms | 59 ms | **1.10×** |
@@ -261,11 +261,13 @@ pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
 check per row instead of eight per pixel. PNG encode did the same when its CRC
 moved from a byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, also
 1.00×). What's left at the top is `bench_fill` (**1.22×**): a signed-area
-accumulate whose scattered per-pixel writes haven't been vectorized yet. The same
-precompute-once idea sped gradients up too — building a 1024-entry colour ramp per
-fill turns the per-pixel stop scan (`bench_gradient`) into a single indexed lookup
-(`bench_gradient_fill`, the renderer's actual path), ~3.4× faster for ≤1/255 of
-colour error. Real canvas rendering is GPU-bound, so the end-to-end cost of safety
+accumulate whose scattered per-pixel writes haven't been vectorized yet. Gradients
+got both treatments — a 1024-entry colour ramp built per fill (turning the per-pixel
+stop scan into one indexed lookup, ≤1/255 of colour error) *and* an 8-wide radial
+parameter solve — so `bench_gradient_fill` (the renderer's actual path) is **~6.4×
+faster** than the naive per-pixel scan (`bench_gradient`), at 1.00× overhead: the
+SIMD parameter solve stores eight lanes per `memcpy`, one bounds check instead of
+eight. Real canvas rendering is GPU-bound, so the end-to-end cost of safety
 is smaller still;
 these are the honest prices on the hottest pure-C kernels, two commands to
 re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase
