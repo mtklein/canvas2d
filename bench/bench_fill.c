@@ -1,5 +1,7 @@
 // Isolated benchmark: analytic coverage fill (signed-area accumulation + per-row
-// prefix-sum resolve).  The scene is built once; only the rasterization is timed.
+// prefix-sum resolve), driven the way the renderer does -- one fill() per shape over
+// its own tight bbox (see bench_fill_shapes), not one full-canvas pass.  The scene
+// is built once; only the rasterization is timed.
 #include "bench_reps.h"
 #include "bench_util.h"
 
@@ -19,15 +21,15 @@ int main(void) {
     bench_stars(&path, STARS, (float)DIM, (float)DIM);
 
     cnvs_cover cover = { .acc = NULL, .cap = 0 };
-    uint8_t *cov = malloc((size_t)(DIM * DIM));
+    int const cov_cap = DIM * DIM;
+    uint8_t *cov = malloc((size_t)cov_cap);
     double sink = 0.0;
 
     int reps = bench_reps();
-    for (int rep = 0; rep < reps; rep++) {
-        for (int it = 0; it < ITERS && cov; it++) {
-            bench_cover_path(&cover, DIM, DIM, &path);
-            cnvs_cover_resolve(&cover, DIM, DIM, CNVS_NONZERO, cov);
-            sink += (double)cov[(DIM / 2) * DIM + DIM / 2];
+    for (int rep = 0; rep < reps && cov; rep++) {
+        for (int it = 0; it < ITERS; it++) {
+            sink += bench_fill_shapes(&cover, cov, cov_cap, DIM, DIM, &path,
+                                      CNVS_NONZERO);
         }
     }
 
