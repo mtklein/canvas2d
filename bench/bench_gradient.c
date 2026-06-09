@@ -1,5 +1,7 @@
 // Isolated benchmark: gradient evaluation (radial parameter solve + multi-stop ramp
 // lookup) sampled across a pixel grid; radial is the costlier of the two kinds.
+#include "bench_reps.h"
+
 #include "cnvs_gradient.h"
 
 #include <stdio.h>
@@ -22,12 +24,15 @@ int main(void) {
     cnvs_gradient_add_stop(&gr, 1.00f, cnvs_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
 
     double sink = 0.0;
-    for (int it = 0; it < ITERS; it++) {
-        for (int y = 0; y < DIM; y++) {
-            for (int x = 0; x < DIM; x++) {
-                cnvs_unpremul c = cnvs_gradient_sample(
-                    &gr, (cnvs_vec2){ .x = (float)x + 0.5f, .y = (float)y + 0.5f }, 1.0f);
-                sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
+    int reps = bench_reps();
+    for (int rep = 0; rep < reps; rep++) {
+        for (int it = 0; it < ITERS; it++) {
+            for (int y = 0; y < DIM; y++) {
+                for (int x = 0; x < DIM; x++) {
+                    cnvs_unpremul c = cnvs_gradient_sample(
+                        &gr, (cnvs_vec2){ .x = (float)x + 0.5f, .y = (float)y + 0.5f }, 1.0f);
+                    sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
+                }
             }
         }
     }

@@ -163,6 +163,11 @@ def main():
     w("  pool = console")
     w("  description = benchmark: cost of -fbounds-safety (per phase + e2e)")
     w("")
+    w("rule profile")
+    w("  command = sh bench/profile.sh")
+    w("  pool = console")
+    w("  description = profile: per-kernel self-time under `sample`")
+    w("")
     w("rule run_gallery")
     w("  command = $bin")
     w("  description = render gallery PNGs")
@@ -239,6 +244,9 @@ def main():
     # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
+    # `profile` samples the release benches in place (no output file, always reruns).
+    release_bench_exes = [f"build/release/{s}" for s in bench_stems]
+    w(f"build profile: profile {' '.join(release_bench_exes)}")
     w("build all: phony release debug release-cpu debug-cpu")
     w("default all")
     w("")

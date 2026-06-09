@@ -2,6 +2,7 @@
 // bench_*.c files isolate each phase.  release vs unsafe differ only in
 // -fbounds-safety, so `ninja benchcmp` measures what the bounds checks cost.
 
+#include "bench_reps.h"
 #include "bench_util.h"
 
 #include "cnvs_cover.h"
@@ -15,12 +16,8 @@
 
 int main(void) {
     // Repeat the e2e workload BENCH_REPS times (default 1, so benchcmp is
-    // unchanged); raise it to give a profiler a longer run.
-    char const *__null_terminated rep_env = getenv("BENCH_REPS");
-    int reps = rep_env ? atoi(rep_env) : 1;
-    if (reps < 1) {
-        reps = 1;
-    }
+    // unchanged); `ninja profile` raises it for a longer, samplable run.
+    int reps = bench_reps();
 
     cnvs_path path;
     cnvs_path_init(&path);
