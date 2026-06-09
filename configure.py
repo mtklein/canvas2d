@@ -135,48 +135,44 @@ def main():
     for variant, (opt, bounds, _tests, _bench, backend) in VARIANTS.items():
         bflag = (BOUNDS + " ") if bounds else ""
         frameworks = (BASE_FRAMEWORKS + " " + BACKENDS[backend][1]).strip()
+        # Flag order targets ninja's status line, which elides the middle: the
+        # variant-distinguishing flags lead (clang -fbounds-safety -Os ...), the
+        # source/output trail (... -c $in -o $out), and the std/warning/include/
+        # depfile boilerplate sits in the elided middle.
         w(f"rule cc_{variant}")
-        w(f"  command = clang $cstd {bflag}$cwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
+        w(f"  command = clang {bflag}{opt} $cstd $cwarn $cinc -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
         w("  deps = gcc")
-        w(f"  description = CC({variant}) $out")
         w("")
         # Boundary C: no -fbounds-safety, -Wall -Wextra (system-FFI seam), but the
         # debug sanitizers still apply (unlike the ObjC shim).
         w(f"rule cc_boundary_{variant}")
-        w(f"  command = clang $cstd $objcwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
+        w(f"  command = clang {opt} $cstd $objcwarn $cinc -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
         w("  deps = gcc")
-        w(f"  description = CC-boundary({variant}) $out")
         w("")
         w(f"rule objc_{variant}")
-        w(f"  command = clang $cstd -fobjc-arc $objcwarn $cinc --embed-dir=shaders {opt} -MMD -MF $out.d -c $in -o $out")
+        w(f"  command = clang -fobjc-arc {opt} $cstd $objcwarn $cinc --embed-dir=shaders -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
         w("  deps = gcc")
-        w(f"  description = OBJC({variant}) $out")
         w("")
         w(f"rule link_{variant}")
         w(f"  command = clang {opt} $in {frameworks} -o $out")
-        w(f"  description = LINK({variant}) $out")
         w("")
 
     w("rule run")
     w("  command = $bin && touch $out")
-    w("  description = TEST $bin")
     w("")
     w("rule benchcmp")
     w("  command = $cmd")
     w("  pool = console")
-    w("  description = benchmark: cost of -fbounds-safety (per phase + e2e)")
     w("")
     w("rule profile")
     w("  command = sh bench/profile.sh")
     w("  pool = console")
-    w("  description = profile: per-kernel self-time under `sample`")
     w("")
     w("rule run_gallery")
     w("  command = $bin")
-    w("  description = render gallery PNGs")
     w("")
 
     # Bench stems, e2e "bench" sorted last; variants that build benches.
