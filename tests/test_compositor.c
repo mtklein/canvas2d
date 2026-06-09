@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// RGBA16F blend tile (channels in [0,1]).
+// Premultiplied RGBA16F blend tile from a straight colour (channels in [0,1]).
 static _Float16 *__counted_by(w * h * 4) make_tile16(int w, int h,
                                                      float r, float g, float b, float a) {
     int len = w * h * 4;
@@ -14,9 +14,9 @@ static _Float16 *__counted_by(w * h * 4) make_tile16(int w, int h,
         return NULL;
     }
     for (int i = 0; i < w * h; i++) {
-        t[i * 4] = (_Float16)r;
-        t[i * 4 + 1] = (_Float16)g;
-        t[i * 4 + 2] = (_Float16)b;
+        t[i * 4] = (_Float16)(r * a);  // premultiplied
+        t[i * 4 + 1] = (_Float16)(g * a);
+        t[i * 4 + 2] = (_Float16)(b * a);
         t[i * 4 + 3] = (_Float16)a;
     }
     return t;
@@ -77,6 +77,18 @@ int main(void) {
     compositor_clear(c, 0, 0, w, h);
     compositor_read_rgba(c, px, len);
     CHECK(px_near(pixel_at(px, len, w, 3, 3), 0, 0, 0, 0, 0));
+
+    // Translucent over transparent must read back STRAIGHT: a half-alpha red tile
+    // is stored premultiplied (0.5,0,0,0.5) but un-premultiplies to (255,0,0,128).
+    // (This is the case that exposes a premultiplied/straight mix-up.)
+    _Float16 *half_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 0.5f);
+    if (half_red) {
+        compositor_blend(c, 0, 0, w, h, half_red, COMPOSITOR_SRC_OVER);
+        compositor_read_rgba(c, px, len);
+        CHECK(px_near(pixel_at(px, len, w, 8, 8), 255, 0, 0, 128, 3));
+        free(half_red);
+    }
+    compositor_clear(c, 0, 0, w, h);
 
     // Clip mask: left half open (255), right half closed (0).
     uint8_t *mask = malloc((size_t)(w * h));

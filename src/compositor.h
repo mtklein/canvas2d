@@ -6,9 +6,11 @@
 // A Metal backend implements this today; nothing here is GPU-specific, so a pure
 // CPU backend could implement the same ABI.
 //
-// Colour tiles are tightly packed straight-alpha RGBA16F (_Float16 channels),
-// row-major, top row first; putImageData tiles are RGBA8.  All regions must lie
-// within the target (the caller clips to it).
+// Colour tiles are tightly packed *premultiplied* RGBA16F (_Float16 channels),
+// row-major, top row first; the target is premultiplied too, and read_rgba
+// un-premultiplies to the straight RGBA8 the Canvas API speaks.  putImageData
+// (replace) tiles are straight RGBA8 (premultiplied on entry).  All regions must
+// lie within the target (the caller clips to it).
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -60,9 +62,10 @@ void compositor_destroy(compositor *__single c);
 void compositor_set_clip(compositor *__single c,
                          uint8_t const *__counted_by(len) mask, int len);
 
-// Composite a w*h RGBA16F tile at (x,y) onto the target under `mode`, attenuated
-// by the current clip mask.  This is every painted fill and stroke (colour and
-// coverage already baked into alpha).  COMPOSITOR_SRC_OVER is the fast path.
+// Composite a w*h premultiplied RGBA16F tile at (x,y) onto the target under
+// `mode`, attenuated by the current clip mask.  This is every painted fill and
+// stroke (colour and coverage already baked in).  COMPOSITOR_SRC_OVER is the fast
+// path.
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       _Float16 const *__counted_by(w * h * 4) tile,
                       compositor_blend_mode mode);

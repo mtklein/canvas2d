@@ -82,10 +82,12 @@ static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
     // TILE_COMPOSITE reads the backdrop via framebuffer fetch and writes the
     // finished colour, so it leaves fixed-function blending disabled.
     if (mode == TILE_BLEND) {
+        // Premultiplied source-over: out = src + dst*(1 - srcAlpha).  The tile is
+        // already premultiplied, so the source factor is One (not SourceAlpha).
         ca.blendingEnabled = YES;
         ca.rgbBlendOperation = MTLBlendOperationAdd;
         ca.alphaBlendOperation = MTLBlendOperationAdd;
-        ca.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        ca.sourceRGBBlendFactor = MTLBlendFactorOne;
         ca.sourceAlphaBlendFactor = MTLBlendFactorOne;
         ca.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
         ca.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
@@ -334,10 +336,17 @@ void compositor_read_rgba(compositor *c, uint8_t *out, int len) {
                bytesPerRow:(NSUInteger)o.width * 4 * sizeof(_Float16)
                 fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
                mipmapLevel:0];
-        for (int i = 0; i < n * 4; i++) {
-            float v = (float)halfs[i];
-            v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
-            out[i] = (uint8_t)(v * 255.0f + 0.5f);
+        // The target is premultiplied; the Canvas API speaks straight alpha, so
+        // un-premultiply (divide out alpha) on the way out.
+        for (int i = 0; i < n; i++) {
+            float a = (float)halfs[i * 4 + 3];
+            a = a < 0.0f ? 0.0f : a > 1.0f ? 1.0f : a;
+            for (int k = 0; k < 3; k++) {
+                float v = a > 0.0f ? (float)halfs[i * 4 + k] / a : 0.0f;
+                v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
+                out[i * 4 + k] = (uint8_t)(v * 255.0f + 0.5f);
+            }
+            out[i * 4 + 3] = (uint8_t)(a * 255.0f + 0.5f);
         }
         free(halfs);
     }

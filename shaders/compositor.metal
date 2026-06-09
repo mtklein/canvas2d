@@ -16,23 +16,25 @@ vertex tile_io tile_vs(uint vid [[vertex_id]],
     return o;
 }
 
-// Sample the tile at this pixel (framebuffer position minus the tile origin),
-// scale its alpha by the clip coverage, and let the pipeline source-over it.
+// Sample the premultiplied tile at this pixel (framebuffer position minus the
+// tile origin) and scale it by the clip coverage; the pipeline source-overs it.
+// Premultiplied, so coverage scales colour and alpha together (one multiply).
 fragment float4 tile_blend_fs(tile_io in [[stage_in]],
                               float2 constant &origin [[buffer(0)]],
                               texture2d<float> tile [[texture(0)]],
                               texture2d<float> clip [[texture(1)]]) {
     uint2 p = uint2(in.pos.xy);
-    float4 c = tile.read(p - uint2(origin));
-    c.a *= clip.read(p).r;
-    return c;
+    return tile.read(p - uint2(origin)) * clip.read(p).r;
 }
 
-// Overwrite (putImageData): no clip, pipeline blending disabled.
+// Overwrite (putImageData): no clip, pipeline blending disabled.  The source is
+// straight RGBA8, so premultiply it before storing into the premultiplied target.
 fragment float4 tile_replace_fs(tile_io in [[stage_in]],
                                 float2 constant &origin [[buffer(0)]],
                                 texture2d<float> tile [[texture(0)]]) {
-    return tile.read(uint2(in.pos.xy) - uint2(origin));
+    float4 c = tile.read(uint2(in.pos.xy) - uint2(origin));
+    c.rgb *= c.a;
+    return c;
 }
 
 // Erase (clearRect): output alpha = clip coverage; the pipeline blend
@@ -117,10 +119,10 @@ fragment float4 tile_composite_fs(tile_io in [[stage_in]],
                                   texture2d<float> clip [[texture(1)]]) {
     uint2 p = uint2(in.pos.xy);
     float4 s = tile.read(p - uint2(origin));
-    float as = s.a * clip.read(p).r;   // source alpha, attenuated by the clip
-    float3 cs = s.rgb;                 // straight source colour
+    float as = s.a * clip.read(p).r;                      // source alpha (clip-attenuated)
+    float3 cs = s.a > 0.0 ? s.rgb / s.a : float3(0.0);    // un-premultiply to straight
     float ab = dst.a;
-    float3 cb = dst.rgb;               // straight backdrop colour
+    float3 cb = ab > 0.0 ? dst.rgb / ab : float3(0.0);    // backdrop, un-premultiplied
 
     // Blend modes (>=11) replace the source colour with the backdrop-mixed blend,
     // then composite as source-over; Porter-Duff operators use their own factors.
@@ -151,9 +153,9 @@ fragment float4 tile_composite_fs(tile_io in [[stage_in]],
     }
 
     float ao = as * fa + ab * fb;
-    float3 co = as * fa * csb + ab * fb * cb;     // premultiplied result
-    // Clamp alpha to 1 before un-premultiplying so additive 'lighter' (ao up to 2)
-    // keeps full brightness; readback clamps the straight colour channels to [0,1].
+    float3 co = as * fa * csb + ab * fb * cb;     // premultiplied result colour
+    // Clamp alpha to 1 (additive 'lighter' can reach 2) and keep the colour within
+    // [0, alpha] so the stored value is a valid premultiplied pixel.
     float aoc = min(ao, 1.0);
-    return float4(aoc > 0.0 ? co / aoc : float3(0.0), aoc);
+    return float4(clamp(co, 0.0, aoc), aoc);
 }

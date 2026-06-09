@@ -393,10 +393,11 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                 col = solid;
                 a = (float)col.a * ga;
             }
-            cv->tile[i * 4] = f16c((float)col.r);
-            cv->tile[i * 4 + 1] = f16c((float)col.g);
-            cv->tile[i * 4 + 2] = f16c((float)col.b);
-            cv->tile[i * 4 + 3] = f16c(a * covf);
+            float alpha = a * covf;  // tiles are premultiplied: colour *= alpha
+            cv->tile[i * 4] = f16c((float)col.r * alpha);
+            cv->tile[i * 4 + 1] = f16c((float)col.g * alpha);
+            cv->tile[i * 4 + 2] = f16c((float)col.b * alpha);
+            cv->tile[i * 4 + 3] = f16c(alpha);
         }
     }
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
@@ -869,10 +870,11 @@ void canvas_draw_image_subrect(canvas *__single cv,
             float fsy = sy + ((u.y - dy) / dh) * shh;
             float s[4];
             sample_src(src, sw * sh * 4, sw, sh, fsx, fsy, s);
-            cv->tile[i * 4] = f16c(s[0]);
-            cv->tile[i * 4 + 1] = f16c(s[1]);
-            cv->tile[i * 4 + 2] = f16c(s[2]);
-            cv->tile[i * 4 + 3] = f16c(s[3] * ga * covf);
+            float alpha = s[3] * ga * covf;  // premultiplied tile
+            cv->tile[i * 4] = f16c(s[0] * alpha);
+            cv->tile[i * 4 + 1] = f16c(s[1] * alpha);
+            cv->tile[i * 4 + 2] = f16c(s[2] * alpha);
+            cv->tile[i * 4 + 3] = f16c(alpha);
         }
     }
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
