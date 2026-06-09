@@ -1,0 +1,91 @@
+# The text boundary under `-fbounds-safety`: shaping a glyph run
+
+Text is where this project's real boundary to un-annotated unsafe code lives. Core
+Text is a pure-C framework with no bounds annotations, so the shim that binds it
+(`cnvs_font_ct.c`, and now `cnvs_shape_ct.c`) is built without `-fbounds-safety`
+(`configure.py BOUNDARY_C`). The question this probe asks: as the text API grows from
+"draw a string" to real shaping — RTL, ligatures, emoji, font fallback — what crosses
+that boundary, and how does the flag shape it?
+
+## Today's boundary is narrow and value-typed
+
+`cnvs_font_ct.c` processes text *one codepoint → one glyph* (`CTFontGetGlyphsForCharacters(..., 1)`),
+does all the Core Text array work internally with fixed count-1 buffers, and hands the
+checked core only *finished* `cnvs_path` outlines and `float` metrics. **No glyph
+array ever crosses the boundary.** That keeps the checked side forge-free, but it also
+means every bit of text logic lives in the *unsafe* TU — fine while that logic is
+trivial, a growing liability once it's shaping.
+
+## Real shaping produces runtime-count runs
+
+[../src/cnvs_shape_ct.c](../src/cnvs_shape_ct.c) shapes a UTF-8 string with Core Text
+(`CTLine` → `CTRun`s) and, for each run, hands back a glyph count, the glyph ids, the
+advances, and a **cluster map** (`cluster[i]` = the logical UTF-16 index in the source
+for glyph `i`). Real CT output shows why each feature matters:
+
+| input | runs | what shows up |
+|---|---|---|
+| `"ffi waffle"` (10 UTF-16) | 1 run, **8** glyphs | ligatures: fewer glyphs than chars, cluster *gaps* `[0 1 3 4 5 6 7 9]` |
+| `"a😀b"` (4 UTF-16) | **3** runs | emoji is a fallback-font run; the cluster jumps `0→1→3` (surrogate pair) |
+| Hebrew `"שלום"` | 1 run, `rtl=1` | clusters **descend** `[3 2 1 0]` — visual-order glyphs, logical indices |
+| `"Hi שלום!"` | 3 runs | per-run direction; runs in visual order |
+
+## The run crosses by `(pointer, count)` — no forge
+
+[../src/cnvs_shape.h](../src/cnvs_shape.h) declares the run as a struct of
+`__counted_by(count)` pointers plus a sibling `int count`. That struct is **the same
+layout in both TUs** — `__counted_by` ties the bound to the existing `count` field and
+adds no hidden member — so the unsafe shim fills it (the attribute is a no-op there)
+and the checked core reads it (the attribute is enforced there), with no marshalling
+in between. Every `glyph[i]`, `xadv[i]`, `cluster[i]` in [../src/cnvs_shape.c](../src/cnvs_shape.c)
+is bounds-checked against the count the boundary supplied.
+
+This is the friendliest boundary in the whole exploration:
+
+| boundary | how data crosses | cost |
+|---|---|---|
+| `qsort`/`CGPathApply` callback | `void *` context | `__unsafe_forge_single` |
+| tagged pointer | `uintptr_t` round-trip | `__unsafe_forge` (bound lost) |
+| **shaped glyph run (C↔C)** | **`(ptr, count)` ABI** | **none** |
+
+Two consequences worth stating:
+
+- **Put the rich logic in the checked core.** Because a run crosses for free, layout,
+  cluster mapping, RTL handling, and hit-testing belong on the checked side — the
+  unsafe TU shrinks to "call CT, copy out `(ptr, count)`". The opposite of where the
+  per-codepoint design was heading.
+- **The counted-local gotcha is sidestepped.** A `__counted_by(n)` *local* can't be
+  allocated against a parameter `n` in checked code — but here the runtime-count
+  `malloc` happens in the *unsafe* shim (no flag, no gotcha), and the checked core only
+  ever *reads* counted pointers it was handed. The boundary naturally lands the
+  allocation on the side where the restriction doesn't apply.
+
+## Frictions the real features introduce
+
+- **Ligature runs are non-contiguous → the `Ptr` accessors return NULL.**
+  `CTRunGetGlyphsPtr`/`StringIndicesPtr` returned `NULL` for `"ffi waffle"`. The copy
+  variants (`CTRunGetGlyphs`, …) always work, so the boundary always copies — which is
+  also what lets the run *outlive* the `CTLine` and become checked-owned. (Had we
+  wanted zero-copy, NULL-able `Ptr` would mean `__counted_by_or_null` plus a fallback.)
+- **The cluster cross-index is a checked, data-dependent index.** `text[cluster[i]]`
+  is exactly the gather pattern: the flag checks it per access (it won't fold the
+  range), so a *bad* cluster value from a CT bug traps cleanly instead of reading out
+  of bounds. The core also range-checks `cluster[i]` against `text_len` explicitly and
+  returns "no hit" rather than trapping, since a hostile or buggy map is foreseeable.
+- **RTL is just data.** Glyphs arrive in visual order with descending logical clusters
+  and an `rtl` flag; the checked hit-test sweeps left-to-right and reads `cluster[i]`
+  uniformly — no special-casing, no new bounds concern.
+- **Emoji/fallback means a *sequence* of runs.** The line is `__counted_by(nruns)`;
+  iterating it is one more checked loop. Color-glyph *rendering* (not covered here)
+  would need `CTFontDrawGlyphs`/bitmaps rather than the outline-path API — a different
+  boundary shape, but the same `(ptr, count)` hand-off for the glyph data.
+
+## The trust boundary
+
+The checked core is safe *given an honest count*. If the shim reported a count larger
+than the arrays it allocated, the core would read within the claimed count and not
+trap — so the boundary's contract is "count matches arrays," kept trivially because the
+same code mallocs and counts. Everything downstream of that — including untrusted
+*values* like cluster indices — is either bounds-checked or explicitly range-checked.
+So the unsafe surface for real text shaping is small and fixed (the CT calls plus the
+copy), and grows with feature richness far slower than the per-codepoint design would.
