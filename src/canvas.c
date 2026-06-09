@@ -399,9 +399,16 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
     cbbox b = points_bbox(cv, q, 4);
-    if (b.w > 0 && b.h > 0) {
-        compositor_clear(cv->comp, b.x, b.y, b.w, b.h);
+    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h)) {
+        return;
     }
+    // Erase = destination-out of a unit-alpha tile: out = dst*(1 - alpha), and the
+    // clip attenuates alpha to the coverage, so a clip leaves dst*(1 - clip).
+    int npix = b.w * b.h;
+    for (int i = 0; i < npix; i++) {
+        cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = (_Float16)1.0f };
+    }
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, COMPOSITOR_DST_OUT);
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
@@ -881,8 +888,31 @@ void canvas_draw_image_scaled(canvas *__single cv,
                               dx, dy, dw, dh);
 }
 
+// Read the whole canvas back as straight RGBA8 -- the form the Canvas API speaks.
+// The compositor hands back premultiplied pixels; the un-premultiply and 8-bit
+// quantize happen here in checked C (the conversion the spec mandates at the edge).
+static void read_straight(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
+    if (len < cv->width * cv->height * 4) {
+        return;
+    }
+    int const n = cv->width * cv->height;
+    cnvs_premul *__counted_by(n) buf = malloc((size_t)n * sizeof *buf);
+    if (!buf) {
+        return;
+    }
+    compositor_read(cv->comp, buf, n);
+    for (int i = 0; i < n; i++) {
+        cnvs_unpremul s = cnvs_unpremultiply(buf[i]);
+        out[i * 4]     = (uint8_t)((float)s.r * 255.0f + 0.5f);
+        out[i * 4 + 1] = (uint8_t)((float)s.g * 255.0f + 0.5f);
+        out[i * 4 + 2] = (uint8_t)((float)s.b * 255.0f + 0.5f);
+        out[i * 4 + 3] = (uint8_t)((float)s.a * 255.0f + 0.5f);
+    }
+    free(buf);
+}
+
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
-    compositor_read_rgba(cv->comp, out, len);
+    read_straight(cv, out, len);
 }
 
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
@@ -891,7 +921,7 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     if (!out) {
         return false;
     }
-    compositor_read_rgba(cv->comp, out, len);
+    read_straight(cv, out, len);
     bool ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
@@ -908,7 +938,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     if (!buf) {
         return;
     }
-    compositor_read_rgba(cv->comp, buf, clen);
+    read_straight(cv, buf, clen);
     cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
     free(buf);
 }
@@ -931,19 +961,21 @@ void canvas_put_image_data(canvas *__single cv,
     }
     int rw = cx1 - cx0;
     int rh = cy1 - cy0;
-    if (rw <= 0 || rh <= 0) {
+    if (rw <= 0 || rh <= 0 || !ensure_tile(cv, rw * rh)) {
         return;
     }
-    if (cx0 == dx && cy0 == dy && rw == w && rh == h) {
-        compositor_replace(cv->comp, dx, dy, w, h, data);  // fully inside; no copy
-        return;
+    // Build a premultiplied tile from the (canvas-clipped) straight RGBA8 source.
+    for (int py = 0; py < rh; py++) {
+        for (int px = 0; px < rw; px++) {
+            int si = (((cy0 - dy) + py) * w + ((cx0 - dx) + px)) * 4;
+            cv->tile[py * rw + px] = cnvs_premultiply(cnvs_unpremul_of(
+                (float)data[si] / 255.0f, (float)data[si + 1] / 255.0f,
+                (float)data[si + 2] / 255.0f, (float)data[si + 3] / 255.0f));
+        }
     }
-    int const tlen = rw * rh * 4;
-    uint8_t *__counted_by(tlen) tmp = malloc((size_t)tlen);
-    if (!tmp) {
-        return;
-    }
-    cnvs_blit_rgba(tmp, rw, rh, 0, 0, data, w, h, cx0 - dx, cy0 - dy, rw, rh);
-    compositor_replace(cv->comp, cx0, cy0, rw, rh, tmp);
-    free(tmp);
+    // putImageData overwrites and ignores the clip: composite COPY with the clip
+    // open, then restore it.
+    compositor_set_clip(cv->comp, NULL, 0);
+    compositor_blend(cv->comp, cx0, cy0, rw, rh, cv->tile, COMPOSITOR_COPY);
+    compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
 }

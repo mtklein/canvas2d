@@ -2,15 +2,18 @@
 
 // The rendering backend boundary.  The canvas does all the interesting work --
 // geometry, analytic coverage, gradient evaluation, clip intersection -- in
-// bounds-checked C, and hands the compositor only finished RGBA8 tiles to blend.
-// A Metal backend implements this today; nothing here is GPU-specific, so a pure
-// CPU backend could implement the same ABI.
+// bounds-checked C, and hands the compositor only finished premultiplied tiles to
+// composite.  A Metal backend implements this today; nothing here is GPU-specific,
+// so a pure CPU backend could implement the same ABI.
 //
-// Colour tiles are tightly packed premultiplied RGBA16F (cnvs_premul pixels),
-// row-major, top row first; the target is premultiplied too, and read_rgba
-// un-premultiplies to the straight RGBA8 the Canvas API speaks.  putImageData
-// (replace) tiles are straight RGBA8 (premultiplied on entry).  All regions must
-// lie within the target (the caller clips to it).
+// The compositor is a pure premultiplied-pixel store: tiles in and the target are
+// premultiplied RGBA16F (cnvs_premul), row-major, top row first; read hands the
+// premultiplied target straight back.  The whole interface is just three verbs --
+// set the clip, composite a tile under a blend mode, read the target.  putImageData
+// (blend with COPY) and clearRect (blend with DESTINATION_OUT over a unit-alpha
+// tile) fall out of blend; the straight<->premultiplied and 8-bit conversions the
+// Canvas API needs all live in checked C on the canvas side.  All regions must lie
+// within the target (the caller clips to it).
 
 #include "cnvs_math.h"  // cnvs_premul
 
@@ -59,27 +62,17 @@ compositor *__single compositor_create(int width, int height);
 void compositor_destroy(compositor *__single c);
 
 // Set the clip mask: one coverage byte per pixel (0..255), length width*height,
-// row-major top-first.  Subsequent blend/clear are multiplied by it.  NULL opens
-// the clip (everything passes).
+// row-major top-first.  Subsequent blends are multiplied by it.  NULL opens the
+// clip (everything passes).
 void compositor_set_clip(compositor *__single c,
                          uint8_t const *__counted_by(len) mask, int len);
 
-// Composite a w*h premultiplied RGBA16F tile at (x,y) onto the target under
-// `mode`, attenuated by the current clip mask.  This is every painted fill and
-// stroke (colour and coverage already baked in).  COMPOSITOR_SRC_OVER is the fast
-// path.
+// Composite a w*h premultiplied tile at (x,y) onto the target under `mode`,
+// attenuated by the current clip mask.  COMPOSITOR_SRC_OVER is the fast path.
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       cnvs_premul const *__counted_by(w * h) tile,
                       compositor_blend_mode mode);
 
-// Overwrite a w*h region at (x,y) with the RGBA8 tile (no blend, ignores the
-// clip).  This is putImageData, whose source is 8-bit.
-void compositor_replace(compositor *__single c, int x, int y, int w, int h,
-                        uint8_t const *__counted_by(w * h * 4) tile);
-
-// Erase a rectangle toward transparent black, weighted by the clip mask.  This
-// is clearRect (with no clip set it fully clears).
-void compositor_clear(compositor *__single c, int x, int y, int w, int h);
-
-// Tightly packed RGBA8, top row first; len must be width*height*4.
-void compositor_read_rgba(compositor *__single c, uint8_t *__counted_by(len) out, int len);
+// Read the premultiplied target back, row-major top-first; len must be
+// width*height (pixels).  Conversion to straight RGBA8 is the caller's job.
+void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out, int len);

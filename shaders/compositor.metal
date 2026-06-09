@@ -27,23 +27,6 @@ fragment float4 tile_blend_fs(tile_io in [[stage_in]],
     return tile.read(p - uint2(origin)) * clip.read(p).r;
 }
 
-// Overwrite (putImageData): no clip, pipeline blending disabled.  The source is
-// straight RGBA8, so premultiply it before storing into the premultiplied target.
-fragment float4 tile_replace_fs(tile_io in [[stage_in]],
-                                float2 constant &origin [[buffer(0)]],
-                                texture2d<float> tile [[texture(0)]]) {
-    float4 c = tile.read(uint2(in.pos.xy) - uint2(origin));
-    c.rgb *= c.a;
-    return c;
-}
-
-// Erase (clearRect): output alpha = clip coverage; the pipeline blend
-// (factors Zero / OneMinusSourceAlpha) scales the destination by (1 - clip).
-fragment float4 clear_fs(tile_io in [[stage_in]],
-                         texture2d<float> clip [[texture(1)]]) {
-    return float4(0.0, 0.0, 0.0, clip.read(uint2(in.pos.xy)).r);
-}
-
 // --- globalCompositeOperation (W3C Compositing and Blending Level 1) ----------
 // Source-over has a fixed-function fast path (tile_blend_fs); every other mode
 // goes through tile_composite_fs below, which reads the *premultiplied* backdrop

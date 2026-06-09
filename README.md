@@ -125,10 +125,10 @@ Three variants are produced from one source tree:
       │  ▼   cnvs_font.h   (C ABI: opaque cnvs_font*, glyph outlines → a cnvs_path)
       │  cnvs_font_ct.c  ── unsafe boundary #2: Core Text glyph outlines (C, no ARC)
       │
-      ▼   compositor.h  (C ABI: opaque compositor*, RGBA16F tiles + a clip mask)
-   compositor_metal.m  ── unsafe boundary #1: blend / replace / clear of
-                          tiles onto a single-sample target, masked by a clip
-                          coverage texture, batched + read back  (ObjC + ARC)
+      ▼   compositor.h  (C ABI: set clip · composite a premultiplied tile · read)
+   compositor_metal.m  ── unsafe boundary #1: composites premultiplied tiles onto
+                          a single-sample target under a blend mode, masked by a
+                          clip coverage texture, batched + read back  (ObjC + ARC)
 ```
 
 Everything above the two ABI lines is pure C23 under `-fbounds-safety`. There are

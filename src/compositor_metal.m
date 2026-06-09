@@ -24,10 +24,8 @@ static char const compositor_metal_src[] = {
 @property (nonatomic, strong) id<MTLCommandQueue> queue;
 @property (nonatomic, strong) id<MTLTexture> target;   // 1x RGBA8, readback
 @property (nonatomic, strong) id<MTLTexture> clip;      // R8 coverage, 255 = open
-@property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;     // source-over
+@property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;      // source-over
 @property (nonatomic, strong) id<MTLRenderPipelineState> compositePipe;  // other GCO modes
-@property (nonatomic, strong) id<MTLRenderPipelineState> replacePipe;
-@property (nonatomic, strong) id<MTLRenderPipelineState> clearPipe;
 @property (nonatomic) int width;
 @property (nonatomic) int height;
 // Open render pass that consecutive ops batch into; flushed before a clip
@@ -65,38 +63,27 @@ static void flush_batch(CmpImpl *o) {
     o.batchCB = nil;
 }
 
-typedef enum { TILE_BLEND, TILE_COMPOSITE, TILE_REPLACE, TILE_CLEAR } tile_mode;
+typedef enum { TILE_BLEND, TILE_COMPOSITE } tile_mode;
 
 static id<MTLRenderPipelineState> make_pipeline(id<MTLDevice> device,
                                                 id<MTLLibrary> lib,
                                                 tile_mode mode) {
-    NSString *fn = mode == TILE_BLEND     ? @"tile_blend_fs"
-                 : mode == TILE_COMPOSITE ? @"tile_composite_fs"
-                 : mode == TILE_REPLACE   ? @"tile_replace_fs"
-                                          : @"clear_fs";
     MTLRenderPipelineDescriptor *pd = [[MTLRenderPipelineDescriptor alloc] init];
     pd.vertexFunction = [lib newFunctionWithName:@"tile_vs"];
-    pd.fragmentFunction = [lib newFunctionWithName:fn];
+    pd.fragmentFunction = [lib newFunctionWithName:mode == TILE_BLEND ? @"tile_blend_fs"
+                                                                      : @"tile_composite_fs"];
     MTLRenderPipelineColorAttachmentDescriptor *ca = pd.colorAttachments[0];
     ca.pixelFormat = MTLPixelFormatRGBA16Float;
-    // TILE_COMPOSITE reads the backdrop via framebuffer fetch and writes the
-    // finished colour, so it leaves fixed-function blending disabled.
+    // TILE_BLEND is premultiplied source-over via fixed-function blending
+    // (out = src + dst*(1 - srcAlpha); the tile is premultiplied, so the source
+    // factor is One).  TILE_COMPOSITE reads the backdrop via framebuffer fetch and
+    // writes the finished colour, so it leaves blending disabled.
     if (mode == TILE_BLEND) {
-        // Premultiplied source-over: out = src + dst*(1 - srcAlpha).  The tile is
-        // already premultiplied, so the source factor is One (not SourceAlpha).
         ca.blendingEnabled = YES;
         ca.rgbBlendOperation = MTLBlendOperationAdd;
         ca.alphaBlendOperation = MTLBlendOperationAdd;
         ca.sourceRGBBlendFactor = MTLBlendFactorOne;
         ca.sourceAlphaBlendFactor = MTLBlendFactorOne;
-        ca.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-        ca.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    } else if (mode == TILE_CLEAR) {
-        ca.blendingEnabled = YES;
-        ca.rgbBlendOperation = MTLBlendOperationAdd;
-        ca.alphaBlendOperation = MTLBlendOperationAdd;
-        ca.sourceRGBBlendFactor = MTLBlendFactorZero;
-        ca.sourceAlphaBlendFactor = MTLBlendFactorZero;
         ca.destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
         ca.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
     }
@@ -171,12 +158,9 @@ compositor *compositor_create(int width, int height) {
         o.clip = [device newTextureWithDescriptor:cd];
         o.blendPipe = make_pipeline(device, lib, TILE_BLEND);
         o.compositePipe = make_pipeline(device, lib, TILE_COMPOSITE);
-        o.replacePipe = make_pipeline(device, lib, TILE_REPLACE);
-        o.clearPipe = make_pipeline(device, lib, TILE_CLEAR);
         o.width = width;
         o.height = height;
-        if (!o.queue || !o.target || !o.clip || !o.blendPipe ||
-            !o.compositePipe || !o.replacePipe || !o.clearPipe) {
+        if (!o.queue || !o.target || !o.clip || !o.blendPipe || !o.compositePipe) {
             return NULL;
         }
         set_clip_bytes(o, NULL);  // open clip
@@ -288,62 +272,22 @@ void compositor_blend(compositor *c, int x, int y, int w, int h,
     }
 }
 
-void compositor_replace(compositor *c, int x, int y, int w, int h, uint8_t const *tile) {
-    if (!c || !tile || w <= 0 || h <= 0) {
-        return;
-    }
-    @autoreleasepool {
-        CmpImpl *o = (__bridge CmpImpl *)c;
-        if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
-            return;
-        }
-        id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA8Unorm, w, h, tile,
-                                         (NSUInteger)w * 4);
-        draw_tile(o, o.replacePipe, x, y, w, h, tex, -1);
-    }
-}
-
-void compositor_clear(compositor *c, int x, int y, int w, int h) {
-    if (!c || w <= 0 || h <= 0) {
-        return;
-    }
-    @autoreleasepool {
-        CmpImpl *o = (__bridge CmpImpl *)c;
-        if (x < 0 || y < 0 || x + w > o.width || y + h > o.height) {
-            return;
-        }
-        draw_tile(o, o.clearPipe, x, y, w, h, nil, -1);
-    }
-}
-
-void compositor_read_rgba(compositor *c, uint8_t *out, int len) {
+void compositor_read(compositor *c, cnvs_premul *out, int len) {
     if (!c || !out) {
         return;
     }
     @autoreleasepool {
         CmpImpl *o = (__bridge CmpImpl *)c;
         int n = o.width * o.height;
-        if (len < n * 4) {
+        if (len < n) {
             return;
         }
         flush_batch(o);  // execute pending ops so the readback sees them
-        // The target is premultiplied RGBA16Float; the Canvas API speaks straight
-        // alpha, so un-premultiply each pixel and quantize to 8-bit (the edge).
-        cnvs_premul *pix = malloc((size_t)n * sizeof(cnvs_premul));
-        if (!pix) {
-            return;
-        }
-        [o.target getBytes:pix
+        // The target is premultiplied; hand it back verbatim.  Straight-alpha and
+        // 8-bit conversion happen in checked C on the canvas side.
+        [o.target getBytes:out
                bytesPerRow:(NSUInteger)o.width * sizeof(cnvs_premul)
                 fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
                mipmapLevel:0];
-        for (int i = 0; i < n; i++) {
-            cnvs_unpremul s = cnvs_unpremultiply(pix[i]);  // straight, channels in [0,1]
-            out[i * 4]     = (uint8_t)((float)s.r * 255.0f + 0.5f);
-            out[i * 4 + 1] = (uint8_t)((float)s.g * 255.0f + 0.5f);
-            out[i * 4 + 2] = (uint8_t)((float)s.b * 255.0f + 0.5f);
-            out[i * 4 + 3] = (uint8_t)((float)s.a * 255.0f + 0.5f);
-        }
-        free(pix);
     }
 }
