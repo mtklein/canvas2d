@@ -1,4 +1,4 @@
-#include "cnvs_shape.h"
+#include "cnvs_text.h"
 #include "test_util.h"
 
 #include <stdlib.h>

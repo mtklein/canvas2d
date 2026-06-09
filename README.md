@@ -250,8 +250,8 @@ shows only its progress line; a failing test prints the offending `CHECK` to std
       │  ├── cnvs_geom     growable vertex/int buffers
       │  ├── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
       │  │
-      │  ▼   cnvs_font.h   (C ABI: opaque cnvs_font*, glyph outlines → a cnvs_path)
-      │  cnvs_font_ct.c  ── unsafe boundary #2: Core Text glyph outlines (C, no ARC)
+      │  ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
+      │  cnvs_text_ct.c  ── unsafe boundary #2: Core Text shaping + glyphs (C, no ARC)
       │
       ▼   compositor.h  (C ABI: set clip · composite a premultiplied tile · read)
    compositor_metal.m  ── unsafe boundary #1: composites premultiplied tiles onto
@@ -274,9 +274,10 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   [cnvs_blend.h](src/cnvs_blend.h), is the same premultiplied math the Metal shader
   runs), selected instead of Metal at build time. The two agree to ≤1/255 per
   channel, and the `-cpu` build links no GPU frameworks at all.
-- The [Core Text font shim](src/cnvs_font_ct.c) turns a system typeface into
-  ordinary device-space `cnvs_path` outlines, which the *same* coverage rasterizer
-  then fills/strokes — so text gets gradients, transforms, clips and AA for free.
+- The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with font
+  fallback) and turns each glyph into either a device-space `cnvs_path` outline —
+  which the *same* coverage rasterizer fills/strokes, so text gets gradients,
+  transforms, clips and AA for free — or, for a color glyph (emoji), an RGBA8 bitmap.
 
 > These two `.c`/`.m` files are the only translation units *not* under
 > `-fbounds-safety`. The Metal one *can't* be — the flag is C-only and rejects

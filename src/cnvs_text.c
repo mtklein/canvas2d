@@ -1,4 +1,4 @@
-#include "cnvs_shape.h"
+#include "cnvs_text.h"
 
 // Checked-core consumers of a shaped run.  Every glyph and cluster access is
 // bounds-checked against the counts the boundary handed over; the cluster value is

@@ -3,7 +3,6 @@
 #include "compositor.h"
 #include "blur.h"
 #include "cnvs_cover.h"
-#include "cnvs_font.h"
 #include "cnvs_geom.h"
 #include "cnvs_gradient.h"
 #include "cnvs_image.h"
@@ -12,8 +11,8 @@
 #include "cnvs_path.h"
 #include "cnvs_png.h"
 #include "cnvs_record.h"
-#include "cnvs_shape.h"
 #include "cnvs_stroke.h"
+#include "cnvs_text.h"
 
 #include <limits.h>
 #include <math.h>

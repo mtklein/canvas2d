@@ -1,11 +1,16 @@
 # The text boundary under `-fbounds-safety`: shaping a glyph run
 
 Text is where this project's real boundary to un-annotated unsafe code lives. Core
-Text is a pure-C framework with no bounds annotations, so the shim that binds it
-(`cnvs_font_ct.c`, and now `cnvs_shape_ct.c`) is built without `-fbounds-safety`
-(`configure.py BOUNDARY_C`). The question this probe asks: as the text API grows from
-"draw a string" to real shaping — RTL, ligatures, emoji, font fallback — what crosses
-that boundary, and how does the flag shape it?
+Text is a pure-C framework with no bounds annotations, so the shim that binds it is
+built without `-fbounds-safety` (`configure.py BOUNDARY_C`). The question this probe
+asks: as the text API grows from "draw a string" to real shaping — RTL, ligatures,
+emoji, font fallback — what crosses that boundary, and how does the flag shape it?
+
+> The two boundary shims this doc develops separately — the per-codepoint
+> `cnvs_font_ct.c` and the shaping `cnvs_shape_ct.c` — have since been unified into a
+> single text module, `src/cnvs_text_ct.c` (with checked core `src/cnvs_text.c` and
+> header `src/cnvs_text.h`). The split below is the design narrative; the file names
+> in links point at the merged module.
 
 ## Today's boundary is narrow and value-typed
 
@@ -18,7 +23,7 @@ trivial, a growing liability once it's shaping.
 
 ## Real shaping produces runtime-count runs
 
-[../src/cnvs_shape_ct.c](../src/cnvs_shape_ct.c) shapes a UTF-8 string with Core Text
+[../src/cnvs_text_ct.c](../src/cnvs_text_ct.c) shapes a UTF-8 string with Core Text
 (`CTLine` → `CTRun`s) and, for each run, hands back a glyph count, the glyph ids, the
 advances, and a **cluster map** (`cluster[i]` = the logical UTF-16 index in the source
 for glyph `i`). Real CT output shows why each feature matters:
@@ -32,12 +37,12 @@ for glyph `i`). Real CT output shows why each feature matters:
 
 ## The run crosses by `(pointer, count)` — no forge
 
-[../src/cnvs_shape.h](../src/cnvs_shape.h) declares the run as a struct of
+[../src/cnvs_text.h](../src/cnvs_text.h) declares the run as a struct of
 `__counted_by(count)` pointers plus a sibling `int count`. That struct is **the same
 layout in both TUs** — `__counted_by` ties the bound to the existing `count` field and
 adds no hidden member — so the unsafe shim fills it (the attribute is a no-op there)
 and the checked core reads it (the attribute is enforced there), with no marshalling
-in between. Every `glyph[i]`, `xadv[i]`, `cluster[i]` in [../src/cnvs_shape.c](../src/cnvs_shape.c)
+in between. Every `glyph[i]`, `xadv[i]`, `cluster[i]` in [../src/cnvs_text.c](../src/cnvs_text.c)
 is bounds-checked against the count the boundary supplied.
 
 This is the friendliest boundary in the whole exploration:

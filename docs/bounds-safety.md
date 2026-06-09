@@ -393,8 +393,8 @@ is `CGPathElement.points`, whose length is encoded in a sibling enum
 (`type` → 0–3 points) that `__counted_by` can't even name.
 
 **The design we chose** mirrors the Metal boundary: an unchecked C shim
-([cnvs_font_ct.c](../src/cnvs_font_ct.c)) behind a bounds-safe ABI
-([cnvs_font.h](../src/cnvs_font.h)). With the flag off, the FFI is natural C — no
+([cnvs_text_ct.c](../src/cnvs_text_ct.c)) behind a bounds-safe ABI
+([cnvs_text.h](../src/cnvs_text.h)). With the flag off, the FFI is natural C — no
 forges, no pragma, no fight — and the glyphs flow back as ordinary device-space
 `cnvs_path`s the existing coverage rasterizer fills. One refinement over the `.m`:
 a C shim still takes the debug sanitizers, so that unbounded `points[i]` read is
