@@ -16,6 +16,16 @@ typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
 typedef enum { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL } canvas_line_join;
 typedef enum { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE } canvas_line_cap;
 
+// textAlign / textBaseline.  Direction is LTR, so start == left and end == right.
+typedef enum {
+    CANVAS_ALIGN_START, CANVAS_ALIGN_END,
+    CANVAS_ALIGN_LEFT, CANVAS_ALIGN_RIGHT, CANVAS_ALIGN_CENTER,
+} canvas_text_align;
+typedef enum {
+    CANVAS_BASELINE_ALPHABETIC, CANVAS_BASELINE_TOP, CANVAS_BASELINE_HANGING,
+    CANVAS_BASELINE_MIDDLE, CANVAS_BASELINE_IDEOGRAPHIC, CANVAS_BASELINE_BOTTOM,
+} canvas_text_baseline;
+
 // globalCompositeOperation.  Order mirrors compositor_blend_mode (src/compositor.h)
 // value-for-value; the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
@@ -173,6 +183,14 @@ void canvas_draw_image_subrect(canvas *__single cv,
 // +x, and paint the glyph outlines like fill()/stroke(): transform, clip, gradient
 // and global alpha all apply.  measure_text returns the advance width in user px.
 void canvas_set_font_size(canvas *__single cv, float px);
+// textAlign: horizontal placement of the text relative to the (x, y) passed to
+// fill_text/stroke_text, by the advance width.  start/left (default) puts x at
+// the left edge, end/right at the right edge, center centres it.
+void canvas_set_text_align(canvas *__single cv, canvas_text_align align);
+// textBaseline: vertical placement of the baseline relative to (x, y).
+// alphabetic (default) draws the baseline at y; top/hanging/middle/ideographic/
+// bottom shift it by the font's ascent/descent.
+void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline);
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text);
 
 // Full measureText() TextMetrics, all in user px, relative to the text's origin

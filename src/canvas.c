@@ -65,6 +65,8 @@ struct canvas_state {
     int dash_count;
     float dash_offset;
     float font_size;  // text size in user px (Canvas default 10px)
+    canvas_text_align text_align;
+    canvas_text_baseline text_baseline;
     // Clip coverage, one byte per canvas pixel (NULL = open).  Held by value in
     // the state, so save() snapshots it and restore() brings it back; clip()
     // intersects the current path's coverage into it.
@@ -122,6 +124,8 @@ static void state_defaults(struct canvas_state *s) {
     s->dash_count = 0;
     s->dash_offset = 0.0f;
     s->font_size = 10.0f;
+    s->text_align = CANVAS_ALIGN_START;
+    s->text_baseline = CANVAS_BASELINE_ALPHABETIC;
     // Drop the clip: zero the count before NULLing the pointer so the
     // __counted_by(clip_len) invariant never sees NULL with a positive count.
     s->clip_len = 0;
@@ -990,6 +994,61 @@ void canvas_set_font_size(canvas *__single cv, float px) {
     cv->cur.font_size = px > 0.0f ? px : 0.0f;
 }
 
+void canvas_set_text_align(canvas *__single cv, canvas_text_align align) {
+    switch (align) {
+        case CANVAS_ALIGN_START:
+        case CANVAS_ALIGN_END:
+        case CANVAS_ALIGN_LEFT:
+        case CANVAS_ALIGN_RIGHT:
+        case CANVAS_ALIGN_CENTER:
+            cv->cur.text_align = align;
+            break;
+    }
+}
+
+void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline) {
+    switch (baseline) {
+        case CANVAS_BASELINE_ALPHABETIC:
+        case CANVAS_BASELINE_TOP:
+        case CANVAS_BASELINE_HANGING:
+        case CANVAS_BASELINE_MIDDLE:
+        case CANVAS_BASELINE_IDEOGRAPHIC:
+        case CANVAS_BASELINE_BOTTOM:
+            cv->cur.text_baseline = baseline;
+            break;
+    }
+}
+
+// Resolve the pen origin (alphabetic baseline, in user space) for fill_text /
+// stroke_text under the current textAlign and textBaseline.  textAlign shifts x
+// by a fraction of the advance width (only measured when not left/start);
+// textBaseline shifts y by an offset derived from the font's ascent/descent.
+static void text_origin(canvas *__single cv, cnvs_font *__single f,
+                        char const *__null_terminated text,
+                        float x, float y, float *__single ox, float *__single oy) {
+    *ox = x;
+    if (cv->cur.text_align != CANVAS_ALIGN_START &&
+        cv->cur.text_align != CANVAS_ALIGN_LEFT) {
+        float frac = cv->cur.text_align == CANVAS_ALIGN_CENTER ? 0.5f : 1.0f;
+        *ox = x - frac * cnvs_font_advance(f, text);
+    }
+    *oy = y;
+    if (cv->cur.text_baseline != CANVAS_BASELINE_ALPHABETIC) {
+        float a = 0.0f, d = 0.0f;
+        cnvs_font_vmetrics(f, &a, &d);
+        float dy = 0.0f;
+        switch (cv->cur.text_baseline) {
+            case CANVAS_BASELINE_ALPHABETIC:  break;  // handled by the guard
+            case CANVAS_BASELINE_TOP:         dy = a; break;
+            case CANVAS_BASELINE_HANGING:     dy = a; break;  // no BASE table: ~top
+            case CANVAS_BASELINE_MIDDLE:      dy = (a - d) * 0.5f; break;
+            case CANVAS_BASELINE_IDEOGRAPHIC: dy = -d; break;
+            case CANVAS_BASELINE_BOTTOM:      dy = -d; break;
+        }
+        *oy = y + dy;
+    }
+}
+
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
     cnvs_font *__single f = ensure_font(cv);
     return f ? cnvs_font_advance(f, text) : 0.0f;
@@ -1025,8 +1084,10 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
     if (!f) {
         return;
     }
+    float ox, oy;
+    text_origin(cv, f, text, x, y, &ox, &oy);
     cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, x, y, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
+    cnvs_font_outline(f, text, ox, oy, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
     // Glyph outlines use nonzero winding (overlapping contours fill solid).
     fill_device_path(cv, &cv->text_path, CNVS_NONZERO, cv->cur.fill_is_gradient,
                      &cv->cur.fill_grad, cv->cur.fill);
@@ -1038,8 +1099,10 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
     if (!f) {
         return;
     }
+    float ox, oy;
+    text_origin(cv, f, text, x, y, &ox, &oy);
     cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, x, y, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
+    cnvs_font_outline(f, text, ox, oy, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
     stroke_device_path(cv, &cv->text_path);
 }
 

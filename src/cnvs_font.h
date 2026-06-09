@@ -40,3 +40,8 @@ typedef struct {
 
 void cnvs_font_measure(cnvs_font *__single f, char const *__null_terminated text,
                        cnvs_text_metrics *__single out);
+
+// Font vertical metrics in user px: ascent and descent, both positive magnitudes
+// from the baseline.  Cheap (no glyph walk) -- for textBaseline positioning.
+void cnvs_font_vmetrics(cnvs_font *__single f, float *__single ascent,
+                        float *__single descent);

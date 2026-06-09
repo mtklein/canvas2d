@@ -218,3 +218,8 @@ void cnvs_font_measure(cnvs_font *f, char const *text, cnvs_text_metrics *m) {
     m->actual_ascent = any ? (float)maxy : 0.0f;
     m->actual_descent = any ? (float)(-miny) : 0.0f;
 }
+
+void cnvs_font_vmetrics(cnvs_font *f, float *ascent, float *descent) {
+    *ascent = (float)CTFontGetAscent(f->font);
+    *descent = (float)CTFontGetDescent(f->font);
+}

@@ -37,9 +37,9 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 
 ## Partial — implemented but narrower than spec
 
-- **Text styling** is `set_font_size` only. No font-family selection (pinned to
-  Libian TC), weight, style, or the CSS `font` shorthand; and none of
-  `textAlign`, `textBaseline`, `direction`, `letterSpacing`, `wordSpacing`,
+- **Text styling** covers `set_font_size`, `textAlign`, and `textBaseline`. No
+  font-family selection (pinned to Libian TC), weight, style, or the CSS `font`
+  shorthand; and none of `direction`, `letterSpacing`, `wordSpacing`,
   `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
 - **`fillText`/`strokeText`** take no `maxWidth` (no auto-condense).
 - **Text shaping** maps code point → glyph 1:1: no ligatures, contextual forms, or
