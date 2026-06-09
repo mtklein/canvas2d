@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef float covf8 __attribute__((ext_vector_type(8)));
+typedef uint8_t covu8x8 __attribute__((ext_vector_type(8)));
+
 void cnvs_cover_free(cnvs_cover *c) {
     free(c->acc);
     c->acc = NULL;
@@ -84,13 +87,45 @@ static void accum_row(cnvs_cover *c, int w, int y,
     float chif = floorf(xhi);
     int clo = cnvs_f2i(clof);
     int chi = cnvs_f2i(chif);
-    for (int col = clo; col <= chi && col < w; col++) {
-        float a = (float)col > xlo ? (float)col : xlo;
-        float b = (float)(col + 1) < xhi ? (float)(col + 1) : xhi;
-        if (b <= a) {
-            continue;
+
+    if (clo == chi) {  // the whole span lies in one column
+        // Area from the in-raster width, NOT dir*dyt: when the segment was
+        // clipped above, the off-raster part of dyt is already lumped into
+        // column 0 (left) or dropped (right).
+        deposit(c, base, w, clo, 0.5f * (xlo + xhi) - clof, dir * (xhi - xlo) * dydx);
+        return;
+    }
+
+    // First partial column [xlo, clo+1).
+    deposit(c, base, w, clo, 0.5f * (xlo + clof + 1.0f) - clof,
+            dir * (clof + 1.0f - xlo) * dydx);
+    // Last partial column [chi, xhi); zero-width when xhi sits on the boundary.
+    if (chi < w && xhi > chif) {
+        deposit(c, base, w, chi, 0.5f * (xhi - chif), dir * (xhi - chif) * dydx);
+    }
+
+    // Interior columns in (clo, chi) each cover a full unit of x -- the same
+    // signed area d, half deposited in their own cell, half spilled right.
+    // Telescoped along the run, that's +d/2 at the run's two outer cells and a
+    // constant +d on every cell between: a contiguous add, done 8-wide with one
+    // whole-vector bounds check per block (the resolve's memcpy idiom) instead
+    // of two scattered checked writes per column.
+    if (chi - clo >= 2) {
+        float d = dir * dydx;
+        c->acc[base + clo + 1] += 0.5f * d;
+        if (chi < w) {
+            c->acc[base + chi] += 0.5f * d;
         }
-        deposit(c, base, w, col, 0.5f * (a + b) - (float)col, dir * (b - a) * dydx);
+        int x = clo + 2;
+        for (; x + 8 <= chi; x += 8) {
+            covf8 v;
+            memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
+            v += d;
+            memcpy(c->acc + base + x, &v, sizeof v);  // bounds-checked vector store
+        }
+        for (; x < chi; x++) {
+            c->acc[base + x] += d;
+        }
     }
 }
 
@@ -150,9 +185,6 @@ static uint8_t cover_to_u8(cnvs_fill_rule rule, float run) {
     }
     return cnvs_f2u8(cov * 255.0f + 0.5f);
 }
-
-typedef float covf8 __attribute__((ext_vector_type(8)));
-typedef uint8_t covu8x8 __attribute__((ext_vector_type(8)));
 
 // Coverage-fold a vector of 8 winding values to 0..255, matching cover_to_u8 lane
 // by lane.  run values are finite (a prefix sum of finite areas), so the saturating
