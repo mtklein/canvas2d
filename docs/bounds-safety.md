@@ -404,6 +404,52 @@ tighter "C matches Rust" story (the forges *are* C's `unsafe { ffi() }`); we wen
 with the shim for boundary consistency and because, here, it cedes essentially
 nothing.
 
+## Writing a text parser: the `__null_terminated` seam
+
+`canvas_replay_from()` reads a text *canvas program* (one `canvas_*` command per
+line) and replays it; the parser ([src/cnvs_replay.c](../src/cnvs_replay.c)) is
+deliberately a hostile-input target, so it's a good probe of what `-fbounds-safety`
+feels like for the classic C minefield of tokenizing untrusted text.
+
+**The ease (most of it).** Parsing *by index* over a `char const *__counted_by(len)`
+buffer is friction-free and pleasant: the cursor is a `size_t`, every `data[i]`
+is bounds-checked against `len` for free, and a line is just a `[start, end)`
+slice. Comparing a token to a literal, scanning to whitespace, the strict
+"unknown command / wrong arity → reject" structure — all of it is ordinary C that
+needed *zero* annotations beyond the one `__counted_by` on the entry pointer. The
+DoS guard (cap the line length) is a plain `if`. This is the feature at its best:
+the dangerous loop is the indexed buffer walk, and it's checked with no effort.
+
+**The friction (the C-library boundary).** Text parsing *forces* you across the
+`__null_terminated` seam, because that's how libc is annotated:
+- `strtof`'s first argument is `__null_terminated`; a `__bidi_indexable` cursor
+  won't pass without `__unsafe_null_terminated_from_indexable()` (a linear scan)
+  or a forge.
+- `memcpy`'s source is `__sized_by`, so copying *out of* a `__null_terminated`
+  string needs `__null_terminated_to_indexable()` first.
+- a `__terminated_by` (i.e. `__null_terminated`) pointer **can't be subscripted**
+  (`lit[k]` is an error — walk it with `*lit`/`lit++`) and **can't be offset by
+  more than one** (`p + n` is an error — check `*end` instead of `end == p + n`).
+
+None of these are hard once you know them, but they're invisible until the
+compiler stops you. The clean resolution is to **keep the bulk of the parser in
+the indexable world and confine the conversions to leaves**: here, exactly two —
+a copied numeric token handed to `strtof`, and the copied text tail handed to
+`fill_text` — each a *sound* `__unsafe_forge_null_terminated` over a fixed buffer
+we just NUL-terminated. The forge is C's `unsafe {}`: it's where I assert an
+invariant the type system can't see, and there are precisely two, both one-liners.
+
+**One gotcha worth flagging:** a parameter used *only* inside a `__counted_by(n)`
+annotation reads as unused in the `unsafe` variant (where the macro expands to
+nothing) and trips `-Werror=unused-parameter` — a build that's green under
+`-fbounds-safety` can fail without it. The fix doubles as defense-in-depth: use
+the bound in a real check (`if (ts + tlen > le) return false;`), which also
+guards the unchecked `unsafe`/fuzz build where `__counted_by` is absent.
+
+Net: `-fbounds-safety` made the *parsing* (the actual attack surface) safe for
+free, and pushed the only real work to the libc string boundary — a small, named,
+auditable set of forges. Fuzzed at ~46k exec/run with nothing found.
+
 ## Regrets / things we'd reconsider
 
 - **Hand-rolled per-type vectors.** `cnvs_verts` and the `cnvs_cover`/clip-mask

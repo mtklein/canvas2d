@@ -15,6 +15,8 @@
 #                  adversarial UTF-8; ASan is the only net in that TU.
 #   fuzz_png    -- the PNG encoder (size arithmetic, cursor, SIMD adler32/CRC) on
 #                  fuzzed dimensions + pixels, encoding to /dev/null.
+#   fuzz_replay -- the text canvas-program parser (cnvs_replay.c) on adversarial
+#                  bytes: tokenizing, number parsing, the __null_terminated seam.
 #
 # To confirm a crasher traps under the feature, replay it against the Apple-clang
 # -fbounds-safety build -- see fuzz/README.md.
@@ -42,7 +44,7 @@ CFLAGS="-std=c23 -g -O1 -fno-omit-frame-pointer -isysroot $SDKROOT \
 # CPU backend only (no Metal/ObjC); pixvm is excluded (unreferenced here, and
 # under active development on another branch).
 CORE="canvas cnvs_cover cnvs_font_ct cnvs_geom cnvs_gradient cnvs_image \
-      cnvs_math cnvs_mem cnvs_path cnvs_stroke cnvs_png compositor_cpu"
+      cnvs_math cnvs_mem cnvs_path cnvs_replay cnvs_stroke cnvs_png compositor_cpu"
 FRAMEWORKS="-framework CoreText -framework CoreGraphics -framework CoreFoundation"
 
 echo "[fuzz] compiling core with $CC (libFuzzer + ASan + UBSan, rootless)"
@@ -52,7 +54,7 @@ for s in $CORE; do
     OBJS="$OBJS $BUILD/obj/$s.o"
 done
 
-for h in fuzz_api fuzz_state fuzz_text fuzz_png; do
+for h in fuzz_api fuzz_state fuzz_text fuzz_png fuzz_replay; do
     echo "[fuzz] linking harness $h"
     "$CC" $CFLAGS $COMPILE_SAN -DFUZZ_NO_MAIN -c "fuzz/$h.c" -o "$BUILD/obj/$h.o"
     "$CC" $LINK_SAN -isysroot "$SDKROOT" $OBJS "$BUILD/obj/$h.o" $FRAMEWORKS -o "$BUILD/$h"

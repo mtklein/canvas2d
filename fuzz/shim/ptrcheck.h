@@ -27,3 +27,11 @@
 #define __null_terminated_by(E)
 #define __ptrcheck_abi_assume_single()
 #define __ptrcheck_abi_assume_unsafe_indexable()
+
+// Forges / conversions: plain casts or identities when bounds-safety is off.
+#define __unsafe_forge_single(T, P) ((T)(P))
+#define __unsafe_forge_bidi_indexable(T, P, S) ((T)(P))
+#define __unsafe_forge_null_terminated(T, P) ((T)(P))
+#define __unsafe_forge_terminated_by(T, P, E) ((T)(P))
+#define __null_terminated_to_indexable(P) (P)
+#define __unsafe_null_terminated_from_indexable(P) (P)

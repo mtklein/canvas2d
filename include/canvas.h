@@ -168,3 +168,22 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
 void canvas_put_image_data(canvas *__single cv,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy);
+
+// Read a text canvas-program from `path` and replay it onto cv via the calls
+// above.  One command per line (UTF-8): each command is exactly the canvas_*
+// function name *without* the `canvas_` prefix, followed by its whitespace-
+// separated arguments, e.g.:
+//     set_fill_rgba 0.8 0.2 0.2 1
+//     move_to 10 20
+//     set_global_composite_operation multiply
+//     fill_text 12 30 Hello
+// Enums (set_global_composite_operation / set_line_join / set_line_cap /
+// set_fill_rule) are written by name; the bool arg of arc/ellipse is 0/1 or
+// false/true; set_line_dash takes a variable number of lengths; fill_text and
+// stroke_text take the rest of the line as their text.  Blank lines and lines
+// whose first non-space character is `#` are ignored.  Parsing is strict: an
+// unknown command, a bad argument, or an over-long line stops replay and returns
+// false (commands before the faulty line have already been applied).  The query
+// and image ops (measure_text, read_rgba, write_png, get/put_image_data,
+// draw_image) are not part of the text format.
+bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path);

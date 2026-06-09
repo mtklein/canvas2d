@@ -240,6 +240,15 @@ allocation limits) surfaces.
 - **CPU compositor** ([`compositor_cpu.c`](../src/compositor_cpu.c)): fully
   checked; keeps `target/__counted_by(tn)` consistent, so overflowed dimensions
   trap on access rather than corrupt.
+- **Text-program parser** ([`cnvs_replay.c`](../src/cnvs_replay.c), behind the new
+  public `canvas_replay_from`): a fresh untrusted-input surface (tokenizing,
+  number parsing, line handling). Parsed by index over a `__counted_by(len)`
+  buffer with a line-length cap and strict rejection; the `__null_terminated`
+  conversions libc forces (`strtof`/`fill_text`) are confined to two sound forges.
+  Fuzzed by [`fuzz/fuzz_replay.c`](../fuzz/fuzz_replay.c) — 46k execs under ASan,
+  **clean** — plus a round-trip + malformed-rejection test
+  ([`tests/test_replay.c`](../tests/test_replay.c)). The `-fbounds-safety` ease/
+  friction is written up in [docs/bounds-safety.md](../docs/bounds-safety.md).
 
 ---
 
