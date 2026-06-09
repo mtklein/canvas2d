@@ -18,3 +18,9 @@
 
 long ring_sum_masked(int32_t const *__counted_by(cap) buf, int cap, int tail, int n);
 long ring_sum_runs(int32_t const *__counted_by(cap) buf, int cap, int tail, int n);
+
+// Same contiguous runs, but explicitly vectorized: a whole-vector bounds-checked
+// load (one check per 4 elements, not per element) into a SIMD accumulator.  The
+// flag doesn't block explicit SIMD the way it blocks the autovectorizer, so this
+// stays fast even at -Os/-O1.
+long ring_sum_simd(int32_t const *__counted_by(cap) buf, int cap, int tail, int n);

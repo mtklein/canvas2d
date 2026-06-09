@@ -31,6 +31,7 @@ int main(void) {
                 long want = naive(buf, cap, t, n);
                 if (ring_sum_masked(buf, cap, t, n) != want) { ok = false; }
                 if (ring_sum_runs(buf, cap, t, n) != want) { ok = false; }
+                if (ring_sum_simd(buf, cap, t, n) != want) { ok = false; }
             }
         }
         CHECK(ok);
