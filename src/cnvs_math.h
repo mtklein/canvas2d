@@ -20,7 +20,7 @@ typedef struct {
 // match for Metal's `half` / RGBA16Float.  Plenty of precision for [0,1] colour
 // (and headroom past it); 8-bit only at the edges.
 //
-// Two distinct types so premultiplied and straight colour can never be confused:
+// Two distinct types so premultiplied and unpremultiplied colour can't be confused:
 // cnvs_unpremul is what the Canvas API speaks (r,g,b independent of a); cnvs_premul
 // is what every internal pixel buffer holds (r,g,b already scaled by a).  Convert
 // only through cnvs_premultiply / cnvs_unpremultiply -- never by reinterpreting one
@@ -33,7 +33,7 @@ typedef struct cnvs_premul {
     _Float16 r, g, b, a;
 } cnvs_premul;
 
-// Build a straight colour from float components (the float -> _Float16 narrow site).
+// Build an unpremultiplied colour from float components (the float -> _Float16 site).
 cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a);
 
 // The explicit conversions.  premultiply scales r,g,b by a; unpremultiply divides

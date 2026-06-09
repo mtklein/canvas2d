@@ -252,7 +252,7 @@ We tried. Two findings, both verified:
 
 So "blanket `-fbounds-safety`" is reachable only in the hollow sense that every
 TU compiles with the flag; the GPU TU would check nothing. And there is nothing
-to check there: the compositor forwards already-rendered RGBA16F tiles straight to
+to check there: the compositor forwards already-rendered RGBA16F tiles directly to
 Metal as `void*`; all the geometry, coverage, gradient, and clip logic lives in
 the C core, which is already fully covered.
 

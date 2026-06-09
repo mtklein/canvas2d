@@ -8,12 +8,12 @@
 //
 // The compositor is a pure premultiplied-pixel store: tiles in and the target are
 // premultiplied RGBA16F (cnvs_premul), row-major, top row first; read hands the
-// premultiplied target straight back.  The whole interface is just three verbs --
+// premultiplied target back verbatim.  The whole interface is just three verbs --
 // set the clip, composite a tile under a blend mode, read the target.  putImageData
 // (blend with COPY) and clearRect (blend with DESTINATION_OUT over a unit-alpha
-// tile) fall out of blend; the straight<->premultiplied and 8-bit conversions the
-// Canvas API needs all live in checked C on the canvas side.  All regions must lie
-// within the target (the caller clips to it).
+// tile) fall out of blend; the unpremultiplied<->premultiplied and 8-bit
+// conversions the Canvas API needs all live in checked C on the canvas side.  All
+// regions must lie within the target (the caller clips to it).
 
 #include "cnvs_math.h"  // cnvs_premul
 
@@ -74,5 +74,5 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       compositor_blend_mode mode);
 
 // Read the premultiplied target back, row-major top-first; len must be
-// width*height (pixels).  Conversion to straight RGBA8 is the caller's job.
+// width*height (pixels).  Conversion to unpremultiplied RGBA8 is the caller's job.
 void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out, int len);

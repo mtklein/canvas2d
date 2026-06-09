@@ -40,6 +40,6 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
 // circle in the family passes through it) -- such samples paint transparent.
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t);
 
-// Convenience: the straight-alpha colour to paint at a device-space point,
+// Convenience: the unpremultiplied colour to paint at a device-space point,
 // with `alpha` (global alpha) folded into the result's alpha.
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);

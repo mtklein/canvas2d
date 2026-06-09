@@ -36,12 +36,12 @@ fragment float4 tile_blend_fs(tile_io in [[stage_in]],
 // for the blend modes (source-over compositing of the blended colour), where the
 // premultiplied blend term T = sa*da*B(Cb, Cs).  The polynomial separable modes
 // have divide-free premultiplied forms for T; the intrinsically non-linear ones
-// (dodge/burn/soft-light and the HSL set) are *defined* on straight colour, so
-// they un-premultiply with a guarded divide.  Mode integers match
+// (dodge/burn/soft-light and the HSL set) are *defined* on unpremultiplied colour,
+// so they un-premultiply with a guarded divide.  Mode integers match
 // compositor_blend_mode in compositor.h.
 
-// Separable blend B(cb, cs) on straight channels -- used only for the non-linear
-// modes (color-dodge/-burn, soft-light); the rest fold into pm_term below.
+// Separable blend B(cb, cs) on unpremultiplied channels -- used only for the
+// non-linear modes (color-dodge/-burn, soft-light); the rest fold into pm_term.
 static float blend_sep(uint mode, float cb, float cs) {
     switch (mode) {
         case 11: return cb * cs;                                    // multiply
@@ -104,7 +104,7 @@ static float3 blend_nonsep(uint mode, float3 cb, float3 cs) {
 
 // Premultiplied separable blend term T = sa*da*B(Cb,Cs) for one channel; s,d are
 // premultiplied.  The polynomial modes are divide-free; the non-linear ones reuse
-// the straight B with a single guarded un-premultiply.
+// the unpremultiplied B with a single guarded un-premultiply.
 static float pm_term(uint mode, float s, float d, float sa, float da) {
     switch (mode) {
         case 11: return s * d;                                  // multiply

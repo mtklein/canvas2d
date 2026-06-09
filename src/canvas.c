@@ -799,8 +799,8 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
     stroke_device_path(cv, &cv->text_path);
 }
 
-// Bilinear sample of an RGBA8 source at source-pixel coords (fx,fy), straight
-// alpha, clamp-to-edge.  Four checked taps per pixel -- the indexing is bounded
+// Bilinear sample of an RGBA8 source at source-pixel coords (fx,fy),
+// unpremultiplied, clamp-to-edge.  Four checked taps per pixel -- the indexing is bounded
 // by the clamps, and -fbounds-safety guards each src[] against `slen`.
 static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
                        int sw, int sh, float fx, float fy,
@@ -888,10 +888,10 @@ void canvas_draw_image_scaled(canvas *__single cv,
                               dx, dy, dw, dh);
 }
 
-// Read the whole canvas back as straight RGBA8 -- the form the Canvas API speaks.
-// The compositor hands back premultiplied pixels; the un-premultiply and 8-bit
-// quantize happen here in checked C (the conversion the spec mandates at the edge).
-static void read_straight(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
+// Read the whole canvas back as unpremultiplied RGBA8 -- the form the Canvas API
+// speaks.  The compositor hands back premultiplied pixels; the un-premultiply and
+// 8-bit quantize happen here in checked C (the conversion the spec mandates here).
+static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
     }
@@ -912,7 +912,7 @@ static void read_straight(canvas *__single cv, uint8_t *__counted_by(len) out, i
 }
 
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
-    read_straight(cv, out, len);
+    read_unpremul(cv, out, len);
 }
 
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
@@ -921,7 +921,7 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     if (!out) {
         return false;
     }
-    read_straight(cv, out, len);
+    read_unpremul(cv, out, len);
     bool ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
@@ -938,7 +938,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     if (!buf) {
         return;
     }
-    read_straight(cv, buf, clen);
+    read_unpremul(cv, buf, clen);
     cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
     free(buf);
 }
@@ -964,7 +964,7 @@ void canvas_put_image_data(canvas *__single cv,
     if (rw <= 0 || rh <= 0 || !ensure_tile(cv, rw * rh)) {
         return;
     }
-    // Build a premultiplied tile from the (canvas-clipped) straight RGBA8 source.
+    // Build a premultiplied tile from the (canvas-clipped) unpremultiplied RGBA8 source.
     for (int py = 0; py < rh; py++) {
         for (int px = 0; px < rw; px++) {
             int si = (((cy0 - dy) + py) * w + ((cx0 - dx) + px)) * 4;

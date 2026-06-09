@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 
-// Premultiplied blend tile from a straight colour (channels in [0,1]).
+// Premultiplied blend tile from an unpremultiplied colour (channels in [0,1]).
 static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
                                                     float r, float g, float b, float a) {
     int n = w * h;
@@ -19,8 +19,8 @@ static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
     return t;
 }
 
-// Read the premultiplied target back as straight RGBA8 (mirrors the canvas-side
-// conversion), so the pixel checks can use straight values.
+// Read the premultiplied target back as unpremultiplied RGBA8 (mirrors the
+// canvas-side conversion), so the pixel checks can use unpremultiplied values.
 static void read8(compositor *__single c, int w, int h,
                   uint8_t *__counted_by(w * h * 4) out) {
     int const n = w * h;
