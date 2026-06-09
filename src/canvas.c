@@ -435,7 +435,8 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                     inside = cnvs_gradient_param(gr, p, &t);
                 }
                 if (inside) {
-                    // t is clamped to [0,1], so the ramp index is in range.
+                    // Nearest ramp entry (t is clamped to [0,1], so the index is in
+                    // range); see CNVS_GRAD_RAMP_N for why not interpolated.
                     col = use_ramp
                         ? cv->ramp[(int)(t * (float)(CNVS_GRAD_RAMP_N - 1) + 0.5f)]
                         : cnvs_gradient_color_at(gr, t);
