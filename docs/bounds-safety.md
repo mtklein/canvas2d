@@ -251,6 +251,53 @@ the spread shows:
   The compiler elides checks it can prove redundant; what's left is the cost of the
   ones it can't, and that cost is very workload-dependent.
 
+## How close is this to Rust, really?
+
+The project's pitch is "C can play with the big boys." After a security pass that
+fuzzed the public API and fixed six findings, here's the honest scorecard — where
+the `-fbounds-safety` + UBSan + ASan stack reaches Rust, and where it doesn't.
+Each row is a real bug we hit (see `secreview/SECURITY-REVIEW.md`).
+
+| Bug class | What we did in C | What Rust does | Verdict |
+|---|---|---|---|
+| **Spatial OOB** (a bad `__counted_by` bound → out-of-bounds index) | `-fbounds-safety` traps (`SIGTRAP`) in every build | mandatory bounds-check **panic** in every build | **parity** — this is the headline, and it holds |
+| **Integer overflow** in a size/count (Findings 1, 2) | UB; UBSan catches in debug; the resulting OOB then traps under `-fbounds-safety` | debug build **panics**; release **wraps** (defined), and the OOB it causes still panics on index | **comparable at runtime**; neither catches it at compile time |
+| **float→int / float→uint8** conversion (Finding 4) | UB; we wrote a saturating `cnvs_f2i`/`cnvs_f2u8` (NaN→0, clamp) by hand | `as` is **saturating by default** (the exact semantics we re-implemented) | **Rust stronger** — safe by construction, no opt-in |
+| **Temporal** (use-after-free, double-free) | *not covered* — `-fbounds-safety` is spatial-only; ASan catches it in debug, nothing in release | **borrow checker, at compile time** | **Rust much stronger** — the real gap |
+| **Resource / termination** (Findings 5, 6: unbounded alloc, infinite loop) | found by fuzzing | found by fuzzing (or timeouts) | **same** — outside both type systems |
+
+Three things are worth stating plainly:
+
+1. **For the spatial-memory class — the thing the project is actually about —
+   the runtime guarantee is at parity with Rust.** A wrong bound becomes a
+   deterministic abort either way. That's the win, and it's real.
+
+2. **The difference is in *defaults and auditability*, not just capability.**
+   Rust's `as` saturates no matter who writes it; reintroducing Finding 4 requires
+   typing `unsafe { …to_int_unchecked() }`, which is greppable. Our model is the
+   inverse: a teammate writes a fresh `(int)floorf(x)` and silently reintroduces
+   the UB with *no compile error and no warning* — the explicit cast even
+   suppresses `-Wconversion`. We rely on UBSan-in-debug + fuzzing to *re-catch* what
+   Rust *prevents*. The unsafe surface in Rust is small, named, and auditable; in
+   C it's the implicit default everywhere. Finding 4 is the vivid case: our fix is
+   literally Rust's cast semantics, written out by hand, at every site we could find.
+
+3. **Temporal safety is the honest gap.** `-fbounds-safety` doesn't attempt it.
+   UAF/double-free are caught only by ASan in the *debug* build; the shipping
+   release build is unguarded. Rust's borrow checker makes them compile errors.
+   If the goal is "Rust-parity memory safety," this is the part C+`-fbounds-safety`
+   does not deliver.
+
+And a quieter point from Findings 5 and 6: neither language's type system catches
+unbounded allocation or non-termination. Those are logic bugs that only fuzzing
+(or runtime timeouts / allocation limits) surfaces — a reminder that "memory safe"
+is not "correct," in either language.
+
+The net: `-fbounds-safety` + the sanitizers + fuzzing can *reach* Rust's runtime
+guarantees for the spatial and value-conversion classes — but Rust's are **default,
+non-forgettable, partly compile-time, and extend to temporal safety**, which is
+where the analogy stops.
+
 ## ABI and the C ↔ Objective-C boundary
 
 The most important practical property: because `__counted_by`/`__single` have
