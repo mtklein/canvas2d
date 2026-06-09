@@ -1,6 +1,7 @@
 #include "cnvs_shape.h"
 #include "test_util.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 // Shaping output is font/OS-dependent, so assert structural invariants, not exact
@@ -105,6 +106,43 @@ static void check_outline(void) {
     }
 }
 
+// Color emoji: no outline, so it must be drawn into a pixel buffer.  The checked
+// core owns the __counted_by(w*h*4) buffer; the boundary fills it via CGBitmapContext.
+static void check_emoji_draw(void) {
+    cnvs_shaped *s = cnvs_shape("Helvetica", 40.0f, "\xF0\x9F\x98\x80");  // 😀
+    CHECK(s != NULL);
+    if (!s) {
+        return;
+    }
+    CHECK(s->nruns >= 1 && s->run[0].count >= 1);
+    if (s->nruns >= 1 && s->run[0].count >= 1) {
+        int const W = 64, H = 64, LEN = W * H * 4;
+        uint8_t *__counted_by(LEN) px = calloc((size_t)LEN, 1);
+        CHECK(px != NULL);
+        if (px) {
+            cnvs_glyph_draw(s->run[0].font, s->run[0].glyph[0], 12.0f, 12.0f, px, W, H);
+            int nonzero = 0, maxa = 0;
+            bool colored = false;
+            for (int i = 0; i < LEN; i += 4) {
+                if (px[i] | px[i + 1] | px[i + 2] | px[i + 3]) {
+                    nonzero++;
+                }
+                if (px[i] != px[i + 1] || px[i + 1] != px[i + 2]) {
+                    colored = true;  // a channel differs -> actual colour, not coverage
+                }
+                if (px[i + 3] > maxa) {
+                    maxa = px[i + 3];
+                }
+            }
+            CHECK(nonzero > 0);  // the color glyph rendered into the buffer
+            CHECK(colored);      // and in colour (not just grayscale coverage)
+            CHECK(maxa > 0);     // with real opacity
+        }
+        free(px);
+    }
+    cnvs_shaped_free(s);
+}
+
 int main(void) {
     check_shape("ffi waffle", false);             // Latin with ligatures (cluster gaps)
     check_shape("a\xF0\x9F\x98\x80""b", false);   // a + U+1F600 emoji + b (multi-run)
@@ -112,5 +150,6 @@ int main(void) {
     check_shape("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!", true);  // mixed bidi
     check_fallback();
     check_outline();
+    check_emoji_draw();
     return TEST_REPORT();
 }

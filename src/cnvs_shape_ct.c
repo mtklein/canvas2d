@@ -131,6 +131,23 @@ void cnvs_glyph_outline(void *font, uint16_t glyph, float ox, float oy,
     }
 }
 
+void cnvs_glyph_draw(void *font, uint16_t glyph, float x, float y,
+                     uint8_t *px, int w, int h) {
+    if (!font || w <= 0 || h <= 0) {
+        return;
+    }
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(px, (size_t)w, (size_t)h, 8, (size_t)w * 4,
+                                             cs, kCGImageAlphaPremultipliedLast);
+    if (ctx) {
+        CGGlyph g = (CGGlyph)glyph;
+        CGPoint pos = { (CGFloat)x, (CGFloat)y };
+        CTFontDrawGlyphs((CTFontRef)font, &g, &pos, 1, ctx);
+        CGContextRelease(ctx);
+    }
+    CGColorSpaceRelease(cs);
+}
+
 cnvs_shaped *cnvs_shape(char const *name, float size_px, char const *text) {
     CFStringRef cfname = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
     CFStringRef str = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);

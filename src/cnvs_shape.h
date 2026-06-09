@@ -63,3 +63,11 @@ float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
 // Outline one glyph of the opaque `font` at pen origin (ox,oy).  Boundary helper.
 void cnvs_glyph_outline(void *__single font, uint16_t glyph, float ox, float oy,
                         cnvs_mat to_device, float tol, cnvs_path *__single out);
+
+// Draw one glyph of the opaque `font` into an RGBA8 premultiplied buffer at (x,y) in
+// bitmap space (origin bottom-left, y up).  The rendering path for color glyphs
+// (emoji), which have no outline.  The checked core owns the __counted_by(w*h*4)
+// buffer and hands it over; the boundary wraps it in a CGBitmapContext and draws
+// within (w,h) -- a pixel buffer crossing checked->boundary, mirror of the glyph run.
+void cnvs_glyph_draw(void *__single font, uint16_t glyph, float x, float y,
+                     uint8_t *__counted_by(w * h * 4) px, int w, int h);
