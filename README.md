@@ -71,6 +71,12 @@ the exact piecewise-linear colour):
 
 ![gradients](gallery/gradients.png)
 
+`createConicGradient` — a smooth rainbow wheel, a hard-stop "pie" (coincident stop
+offsets give crisp sector edges), and a conic-gradient *stroke* ring around a
+two-tone conic medallion:
+
+![conic](gallery/conic.png)
+
 Batching — 320 translucent discs, each its own `fill()`, all submitted in a
 single compositor command buffer (the alpha overlap shows ordering is preserved):
 

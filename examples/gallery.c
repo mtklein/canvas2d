@@ -409,6 +409,86 @@ static void strokerect(void) {
     save(c, "gallery/strokerect.png");
 }
 
+// createConicGradient: colours sweep clockwise around a centre.  A smooth rainbow
+// wheel, a hard-stop "pie" (coincident stop offsets make crisp sector edges), and
+// a conic-gradient *stroke* ring around a two-tone conic medallion.
+static void conic(void) {
+    canvas *__single c = canvas_create(440, 176);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 176.0f);
+
+    float const cy = 78.0f, r = 56.0f;
+    float const cx[3] = { 78.0f, 220.0f, 362.0f };
+    char const *const labels[3] = { "rainbow wheel", "hard-stop sectors",
+                                    "conic stroke" };
+    int const ns = 13;
+
+    // A: smooth rainbow wheel from the cosine palette (wraps red -> red).
+    canvas_set_fill_conic_gradient(c, -TAU * 0.25f, cx[0], cy);
+    for (int k = 0; k < ns; k++) {
+        float t = (float)k / (float)(ns - 1);
+        canvas_add_fill_color_stop(c, t, 0.5f + 0.5f * cosf(TAU * t),
+                                   0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                                   0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+    }
+    canvas_begin_path(c);
+    canvas_arc(c, cx[0], cy, r, 0.0f, TAU, false);
+    canvas_fill(c);
+
+    // B: five solid sectors via paired (coincident) stops -> hard edges.
+    float const bnd[6] = { 0.00f, 0.18f, 0.40f, 0.55f, 0.78f, 1.00f };
+    float const sect[5][3] = { { 0.97f, 0.78f, 0.24f }, { 0.20f, 0.78f, 0.70f },
+                               { 0.95f, 0.45f, 0.40f }, { 0.42f, 0.40f, 0.92f },
+                               { 0.45f, 0.82f, 0.45f } };
+    canvas_set_fill_conic_gradient(c, -TAU * 0.25f, cx[1], cy);
+    for (int s = 0; s < 5; s++) {
+        canvas_add_fill_color_stop(c, bnd[s], sect[s][0], sect[s][1], sect[s][2],
+                                   1.0f);
+        canvas_add_fill_color_stop(c, bnd[s + 1], sect[s][0], sect[s][1],
+                                   sect[s][2], 1.0f);
+    }
+    canvas_begin_path(c);
+    canvas_arc(c, cx[1], cy, r, 0.0f, TAU, false);
+    canvas_fill(c);
+
+    // C: a two-tone conic medallion, ringed by a conic-gradient stroke.
+    canvas_set_fill_conic_gradient(c, TAU * 0.1f, cx[2], cy);
+    canvas_add_fill_color_stop(c, 0.00f, 0.82f, 0.84f, 0.90f, 1.0f);
+    canvas_add_fill_color_stop(c, 0.25f, 0.30f, 0.33f, 0.42f, 1.0f);
+    canvas_add_fill_color_stop(c, 0.50f, 0.82f, 0.84f, 0.90f, 1.0f);
+    canvas_add_fill_color_stop(c, 0.75f, 0.30f, 0.33f, 0.42f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.00f, 0.82f, 0.84f, 0.90f, 1.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, cx[2], cy, 24.0f, 0.0f, TAU, false);
+    canvas_fill(c);
+
+    canvas_set_stroke_conic_gradient(c, 0.0f, cx[2], cy);
+    for (int k = 0; k < ns; k++) {
+        float t = (float)k / (float)(ns - 1);
+        canvas_add_stroke_color_stop(c, t, 0.5f + 0.5f * cosf(TAU * t),
+                                     0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                                     0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+    }
+    canvas_set_line_width(c, 15.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, cx[2], cy, 46.0f, 0.0f, TAU, false);
+    canvas_close_path(c);
+    canvas_stroke(c);
+
+    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    for (int i = 0; i < 3; i++) {
+        canvas_fill_text(c, labels[i], cx[i], 166.0f);
+    }
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/conic.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -668,6 +748,7 @@ int main(void) {
     strokerect();
     clipping();
     gradients();
+    conic();
     batching();
     drawimage();
     text();
