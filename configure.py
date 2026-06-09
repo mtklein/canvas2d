@@ -108,6 +108,12 @@ PIPELINE_BENCHES = {"bench_render", "bench_render_large"}
 _DEBUG = ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all "
           "-fsanitize-address-use-after-scope -fsanitize-address-use-after-return=always")
 
+# Redefine the allocator to the fault injector (tests/oom_alloc.c) for the OOM and
+# coverage builds.  Invisible to -fbounds-safety: stdlib.h's annotated malloc
+# declaration macro-expands onto the wrapper, so size tracking is preserved.
+OOM_DEFINES = ("-Dmalloc=cnvs_oom_malloc -Drealloc=cnvs_oom_realloc "
+               "-Dcalloc=cnvs_oom_calloc")
+
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?, backend).
 # The -cpu variants run the test suite against the software compositor,
 # cross-validating the two backends.  Benchmarks measure backend-agnostic CPU
@@ -469,13 +475,23 @@ def main():
     # cpu backend (GPU-free, deterministic).  Like benchcmp/profile it's a
     # measurement, not a gate -- always reruns, console output, NOT in `all`.
     COV = "-O0 -fprofile-instr-generate -fcoverage-mapping"
+    # The coverage core routes through the fault injector ({OOM_DEFINES}), so adding
+    # test_oom to the suite below merges its armed-allocation-failure run into the
+    # report -- making the realloc-failure guards show as covered instead of dead.
+    # With the injector disarmed (every other test), the wrapper is just malloc.
+    # -Itests so test_oom finds oom_alloc.h.
     w("rule cc_cov")
-    w(f"  command = clang $cstd {BOUNDS} $cwarn $cinc {COV} -MMD -MF $out.d -c $in -o $out")
+    w(f"  command = clang $cstd {BOUNDS} $cwarn $cinc -Itests {OOM_DEFINES} {COV} -MMD -MF $out.d -c $in -o $out")
     w("  depfile = $out.d")
     w("  deps = gcc")
     w("")
     w("rule cc_cov_boundary")
-    w(f"  command = clang $cstd $objcwarn $cinc {COV} -MMD -MF $out.d -c $in -o $out")
+    w(f"  command = clang $cstd $objcwarn $cinc {OOM_DEFINES} {COV} -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    w("rule cc_cov_shim")  # the fault injector itself: instrumented, NOT redefined
+    w(f"  command = clang $cstd {BOUNDS} $cwarn -Wno-allocator-wrappers $cinc -Itests {COV} -MMD -MF $out.d -c $in -o $out")
     w("  depfile = $out.d")
     w("  deps = gcc")
     w("")
@@ -504,8 +520,13 @@ def main():
     cov_bo = obj("cov", cov_bsrc)
     w(f"build {cov_bo}: cc_cov {cov_bsrc}")
     cov_lib.append(cov_bo)
+    # The fault injector is linked into every coverage binary (the redefined core
+    # calls it); only test_oom arms it.
+    cov_oom_alloc = "build/cov/obj/oom_alloc.o"
+    w(f"build {cov_oom_alloc}: cc_cov_shim tests/oom_alloc.c")
+    cov_lib.append(cov_oom_alloc)
     cov_raws, cov_exes = [], []
-    for t in tests:
+    for t in tests + [os.path.join("tests", "test_oom.c")]:
         stem = os.path.splitext(os.path.basename(t))[0]
         o = obj("cov", t)
         exe = os.path.join("build", "cov", stem)
@@ -537,15 +558,13 @@ def main():
     # redefine is invisible to -fbounds-safety: stdlib.h's malloc declaration (with
     # __sized_by_or_null/alloc_size) macro-expands onto cnvs_oom_malloc, so size
     # tracking is preserved.  cpu backend; folded into `all`.
-    OOM_DEF = ("-Dmalloc=cnvs_oom_malloc -Drealloc=cnvs_oom_realloc "
-               "-Dcalloc=cnvs_oom_calloc")
     w("rule cc_oom")
-    w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn $cinc {OOM_DEF} -MMD -MF $out.d -c $in -o $out")
+    w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn $cinc {OOM_DEFINES} -MMD -MF $out.d -c $in -o $out")
     w("  depfile = $out.d")
     w("  deps = gcc")
     w("")
     w("rule cc_oom_boundary")
-    w(f"  command = clang $cstd {_DEBUG} $objcwarn $cinc {OOM_DEF} -MMD -MF $out.d -c $in -o $out")
+    w(f"  command = clang $cstd {_DEBUG} $objcwarn $cinc {OOM_DEFINES} -MMD -MF $out.d -c $in -o $out")
     w("  depfile = $out.d")
     w("  deps = gcc")
     w("")
