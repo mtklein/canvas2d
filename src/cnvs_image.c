@@ -1,11 +1,13 @@
 #include "cnvs_image.h"
 
+#include <string.h>
+
 void cnvs_blit_rgba(uint8_t *__counted_by(dw * dh * 4) dst, int dw, int dh,
                     int dx, int dy,
                     uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh,
                     int sx, int sy, int w, int h) {
     // Clip the copy rectangle so every src and dst access stays in bounds, then
-    // iterate only the overlap (no per-pixel bounds tests needed).
+    // copy only the overlap.
     int i0 = 0;
     if (-sx > i0) { i0 = -sx; }
     if (-dx > i0) { i0 = -dx; }
@@ -20,16 +22,16 @@ void cnvs_blit_rgba(uint8_t *__counted_by(dw * dh * 4) dst, int dw, int dh,
     if (sh - sy < j1) { j1 = sh - sy; }
     if (dh - dy < j1) { j1 = dh - dy; }
 
+    if (i1 <= i0) {
+        return;  // empty span: nothing to copy (also keeps the byte count >= 0)
+    }
+    // Each clipped row is one contiguous RGBA8 run -- copy it whole.  One bounds
+    // check per row instead of four per pixel: vectorizes, and amortizes the
+    // -fbounds-safety per-element cost a byte-by-byte loop would pay in full.
+    size_t span = (size_t)(i1 - i0) * 4;
     for (int j = j0; j < j1; j++) {
-        int srow = ((sy + j) * sw + sx) * 4;
-        int drow = ((dy + j) * dw + dx) * 4;
-        for (int i = i0; i < i1; i++) {
-            int s = srow + i * 4;
-            int d = drow + i * 4;
-            dst[d + 0] = src[s + 0];
-            dst[d + 1] = src[s + 1];
-            dst[d + 2] = src[s + 2];
-            dst[d + 3] = src[s + 3];
-        }
+        int s = ((sy + j) * sw + sx + i0) * 4;
+        int d = ((dy + j) * dw + dx + i0) * 4;
+        memcpy(dst + d, src + s, span);
     }
 }
