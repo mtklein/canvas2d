@@ -191,7 +191,7 @@ canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
 canvas_set_line_dash / get_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
-    bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path
+    bezier_curve_to / arc / ellipse / round_rect / round_rect_radii / arc_to / close_path
 canvas_fill / canvas_stroke / canvas_clip
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
@@ -211,7 +211,7 @@ complete, honest gap inventory (missing + partial + what's next).
 |---|---|
 | Transforms, save/restore, alpha blending | ✅ |
 | `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export | ✅ |
-| Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: one scalar radius) |
+| Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: per-corner elliptical radii) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ◑ no dirty-rect / colorSpace |

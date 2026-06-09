@@ -47,8 +47,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`fillText`/`strokeText`** take no `maxWidth` (no auto-condense).
 - **Text shaping** maps code point → glyph 1:1: no ligatures, contextual forms, or
   bidi, and only the BMP path is exercised (CJK works; emoji/astral untested).
-- **`roundRect`** takes a single uniform scalar radius; the spec allows 1–4 radii,
-  per-corner, and elliptical (x/y) corners.
 - **`fill`/`stroke`/`clip`** have no `Path2D` overload, and the fill rule is taken
   from state rather than an explicit argument.
 - **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color

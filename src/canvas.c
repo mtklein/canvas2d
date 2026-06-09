@@ -660,6 +660,59 @@ void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
     canvas_close_path(cv);
 }
 
+// CSS border-radius overlap rule: reduce the scale factor `f` so that two radii
+// summing to `sum` fit within an edge of length `len`.  `sum` 0 (no radii on the
+// edge) imposes no constraint.
+static float radii_fit(float f, float len, float sum) {
+    if (sum > 0.0f) {
+        float g = len / sum;
+        if (g < f) {
+            f = g;
+        }
+    }
+    return f;
+}
+
+void canvas_round_rect_radii(canvas *__single cv, float x, float y,
+                             float w, float h,
+                             float tl_x, float tl_y, float tr_x, float tr_y,
+                             float br_x, float br_y, float bl_x, float bl_y) {
+    if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h)) {
+        return;  // Canvas spec: non-finite geometry paints nothing.
+    }
+    // Normalise negative extents so the corners keep CSS order (TL, TR, BR, BL).
+    if (w < 0.0f) { x += w; w = -w; }
+    if (h < 0.0f) { y += h; h = -h; }
+    // r[2i], r[2i+1] are corner i's (x,y) radii, i = TL, TR, BR, BL.  Each clamps
+    // to a finite, non-negative value (negative / NaN / inf -> 0), matching the
+    // scalar canvas_round_rect's convention and keeping the scaling math finite.
+    float r[8] = { tl_x, tl_y, tr_x, tr_y, br_x, br_y, bl_x, bl_y };
+    for (int i = 0; i < 8; i++) {
+        r[i] = (isfinite(r[i]) && r[i] > 0.0f) ? r[i] : 0.0f;
+    }
+    // Scale every radius down by the tightest edge constraint (CSS rule).
+    float f = 1.0f;
+    f = radii_fit(f, w, r[0] + r[2]);  // top:    TL.x + TR.x
+    f = radii_fit(f, w, r[6] + r[4]);  // bottom: BL.x + BR.x
+    f = radii_fit(f, h, r[1] + r[7]);  // left:   TL.y + BL.y
+    f = radii_fit(f, h, r[3] + r[5]);  // right:  TR.y + BR.y
+    if (f < 1.0f) {
+        for (int i = 0; i < 8; i++) {
+            r[i] *= f;
+        }
+    }
+    // Trace the outline clockwise from the top edge, each corner an elliptical
+    // arc (a zero-radius corner degenerates to the sharp rectangle corner).
+    float q = (float)M_PI * 0.5f;
+    float pi = (float)M_PI;
+    canvas_move_to(cv, x + r[0], y);
+    canvas_ellipse(cv, x + w - r[2], y + r[3], r[2], r[3], 0.0f, -q, 0.0f, false);
+    canvas_ellipse(cv, x + w - r[4], y + h - r[5], r[4], r[5], 0.0f, 0.0f, q, false);
+    canvas_ellipse(cv, x + r[6], y + h - r[7], r[6], r[7], 0.0f, q, pi, false);
+    canvas_ellipse(cv, x + r[0], y + r[1], r[0], r[1], 0.0f, pi, pi + q, false);
+    canvas_close_path(cv);
+}
+
 void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
                    float radius) {
     if (!cv->path.has_cur) {

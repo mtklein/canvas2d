@@ -101,6 +101,15 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
                     bool anticlockwise);
 void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
                        float radius);
+// roundRect with independent, elliptical per-corner radii.  Corners are given in
+// CSS order -- top-left, top-right, bottom-right, bottom-left -- each as an (x,y)
+// radius pair (equal x and y is a circular corner; 0 is a sharp corner).
+// Negative/non-finite radii are treated as 0, and radii too large for the rect
+// are scaled down proportionally (the CSS border-radius overlap rule).
+void canvas_round_rect_radii(canvas *__single cv, float x, float y,
+                             float w, float h,
+                             float tl_x, float tl_y, float tr_x, float tr_y,
+                             float br_x, float br_y, float bl_x, float bl_y);
 void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
                    float radius);
 void canvas_close_path(canvas *__single cv);
