@@ -639,8 +639,14 @@ def main():
     w("  depfile = $out.d")
     w("  deps = gcc")
     w("")
-    w("rule cc_cov_shim")  # the fault injector itself: instrumented, NOT redefined
-    w(f"  command = clang $cstd {BOUNDS} $cwarn -Wno-allocator-wrappers $cinc -Itests {COV} -MMD -MF $out.d -c $in -o $out")
+    # The fault injector itself: instrumented, NOT redefined, NOT checked.  It must
+    # hand back exactly what libc hands it, and -fbounds-safety's alloc_size return
+    # check traps a non-NULL return whose size is zero -- which is precisely what
+    # macOS malloc(0)/calloc(0, n) produce (cnvs_shape callocs 0 runs for an empty
+    # string).  Compiled unchecked like the other boundary shims; checked callers
+    # still get size tracking from oom_alloc.h's alloc_size declarations.
+    w("rule cc_cov_shim")
+    w(f"  command = clang $cstd $objcwarn $cinc -Itests {COV} -MMD -MF $out.d -c $in -o $out")
     w("  depfile = $out.d")
     w("  deps = gcc")
     w("")
@@ -718,11 +724,19 @@ def main():
     w("  deps = gcc")
     w("")
     # The injector and the test are NOT redefined (they reach the real allocator),
-    # and need tests/ on the include path for oom_alloc.h.
+    # and need tests/ on the include path for oom_alloc.h.  test_oom.c stays
+    # checked; the injector itself compiles unchecked (still sanitized) because
+    # -fbounds-safety's alloc_size return check traps a non-NULL return whose size
+    # is zero, and a faithful libc wrapper must pass malloc(0)'s non-NULL block
+    # through verbatim (see cc_cov_shim).
     w("rule cc_oom_harness")
-    # -Wno-allocator-wrappers: oom_alloc.c is *deliberately* a malloc/realloc/calloc
-    # wrapper -- that's the whole point.
-    w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn -Wno-allocator-wrappers $cinc "
+    w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn $cinc "
+      "-Itests -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    w("rule cc_oom_shim")
+    w(f"  command = clang $cstd {_DEBUG} $objcwarn $cinc "
       "-Itests -MMD -MF $out.d -c $in -o $out")
     w("  depfile = $out.d")
     w("  deps = gcc")
@@ -740,7 +754,7 @@ def main():
     oom_bo = obj("oom", oom_bsrc)
     w(f"build {oom_bo}: cc_oom {oom_bsrc}")
     oom_objs.append(oom_bo)
-    w("build build/oom/obj/oom_alloc.o: cc_oom_harness tests/oom_alloc.c")
+    w("build build/oom/obj/oom_alloc.o: cc_oom_shim tests/oom_alloc.c")
     w("build build/oom/obj/test_oom.o: cc_oom_harness tests/test_oom.c")
     w(f"build build/oom/test_oom: link_oom build/oom/obj/test_oom.o "
       f"build/oom/obj/oom_alloc.o {' '.join(oom_objs)}")

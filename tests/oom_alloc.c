@@ -1,6 +1,10 @@
 // Fault-injecting allocator implementation.  Compiled WITHOUT the
 // -Dmalloc=cnvs_oom_malloc redefines, so malloc/realloc/calloc below are the real
-// libc ones.  See oom_alloc.h.
+// libc ones -- and WITHOUT -fbounds-safety: its alloc_size return check traps a
+// non-NULL return whose size is zero, but a faithful wrapper must pass libc's
+// non-NULL malloc(0)/calloc(0, n) block through verbatim (checked callers still
+// get size tracking from oom_alloc.h's alloc_size declarations).  See oom_alloc.h
+// and docs/bounds-safety.md.
 
 #include "oom_alloc.h"
 

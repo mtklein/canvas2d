@@ -187,6 +187,22 @@ bounds-safety hole: assigning an undersized allocation to a `__counted_by(n)`
 target still traps at runtime (we verified — exit 133). The size check is
 independent of the cast diagnostic.
 
+**An `alloc_size` wrapper can't faithfully return `malloc(0)`.** Our OOM fault
+injector ([tests/oom_alloc.c](../tests/oom_alloc.c)) wraps malloc/realloc/calloc
+behind `alloc_size`-annotated declarations so checked callers keep size tracking.
+Compiled *checked*, the wrapper traps the moment anything allocates zero bytes:
+on return, `-fbounds-safety` checks that a non-NULL result carries a non-empty
+range — but macOS `malloc(0)`/`calloc(0, n)` return a non-NULL block of size
+zero, and zero-size allocations legitimately occur (the Core Text shim callocs
+zero runs when shaping an empty string). A six-line repro traps at every
+optimization level. The call *site* is fine — a checked caller receiving the
+zero-size result just gets a pointer it can't deref — it's only the checked
+*definition*'s return check that fires. So the injector compiles unchecked like
+the boundary shims (the `brk` was, fittingly, exit 133 again), and the
+annotations live in its header where callers see them. The general lesson: a
+wrapper that must reproduce libc's exact corner-case behaviour belongs on the
+unchecked side of the boundary, with its contract expressed in the header.
+
 ## Antialiasing: the strongest demonstration
 
 Antialiasing is where the project makes its most pointed `-fbounds-safety`
