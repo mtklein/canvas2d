@@ -85,11 +85,11 @@ composite+blend formula in a framebuffer-fetch shader):
 
 ```sh
 python3 configure.py     # generate build.ninja
-ninja                    # build every variant and run the whole test suite
+ninja                    # build every variant, run the suite, re-render the gallery
 ninja test               # just the tests (subset of the default build)
+ninja images             # just (re)render the gallery PNGs (subset of default)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
-ninja images             # regenerate the gallery/*.png shown above
 ```
 
 Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
@@ -110,8 +110,11 @@ frameworks):
 
 The default build runs every test binary in all four checked variants (so each
 pixel test runs against *both* backends); `ninja test` is the same set on its own.
-Tests are silent on success — a green `ninja` shows only its progress line, and a
-failure prints the offending `CHECK` to stderr. The PNGs land in `build/`.
+It also re-renders the gallery straight into the committed `gallery/*.png`: those
+PNGs are build outputs gated on the gallery binary, so a rendering change relinks
+it, re-renders them, and shows up as a `git diff` in lockstep — review and commit
+the new PNGs alongside the code. Tests are silent on success, so a green `ninja`
+shows only its progress line; a failing test prints the offending `CHECK` to stderr.
 
 ## Architecture
 

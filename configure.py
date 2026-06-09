@@ -109,6 +109,12 @@ def main():
     tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c")))
     benches = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "bench", "*.c")))
     examples = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "examples", "*.c")))
+    # The gallery PNGs are committed build artifacts.  A bare `ninja` re-renders
+    # them straight into the tree whenever the gallery binary changes, so a
+    # rendering change surfaces as a git diff in lockstep -- review and commit the
+    # new PNGs alongside the code.  Declaring them as outputs (input = the binary)
+    # makes ninja re-render exactly when the renderer changes, no more.
+    gallery_pngs = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "gallery", "*.png")))
 
     n = []
     w = n.append
@@ -238,9 +244,13 @@ def main():
 
     w(f"build test: phony {' '.join(test_stamps)}")
     w(f"build bench: phony {' '.join(bench_exes)}")
-    # `images` regenerates the committed gallery PNGs (always reruns; not in `all`).
-    w("build images: run_gallery build/release/gallery")
+    # `images` renders straight into the committed gallery/*.png.  The PNGs are
+    # outputs gated on the gallery binary, so a bare `ninja` keeps them in
+    # lockstep with the renderer -- and dirties the tree the moment a code change
+    # moves a pixel.  `ninja images` is the same edge on its own.
+    w(f"build {' '.join(gallery_pngs)}: run_gallery build/release/gallery")
     w("  bin = ./build/release/gallery")
+    w(f"build images: phony {' '.join(gallery_pngs)}")
     # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
@@ -248,13 +258,14 @@ def main():
     release_bench_exes = [f"build/release/{s}" for s in bench_stems]
     w(f"build profile: profile {' '.join(release_bench_exes)}")
     # The default `all` builds every variant's executables -- tests, benches and
-    # examples -- and runs the whole test suite (`test`).  Listing all five
+    # examples -- runs the whole test suite (`test`), and re-renders the gallery
+    # PNGs (`images`) so they track the renderer in lockstep.  Listing all five
     # variant phonies covers every buildable artifact (release/unsafe carry the
-    # benches; release/release-cpu carry the examples); `test` adds the run
-    # stamps.  Tests are silent on success, so a green `ninja` shows only its
-    # progress.  The measurement/regen targets (benchcmp, profile, images) are
-    # always-rerun and stay opt-in -- not in `all`.
-    w("build all: phony release debug unsafe release-cpu debug-cpu test")
+    # benches; release/release-cpu carry the examples).  A passing build is
+    # silent, so a green `ninja` shows only its progress -- a rendering change
+    # instead surfaces as a dirtied gallery/*.png.  The always-rerun measurement
+    # targets (benchcmp, profile) stay opt-in -- not in `all`.
+    w("build all: phony release debug unsafe release-cpu debug-cpu test images")
     w("default all")
     w("")
 
