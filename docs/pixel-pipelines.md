@@ -11,7 +11,7 @@ where does `-fbounds-safety` help, and where does it fight back?
    its work and `[[clang::musttail]]`-returns the next handler. *(implemented)*
 3. **SkRasterPipeline-style pipeline** — stages carry the current r,g,b,a (and x)
    as explicit vector arguments and tail-call the next stage, so the channels stay
-   in registers across the whole program. *(planned)*
+   in registers across the whole program. *(implemented)*
 
 They share an ISA ([../src/pixvm.h](../src/pixvm.h)): a register file of
 `PIXVM_N`-wide `_Float16` vectors, RGBA8 load/store ops, and `splat`/`mov`/`add`/`sub`/
@@ -199,16 +199,75 @@ regime.) Moving to `_Float16` widened both costs versus the earlier `float` chan
 (A 1.09× → 1.40×, B 1.55× → 1.78×): halving the colour data sped the unchecked work
 but not the integer checks, so the checks loom larger.
 
-## Design C — SkRasterPipeline-style register pipeline (planned)
+## Design C — SkRasterPipeline-style register pipeline (implemented)
 
-Stages with a fixed signature carrying the live registers as arguments
-(`stage(program, x, tail, r, g, b, a, dr, dg, db, da)`), each tail-calling the next;
-the "program" is an array of `{fn, ctx}` stages advanced by pointer bump. The
-`-fbounds-safety` questions, expected to be the sharpest of the three:
+[../src/pixvm_pipe.c](../src/pixvm_pipe.c) is `pixvm_run_pipe`: stages with a fixed
+signature carry the live channels as arguments — `r,g,b,a` (working colour) and
+`dr,dg,db,da` (backdrop), all `_Float16x8` — plus the pixel position; each does its
+work and `[[clang::musttail]]`-jumps to the next. The channels ride in NEON
+registers across the whole program, so there is **no register file** — the memory
+ceiling A and B both hit. It runs the same source-over computation A and B express
+as bytecode (verified bit-identical in `test_pixvm`).
 
-- Each stage casts an opaque `void *ctx` to its own parameter struct — the generic-
-  callback hole (qsort, `CGPathApply`) from [bounds-safety.md](bounds-safety.md), now
-  on every stage. How much is forged, and can load/store stages keep their pixel
-  pointers `__counted_by` behind that `void*`?
-- The tail (the final short run of `< PIXVM_N` pixels): partial vector load/store
-  that stays checked, the `memcpy`-spelling trick from the adler32 work.
+### It is the sharpest `-fbounds-safety` tradeoff: speed for an unchecked dispatch
+
+C keeps the channels in registers and moves the *dispatch* out of the checked
+domain entirely, in two forced moves:
+
+- **The program pointer is raw (`__unsafe_indexable`).** A `__counted_by` advancing
+  pointer can't survive `musttail` (the B finding), so the pipeline walk is
+  unchecked — exactly what SkRasterPipeline does. Defensible here: the program is a
+  handful of stages built by trusted code, not attacker input. But it is a real
+  unchecked seam, where A's program fetch is checked-then-elided and B's is checked
+  per op.
+- **Each stage forges its `void *ctx`** to a typed context (`__unsafe_forge_single`)
+  — the qsort/`CGPathApply` hole, now once per stage. The redeeming detail: a
+  buffer's bound rides in a sibling `int len` field, so after the forge the pixel
+  loads/stores are still `__counted_by(len)` and **checked**. The void* erases the
+  *pointer's* bound; the struct re-establishes it. So the large-memory accesses keep
+  their guard even though the dispatch and ctx-unwrap don't.
+
+Channels thread as vector args (no counted pointer in argument position), so
+`musttail` lowers cleanly to indirect jumps; stages return `int` (a void `musttail`
+return trips `-Wpedantic`, the B gotcha again). The short final chunk is the one
+place lane-wise writes appear, into *local* channel vectors that don't alias
+anything — cold, and harmless.
+
+## The three together
+
+Same source-over program, same 256×256 tile, `-Os`, `_Float16` channels, `A`-vs-`A`
+control 1.00×:
+
+| design | dispatch | channels | bounds-safe | unsafe | cost of checks |
+|---|---|---|---|---|---|
+| A — switch | `for`/`switch` | register file (stack) | 59.6 ms | 42.5 ms | **1.40×** |
+| B — threaded | `musttail` chain | register file (struct) | 88.5 ms | 49.7 ms | **1.78×** |
+| C — pipeline | `musttail` chain | function arguments | **31.6 ms** | 31.4 ms | **~1.0×** |
+
+Read as one axis, the three are a spectrum of *what `-fbounds-safety` is allowed to
+see*:
+
+- **A** checks the dispatch and every register access, but runs in one function, so
+  the optimizer hoists the register-file base and the `for (pc < prog_len)` loop
+  proves the program fetch in-bounds and elides it. Cheap-ish — until fp16 shrank
+  the data and pushed the fixed-cost checks up to 1.40×.
+- **B** checks the same things but reaches each handler by an indirect `musttail`
+  the optimizer can't see across, so it re-checks the program fetch and reloads the
+  counted pointer *per opcode*. Same safety as A, ~1.8× the cost.
+- **C** has almost nothing left to check on the hot path: channels in registers
+  mean **no indexed register file** (A and B bounds-check every `reg[d]`), and the
+  raw program pointer means **no dispatch check**. Only three per-chunk buffer
+  `memcpy` checks remain, amortized over eight pixels — so the flag costs ~nothing,
+  and C is also ~1.9× faster than A outright.
+
+The catch is the headline: **C is fastest and least-taxed precisely because it took
+the dispatch and the register file out from under the flag.** Its pixel memory — the
+part that actually touches large buffers — stays checked, but the program walk and
+the per-stage ctx unwrap are unchecked forges. That is the real choice the
+comparison surfaces: `-fbounds-safety` is close to free when the hot path is dense
+indexed-buffer work it can prove or amortize (A), it taxes you when the structure
+hides the checks from the optimizer (B), and it gets out of the way entirely only
+when you move the hot work into registers and accept an unchecked dispatch (C). For
+this renderer the C shape is the one to reach for — registers for the channels, a
+checked counted buffer for the pixels, and a small trusted (unchecked) program walk
+is a sound place to spend the one unsafe seam.
