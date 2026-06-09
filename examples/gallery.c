@@ -364,10 +364,8 @@ static void gradients(void) {
     save(c, "gallery/gradients.png");
 }
 
-// Batching: a dense field of translucent discs.  Every disc is its own
-// canvas_fill -- hundreds of draws that batch into a single GPU command buffer,
-// flushed once at write_png.  The alpha overlap also shows source-over ordering
-// survives the batch.
+// Batching: a dense field of translucent discs, each its own canvas_fill, batched
+// into one GPU command buffer flushed at write_png.
 static uint32_t batch_rng = 0x1234567u;
 
 static float batch_rand(void) {
@@ -433,11 +431,9 @@ static void drawimage(void) {
     save(c, "gallery/drawimage.png");
 }
 
-// Text: Libian TC (clerical-script 隸書) glyph outlines from Core Text, rasterized
-// by the same analytic-coverage fill as everything else -- so they take gradients,
-// strokes, transforms, and alpha, and one fill_text mixes Latin and Chinese (UTF-8).
-// The glyphs arrive as ordinary device-space paths from the unchecked C shim
-// (cnvs_font_ct.c); nothing else gives up checking.
+// Text: Libian TC glyph outlines rasterized by the same coverage fill as the
+// shapes, so they take gradients, strokes, transforms, and alpha; one fill_text
+// mixes Latin and Chinese.
 static void text(void) {
     canvas *__single c = canvas_create(420, 170);
     if (!c) {
@@ -473,10 +469,8 @@ static void text(void) {
     save(c, "gallery/text.png");
 }
 
-// globalCompositeOperation: the same two overlapping discs over a gradient, under
-// a range of blend modes.  source-over composites on the GPU's fixed-function
-// blend; every other mode runs the W3C composite+blend formula in a
-// framebuffer-fetch shader (the eventual software backend will do it in checked C).
+// globalCompositeOperation: two overlapping discs over a gradient, under a range of
+// blend modes.
 static void blend(void) {
     struct { canvas_composite_op op; char const *name; } cell[6] = {
         { CANVAS_OP_MULTIPLY, "multiply" },   { CANVAS_OP_SCREEN, "screen" },

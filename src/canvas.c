@@ -143,7 +143,7 @@ static bool stack_reserve(canvas *__single cv, int need) {
     if (!ns) {
         return false;
     }
-    cv->stack = ns;          // pointer and its count updated together
+    cv->stack = ns;
     cv->stack_cap = newcap;
     return true;
 }
@@ -806,9 +806,8 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
     stroke_device_path(cv, &cv->text_path);
 }
 
-// Bilinear sample of an RGBA8 source at source-pixel coords (fx,fy),
-// unpremultiplied, clamp-to-edge.  Four checked taps per pixel -- the indexing is bounded
-// by the clamps, and -fbounds-safety guards each src[] against `slen`.
+// Bilinear sample of an RGBA8 source at source-pixel (fx, fy), unpremultiplied,
+// clamp-to-edge.
 static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
                        int sw, int sh, float fx, float fy,
                        float *__counted_by(4) out) {
@@ -895,9 +894,8 @@ void canvas_draw_image_scaled(canvas *__single cv,
                               dx, dy, dw, dh);
 }
 
-// Read the whole canvas back as unpremultiplied RGBA8 -- the form the Canvas API
-// speaks.  The compositor hands back premultiplied pixels; the un-premultiply and
-// 8-bit quantize happen here in checked C (the conversion the spec mandates here).
+// Read the canvas back as unpremultiplied RGBA8: the compositor returns
+// premultiplied pixels, and the un-premultiply and 8-bit quantize happen here.
 static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;

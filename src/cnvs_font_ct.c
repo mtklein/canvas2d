@@ -1,9 +1,6 @@
-// Core Text glyph-outline shim.  Built WITHOUT -fbounds-safety (see configure.py
-// BOUNDARY_C) so it can bind the un-annotated CoreText/CoreGraphics headers as
-// plain C: no opaque-handle forges, no fight with the strict function-pointer
-// check on CGPathApply's callback.  It hands the checked core finished
-// device-space cnvs_paths, so the unsafety stops at this file -- the same
-// arrangement as the Metal compositor, but in C rather than Objective-C.
+// Core Text glyph-outline shim.  Built without -fbounds-safety (configure.py
+// BOUNDARY_C) to bind the un-annotated CoreText/CoreGraphics headers as plain C; it
+// hands the checked core finished device-space cnvs_paths.  See docs/bounds-safety.md.
 
 #include "cnvs_font.h"
 

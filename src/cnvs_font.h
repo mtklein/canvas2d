@@ -1,14 +1,8 @@
 #pragma once
 
-// System-font glyph outlines.  This header is the bounds-safe boundary; the
-// implementation (cnvs_font_ct.c) is the project's one *C* translation unit built
-// without -fbounds-safety -- the Core Text / Core Graphics FFI seam, isolated
-// exactly like the Objective-C Metal compositor shim.  The system framework
-// headers predate -fbounds-safety and carry no bounds attributes, so binding them
-// from checked code would mean forging every opaque handle and fighting the
-// strict function-pointer check on CGPathApply's callback; instead the seam lives
-// in an unchecked TU and everything it produces flows back as an ordinary
-// device-space cnvs_path.  See docs/bounds-safety.md.
+// System-font glyph outlines.  The implementation (cnvs_font_ct.c) is built without
+// -fbounds-safety to bind the un-annotated Core Text / Core Graphics headers, and
+// hands back ordinary device-space cnvs_paths.  See docs/bounds-safety.md.
 
 #include "cnvs_math.h"
 #include "cnvs_path.h"

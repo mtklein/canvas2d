@@ -17,18 +17,17 @@ bool cnvs_cover_reset(cnvs_cover *c, int w, int h) {
         if (!na) {
             return false;
         }
-        c->acc = na;            // pointer and its count updated together
+        c->acc = na;
         c->cap = need;
     }
     memset(c->acc, 0, (size_t)need * sizeof *c->acc);  // 0.0f is all-zero bits
     return true;
 }
 
-// Deposit one cell's worth of signed cover: the edge passes through column
-// `col` at fractional position `xmf` in [0,1], leaving cover `d` to its right.
-// The cell it sits in gets the right fraction; the rest propagates via the
-// prefix sum.  x left of the raster lumps full cover into column 0; x at or past
-// the right edge contributes nothing on-screen.
+// Deposit one cell of signed cover: the edge crosses column `col` at fraction
+// `xmf` in [0,1], leaving cover `d` to its right (the rest propagates via the
+// prefix sum).  Left of the raster, full cover lumps into column 0; at or past the
+// right edge, nothing lands on-screen.
 static void deposit(cnvs_cover *c, int base, int w, int col, float xmf, float d) {
     if (col < 0) {
         c->acc[base] += d;

@@ -7,7 +7,7 @@
 #include <string.h>
 
 int main(void) {
-    // --- cnvs_blit_rgba: plain copy of a 2x2 sub-rect (CPU only) ---
+    // cnvs_blit_rgba: plain copy of a 2x2 sub-rect.
     int const sw = 4;
     int const sh = 4;
     int const slen = sw * sh * 4;
@@ -45,7 +45,7 @@ int main(void) {
     free(src);
     free(dst);
 
-    // --- GPU get/put round-trip ---
+    // get/put round-trip.
     int const W = 8;
     int const H = 8;
     int const len = W * H * 4;

@@ -1,9 +1,7 @@
-// Metal backend for compositor.h: composite / replace / erase of tiles onto a
-// single-sample target, masked by a clip-coverage texture.  source-over uses
-// fixed-function blending; the other globalCompositeOperation modes use a
-// framebuffer-fetch fragment shader.  All the interesting rendering work happens
-// in the C core; this just composites finished tiles.  Not under -fbounds-safety
-// (it is Objective-C); the ABI uses plain-C pointers.
+// Metal backend for compositor.h: blends tiles onto an RGBA16Float target masked by
+// a clip-coverage texture.  source-over uses fixed-function blending; the other
+// modes use a framebuffer-fetch fragment shader.  Not under -fbounds-safety
+// (Objective-C); the ABI uses plain-C pointers.
 
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
@@ -22,7 +20,7 @@ static char const compositor_metal_src[] = {
 @interface CmpImpl : NSObject
 @property (nonatomic, strong) id<MTLDevice> device;
 @property (nonatomic, strong) id<MTLCommandQueue> queue;
-@property (nonatomic, strong) id<MTLTexture> target;   // 1x RGBA8, readback
+@property (nonatomic, strong) id<MTLTexture> target;   // RGBA16Float, read back
 @property (nonatomic, strong) id<MTLTexture> clip;      // R8 coverage, 255 = open
 @property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;      // source-over
 @property (nonatomic, strong) id<MTLRenderPipelineState> compositePipe;  // other GCO modes
@@ -284,7 +282,7 @@ void compositor_read(compositor *c, cnvs_premul *out, int len) {
         }
         flush_batch(o);  // execute pending ops so the readback sees them
         // The target is premultiplied; hand it back verbatim.  Straight-alpha and
-        // 8-bit conversion happen in checked C on the canvas side.
+        // 8-bit conversion happen on the canvas side.
         [o.target getBytes:out
                bytesPerRow:(NSUInteger)o.width * sizeof(cnvs_premul)
                 fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)

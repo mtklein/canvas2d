@@ -1,9 +1,9 @@
 #pragma once
 
-// Linear and radial colour gradients.  Stops are kept sorted by offset in a
-// small fixed array (so a gradient is a plain value, copied with the canvas
-// state on save/restore).  Evaluation happens entirely on the CPU: a fill or
-// stroke samples the gradient per pixel into the tile the compositor blends.
+// Linear and radial colour gradients.  Stops are kept sorted by offset in a small
+// fixed array, so a gradient is a plain value copied with the canvas state on
+// save/restore.  Fills and strokes sample it per pixel on the CPU into the tile the
+// compositor blends.
 
 #include "cnvs_math.h"
 
@@ -40,6 +40,6 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
 // circle in the family passes through it) -- such samples paint transparent.
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t);
 
-// Convenience: the unpremultiplied colour to paint at a device-space point,
-// with `alpha` (global alpha) folded into the result's alpha.
+// Unpremultiplied colour to paint at a device-space point, with `alpha` (global
+// alpha) folded into the result's alpha.
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);

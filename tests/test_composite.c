@@ -64,9 +64,8 @@ int main(void) {
     // soft-light: src 0.25 (<=0.5) over backdrop 0.5 -> 0.5 - 0.5*0.5*0.5 = 0.375.
     CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_SOFT_LIGHT,
                         0.5f, 0.5f, 0.5f, 0.25f, 0.25f, 0.25f, 1), 96, 96, 96, 255, 3));
-    // Translucent blend: 50% green screened over opaque red -> (255,128,0).
-    // Exercises the premultiplied s*(1-da)+d*(1-sa)+T assembly, not just the
-    // opaque reduction to B.
+    // Translucent: 50% green screened over opaque red -> (255,128,0), exercising
+    // the premultiplied s*(1-da)+d*(1-sa)+T path, not just the opaque reduction.
     CHECK(px_near(blend(cv, w, h, px, len, CANVAS_OP_SCREEN,
                         1, 0, 0, 0, 1, 0, 0.5f), 255, 128, 0, 255, 3));
     // copy: source replaces backdrop entirely = green.

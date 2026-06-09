@@ -1,18 +1,12 @@
 #pragma once
 
-// The rendering backend boundary.  The canvas does all the interesting work --
-// geometry, analytic coverage, gradient evaluation, clip intersection -- in
-// bounds-checked C, and hands the compositor only finished premultiplied tiles to
-// composite.  A Metal backend implements this today; nothing here is GPU-specific,
-// so a pure CPU backend could implement the same ABI.
+// Rendering backend boundary.  The canvas produces finished premultiplied tiles;
+// the compositor only composites them.  The Metal and CPU backends implement this
+// same ABI; nothing here is GPU-specific.
 //
-// The compositor is a pure premultiplied-pixel store: tiles in and the target are
-// premultiplied RGBA16F (cnvs_premul), row-major, top row first; read hands the
-// premultiplied target back verbatim.  The whole interface is just three verbs --
-// set the clip, composite a tile under a blend mode, read the target.  putImageData
-// (blend with COPY) and clearRect (blend with DESTINATION_OUT over a unit-alpha
-// tile) fall out of blend; the unpremultiplied<->premultiplied and 8-bit
-// conversions the Canvas API needs all live in checked C on the canvas side.  All
+// Tiles and the target are premultiplied RGBA16F (cnvs_premul), row-major, top row
+// first; read() returns the premultiplied target verbatim.  putImageData is blend
+// with COPY, clearRect is blend with DESTINATION_OUT over a unit-alpha tile.  All
 // regions must lie within the target (the caller clips to it).
 
 #include "cnvs_math.h"  // cnvs_premul
@@ -22,11 +16,10 @@
 
 typedef struct compositor compositor;
 
-// globalCompositeOperation.  The order is canonical: it is shared by value with
-// canvas_composite_op (canvas.h) and with the integer cases in the Metal
-// composite shader (shaders/compositor.metal) -- keep all three in sync.  Modes
-// 0..10 are the Porter-Duff compositing operators (linear in src/dst); 11..21 are
-// the separable blend modes; 22..25 are the non-separable ones.
+// globalCompositeOperation.  These values are shared with canvas_composite_op
+// (canvas.h) and the integer cases in shaders/compositor.metal -- keep all three in
+// sync.  0..10 Porter-Duff operators, 11..21 separable blend modes, 22..25
+// non-separable.
 typedef enum {
     COMPOSITOR_SRC_OVER = 0,
     COMPOSITOR_SRC_IN,

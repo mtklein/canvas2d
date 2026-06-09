@@ -51,11 +51,9 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha);
 void canvas_set_global_composite_operation(canvas *__single cv,
                                            canvas_composite_op op);
 
-// Set the fill paint to a gradient and clear its colour stops; subsequent
-// fill() calls paint with it until the next canvas_set_fill_rgba.  Coordinates
-// are in the current user space (the transform is baked in now), matching how
-// path points are transformed when added.  Add at least two stops with
-// canvas_add_fill_color_stop; offsets are clamped to [0,1].
+// Set the fill paint to a gradient and clear its stops; fill() uses it until the
+// next canvas_set_fill_rgba.  Coordinates are user space (the transform is baked in
+// now).  Add stops with canvas_add_fill_color_stop; offsets clamp to [0,1].
 void canvas_set_fill_linear_gradient(canvas *__single cv,
                                      float x0, float y0, float x1, float y1);
 void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
@@ -134,12 +132,11 @@ void canvas_draw_image_subrect(canvas *__single cv,
                                float sww, float shh, float dx, float dy,
                                float dw, float dh);
 
-// Text.  The typeface is fixed to Libian TC -- a clerical-script (隸書) face, so
-// the same call renders Latin and Chinese.  Size is user-space px (default 10).
-// fill_text/stroke_text lay out `text` (UTF-8) with its baseline origin at (x, y),
-// advance +x, and paint the glyph outlines exactly like fill()/stroke() --
-// transform, clip, gradient and global alpha all apply.  measure_text returns the
-// advance width in user px (Canvas measureText().width).
+// Text.  The typeface is fixed to Libian TC (clerical-script 隸書), which carries
+// both Latin and Chinese.  Size is user-space px (default 10).  fill_text and
+// stroke_text lay out `text` (UTF-8) with its baseline origin at (x, y), advance
+// +x, and paint the glyph outlines like fill()/stroke(): transform, clip, gradient
+// and global alpha all apply.  measure_text returns the advance width in user px.
 void canvas_set_font_size(canvas *__single cv, float px);
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text);
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,

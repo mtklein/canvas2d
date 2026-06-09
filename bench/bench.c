@@ -14,8 +14,8 @@
 #include <stdlib.h>
 
 int main(void) {
-    // Repeat the whole e2e workload BENCH_REPS times (default 1, so benchcmp is
-    // unchanged) -- crank it up to give `sample` something long enough to profile.
+    // Repeat the e2e workload BENCH_REPS times (default 1, so benchcmp is
+    // unchanged); raise it to give a profiler a longer run.
     char const *__null_terminated rep_env = getenv("BENCH_REPS");
     int reps = rep_env ? atoi(rep_env) : 1;
     if (reps < 1) {

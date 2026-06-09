@@ -1,6 +1,5 @@
-// Isolated benchmark: gradient evaluation -- the radial parameter solve plus the
-// multi-stop ramp lookup, sampled across a pixel grid.  This is the per-vertex
-// work behind gradient fills (the radial kind is the more expensive of the two).
+// Isolated benchmark: gradient evaluation (radial parameter solve + multi-stop ramp
+// lookup) sampled across a pixel grid; radial is the costlier of the two kinds.
 #include "cnvs_gradient.h"
 
 #include <stdio.h>

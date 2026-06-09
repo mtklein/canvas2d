@@ -1,29 +1,26 @@
 #!/usr/bin/env python3
 """Generate build.ninja for the canvas2d project.
 
-Three build variants are produced from one source tree:
+Build variants (one source tree):
 
-  release : -Os -fbounds-safety                       (the shipping build)
-  debug   : -O0 -g -fbounds-safety -fsanitize=...       (address,integer,undefined)
-  unsafe  : -Os                                         (same as release, minus
-                                                         -fbounds-safety -- the
-                                                         benchmark baseline)
+  release      -Os -fbounds-safety              (shipping build)
+  debug        -O0 -g -fbounds-safety -fsanitize=address,integer,undefined
+  unsafe       -Os                              (release minus -fbounds-safety)
+  release-cpu  release with the software compositor backend
+  debug-cpu    debug with the software compositor backend
 
-`release` vs `unsafe` is an apples-to-apples measurement of what -fbounds-safety
-costs: identical sources and optimisation, differing only in the bounds-safety
-flag. `ninja benchcmp` runs hyperfine over the two.
+`release` vs `unsafe` isolates the cost of -fbounds-safety: same sources and
+optimisation, only the flag differs. `ninja benchcmp` runs hyperfine over the two.
 
-The C core is compiled `-std=c23 -Werror -Weverything` (plus -fbounds-safety for
-release/debug); only the handful of warnings below are disabled, each justified.
+The C core is built -std=c23 -Werror -Weverything (plus -fbounds-safety for
+release/debug); the few disabled warnings below are each justified.
 
-Two source files are platform boundaries, built -std=c23 with -Wall -Wextra
-(not -Weverything) and without -fbounds-safety, under the sanitizers in debug:
-the Objective-C Metal shim (src/*.m) -- the flag is C-only and cannot apply to it
--- and the Core Text font shim (the BOUNDARY_C list), a C file that talks to the
-un-annotated system framework headers (see docs/bounds-safety.md). Both sit
-behind a bounds-safe C ABI; everything else is checked C. The shader is embedded
-with C23 #embed (--embed-dir=shaders) and compiled at runtime; -MMD tracks the
-embed dependency.
+Two source files are platform boundaries, built -Wall -Wextra without
+-fbounds-safety (still under the debug sanitizers): the Objective-C Metal shim
+(src/*.m), since the flag is C-only, and the Core Text font shim (BOUNDARY_C),
+which binds un-annotated system headers. Both sit behind a bounds-safe C ABI; see
+docs/bounds-safety.md. The shader is embedded with C23 #embed (--embed-dir=shaders);
+-MMD tracks the dependency.
 """
 
 import os
@@ -73,9 +70,8 @@ OBJCWARN = "-Wall -Wextra"
 # Frameworks every variant needs (the Core Text font shim).
 BASE_FRAMEWORKS = "-framework CoreText -framework CoreGraphics -framework CoreFoundation"
 
-# Mutually-exclusive compositor backends -- a binary links exactly one.  metal is
-# the GPU shim (ObjC + ARC); cpu is the pure checked-C software compositor, which
-# needs no frameworks at all (a genuinely GPU-free build).  backend -> (source,
+# Mutually-exclusive compositor backends; a binary links exactly one.  metal is the
+# ObjC GPU shim, cpu is the software compositor (no frameworks).  backend -> (source,
 # extra link frameworks).
 BACKENDS = {
     "metal": ("src/compositor_metal.m", "-framework Metal -framework Foundation"),
@@ -83,17 +79,16 @@ BACKENDS = {
 }
 BACKEND_SRCS = {os.path.basename(src) for src, _fw in BACKENDS.values()}
 
-# C sources that are platform boundaries: built without -fbounds-safety and at
-# -Wall -Wextra (like the .m shim), because they bind un-annotated system
-# framework headers.  They expose a bounds-safe C ABI to the checked core.
+# Platform-boundary C sources: built without -fbounds-safety at -Wall -Wextra (like
+# the .m shim) because they bind un-annotated system headers, behind a bounds-safe ABI.
 BOUNDARY_C = {"cnvs_font_ct.c"}
 
 _DEBUG = "-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all"
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?, backend).
-# The -cpu variants run the whole test suite against the software compositor, so
-# every pixel test cross-validates the two backends and the GPU-free path stays
-# green.  The benchmark measures backend-agnostic CPU kernels, so it stays metal.
+# The -cpu variants run the test suite against the software compositor,
+# cross-validating the two backends.  Benchmarks measure backend-agnostic CPU
+# kernels, so they stay metal.
 VARIANTS = {
     "release":     ("-Os", True,  True,  True,  "metal"),
     "debug":       (_DEBUG, True, True,  False, "metal"),
@@ -141,8 +136,7 @@ def main():
         w(f"  description = CC({variant}) $out")
         w("")
         # Boundary C: no -fbounds-safety, -Wall -Wextra (system-FFI seam), but the
-        # debug sanitizers still apply -- so the unchecked shim is still ASan/UBSan
-        # instrumented in debug, unlike the ObjC one.
+        # debug sanitizers still apply (unlike the ObjC shim).
         w(f"rule cc_boundary_{variant}")
         w(f"  command = clang $cstd $objcwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
@@ -187,8 +181,7 @@ def main():
             ccrule = "cc_boundary" if os.path.basename(c) in BOUNDARY_C else "cc"
             w(f"build {o}: {ccrule}_{variant} {c}")
             lib_objs.append(o)
-        # The chosen compositor backend: the ObjC Metal shim, or the checked-C
-        # software compositor (built like any core .c).
+        # The chosen compositor backend: the ObjC Metal shim or the software compositor.
         bsrc = BACKENDS[backend][0]
         bo = obj(variant, bsrc)
         w(f"build {bo}: {'objc' if bsrc.endswith('.m') else 'cc'}_{variant} {bsrc}")
@@ -231,8 +224,7 @@ def main():
     # All bench executables (every stem in every bench-building variant).
     bench_exes = [f"build/{v}/{s}" for v in bench_variants for s in bench_stems]
 
-    # One hyperfine invocation per phase, comparing the variants side by side, so
-    # a slow phase can't mask a regression in a fast one.
+    # One hyperfine invocation per phase, comparing variants side by side.
     calls = []
     for s in bench_stems:
         args = " ".join(f'-n "{s} {v}" ./build/{v}/{s}' for v in bench_variants)
@@ -244,8 +236,7 @@ def main():
     # `images` regenerates the committed gallery PNGs (always reruns; not in `all`).
     w("build images: run_gallery build/release/gallery")
     w("  bin = ./build/release/gallery")
-    # `benchcmp` names a file that is never created, so ninja always reruns it
-    # (after building the binaries it depends on).
+    # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
     w("build all: phony release debug release-cpu debug-cpu")

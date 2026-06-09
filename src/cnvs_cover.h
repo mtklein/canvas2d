@@ -1,14 +1,13 @@
 #pragma once
 
-// Analytic coverage rasterizer (signed-area accumulation).  Edges of a closed
-// path are accumulated in device space; resolve() turns the accumulation into
-// exact per-pixel coverage in [0,255] for a w*h raster -- true antialiasing in
-// both axes, in checked C.  The GPU then just composites the coverage.
+// Analytic coverage rasterizer by signed-area accumulation.  Edges of a closed
+// path accumulate in device space; resolve() turns the accumulation into per-pixel
+// coverage in [0,255] for a w*h raster.
 //
-// The method: each edge deposits, into a per-pixel float buffer, the signed
-// fractional area it leaves to its right on every row it crosses.  A left-to-
-// right prefix sum per row turns that into running winding-weighted coverage,
-// which the fill rule folds to [0,1].
+// Each edge deposits, into a per-pixel float buffer, the signed fractional area it
+// leaves to its right on every row it crosses.  A left-to-right prefix sum per row
+// turns that into running winding-weighted coverage, which the fill rule folds to
+// [0,1].
 
 #include <ptrcheck.h>
 #include <stdint.h>

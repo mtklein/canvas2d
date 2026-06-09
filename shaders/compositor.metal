@@ -27,21 +27,16 @@ fragment float4 tile_blend_fs(tile_io in [[stage_in]],
     return tile.read(p - uint2(origin)) * clip.read(p).r;
 }
 
-// --- globalCompositeOperation (W3C Compositing and Blending Level 1) ----------
-// Source-over has a fixed-function fast path (tile_blend_fs); every other mode
-// goes through tile_composite_fs below, which reads the *premultiplied* backdrop
-// via framebuffer fetch and writes a premultiplied result (pipeline blending off).
-// Everything is premultiplied throughout: the result is
-//     co = s*(1-da) + d*(1-sa) + T,   ao = sa + da*(1-sa)
-// for the blend modes (source-over compositing of the blended colour), where the
-// premultiplied blend term T = sa*da*B(Cb, Cs).  The polynomial separable modes
-// have divide-free premultiplied forms for T; the intrinsically non-linear ones
-// (dodge/burn/soft-light and the HSL set) are *defined* on unpremultiplied colour,
-// so they un-premultiply with a guarded divide.  Mode integers match
-// compositor_blend_mode in compositor.h.
+// globalCompositeOperation (W3C Compositing and Blending Level 1).  source-over has
+// a fixed-function fast path (tile_blend_fs); every other mode goes through
+// tile_composite_fs, which reads the premultiplied backdrop via framebuffer fetch
+// and writes a premultiplied result (pipeline blending off).  Blend modes:
+//     co = s*(1-da) + d*(1-sa) + T,   ao = sa + da*(1-sa),
+// with premultiplied term T = sa*da*B(Cb, Cs); polynomial modes have divide-free T,
+// the non-linear ones (dodge/burn/soft-light, HSL) un-premultiply with a guarded
+// divide.  Mode integers match compositor_blend_mode in compositor.h.
 
-// Separable blend B(cb, cs) on unpremultiplied channels -- used only for the
-// non-linear modes (color-dodge/-burn, soft-light); the rest fold into pm_term.
+// Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
 static float blend_sep(uint mode, float cb, float cs) {
     switch (mode) {
         case 11: return cb * cs;                                    // multiply
@@ -80,8 +75,7 @@ static float3 clip_color(float3 c) {
 
 static float3 set_lum(float3 c, float l) { return clip_color(c + (l - lum(c))); }
 
-// Set saturation s: max channel -> s, min -> 0, mid -> proportional.  The
-// vectorized form reproduces the spec's min/mid/max walk without sorting.
+// Set saturation: max channel -> s, min -> 0, mid proportional.
 static float3 set_sat(float3 c, float s) {
     float mn = min(c.r, min(c.g, c.b));
     float mx = max(c.r, max(c.g, c.b));
@@ -92,7 +86,7 @@ static float sat3(float3 c) {
     return max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
 }
 
-// Non-separable blend (hue/saturation/color/luminosity) on the whole colour.
+// Non-separable blend (hue/saturation/color/luminosity).
 static float3 blend_nonsep(uint mode, float3 cb, float3 cs) {
     switch (mode) {
         case 22: return set_lum(set_sat(cs, sat3(cb)), lum(cb));  // hue
@@ -102,9 +96,7 @@ static float3 blend_nonsep(uint mode, float3 cb, float3 cs) {
     }
 }
 
-// Premultiplied separable blend term T = sa*da*B(Cb,Cs) for one channel; s,d are
-// premultiplied.  The polynomial modes are divide-free; the non-linear ones reuse
-// the unpremultiplied B with a single guarded un-premultiply.
+// Premultiplied separable term T = sa*da*B for one channel (s, d premultiplied).
 static float pm_term(uint mode, float s, float d, float sa, float da) {
     switch (mode) {
         case 11: return s * d;                                  // multiply

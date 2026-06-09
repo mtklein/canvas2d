@@ -60,7 +60,7 @@ cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {
                             .b = (_Float16)b, .a = (_Float16)a };
 }
 
-// Clamp to [0,1] and narrow float -> _Float16.
+// Clamp to [0,1], narrow to _Float16.
 static _Float16 clamp16(float v) {
     if (v < 0.0f) { v = 0.0f; }
     if (v > 1.0f) { v = 1.0f; }

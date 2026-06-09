@@ -42,7 +42,7 @@ static inline void bench_stars(cnvs_path *path, int count, float w, float h) {
 }
 
 // Accumulate every subpath edge of `p` into a w*h coverage raster (each subpath
-// implicitly closed).  The shared fill hot path for the benchmarks.
+// implicitly closed).
 static inline void bench_cover_path(cnvs_cover *cov, int w, int h,
                                     cnvs_path const *p) {
     cnvs_cover_reset(cov, w, h);
