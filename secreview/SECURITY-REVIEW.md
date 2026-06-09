@@ -134,7 +134,11 @@ for the same reason as Finding 1: don't rely on "UB happens to trap downstream."
   is careful — malformed/truncated sequences stop at the NUL and never read past
   it. `CGPathElement.points` is indexed by element type per CG's contract
   (move/line=1, quad=2, cubic=3) — correct, and ASan-instrumented in debug.
-  **No bug found.**
+  **No bug found**, and now **fuzzed**: [`fuzz/fuzz_text.c`](../fuzz/fuzz_text.c)
+  drives `measure/fill/stroke_text` with adversarial UTF-8 (truncated,
+  lone-continuation, astral, mixed) under ASan — 141k execs, **clean**, so
+  `utf8_next`'s no-read-past-NUL property holds empirically. This is the highest-
+  value fuzzing target precisely because the TU is unchecked (ASan is its only net).
 
 These are small and correct today, but they are where a *future* edit has no
 compile-time net, so they deserve the heaviest fuzzing (Section 4).

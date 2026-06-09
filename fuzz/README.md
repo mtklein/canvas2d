@@ -76,6 +76,12 @@ for the OOB-write classes.
   the font-cache destroy-then-recreate, image-data buffers), so a coverage fuzzer
   reaches the interprocedural lifetime paths the static analyzer can't follow.
   ASan use-after-free / -scope / -return is the oracle.
+- **`fuzz_text.c`** — the **unchecked Core Text shim** (`cnvs_font_ct.c`, built
+  *without* `-fbounds-safety`) via the public text API: adversarial UTF-8 through
+  the hand-written `utf8_next` decoder, surrogate composition, and the
+  `CGPathApply`→`emit` glyph-outline callback. ASan is the *only* net in that TU,
+  so this is where fuzzing earns the most. Seeds in `fuzz/seeds_text/` cover ASCII,
+  2/3/4-byte sequences, astral, and malformed/truncated bytes. (141k execs: clean.)
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
 `-fsanitize-address-use-after-return=always`, matching the debug variant.
@@ -83,13 +89,14 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 ## Files
 
 - `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
-- `fuzz_api.c`, `fuzz_state.c` — the harnesses (`LLVMFuzzerTestOneInput` + a
-  file-replay `main` behind `#ifndef FUZZ_NO_MAIN`).
-- `seed_gen.c` — emits a seed corpus of real drawing programs.
+- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c` — the harnesses
+  (`LLVMFuzzerTestOneInput` + a file-replay `main` behind `#ifndef FUZZ_NO_MAIN`).
+- `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
+- `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
-- `build.sh` — builds both libFuzzer targets + seeds.
+- `build.sh` — builds all three libFuzzer targets + the `fuzz_api` seeds.
 
-Not yet done: PNG-encoder and Core-Text harnesses; Role B (a strict on-disk
-format with a bounds-safe validating parser, a fuzz target in its own right);
-adding `fuzz_state` to the committed-corpus replay gate (coordinate with
+Not yet done: a PNG-encoder harness; Role B (a strict on-disk format with a
+bounds-safe validating parser, a fuzz target in its own right); adding
+`fuzz_state`/`fuzz_text` to the committed-corpus replay gate (coordinate with
 `fuzzcorpus`, which currently replays `fuzz_api` only).

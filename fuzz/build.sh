@@ -8,9 +8,11 @@
 # `unsafe` variant).  ASan is the oracle, including the temporal classes
 # (use-after-free / -scope / -return).
 #
-# Two harnesses:
+# Three harnesses:
 #   fuzz_api    -- broad public-API state machine (spatial + value classes).
 #   fuzz_state  -- focused temporal stress: save/restore/clip/font ownership churn.
+#   fuzz_text   -- the unchecked Core Text shim (utf8_next, glyph outlines) on
+#                  adversarial UTF-8; ASan is the only net in that TU.
 #
 # To confirm a crasher traps under the feature, replay it against the Apple-clang
 # -fbounds-safety build -- see fuzz/README.md.
@@ -48,7 +50,7 @@ for s in $CORE; do
     OBJS="$OBJS $BUILD/obj/$s.o"
 done
 
-for h in fuzz_api fuzz_state; do
+for h in fuzz_api fuzz_state fuzz_text; do
     echo "[fuzz] linking harness $h"
     "$CC" $CFLAGS $COMPILE_SAN -DFUZZ_NO_MAIN -c "fuzz/$h.c" -o "$BUILD/obj/$h.o"
     "$CC" $LINK_SAN -isysroot "$SDKROOT" $OBJS "$BUILD/obj/$h.o" $FRAMEWORKS -o "$BUILD/$h"
@@ -58,7 +60,13 @@ echo "[fuzz] building seed generator + corpus"
 cc -std=c23 -O2 -Ifuzz fuzz/seed_gen.c -o "$BUILD/seed_gen"
 "$BUILD/seed_gen" fuzz/seeds
 
-echo "[fuzz] built $BUILD/fuzz_api and $BUILD/fuzz_state (libFuzzer, rootless). run e.g.:"
-echo "  ./$BUILD/fuzz_state -max_len=4096 fuzz/seeds        # temporal stress; Ctrl-C to stop"
-echo "  ./$BUILD/fuzz_api   -max_len=4096 fuzz/seeds        # broad API"
-echo "  ./$BUILD/<harness>  <crash-file>                    # reproduce one crash"
+# Scratch corpus dirs (gitignored under build/): libFuzzer writes discoveries to
+# its FIRST corpus arg, so point it here and pass the committed seeds read-only --
+# keeps fuzz/seeds_text/ and fuzz/seeds/ pristine.
+mkdir -p "$BUILD/corpus_text" "$BUILD/corpus"
+
+echo "[fuzz] built fuzz_api, fuzz_state, fuzz_text in $BUILD (libFuzzer, rootless). run e.g.:"
+echo "  ./$BUILD/fuzz_text  -max_len=512  $BUILD/corpus_text fuzz/seeds_text  # unchecked Core Text shim"
+echo "  ./$BUILD/fuzz_state -max_len=4096 $BUILD/corpus      fuzz/seeds       # temporal stress"
+echo "  ./$BUILD/fuzz_api   -max_len=4096 $BUILD/corpus      fuzz/seeds       # broad API; Ctrl-C to stop"
+echo "  ./$BUILD/<harness>  <crash-file>                                     # reproduce one crash"
