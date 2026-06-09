@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- get-task-allow lets `leaks` fully inspect the process (task_for_pid).
+         Without it the macOS `leaks` tool can only read read-only memory, prints a
+         "Process is not debuggable" warning, and misses heap leaks.  ninja's
+         leakcheck ad-hoc-codesigns a copy of the test binary with this entitlement
+         before running `leaks`.  See configure.py and docs/bounds-safety.md. -->
+    <key>com.apple.security.get-task-allow</key>
+    <true/>
+</dict>
+</plist>

@@ -232,10 +232,19 @@ def main():
     # (LeakSanitizer is broken on Apple-Silicon macOS).  `leaks` exits non-zero if
     # any allocation is unreachable at exit, so it gates.  The stamp makes it
     # idempotent -- it reruns only when its binary changes -- so it can live in `all`.
+    #
+    # `leaks` needs task_for_pid to inspect the heap; without the get-task-allow
+    # entitlement it can only read read-only memory, prints a "Process is not
+    # debuggable" warning, AND misses leaks.  So ad-hoc-codesign a *copy* of the
+    # binary (a copy, to leave the build output's mtime untouched) with
+    # tests/leaks.entitlements first.  Then capture the report and surface it only on
+    # a finding -- a clean run is silent (no leaks summary spam), a real leak prints
+    # the full report and fails.
     w("rule leakcheck")
-    w("  command = leaks --atExit -- $bin && touch $out")
-    w("  pool = console")
-    w("  description = leakcheck $bin")
+    w("  command = cp $bin $bin.signed && "
+      "codesign -s - -f --entitlements tests/leaks.entitlements $bin.signed 2>/dev/null && "
+      "leaks --atExit -- $bin.signed >$out.log 2>&1 && { touch $out ; rm -f $out.log $bin.signed ; } "
+      "|| { cat $out.log >&2 ; rm -f $out.log $bin.signed ; exit 1 ; }")
     w("")
 
     # Bench stems, e2e "bench" sorted last; variants that build benches.
@@ -399,8 +408,10 @@ def main():
         w(f"build {stamp}: analyze {c}")
         analyze_stamps.append(stamp)
     w(f"build analyze: phony {' '.join(analyze_stamps)}")
-    # leakcheck stamp regenerates only when the release-cpu test_leak binary changes.
-    w("build build/release-cpu/test_leak.leakok: leakcheck build/release-cpu/test_leak")
+    # leakcheck stamp regenerates when the release-cpu test_leak binary or the
+    # codesign entitlements change.
+    w("build build/release-cpu/test_leak.leakok: leakcheck build/release-cpu/test_leak"
+      " | tests/leaks.entitlements")
     w("  bin = ./build/release-cpu/test_leak")
     w("build leakcheck: phony build/release-cpu/test_leak.leakok")
     # The default `all` builds every variant's executables -- tests, benches and
