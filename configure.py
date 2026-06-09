@@ -636,7 +636,13 @@ def main():
     # writing its own .profraw, merge, and print an llvm-cov report over src/.
     # cpu backend (GPU-free, deterministic).  Like benchcmp/profile it's a
     # measurement, not a gate -- always reruns, console output, NOT in `all`.
-    COV = "-O0 -fprofile-instr-generate -fcoverage-mapping"
+    # -fcoverage-compilation-dir=. records the compilation directory in the
+    # coverage mapping as "." rather than the absolute CWD, so the metadata is
+    # checkout-relative: llvm-cov resolves paths against wherever it runs (ninja
+    # runs it from the repo root).  Without it, moving or renaming the checkout
+    # strands every already-built object's records at the old absolute path, and
+    # the `src` filter below silently drops those files from the report.
+    COV = "-O0 -fprofile-instr-generate -fcoverage-mapping -fcoverage-compilation-dir=."
     # The coverage core routes through the fault injector ({OOM_DEFINES}), so adding
     # test_oom to the suite below merges its armed-allocation-failure run into the
     # report -- making the realloc-failure guards show as covered instead of dead.
@@ -671,11 +677,17 @@ def main():
     w("")
     # Merge the profiles, write the checked-in Markdown report (docs/coverage.md,
     # browsable on GitHub), and print the human-readable table to the console.
+    # The report is scoped to src/ by *excluding* tests/ (-ignore-filename-regex
+    # matches the path string as recorded in the coverage mapping), not by the
+    # positional source-path filter: that filter resolves to absolute paths, so it
+    # cannot match the checkout-relative records -fcoverage-compilation-dir=.
+    # writes, and silently reports everything instead of src/.
+    cov_scope = "-ignore-filename-regex='(^|/)tests/'"
     w("rule coverage")
     w("  command = xcrun llvm-profdata merge -sparse $in -o $profdata && "
-      "xcrun llvm-cov export -summary-only $mainbin $objargs -instr-profile=$profdata src "
+      f"xcrun llvm-cov export -summary-only $mainbin $objargs -instr-profile=$profdata {cov_scope} "
       "| python3 tools/cov_report.py > $out && "
-      "xcrun llvm-cov report $mainbin $objargs -instr-profile=$profdata src")
+      f"xcrun llvm-cov report $mainbin $objargs -instr-profile=$profdata {cov_scope}")
     w("  pool = console")
     w("")
     cov_lib = []
