@@ -2,70 +2,84 @@
 
 #include "pixvm_pixio.h"
 
-#include <ptrcheck.h>
 #include <string.h>
 
-// Design C: an SkRasterPipeline-style register pipeline.  The live colour channels
-// ride through the stages as _Float16x8 *arguments* (r,g,b,a = working colour,
-// dr..da = backdrop), so they stay in NEON registers across the whole program --
-// no register-file memory, the ceiling A and B hit.  Each stage does its work and
-// [[clang::musttail]]-jumps to the next; the chain of tail jumps is the pipeline.
+// Design C: an SkRasterPipeline-style register pipeline, fully bounds-checked.  The
+// live colour channels ride through the stages as _Float16x8 *arguments* (r,g,b,a =
+// working colour, dr..da = backdrop), so they stay in NEON registers across the
+// whole program -- there is no register file, the memory ceiling A and B both hit.
+// Each stage does its work and [[clang::musttail]]-jumps to the next; the chain of
+// tail jumps is the pipeline.  It runs the same source-over computation A and B
+// express as bytecode (verified bit-identical in test_pixvm).
 //
-// -fbounds-safety shapes this design the most (see docs/pixel-pipelines.md):
-//   * The advancing program pointer can't be `__counted_by` through musttail (the
-//     B finding), so the program walk is a raw `__unsafe_indexable` pointer -- the
-//     dispatch is *unchecked*.  This is what SkRasterPipeline does too; the program
-//     is small and built by trusted code, not attacker input.
-//   * Each stage's `void *ctx` is forged back to its typed context (the qsort hole,
-//     now per stage).  But a buffer's bound survives the void* round-trip by living
-//     in a sibling `int len` field, so the pixel loads/stores stay __counted_by and
-//     checked -- the part that actually touches large memory keeps its guard.
-//   * Channels thread as vector args, x/active as ints -- no counted pointer in
-//     argument position, so musttail is happy.  Stages return int (a void musttail
-//     return trips -Wpedantic).
+// This stays entirely within -fbounds-safety -- no __unsafe_indexable, no forge.
+// The two places SkRasterPipeline's C++ reaches for a raw pointer have checked
+// spellings that cost nothing measurable (proved by benchmarking both):
+//   * The program is a __counted_by array walked by a checked `int` index threaded
+//     through musttail.  A counted *pointer* can't ride musttail (passing prog+1
+//     into a narrower count inserts a check, which musttail rejects), but a plain
+//     index can, and prog[idx] is bounds-checked.
+//   * The per-stage context is a typed union, not a void* forged per stage.  Its
+//     buffer members keep `__counted_by(len)` with a sibling `len`, so after a plain
+//     union access the pixel loads/stores are still checked.  (Counted pointers
+//     inside a union compile and check fine.)
+// Channels thread as vector args (no counted pointer in argument position), so
+// musttail lowers to indirect jumps; stages return int (a void musttail return
+// trips -Wpedantic).
 
-typedef struct pipe_stage pipe_stage;
-typedef int (*pipe_fn)(pipe_stage const *__unsafe_indexable st, int x, int active,
+typedef struct pipe_state pipe_state;
+typedef int (*pipe_fn)(pipe_state const *p, int idx, int x, int active,
                        pixv r, pixv g, pixv b, pixv a,
                        pixv dr, pixv dg, pixv db, pixv da);
-struct pipe_stage {
+
+// Per-stage context: a typed union so the bounds survive without a forge.  Buffer
+// members carry their own `len`, so the pixel accesses stay __counted_by-checked.
+typedef union {
+    struct { _Float16 r, g, b, a; } color;
+    struct { uint8_t *__counted_by(len) p; int len; } wbuf;
+    struct { uint8_t const *__counted_by_or_null(len) p; int len; } rbuf;
+} pipe_ctx;
+
+typedef struct {
     pipe_fn fn;
-    void const *__unsafe_indexable ctx;
+    pipe_ctx ctx;
+} pipe_stage;
+
+struct pipe_state {
+    pipe_stage const *__counted_by(nstages) prog;
+    int nstages;
 };
 
-// Advance the raw program pointer and tail-jump to the next stage, carrying the
-// (possibly updated) channels.  Reads st/x/active from the enclosing stage.
-#define PIPE_NEXT(R, G, B, A, DR, DG, DB, DA) \
-    [[clang::musttail]] return st[1].fn(st + 1, x, active, R, G, B, A, DR, DG, DB, DA)
+static int dispatch(pipe_state const *p, int idx, int x, int active,
+                    pixv r, pixv g, pixv b, pixv a,
+                    pixv dr, pixv dg, pixv db, pixv da);
 
-// Per-stage contexts.  Buffers carry their own bound (`len`) so the access stays
-// checked after the void* ctx is forged back to a typed pointer.
-typedef struct { _Float16 r, g, b, a; } src_ctx;
-typedef struct { uint8_t *__counted_by(len) p; int len; } wbuf_ctx;
-typedef struct { uint8_t const *__counted_by_or_null(len) p; int len; } rbuf_ctx;
+// Thread the (updated) channels to the next stage; checked index walk, no raw ptr.
+#define PIPE_NEXT(R, G, B, A, DR, DG, DB, DA) \
+    [[clang::musttail]] return dispatch(p, idx + 1, x, active, R, G, B, A, DR, DG, DB, DA)
 
 // Splat a constant premultiplied colour into the working channels.
-static int st_src(pipe_stage const *__unsafe_indexable st, int x, int active,
+static int st_src(pipe_state const *p, int idx, int x, int active,
                   pixv r, pixv g, pixv b, pixv a,
                   pixv dr, pixv dg, pixv db, pixv da) {
-    src_ctx const *c = __unsafe_forge_single(src_ctx const *, st->ctx);
-    r = c->r; g = c->g; b = c->b; a = c->a;
+    pipe_ctx c = p->prog[idx].ctx;  // checked: idx < nstages
+    r = c.color.r; g = c.color.g; b = c.color.b; a = c.color.a;
     PIPE_NEXT(r, g, b, a, dr, dg, db, da);
 }
 
 // Scale the working colour by per-pixel coverage (NULL ctx buffer -> coverage 1).
-static int st_scale_cov(pipe_stage const *__unsafe_indexable st, int x, int active,
+static int st_scale_cov(pipe_state const *p, int idx, int x, int active,
                         pixv r, pixv g, pixv b, pixv a,
                         pixv dr, pixv dg, pixv db, pixv da) {
-    rbuf_ctx const *c = __unsafe_forge_single(rbuf_ctx const *, st->ctx);
+    pipe_ctx c = p->prog[idx].ctx;
     pixv cov = (_Float16)1.0f;
-    if (c->p && active == PIXVM_N) {
+    if (c.rbuf.p && active == PIXVM_N) {
         u8x8 cv;
-        memcpy(&cv, c->p + (size_t)x, sizeof cv);  // c->p is __counted_by(len): checked
+        memcpy(&cv, c.rbuf.p + (size_t)x, sizeof cv);  // checked against c.rbuf.len
         cov = pixio_unit(cv);
-    } else if (c->p) {
+    } else if (c.rbuf.p) {
         for (int lane = 0; lane < active; lane++) {
-            cov[lane] = pixio_from_u8(c->p[x + lane]);
+            cov[lane] = pixio_from_u8(c.rbuf.p[x + lane]);
         }
     }
     r = r * cov; g = g * cov; b = b * cov; a = a * cov;
@@ -73,29 +87,29 @@ static int st_scale_cov(pipe_stage const *__unsafe_indexable st, int x, int acti
 }
 
 // Load the backdrop into the dst channels.
-static int st_load_dst(pipe_stage const *__unsafe_indexable st, int x, int active,
+static int st_load_dst(pipe_state const *p, int idx, int x, int active,
                        pixv r, pixv g, pixv b, pixv a,
                        pixv dr, pixv dg, pixv db, pixv da) {
-    wbuf_ctx const *c = __unsafe_forge_single(wbuf_ctx const *, st->ctx);
+    pipe_ctx c = p->prog[idx].ctx;
     if (active == PIXVM_N) {
         u8x32 raw;
-        memcpy(&raw, c->p + (size_t)x * 4, sizeof raw);
+        memcpy(&raw, c.wbuf.p + (size_t)x * 4, sizeof raw);  // checked against c.wbuf.len
         pixio_unpack(raw, &dr, &dg, &db, &da);
     } else {
         dr = 0; dg = 0; db = 0; da = 0;
         for (int lane = 0; lane < active; lane++) {
-            int p = (x + lane) * 4;
-            dr[lane] = pixio_from_u8(c->p[p]);
-            dg[lane] = pixio_from_u8(c->p[p + 1]);
-            db[lane] = pixio_from_u8(c->p[p + 2]);
-            da[lane] = pixio_from_u8(c->p[p + 3]);
+            int q = (x + lane) * 4;
+            dr[lane] = pixio_from_u8(c.wbuf.p[q]);
+            dg[lane] = pixio_from_u8(c.wbuf.p[q + 1]);
+            db[lane] = pixio_from_u8(c.wbuf.p[q + 2]);
+            da[lane] = pixio_from_u8(c.wbuf.p[q + 3]);
         }
     }
     PIPE_NEXT(r, g, b, a, dr, dg, db, da);
 }
 
 // Premultiplied source-over: out = src + dst * (1 - src.a).
-static int st_srcover(pipe_stage const *__unsafe_indexable st, int x, int active,
+static int st_srcover(pipe_state const *p, int idx, int x, int active,
                       pixv r, pixv g, pixv b, pixv a,
                       pixv dr, pixv dg, pixv db, pixv da) {
     pixv ia = (_Float16)1.0f - a;
@@ -104,51 +118,49 @@ static int st_srcover(pipe_stage const *__unsafe_indexable st, int x, int active
 }
 
 // Store the working colour to the destination.
-static int st_store(pipe_stage const *__unsafe_indexable st, int x, int active,
+static int st_store(pipe_state const *p, int idx, int x, int active,
                     pixv r, pixv g, pixv b, pixv a,
                     pixv dr, pixv dg, pixv db, pixv da) {
-    wbuf_ctx const *c = __unsafe_forge_single(wbuf_ctx const *, st->ctx);
+    pipe_ctx c = p->prog[idx].ctx;
     if (active == PIXVM_N) {
         u8x32 out = pixio_pack(r, g, b, a);
-        memcpy(c->p + (size_t)x * 4, &out, sizeof out);
+        memcpy(c.wbuf.p + (size_t)x * 4, &out, sizeof out);
     } else {
         for (int lane = 0; lane < active; lane++) {
-            int p = (x + lane) * 4;
-            c->p[p]     = pixio_to_u8((float)r[lane]);
-            c->p[p + 1] = pixio_to_u8((float)g[lane]);
-            c->p[p + 2] = pixio_to_u8((float)b[lane]);
-            c->p[p + 3] = pixio_to_u8((float)a[lane]);
+            int q = (x + lane) * 4;
+            c.wbuf.p[q]     = pixio_to_u8((float)r[lane]);
+            c.wbuf.p[q + 1] = pixio_to_u8((float)g[lane]);
+            c.wbuf.p[q + 2] = pixio_to_u8((float)b[lane]);
+            c.wbuf.p[q + 3] = pixio_to_u8((float)a[lane]);
         }
     }
     PIPE_NEXT(r, g, b, a, dr, dg, db, da);
 }
 
-// Pipeline terminator: ends the tail-call chain for this chunk.
-static int st_end(pipe_stage const *__unsafe_indexable st, int x, int active,
-                  pixv r, pixv g, pixv b, pixv a,
-                  pixv dr, pixv dg, pixv db, pixv da) {
-    (void)st; (void)x; (void)active;
-    (void)r; (void)g; (void)b; (void)a; (void)dr; (void)dg; (void)db; (void)da;
-    return 0;
+static int dispatch(pipe_state const *p, int idx, int x, int active,
+                    pixv r, pixv g, pixv b, pixv a,
+                    pixv dr, pixv dg, pixv db, pixv da) {
+    if (idx >= p->nstages) {
+        return 0;  // pipeline done for this chunk
+    }
+    [[clang::musttail]] return p->prog[idx].fn(p, idx, x, active,
+                                               r, g, b, a, dr, dg, db, da);
 }
 
 void pixvm_run_pipe(uint8_t *__counted_by(n * 4) dst,
                     uint8_t const *__counted_by_or_null(n) cov, int n) {
-    src_ctx const src = { .r = (_Float16)0.0f, .g = (_Float16)0.5f,
-                          .b = (_Float16)0.0f, .a = (_Float16)0.5f };  // premul green, 0.5 alpha
-    wbuf_ctx const dstc = { .p = dst, .len = n * 4 };
-    rbuf_ctx const covc = { .p = cov, .len = cov ? n : 0 };
     pipe_stage const prog[] = {
-        { st_src,       &src },
-        { st_scale_cov, &covc },
-        { st_load_dst,  &dstc },
-        { st_srcover,   NULL },
-        { st_store,     &dstc },
-        { st_end,       NULL },
+        { st_src,       { .color = { (_Float16)0.0f, (_Float16)0.5f,
+                                     (_Float16)0.0f, (_Float16)0.5f } } },  // premul green
+        { st_scale_cov, { .rbuf  = { cov, cov ? n : 0 } } },
+        { st_load_dst,  { .wbuf  = { dst, n * 4 } } },
+        { st_srcover,   { .color = { 0, 0, 0, 0 } } },
+        { st_store,     { .wbuf  = { dst, n * 4 } } },
     };
+    pipe_state const p = { .prog = prog, .nstages = (int)(sizeof prog / sizeof prog[0]) };
     for (int x = 0; x < n; x += PIXVM_N) {
         int active = n - x < PIXVM_N ? n - x : PIXVM_N;
         pixv z = (_Float16)0.0f;
-        (void)prog[0].fn(prog, x, active, z, z, z, z, z, z, z, z);
+        (void)dispatch(&p, 0, x, active, z, z, z, z, z, z, z, z);
     }
 }
