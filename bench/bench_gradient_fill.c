@@ -1,7 +1,8 @@
 // Isolated benchmark: the gradient *fill* path as paint_tile runs it -- build the
-// colour ramp once per fill, then per pixel solve the parameter and index the ramp.
-// Mirrors bench_gradient's scene (same kind/size/iters) so the two are directly
-// comparable: the delta is what the precomputed ramp buys over a per-pixel stop scan.
+// colour ramp once per fill, solve the parameter a row at a time (vectorized), then
+// index the ramp per pixel.  Mirrors bench_gradient's scene (same kind/size/iters)
+// so the two are directly comparable: the delta is what the ramp + vectorized
+// parameter solve buy over the naive per-pixel scan.
 #include "bench_reps.h"
 
 #include "cnvs_gradient.h"
@@ -26,16 +27,17 @@ int main(void) {
     cnvs_gradient_add_stop(&gr, 1.00f, cnvs_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
 
     static cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];
+    static float trow[DIM];
     double sink = 0.0;
     int reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             cnvs_gradient_build_ramp(&gr, ramp, CNVS_GRAD_RAMP_N);  // once per fill
             for (int y = 0; y < DIM; y++) {
+                cnvs_gradient_param_row(&gr, 0, (float)y + 0.5f, DIM, trow);
                 for (int x = 0; x < DIM; x++) {
-                    cnvs_vec2 p = { .x = (float)x + 0.5f, .y = (float)y + 0.5f };
-                    float t;
-                    cnvs_unpremul c = cnvs_gradient_param(&gr, p, &t)
+                    float t = trow[x];  // -1 marks outside the gradient
+                    cnvs_unpremul c = t >= 0.0f
                         ? ramp[(int)(t * (float)(CNVS_GRAD_RAMP_N - 1) + 0.5f)]
                         : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
                     sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
