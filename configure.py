@@ -95,6 +95,11 @@ BACKEND_SRCS = {os.path.basename(src) for src, _fw in BACKENDS.values()}
 # the .m shim) because they bind un-annotated system headers, behind a bounds-safe ABI.
 BOUNDARY_C = {"cnvs_font_ct.c"}
 
+# Benches that drive the full canvas API through the compositor (not isolated
+# kernels), so they're worth building on *both* compositor backends -- `ninja
+# rendercmp` compares metal vs cpu end-to-end, and both are the shipping path.
+PIPELINE_BENCHES = {"bench_render"}
+
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
 # (stack use-after-scope and use-after-return) -- the class -fbounds-safety
 # doesn't address.  detect_leaks is deliberately NOT enabled: LeakSanitizer is
@@ -208,8 +213,13 @@ def main():
     w("  pool = console")
     w("")
     w("rule profile")
-    w("  command = sh bench/profile.sh")
+    w("  command = $cmd")
     w("  pool = console")
+    w("")
+    w("rule rendercmp")
+    w("  command = $cmd")
+    w("  pool = console")
+    w("  description = real-pipeline render: metal vs cpu compositor (both shipping)")
     w("")
     w("rule run_gallery")
     w("  command = $bin")
@@ -266,6 +276,18 @@ def main():
         if do_bench:
             for b in benches:
                 stem = os.path.splitext(os.path.basename(b))[0]
+                o = obj(variant, b)
+                exe = os.path.join("build", variant, stem)
+                w(f"build {o}: cc_{variant} {b}")
+                w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
+                produced.append(exe)
+        elif variant == "release-cpu":
+            # Pipeline benches build on the optimized cpu backend too, so rendercmp
+            # can pit the two shipping compositors against each other end to end.
+            for b in benches:
+                stem = os.path.splitext(os.path.basename(b))[0]
+                if stem not in PIPELINE_BENCHES:
+                    continue
                 o = obj(variant, b)
                 exe = os.path.join("build", variant, stem)
                 w(f"build {o}: cc_{variant} {b}")
@@ -350,9 +372,21 @@ def main():
     # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
-    # `profile` samples the release benches in place (no output file, always reruns).
+    # `profile` samples the release benches (metal), then the cpu pipeline bench, in
+    # place (no output file, always reruns).
     release_bench_exes = [f"build/release/{s}" for s in bench_stems]
-    w(f"build profile: profile {' '.join(release_bench_exes)}")
+    cpu_pipeline_exes = [f"build/release-cpu/{s}" for s in sorted(PIPELINE_BENCHES)]
+    w(f"build profile: profile {' '.join(release_bench_exes + cpu_pipeline_exes)}")
+    w("  cmd = sh bench/profile.sh build/release ; sh bench/profile.sh build/release-cpu")
+    # `rendercmp` pits the two shipping compositor backends against each other on the
+    # real-pipeline bench (metal vs cpu); names no output file, so it always reruns.
+    render_metal = "build/release/bench_render"
+    render_cpu = "build/release-cpu/bench_render"
+    rendercmp_cmd = ('hyperfine --warmup 3 -N '
+                     f'-n "render metal" ./{render_metal} '
+                     f'-n "render cpu" ./{render_cpu}')
+    w(f"build rendercmp: rendercmp {render_metal} {render_cpu}")
+    w(f"  cmd = {rendercmp_cmd}")
     # `analyze` runs the static analyzer over the checked C (core + the cpu backend;
     # the ObjC Metal shim is out of scope).  One stamp per TU so it's incremental
     # and parallel; gated by -analyzer-werror in the rule.
