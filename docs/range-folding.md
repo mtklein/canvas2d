@@ -109,3 +109,40 @@ channels](pixel-pipelines.md), [the `vtbl` table](gather-lut.md)) are immune —
 per-element check, nothing to block the vectorizer — so "keep the hot index in the
 canonical `i < count` form, or move the data into registers" matters *more* at
 production optimization than `-Os` alone let on.
+
+## Explicit SIMD is the reliable answer
+
+Autovectorization is the wrong thing to lean on here: it only fires at `-O2`+, only on
+the simplest loops, and the flag blocks it for checked code regardless. The durable
+move is to vectorize *explicitly* and let `-fbounds-safety` check the loads at a
+granularity you choose. `ring_sum_simd` is the same contiguous runs written as a hand
+SIMD reduction — a whole-vector bounds-checked block load (`memcpy` of 64 bytes, one
+check per 16 elements) into four register accumulators:
+
+| checked form | `-Os` | `-O1` | `-O2` | flag cost |
+|---|---|---|---|---|
+| scalar runs | 81 ms | 81 ms | 81 ms | (autovec blocked) |
+| explicit SIMD | 9 ms | 9 ms | 9 ms | 1.25× |
+
+- **Opt-level-independent.** ~9 ms checked at `-Os`, `-O1`, and `-O2` alike — no need
+  for `-O2`, no dependence on the optimizer's mood. That 9 ms equals the `-O2`
+  *autovectorized unsafe* build — the one the flag refused to produce for checked code.
+- **The flag cost is a knob.** Going from 81 ms to 9 ms re-derived the cost model in
+  miniature:
+
+  | explicit SIMD variant | checked | flag cost | why |
+  |---|---|---|---|
+  | 1 accumulator | 26 ms | 1.18× | latency-bound; checks hidden in the add-dependency stall |
+  | 4 accumulators, 4 checks/16 | 19 ms | 2.6× | stall gone → the per-vector checks are exposed |
+  | 4 accumulators, 1 check/16 | 9 ms | 1.25× | checks amortized over the block *and* latency hidden |
+
+  So explicit SIMD under the flag wants both **enough ILP to saturate** (several
+  accumulators) and **coarse checks** (one bounds-checked block load, then compute in
+  registers) — the same amortize-and-keep-it-in-registers principle that made
+  [the register pipeline](pixel-pipelines.md) and [the `vtbl` LUT](gather-lut.md) free,
+  here applied to check *granularity* rather than eliminating the check.
+
+Bottom line: `-fbounds-safety` is friendly to *explicit* vectorization (the
+whole-vector load is one cheap, amortizable check) and hostile to the *auto*vectorizer
+(the per-element check is a barrier it won't cross). Reach for vectors and pick your
+check granularity; don't expect `-O2` to rescue a checked scalar loop — it can't.
