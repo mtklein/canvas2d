@@ -258,6 +258,27 @@ void compositor_set_clip(compositor *__single c,
     memcpy(c->clip, mask, (size_t)n);
 }
 
+// One premultiplied pixel as a vector: cnvs_premul is four contiguous _Float16.
+typedef _Float16 blendh4 __attribute__((ext_vector_type(4)));
+typedef float blendf4 __attribute__((ext_vector_type(4)));
+typedef int blendi4 __attribute__((ext_vector_type(4)));
+typedef uint16_t blendu16x4 __attribute__((ext_vector_type(4)));
+
+// Vector form of to_half_rtz (each lane v >= 0): round to nearest, then step the
+// lanes that overshot one ULP back toward zero, so it bit-matches the scalar
+// to_half_rtz the rest of the compositor uses (and thus Metal's RTZ store).
+static blendh4 to_half_rtz4(blendf4 v) {
+    blendh4 n = __builtin_convertvector(v, blendh4);
+    blendf4 nf = __builtin_convertvector(n, blendf4);
+    blendi4 over = nf > v;                                       // -1 where overshot
+    blendu16x4 dec = __builtin_convertvector(over, blendu16x4);  // 0xFFFF where over
+    blendu16x4 bits;
+    memcpy(&bits, &n, sizeof bits);
+    bits = bits + dec;                                           // += 0xFFFF == -= 1
+    memcpy(&n, &bits, sizeof bits);
+    return n;
+}
+
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       cnvs_premul const *__counted_by(w * h) tile,
                       compositor_blend_mode mode) {
@@ -265,6 +286,41 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         return;
     }
     if (x < 0 || y < 0 || x + w > c->width || y + h > c->height) {
+        return;
+    }
+    if (mode == COMPOSITOR_SRC_OVER) {
+        // The overwhelmingly common mode (every ordinary fill).  Its math --
+        // co = s + (1-sa)*d, ao = sa + (1-sa)*da -- folds identically over all four
+        // channels (lane 3 yields ao), so blend a whole pixel as one 4-lane vector.
+        // Bit-identical to blend()'s source-over: the clip-attenuation round, the
+        // clamp to [0,aoc], and the round-toward-zero half store are all reproduced.
+        // contract(off): blend() compiles co = 1*s + fb*d as a rounded multiply then
+        // add; without this the vector form fuses to one FMA and drifts a half-ULP,
+        // which the exact (tolerance-0) backend differential would catch.
+        #pragma clang fp contract(off)
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                int di = (y + row) * c->width + (x + col);
+                blendh4 sh;
+                memcpy(&sh, &tile[row * w + col], sizeof sh);
+                blendf4 s = __builtin_convertvector(sh, blendf4);
+                if (c->clip) {  // attenuate premultiplied source by clip coverage
+                    float k = (float)c->clip[di] / 255.0f;
+                    s = __builtin_convertvector(
+                        __builtin_convertvector(s * k, blendh4), blendf4);  // round-to-nearest, as scalar
+                }
+                blendh4 dh;
+                memcpy(&dh, &c->target[di], sizeof dh);
+                blendf4 d = __builtin_convertvector(dh, blendf4);
+                float fb = 1.0f - s[3];                // 1 - sa
+                blendf4 co = s + fb * d;                // lane 3 = ao
+                float aoc = co[3] < 1.0f ? co[3] : 1.0f;
+                co = __builtin_elementwise_max((blendf4)0.0f,
+                                               __builtin_elementwise_min((blendf4)aoc, co));
+                blendh4 out = to_half_rtz4(co);
+                memcpy(&c->target[di], &out, sizeof out);
+            }
+        }
         return;
     }
     for (int row = 0; row < h; row++) {
