@@ -3,7 +3,60 @@
 
 #include <stdlib.h>
 
+static int clampi(int v, int lo, int hi) {
+    if (v < lo) { return lo; }
+    if (v > hi) { return hi; }
+    return v;
+}
+
+// O(w*r) brute-force reference for one row of the horizontal pass: the literal
+// window sum, edge-clamped, with the same (sum + win/2) / win quantize.
+static void ref_blur_h_row(uint8_t *__counted_by(w) dst,
+                           uint8_t const *__counted_by(w) src, int w, int r) {
+    int win = 2 * r + 1;
+    for (int x = 0; x < w; x++) {
+        int sum = 0;
+        for (int k = -r; k <= r; k++) {
+            sum += src[clampi(x + k, 0, w - 1)];
+        }
+        dst[x] = (uint8_t)((sum + win / 2) / win);
+    }
+}
+
+// blur_box_h must match the brute-force reference bit-for-bit across awkward
+// shapes: widths off the vector-block grid, radii of 0, >= w, and crossing the
+// width, single-pixel rows.
+static void check_h_vs_ref(void) {
+    static int const ws[] = { 1, 2, 7, 8, 9, 31, 33, 64, 200 };
+    static int const rs[] = { 0, 1, 2, 5, 17, 300 };
+    enum { MAXW = 200, H = 3 };
+    uint8_t src[MAXW * H], dst[MAXW * H], ref[MAXW];
+    for (size_t wi = 0; wi < sizeof ws / sizeof *ws; wi++) {
+        for (size_t ri = 0; ri < sizeof rs / sizeof *rs; ri++) {
+            int const w = ws[wi], r = rs[ri], n = w * H;
+            for (int i = 0; i < n; i++) {
+                // Noise covering 0..255, varied per (w, r) config; small-int
+                // arithmetic so the debug build's integer sanitizer stays quiet.
+                src[i] = (uint8_t)((i * 73 + (int)wi * 31 + (int)ri * 11) & 0xFF);
+            }
+            blur_box_h(dst, src, w, H, r);
+            bool same = true;
+            for (int y = 0; y < H; y++) {
+                ref_blur_h_row(ref, src + y * w, w, r);
+                for (int x = 0; x < w; x++) {
+                    if (dst[y * w + x] != ref[x]) {
+                        same = false;
+                    }
+                }
+            }
+            CHECK(same);
+        }
+    }
+}
+
 int main(void) {
+    check_h_vs_ref();
+
     int const w = 32, h = 24, n = w * h, r = 2, win = 2 * r + 1;
     uint8_t *__counted_by(n) src = malloc((size_t)n);
     uint8_t *__counted_by(n) dst = malloc((size_t)n);
