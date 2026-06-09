@@ -255,6 +255,7 @@ canvas_save / canvas_restore / canvas_reset
 canvas_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
 canvas_set_global_composite_operation                        // 26 GCO modes
+canvas_set_shadow_color_rgba / set_shadow_blur / set_shadow_offset_x / set_shadow_offset_y
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / set_fill_conic_gradient / add_fill_color_stop / set_fill_pattern
 canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / set_stroke_conic_gradient / add_stroke_color_stop / set_stroke_pattern
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
@@ -298,7 +299,8 @@ complete, honest gap inventory (missing + partial + what's next).
 | Hit testing — `isPointInPath` / `isPointInStroke` (+ `Path2D` overloads) | ✅ winding + even-odd, transform-aware |
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |
 | `Path2D` — build, `addPath`, fill/stroke/clip/isPointIn* overloads | ✅ no SVG path-data string |
-| Shadows, `filter` | ❌ see [roadmap](docs/roadmap.md) |
+| Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}` | ◑ fills/strokes/text (CPU box-blur ≈ Gaussian); not `drawImage` yet |
+| `filter` | ❌ see [roadmap](docs/roadmap.md) |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy

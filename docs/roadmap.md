@@ -27,9 +27,11 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    premultiplied, over `__counted_by` tiles. Chosen instead of Metal at build time
    (the `-cpu` variants), it links no GPU frameworks and cross-validates the Metal
    backend — every pixel test runs against both, and they agree to ≤1/255.
-3. **Shadows / `filter` blur** — a separable Gaussian (or box) convolution: a
-   horizontal then vertical pass over a coverage/colour buffer, every tap an
-   indexed read against a `__counted_by` row. The canonical stencil loop.
+3. ~~**Shadows**~~ — **done** (fills/strokes/text). The op's coverage mask is
+   blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
+   probe, three passes ≈ Gaussian), tinted, offset, and composited under the
+   shape — all in checked C, so the backends stay bit-identical. `filter` blur
+   (and the other CSS filter functions) reuse the same kernel and are next.
 
 Internals (not API features) considered and deferred: a sparse/RLE coverage format
 to skip the transparent ~40–60% of a fill's bbox — analysis and why dense+SIMD stays
@@ -57,10 +59,16 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
 - **Glyph outlines** are re-fetched from Core Text on every `fill_text` — no cache.
+- **Shadows** are cast from fills, strokes, and text — the op's coverage is
+  blurred (a CPU box-blur, three passes ≈ Gaussian, [blur.c](../src/blur.c)),
+  tinted, offset, and composited under the shape, all in checked C so the two
+  backends stay bit-identical. Not yet wired for `drawImage`; the offset is
+  rounded to whole device pixels; and the shadow's silhouette is the coverage
+  (exact for opaque paint, an approximation for semi-transparent gradient/pattern
+  alpha).
 
 ## Missing entirely
 
-- **Shadows** — `shadowColor`, `shadowBlur`, `shadowOffsetX`, `shadowOffsetY`.
 - **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
   `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).
 

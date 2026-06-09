@@ -1,6 +1,7 @@
 #include "canvas.h"
 
 #include "compositor.h"
+#include "blur.h"
 #include "cnvs_cover.h"
 #include "cnvs_font.h"
 #include "cnvs_geom.h"
@@ -90,6 +91,9 @@ struct canvas_state {
     canvas_text_baseline text_baseline;
     bool image_smoothing_enabled;
     canvas_image_smoothing_quality image_smoothing_quality;
+    cnvs_unpremul shadow_color;  // shadow off when its alpha is 0
+    float shadow_blur;           // device px (a Gaussian radius; CTM does not apply)
+    float shadow_offset_x, shadow_offset_y;  // device px (CTM does not apply)
     // Clip coverage, one byte per canvas pixel (NULL = open).  Held by value in
     // the state, so save() snapshots it and restore() brings it back; clip()
     // intersects the current path's coverage into it.
@@ -120,6 +124,14 @@ struct canvas {
     float *__counted_by(trow_cap) trow;    // one row of gradient parameters (vectorized solve)
     int trow_cap;
     cnvs_recorder *__single rec;  // NULL unless canvas_record_to is active
+    // Shadow scratch: a single-channel mask blurred in place (src/dst ping-pong
+    // for the separable box passes), sized to the shadow's device region.  Each
+    // gets its own cap so the (pointer, count) pairs update independently under
+    // -fbounds-safety (two pointers can't share one count).
+    uint8_t *__counted_by(shadow_src_cap) shadow_src;
+    int shadow_src_cap;
+    uint8_t *__counted_by(shadow_dst_cap) shadow_dst;
+    int shadow_dst_cap;
 };
 
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
@@ -167,6 +179,10 @@ static void state_defaults(struct canvas_state *s) {
     s->text_baseline = CANVAS_BASELINE_ALPHABETIC;
     s->image_smoothing_enabled = true;
     s->image_smoothing_quality = CANVAS_SMOOTHING_LOW;
+    s->shadow_color = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);  // transparent: off
+    s->shadow_blur = 0.0f;
+    s->shadow_offset_x = 0.0f;
+    s->shadow_offset_y = 0.0f;
     // Drop the clip: zero the count before NULLing the pointer so the
     // __counted_by(clip_len) invariant never sees NULL with a positive count.
     s->clip_len = 0;
@@ -221,6 +237,8 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->cov);
     free(cv->tile);
     free(cv->trow);
+    free(cv->shadow_src);
+    free(cv->shadow_dst);
     free(cv);
 }
 
@@ -528,6 +546,30 @@ void canvas_set_global_composite_operation(canvas *__single cv,
     cv->cur.composite = (compositor_blend_mode)op;
 }
 
+void canvas_set_shadow_color_rgba(canvas *__single cv,
+                                  float r, float g, float b, float a) {
+    cv->cur.shadow_color =
+        cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
+}
+
+void canvas_set_shadow_blur(canvas *__single cv, float blur) {
+    if (isfinite(blur) && blur >= 0.0f) {  // spec: ignore negative / non-finite
+        cv->cur.shadow_blur = blur;
+    }
+}
+
+void canvas_set_shadow_offset_x(canvas *__single cv, float offset) {
+    if (isfinite(offset)) {
+        cv->cur.shadow_offset_x = offset;
+    }
+}
+
+void canvas_set_shadow_offset_y(canvas *__single cv, float offset) {
+    if (isfinite(offset)) {
+        cv->cur.shadow_offset_y = offset;
+    }
+}
+
 static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
     return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
 }
@@ -747,9 +789,114 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
+// Grow the two shadow ping-pong masks to at least n bytes each.
+static bool ensure_shadow(canvas *__single cv, int n) {
+    if (n > cv->shadow_src_cap) {
+        uint8_t *na = realloc(cv->shadow_src, (size_t)n);
+        if (!na) {
+            return false;
+        }
+        cv->shadow_src = na;
+        cv->shadow_src_cap = n;
+    }
+    if (n > cv->shadow_dst_cap) {
+        uint8_t *nb = realloc(cv->shadow_dst, (size_t)n);
+        if (!nb) {
+            return false;
+        }
+        cv->shadow_dst = nb;
+        cv->shadow_dst_cap = n;
+    }
+    return true;
+}
+
+// A shadow is cast when its colour is non-transparent and there is some blur or
+// offset (a zero-blur, zero-offset shadow would sit exactly under the shape).
+static bool shadow_active(canvas const *__single cv) {
+    return (float)cv->cur.shadow_color.a > 0.0f &&
+           (cv->cur.shadow_blur > 0.0f || cv->cur.shadow_offset_x != 0.0f ||
+            cv->cur.shadow_offset_y != 0.0f);
+}
+
+// Box-blur radius approximating the spec's Gaussian (stdDev = blur/2): three box
+// passes have variance r^2 + r, so r ~= stdDev.  Clamped so a huge blur stays
+// bounded; <=0 means no blur (a sharp, offset shadow).
+static int shadow_radius(float blur) {
+    if (!(blur > 0.0f)) {
+        return 0;
+    }
+    int r = (int)(blur * 0.5f + 0.5f);
+    return r < 1 ? 1 : (r > 1024 ? 1024 : r);
+}
+
+// Round a shadow offset to an integer device pixel, clamped to a sane range (a
+// larger offset just pushes the shadow off-canvas).
+static int shadow_offset(float v) {
+    float m = (float)(2 * CANVAS_MAX_DIM);
+    v = v > m ? m : (v < -m ? -m : v);
+    return cnvs_f2i(roundf(v));
+}
+
+// Cast the current op's shadow from the coverage in cv->cov over bbox b: build a
+// single-channel mask of the op's silhouette, blur it (~Gaussian), tint it with
+// the shadow colour (global alpha folded in), and composite it -- offset, under
+// the shape (which the caller paints next).  Blur and offset are device-space and
+// unaffected by the CTM, per spec.  All CPU-side, so both backends agree.
+static void emit_shadow(canvas *__single cv, cbbox b) {
+    if (!shadow_active(cv) || b.w <= 0 || b.h <= 0) {
+        return;
+    }
+    int r = shadow_radius(cv->cur.shadow_blur);
+    int offx = shadow_offset(cv->cur.shadow_offset_x);
+    int offy = shadow_offset(cv->cur.shadow_offset_y);
+    int sx0 = b.x + offx - r, sy0 = b.y + offy - r;
+    int sx1 = b.x + b.w + offx + r, sy1 = b.y + b.h + offy + r;
+    if (sx0 < 0) { sx0 = 0; }
+    if (sy0 < 0) { sy0 = 0; }
+    if (sx1 > cv->width) { sx1 = cv->width; }
+    if (sy1 > cv->height) { sy1 = cv->height; }
+    int sw = sx1 - sx0, sh = sy1 - sy0;
+    if (sw <= 0 || sh <= 0 || !ensure_shadow(cv, sw * sh) || !ensure_tile(cv, sw * sh)) {
+        return;
+    }
+    int n = sw * sh;
+    memset(cv->shadow_src, 0, (size_t)n);
+    // Stamp the op coverage into the mask at its offset position (clipped to the
+    // mask, which may be tighter than the offset coverage near the canvas edge).
+    int mx0 = b.x + offx - sx0, my0 = b.y + offy - sy0;
+    for (int cy = 0; cy < b.h; cy++) {
+        int my = my0 + cy;
+        if (my < 0 || my >= sh) {
+            continue;
+        }
+        for (int cx = 0; cx < b.w; cx++) {
+            int mx = mx0 + cx;
+            if (mx >= 0 && mx < sw) {
+                cv->shadow_src[my * sw + mx] = cv->cov[cy * b.w + cx];
+            }
+        }
+    }
+    if (r > 0) {  // three separable box passes ~ a Gaussian (src/dst ping-pong)
+        for (int pass = 0; pass < 3; pass++) {
+            blur_box_h(cv->shadow_dst, cv->shadow_src, sw, sh, r);
+            blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, r);
+        }
+    }
+    cnvs_unpremul sc = cv->cur.shadow_color;
+    float ga = cv->cur.global_alpha;
+    for (int i = 0; i < n; i++) {
+        float alpha = (float)cv->shadow_src[i] / 255.0f * (float)sc.a * ga;
+        cv->tile[i] = cnvs_premultiply(
+            (cnvs_unpremul){ .r = sc.r, .g = sc.g, .b = sc.b, .a = (_Float16)alpha });
+    }
+    compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile, cv->cur.composite);
+}
+
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
 // on its kind (solid and gradient share paint_tile; pattern has its own loop).
+// The shadow, if any, is cast first so it lands under the shape.
 static void paint_fill(canvas *__single cv, cbbox b) {
+    emit_shadow(cv, b);
     if (cv->cur.fill_kind == CNVS_PAINT_PATTERN) {
         paint_tile_pattern(cv, b, &cv->cur.fill_pattern);
     } else {
@@ -759,6 +906,7 @@ static void paint_fill(canvas *__single cv, cbbox b) {
 }
 
 static void paint_stroke(canvas *__single cv, cbbox b) {
+    emit_shadow(cv, b);
     if (cv->cur.stroke_kind == CNVS_PAINT_PATTERN) {
         paint_tile_pattern(cv, b, &cv->cur.stroke_pattern);
     } else {

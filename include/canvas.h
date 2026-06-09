@@ -93,6 +93,18 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha);
 void canvas_set_global_composite_operation(canvas *__single cv,
                                            canvas_composite_op op);
 
+// Shadows: a blurred, offset, colour-tinted copy of each fill/stroke/text/image
+// is painted underneath it.  A shadow is cast only when shadow_color's alpha is
+// > 0 and there is some blur or offset.  shadow_blur is a Gaussian-style radius;
+// it and the offsets are in device pixels and are NOT affected by the current
+// transform (per spec).  Defaults: transparent shadow (off), 0 blur, 0 offset.
+// Negative/non-finite blur and non-finite offsets are ignored, as the spec says.
+void canvas_set_shadow_color_rgba(canvas *__single cv,
+                                  float r, float g, float b, float a);
+void canvas_set_shadow_blur(canvas *__single cv, float blur);
+void canvas_set_shadow_offset_x(canvas *__single cv, float offset);
+void canvas_set_shadow_offset_y(canvas *__single cv, float offset);
+
 // Set the fill paint to a gradient and clear its stops; fill() uses it until the
 // next canvas_set_fill_rgba.  Coordinates are user space (the transform is baked in
 // now).  Add stops with canvas_add_fill_color_stop; offsets clamp to [0,1].
