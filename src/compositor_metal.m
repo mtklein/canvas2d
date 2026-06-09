@@ -21,6 +21,8 @@ static char const compositor_metal_src[] = {
 @property (nonatomic, strong) id<MTLDevice> device;
 @property (nonatomic, strong) id<MTLCommandQueue> queue;
 @property (nonatomic, strong) id<MTLTexture> target;   // RGBA16Float, read back
+@property (nonatomic, strong) id<MTLBuffer> targetBuffer;  // backs `target` (linear, zero-copy readback)
+@property (nonatomic) NSUInteger targetRowBytes;       // backing stride (>= width*8, aligned)
 @property (nonatomic, strong) id<MTLTexture> clip;      // R8 coverage, 255 = open
 @property (nonatomic, strong) id<MTLRenderPipelineState> blendPipe;      // source-over
 @property (nonatomic, strong) id<MTLRenderPipelineState> compositePipe;  // other GCO modes
@@ -167,6 +169,15 @@ compositor *compositor_create(int width, int height) {
                                                            mipmapped:NO];
         td.usage = MTLTextureUsageRenderTarget;  // never sampled, only resolved-to + read back
         td.storageMode = MTLStorageModeShared;
+        // Back the target with a buffer so it's linear (no GPU twiddle/compression)
+        // and its bytes are CPU-visible directly -- the readback reads buffer.contents
+        // instead of getBytes (which de-twiddles).  bytesPerRow must hit the device's
+        // linear-texture alignment.
+        NSUInteger align = [device minimumLinearTextureAlignmentForPixelFormat:
+                                       MTLPixelFormatRGBA16Float];
+        if (align == 0) { align = 256; }
+        NSUInteger rowBytes = (NSUInteger)width * sizeof(cnvs_premul);
+        rowBytes = (rowBytes + align - 1) / align * align;
 
         MTLTextureDescriptor *cd =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
@@ -179,13 +190,17 @@ compositor *compositor_create(int width, int height) {
         CmpImpl *o = [[CmpImpl alloc] init];
         o.device = device;
         o.queue = [device newCommandQueue];
-        o.target = [device newTextureWithDescriptor:td];
+        o.targetRowBytes = rowBytes;
+        o.targetBuffer = [device newBufferWithLength:rowBytes * (NSUInteger)height
+                                             options:MTLResourceStorageModeShared];
+        o.target = [o.targetBuffer newTextureWithDescriptor:td offset:0 bytesPerRow:rowBytes];
         o.clip = [device newTextureWithDescriptor:cd];
         o.blendPipe = make_pipeline(device, lib, TILE_BLEND);
         o.compositePipe = make_pipeline(device, lib, TILE_COMPOSITE);
         o.width = width;
         o.height = height;
-        if (!o.queue || !o.target || !o.clip || !o.blendPipe || !o.compositePipe) {
+        if (!o.queue || !o.targetBuffer || !o.target || !o.clip ||
+            !o.blendPipe || !o.compositePipe) {
             return NULL;
         }
         set_clip_bytes(o, NULL);  // open clip
@@ -308,12 +323,20 @@ void compositor_read(compositor *c, cnvs_premul *out, int len) {
         if (len < n) {
             return;
         }
-        drain_batch(o);  // the one real sync: finish all pending ops before getBytes
-        // The target is premultiplied; hand it back verbatim.  Straight-alpha and
-        // 8-bit conversion happen on the canvas side.
-        [o.target getBytes:out
-               bytesPerRow:(NSUInteger)o.width * sizeof(cnvs_premul)
-                fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
-               mipmapLevel:0];
+        drain_batch(o);  // the one real sync: finish all pending GPU work first
+        // The target is linear and CPU-visible (buffer-backed), so read its bytes
+        // directly -- no getBytes de-twiddle.  Copy row by row because the backing
+        // stride is aligned up from width*8; it collapses to one copy when they match.
+        // Premultiplied, handed back verbatim (straight-alpha + 8-bit on the canvas side).
+        uint8_t const *base = (uint8_t const *)o.targetBuffer.contents;
+        NSUInteger tight = (NSUInteger)o.width * sizeof(cnvs_premul);
+        if (o.targetRowBytes == tight) {
+            memcpy(out, base, tight * (NSUInteger)o.height);
+        } else {
+            for (int row = 0; row < o.height; row++) {
+                memcpy((uint8_t *)out + (NSUInteger)row * tight,
+                       base + (NSUInteger)row * o.targetRowBytes, tight);
+            }
+        }
     }
 }
