@@ -59,6 +59,30 @@ int main(void) {
         }
     }
 
+    // A shape overhanging the left raster edge, its slanted edge crossing x=0:
+    // the rows clipped at x=0 leave narrow in-raster spans within column 0, so
+    // the deposit must use only the in-raster width -- the off-raster part of
+    // the row's dy is already lumped into column 0 by the clip.  (Double-count
+    // that and (0,1) reads ~145 instead of ~9; only the gallery's edge-clipped
+    // discs caught it before this test.)
+    {
+        int const w = 8, h = 8, len = w * h;
+        uint8_t *__counted_by(len) out = malloc((size_t)len);
+        CHECK(out != NULL);
+        if (out) {
+            // Hypotenuse x(y) = 0.8 - 0.6*y crosses x=0 at y = 4/3.
+            float tri[6] = { -4, 0, 0.8f, 0, -4, 8 };
+            CHECK(cnvs_cover_reset(&c, w, h));
+            add_poly(&c, w, h, tri, 3);
+            cnvs_cover_resolve(&c, w, h, CNVS_NONZERO, out);
+            CHECK(abs(cov(out, len, w, 0, 0) - 128) <= 2);    // half-covered, unclipped row
+            CHECK(cov(out, len, w, 1, 0) <= 1);               // right of the edge
+            CHECK(abs(cov(out, len, w, 0, 1) - 9) <= 2);      // clipped row: area only to y=4/3
+            CHECK(cov(out, len, w, 0, 2) <= 1);               // edge fully left of raster
+            free(out);
+        }
+    }
+
     // Even-odd: an inner rect of the same winding punches a hole.
     {
         int const w = 8, h = 8, len = w * h;
