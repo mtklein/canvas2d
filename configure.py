@@ -225,6 +225,11 @@ def main():
     w("  command = $cmd")
     w("  pool = console")
     w("")
+    w("rule profile_scene")
+    w("  command = $cmd")
+    w("  pool = console")
+    w("  description = sample(1): self-time across the whole gallery (real scenes)")
+    w("")
     w("rule rendercmp")
     w("  command = $cmd")
     w("  pool = console")
@@ -402,6 +407,12 @@ def main():
     cpu_pipeline_exes = [f"build/release-cpu/{s}" for s in sorted(PIPELINE_BENCHES)]
     w(f"build profile: profile {' '.join(release_bench_exes + cpu_pipeline_exes)}")
     w("  cmd = sh bench/profile.sh build/release ; sh bench/profile.sh build/release-cpu")
+    # `profile-scene` samples the gallery (the real public-API pipeline across every
+    # scene) rather than a single micro-bench -- the cpu build, since `sample` is
+    # CPU-only.  Loops via GALLERY_REPS so there's enough run time to sample.  No output
+    # file, always reruns.
+    w("build profile-scene: profile_scene build/release-cpu/gallery")
+    w("  cmd = sh bench/profile_scene.sh build/release-cpu/gallery")
     # `rendercmp` pits the two shipping compositor backends against each other on the
     # real-pipeline bench (metal vs cpu); names no output file, so it always reruns.
     # Two shapes: per-frame readback (the getImageData/PNG-export workload, a sync per

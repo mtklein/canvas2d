@@ -10,8 +10,22 @@
 
 static float const TAU = 6.2831853f;
 
+// Profiling knob.  GALLERY_REPS renders every scene that many times so `sample` has
+// a few seconds of the real rendering pipeline to profile (the one-shot gallery
+// finishes in ~0.2 s, too brief to sample).  PNG encoding would dominate and distort
+// such a profile, so save() writes files only on the final rep; the default
+// (GALLERY_REPS unset -> one rep, g_skip_save stays false) renders and writes exactly
+// as before, so `ninja images` is unchanged.
+static bool g_skip_save = false;
+
+static int gallery_reps(void) {
+    char const *__null_terminated env = getenv("GALLERY_REPS");
+    int reps = env ? atoi(env) : 1;
+    return reps < 1 ? 1 : reps;
+}
+
 static void save(canvas *__single cv, char const *__null_terminated path) {
-    if (!canvas_write_png(cv, path)) {
+    if (!g_skip_save && !canvas_write_png(cv, path)) {
         (void)fprintf(stderr, "gallery: write failed: %s\n", path);
     }
     canvas_destroy(cv);
@@ -1519,6 +1533,8 @@ static float batch_rand(void) {
 }
 
 static void batching(void) {
+    batch_rng = 0x1234567u;  // reseed so the scene is reproducible regardless of how
+                             // many times it runs (GALLERY_REPS calls it repeatedly)
     canvas *__single c = canvas_create(300, 120);
     if (!c) {
         return;
@@ -1717,7 +1733,7 @@ static void shadows(void) {
     save(c, "gallery/shadows.png");
 }
 
-int main(void) {
+static void render_all(void) {
     shapes();
     affine();
     winding();
@@ -1746,5 +1762,13 @@ int main(void) {
     hittest();
     blend();
     shadows();
+}
+
+int main(void) {
+    int reps = gallery_reps();
+    for (int rep = 0; rep < reps; rep++) {
+        g_skip_save = rep < reps - 1;  // write PNGs only on the final rep
+        render_all();
+    }
     return 0;
 }
