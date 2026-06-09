@@ -43,8 +43,12 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
 - **Text shaping** maps code point → glyph 1:1: no ligatures, contextual forms, or
   bidi, and only the BMP path is exercised (CJK works; emoji/astral untested).
-- **`fill`/`stroke`/`clip`** have no `Path2D` overload, and the fill rule is taken
-  from state rather than an explicit argument.
+- **`fill`/`stroke`/`clip`** on the *current* path take the fill rule from state,
+  not an explicit argument (the `Path2D` overloads — `fill_path`/`stroke_path`/
+  `clip_path` — do take an explicit rule).
+- **`Path2D`** has no SVG path-data string constructor (string parsing); the
+  constructible object, `add_path`, the builders, and the
+  fill/stroke/clip/isPointIn* overloads are all supported.
 - **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color
   strings), linear/radial/conic gradients, and image patterns — and the
   gradients/patterns are state setters (the pattern image is borrowed), not
@@ -59,8 +63,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **Shadows** — `shadowColor`, `shadowBlur`, `shadowOffsetX`, `shadowOffsetY`.
 - **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
   `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).
-- **`Path2D`** — no constructible path object, no `addPath`, no SVG path-data
-  string, and none of the `fill/stroke/clip/isPointIn*` overloads that take one.
 
 ## Out of scope for a headless renderer
 

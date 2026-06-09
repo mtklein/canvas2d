@@ -1246,16 +1246,9 @@ static bool point_in_tri(cnvs_vec2 q, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
     return !(neg && pos);
 }
 
-bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
-    if (!isfinite(x) || !isfinite(y)) {
-        return false;
-    }
-    // Build the same stroke triangles canvas_stroke would paint, then test the
-    // (transformed) query point against their union -- inside any triangle hits.
-    if (!build_stroke_verts(cv, &cv->path)) {
-        return false;
-    }
-    cnvs_vec2 q = xf(cv, x, y);
+// Whether q lies in the stroke triangles currently in cv->scratch_verts (their
+// union -- inside any triangle counts).
+static bool stroke_verts_contain(canvas *__single cv, cnvs_vec2 q) {
     for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
         if (point_in_tri(q, cv->scratch_verts.data[i], cv->scratch_verts.data[i + 1],
                          cv->scratch_verts.data[i + 2])) {
@@ -1263,6 +1256,18 @@ bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
         }
     }
     return false;
+}
+
+bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
+    if (!isfinite(x) || !isfinite(y)) {
+        return false;
+    }
+    // Build the same stroke triangles canvas_stroke would paint, then test the
+    // (transformed) query point against their union.
+    if (!build_stroke_verts(cv, &cv->path)) {
+        return false;
+    }
+    return stroke_verts_contain(cv, xf(cv, x, y));
 }
 
 void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h) {
@@ -1775,4 +1780,214 @@ void canvas_put_image_data_dirty(canvas *__single cv,
     }
     put_image_sub(cv, data, len, w, dx, dy,
                   (int)dxx, (int)dyy, (int)dww, (int)dhh);
+}
+
+// --- Path2D -----------------------------------------------------------------
+//
+// A Path2D records its commands in user space and replays them through the
+// canvas's path methods (reusing all the curve/arc/rounding logic) into a fresh
+// device-space path at draw time, so it honours the current transform without
+// disturbing the canvas's own current path.
+
+typedef enum {
+    P2D_MOVE, P2D_LINE, P2D_QUAD, P2D_CUBIC, P2D_ARC, P2D_ELLIPSE,
+    P2D_ARC_TO, P2D_RECT, P2D_ROUND_RECT, P2D_CLOSE
+} p2d_op;
+
+typedef struct {
+    p2d_op op;
+    float a[8];  // op arguments (ellipse uses the most: x,y,rx,ry,rotation,sa,ea)
+    bool ccw;    // arc / ellipse winding direction
+} p2d_cmd;
+
+struct canvas_path2d {
+    p2d_cmd *__counted_by(cap) cmds;
+    int len;
+    int cap;
+};
+
+canvas_path2d *__single canvas_path2d_create(void) {
+    return calloc(1, sizeof(canvas_path2d));  // cmds=NULL, len=cap=0 (consistent)
+}
+
+void canvas_path2d_destroy(canvas_path2d *__single p) {
+    if (!p) {
+        return;
+    }
+    free(p->cmds);
+    free(p);
+}
+
+static void p2d_push(canvas_path2d *__single p, p2d_cmd c) {
+    if (p->len >= p->cap) {
+        int nc = cnvs_grow_cap(p->cap, p->len + 1);
+        p2d_cmd *ncmds = realloc(p->cmds, (size_t)nc * sizeof *ncmds);
+        if (!ncmds) {
+            return;  // OOM: drop the command (best-effort, matches the path builders)
+        }
+        p->cmds = ncmds;
+        p->cap = nc;
+    }
+    p->cmds[p->len] = c;
+    p->len += 1;
+}
+
+void canvas_path2d_move_to(canvas_path2d *__single p, float x, float y) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_MOVE, .a = { x, y } });
+}
+
+void canvas_path2d_line_to(canvas_path2d *__single p, float x, float y) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_LINE, .a = { x, y } });
+}
+
+void canvas_path2d_quadratic_curve_to(canvas_path2d *__single p,
+                                      float cpx, float cpy, float x, float y) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_QUAD, .a = { cpx, cpy, x, y } });
+}
+
+void canvas_path2d_bezier_curve_to(canvas_path2d *__single p, float c1x, float c1y,
+                                   float c2x, float c2y, float x, float y) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_CUBIC, .a = { c1x, c1y, c2x, c2y, x, y } });
+}
+
+void canvas_path2d_arc(canvas_path2d *__single p, float x, float y, float radius,
+                       float start_angle, float end_angle, bool anticlockwise) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_ARC,
+                           .a = { x, y, radius, start_angle, end_angle },
+                           .ccw = anticlockwise });
+}
+
+void canvas_path2d_ellipse(canvas_path2d *__single p, float x, float y,
+                           float rx, float ry, float rotation,
+                           float start_angle, float end_angle, bool anticlockwise) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_ELLIPSE,
+                           .a = { x, y, rx, ry, rotation, start_angle, end_angle },
+                           .ccw = anticlockwise });
+}
+
+void canvas_path2d_arc_to(canvas_path2d *__single p, float x1, float y1,
+                          float x2, float y2, float radius) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_ARC_TO, .a = { x1, y1, x2, y2, radius } });
+}
+
+void canvas_path2d_rect(canvas_path2d *__single p, float x, float y,
+                        float w, float h) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_RECT, .a = { x, y, w, h } });
+}
+
+void canvas_path2d_round_rect(canvas_path2d *__single p, float x, float y,
+                              float w, float h, float radius) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_ROUND_RECT, .a = { x, y, w, h, radius } });
+}
+
+void canvas_path2d_close_path(canvas_path2d *__single p) {
+    p2d_push(p, (p2d_cmd){ .op = P2D_CLOSE });
+}
+
+void canvas_path2d_add_path(canvas_path2d *__single dst,
+                            canvas_path2d const *__single src) {
+    for (int i = 0; i < src->len; i++) {
+        p2d_push(dst, src->cmds[i]);
+    }
+}
+
+// Replay a Path2D's commands into cv->path through the canvas path methods (which
+// transform each coordinate by the current CTM and flatten curves at device tol).
+static void p2d_replay(canvas *__single cv, canvas_path2d const *__single p) {
+    for (int i = 0; i < p->len; i++) {
+        p2d_cmd c = p->cmds[i];
+        float const *a = c.a;
+        switch (c.op) {
+            case P2D_MOVE:  canvas_move_to(cv, a[0], a[1]); break;
+            case P2D_LINE:  canvas_line_to(cv, a[0], a[1]); break;
+            case P2D_QUAD:  canvas_quadratic_curve_to(cv, a[0], a[1], a[2], a[3]); break;
+            case P2D_CUBIC: canvas_bezier_curve_to(cv, a[0], a[1], a[2], a[3],
+                                                   a[4], a[5]); break;
+            case P2D_ARC:   canvas_arc(cv, a[0], a[1], a[2], a[3], a[4], c.ccw); break;
+            case P2D_ELLIPSE: canvas_ellipse(cv, a[0], a[1], a[2], a[3], a[4],
+                                             a[5], a[6], c.ccw); break;
+            case P2D_ARC_TO: canvas_arc_to(cv, a[0], a[1], a[2], a[3], a[4]); break;
+            case P2D_RECT:  canvas_rect(cv, a[0], a[1], a[2], a[3]); break;
+            case P2D_ROUND_RECT: canvas_round_rect(cv, a[0], a[1], a[2], a[3], a[4]);
+                            break;
+            case P2D_CLOSE: canvas_close_path(cv); break;
+        }
+    }
+}
+
+void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
+                      canvas_fill_rule rule) {
+    // Replay into a fresh device-space path without touching the current path:
+    // copy the current path aside, build, fill, free, restore.
+    cnvs_path saved = cv->path;
+    cnvs_vec2 saved_user = cv->cur_user;
+    cnvs_path_init(&cv->path);
+    p2d_replay(cv, p);
+    fill_device_path(cv, &cv->path,
+                     rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
+    cnvs_path_free(&cv->path);
+    cv->path = saved;
+    cv->cur_user = saved_user;
+}
+
+void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
+    cnvs_path saved = cv->path;
+    cnvs_vec2 saved_user = cv->cur_user;
+    cnvs_path_init(&cv->path);
+    p2d_replay(cv, p);
+    stroke_device_path(cv, &cv->path);
+    cnvs_path_free(&cv->path);
+    cv->path = saved;
+    cv->cur_user = saved_user;
+}
+
+void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
+                      canvas_fill_rule rule) {
+    cnvs_path saved = cv->path;
+    cnvs_vec2 saved_user = cv->cur_user;
+    cnvs_fill_rule saved_rule = cv->cur.fill_rule;
+    cnvs_path_init(&cv->path);
+    p2d_replay(cv, p);
+    // canvas_clip reads the current fill rule; honour the explicit one here.
+    cv->cur.fill_rule = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    canvas_clip(cv);
+    cv->cur.fill_rule = saved_rule;
+    cnvs_path_free(&cv->path);
+    cv->path = saved;
+    cv->cur_user = saved_user;
+}
+
+bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__single p,
+                               float x, float y, canvas_fill_rule rule) {
+    if (!isfinite(x) || !isfinite(y)) {
+        return false;
+    }
+    cnvs_path saved = cv->path;
+    cnvs_vec2 saved_user = cv->cur_user;
+    cnvs_path_init(&cv->path);
+    p2d_replay(cv, p);
+    bool inside = path_contains(&cv->path, xf(cv, x, y),
+                                rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
+    cnvs_path_free(&cv->path);
+    cv->path = saved;
+    cv->cur_user = saved_user;
+    return inside;
+}
+
+bool canvas_is_point_in_stroke_path(canvas *__single cv,
+                                    canvas_path2d const *__single p,
+                                    float x, float y) {
+    if (!isfinite(x) || !isfinite(y)) {
+        return false;
+    }
+    cnvs_path saved = cv->path;
+    cnvs_vec2 saved_user = cv->cur_user;
+    cnvs_path_init(&cv->path);
+    p2d_replay(cv, p);
+    bool inside = build_stroke_verts(cv, &cv->path) &&
+                  stroke_verts_contain(cv, xf(cv, x, y));
+    cnvs_path_free(&cv->path);
+    cv->path = saved;
+    cv->cur_user = saved_user;
+    return inside;
 }

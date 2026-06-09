@@ -175,6 +175,53 @@ bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
 // transform, as for is_point_in_path; non-finite coordinates return false.
 bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y);
 
+// Path2D: a constructible path object, independent of the canvas and its current
+// path.  Coordinates are recorded in user space and transformed by the canvas's
+// current transform when the path is filled/stroked/clipped/hit-tested -- so the
+// same Path2D draws differently under different transforms (unlike the current
+// path, whose points are baked at build time).  NULL on allocation failure; free
+// with canvas_path2d_destroy.
+typedef struct canvas_path2d canvas_path2d;
+canvas_path2d *__single canvas_path2d_create(void);
+void canvas_path2d_destroy(canvas_path2d *__single p);
+
+// Build a Path2D.  These mirror the canvas path methods (a zero-radius corner is
+// sharp; arc/ellipse angles are radians; round_rect takes one scalar radius).
+void canvas_path2d_move_to(canvas_path2d *__single p, float x, float y);
+void canvas_path2d_line_to(canvas_path2d *__single p, float x, float y);
+void canvas_path2d_quadratic_curve_to(canvas_path2d *__single p,
+                                      float cpx, float cpy, float x, float y);
+void canvas_path2d_bezier_curve_to(canvas_path2d *__single p, float c1x, float c1y,
+                                   float c2x, float c2y, float x, float y);
+void canvas_path2d_arc(canvas_path2d *__single p, float x, float y, float radius,
+                       float start_angle, float end_angle, bool anticlockwise);
+void canvas_path2d_ellipse(canvas_path2d *__single p, float x, float y,
+                           float rx, float ry, float rotation,
+                           float start_angle, float end_angle, bool anticlockwise);
+void canvas_path2d_arc_to(canvas_path2d *__single p, float x1, float y1,
+                          float x2, float y2, float radius);
+void canvas_path2d_rect(canvas_path2d *__single p, float x, float y,
+                        float w, float h);
+void canvas_path2d_round_rect(canvas_path2d *__single p, float x, float y,
+                              float w, float h, float radius);
+void canvas_path2d_close_path(canvas_path2d *__single p);
+// Append all of `src`'s commands to `dst` (addPath, without a transform).
+void canvas_path2d_add_path(canvas_path2d *__single dst,
+                            canvas_path2d const *__single src);
+
+// Fill / stroke / clip / hit-test a Path2D (the fill rule is explicit here, not
+// taken from state).  None of these disturb the canvas's current path.
+void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
+                      canvas_fill_rule rule);
+void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p);
+void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
+                      canvas_fill_rule rule);
+bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__single p,
+                               float x, float y, canvas_fill_rule rule);
+bool canvas_is_point_in_stroke_path(canvas *__single cv,
+                                    canvas_path2d const *__single p,
+                                    float x, float y);
+
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
 // Gradient stroke paint, mirroring the fill gradient calls; stroke() uses it
 // until the next canvas_set_stroke_rgba.  (Coordinates are baked through the
