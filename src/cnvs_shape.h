@@ -24,6 +24,7 @@ typedef struct {
     int32_t *__counted_by(count) cluster;    // source UTF-16 index per glyph (logical)
     int count;
     bool rtl;
+    void *__single font;   // opaque CTFontRef for this run (font fallback), retained
 } cnvs_glyph_run;
 
 typedef struct {
@@ -41,3 +42,9 @@ void cnvs_shaped_free(cnvs_shaped *__single s);
 // Checked-core consumers.
 float cnvs_shaped_width(cnvs_shaped const *__single s);                // sum of advances
 int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x);    // hit-test -> UTF-16 index, or -1
+
+// Copy a run's font name into `buf` (UTF-8, NUL-terminated within `cap`); returns the
+// byte length, or -1.  Boundary helper: the opaque font handle goes in, an output
+// buffer the boundary fills within `cap` comes back.  Used to confirm fallback (a run
+// that fell back to a different font reports a different name).
+int cnvs_run_font_name(void const *__single font, char *__counted_by(cap) buf, int cap);

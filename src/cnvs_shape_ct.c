@@ -10,6 +10,23 @@
 #include <CoreText/CoreText.h>
 
 #include <stdlib.h>
+#include <string.h>
+
+// Copy a run's font name into the checked core's buffer.  The opaque CTFontRef goes
+// in; CFStringGetCString fills `buf` within `cap` (so the boundary respects the
+// caller's bound -- the inverse of the glyph-run hand-off).
+int cnvs_run_font_name(void const *font, char *buf, int cap) {
+    if (!font || cap <= 0) {
+        return -1;
+    }
+    CFStringRef name = CTFontCopyPostScriptName((CTFontRef)font);
+    if (!name) {
+        return -1;
+    }
+    Boolean ok = CFStringGetCString(name, buf, cap, kCFStringEncodingUTF8);
+    CFRelease(name);
+    return ok ? (int)strlen(buf) : -1;
+}
 
 void cnvs_shaped_free(cnvs_shaped *s) {
     if (!s) {
@@ -20,6 +37,9 @@ void cnvs_shaped_free(cnvs_shaped *s) {
             free(s->run[r].glyph);
             free(s->run[r].xadv);
             free(s->run[r].cluster);
+            if (s->run[r].font) {
+                CFRelease(s->run[r].font);
+            }
         }
         free(s->run);
     }
@@ -33,6 +53,11 @@ static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
     CFIndex gc = CTRunGetGlyphCount(run);
     dst->count = (int)gc;
     dst->rtl = (CTRunGetStatus(run) & kCTRunStatusRightToLeft) != 0;
+    // The run's font (font fallback): retain it so the opaque handle outlives the
+    // CTLine, store it as void* for the checked core to pass back to the boundary.
+    CFDictionaryRef ra = CTRunGetAttributes(run);
+    CTFontRef rf = ra ? CFDictionaryGetValue(ra, kCTFontAttributeName) : NULL;
+    dst->font = rf ? (void *)CFRetain(rf) : NULL;
     dst->glyph = malloc((size_t)gc * sizeof *dst->glyph);
     dst->xadv = malloc((size_t)gc * sizeof *dst->xadv);
     dst->cluster = malloc((size_t)gc * sizeof *dst->cluster);
