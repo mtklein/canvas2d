@@ -102,6 +102,12 @@ and scaled + rotated (AA quad edges from the coverage rasterizer):
 
 ![imagedata](gallery/imagedata.png)
 
+`createImageData` builds one rainbow-ring image; `putImageData` stamps it whole
+(left), while the dirty-rectangle overload writes only a checkerboard of sub-rects
+that register into the same picture (right):
+
+![dirtyrect](gallery/dirtyrect.png)
+
 Text — `fillText`/`strokeText` in Libian TC (隸書, a clerical-script face), glyph
 outlines from Core Text, rasterized by the same analytic-coverage fill as
 everything else, so they take a gradient fill, a stroke, and the transform — and

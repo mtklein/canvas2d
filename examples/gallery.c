@@ -942,6 +942,66 @@ static void hittest(void) {
     save(c, "gallery/hittest.png");
 }
 
+// createImageData + putImageData dirty-rect: build one rainbow-ring image, stamp
+// it whole on the left, and on the right write only a checkerboard of dirty
+// sub-rects (the same image origin, so the tiles register into one picture).
+static void dirtyrect(void) {
+    canvas *__single c = canvas_create(518, 210);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 518.0f, 210.0f);
+
+    int const W = 220, H = 150;
+    int const Lx = 24, Ly = 24, Rx = 274, Ry = 24;
+
+    int len = -1;
+    uint8_t *img = canvas_create_image_data(c, W, H, &len);
+    if (img) {
+        for (int y = 0; y < H; y++) {
+            for (int x = 0; x < W; x++) {
+                int i = (y * W + x) * 4;
+                float dx = (float)x - (float)W * 0.5f;
+                float dy = (float)y - (float)H * 0.5f;
+                float t = sqrtf(dx * dx + dy * dy) * (1.0f / 24.0f);  // ring period
+                img[i]     = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * t)) + 0.5f);
+                img[i + 1] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (t + 0.33f))) + 0.5f);
+                img[i + 2] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (t + 0.66f))) + 0.5f);
+                img[i + 3] = 255;
+            }
+        }
+        // Left: the whole image in one putImageData.
+        canvas_put_image_data(c, img, len, W, H, Lx, Ly);
+        // Right: only a checkerboard of dirty sub-rects is written.
+        int const tile = 22;
+        for (int j = 0; j * tile < H; j++) {
+            for (int i = 0; i * tile < W; i++) {
+                if (((i + j) & 1) == 0) {
+                    canvas_put_image_data_dirty(c, img, len, W, H, Rx, Ry,
+                                                i * tile, j * tile, tile, tile);
+                }
+            }
+        }
+        free(img);
+    }
+
+    canvas_set_stroke_rgba(c, 0.40f, 0.44f, 0.52f, 0.9f);
+    canvas_set_line_width(c, 1.5f);
+    canvas_stroke_rect(c, (float)Lx, (float)Ly, (float)W, (float)H);
+    canvas_stroke_rect(c, (float)Rx, (float)Ry, (float)W, (float)H);
+
+    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "putImageData (full)", (float)Lx + (float)W * 0.5f, 196.0f);
+    canvas_fill_text(c, "putImageData (dirty-rect)", (float)Rx + (float)W * 0.5f,
+                     196.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/dirtyrect.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1195,6 +1255,7 @@ int main(void) {
     winding();
     dashes();
     imagedata();
+    dirtyrect();
     joinscaps();
     paths();
     roundrect();
