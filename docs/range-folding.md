@@ -69,3 +69,43 @@ A memory-bound access pays little because the check hides in a cache-miss shadow
 counts and pays the full ~1.5–1.6×. That, not raw arithmetic, is where
 `-fbounds-safety` actually costs you; and the escape (a forge) is the same
 checked-domain exit that [bit-stealing](tagptr.md) needed.
+
+## Across optimization levels: the check blocks the vectorizer
+
+The project ships `-Os`. Re-running at `-O2`/`-O3` splits into two clean answers.
+
+**Elision is identical at every level.** The in-loop check counts above don't move
+between `-Os`, `-O2`, and `-O3` — the pass folds the same loop-induction bounds and
+leaves the same computed-index checks in. Higher optimization does *not* add the
+value-range analysis that would fold the mask or the modulo.
+
+**But the cost explodes, because the check blocks auto-vectorization.** Same sums,
+release (`-fbounds-safety`) vs unsafe, per level:
+
+| check cost | `-Os` | `-O2` | `-O3` |
+|---|---|---|---|
+| masked | 1.7× | **3.3×** | **3.3×** |
+| contiguous runs | 1.6× | **9.6×** | **9.3×** |
+
+The *unsafe* builds vectorize at `-O2`/`-O3` — the contiguous-runs reduction drops
+51 → 8.6 ms (~6×), the masked/gather form gets ~1.9× — but the *bounds-checked*
+builds don't move (runs: 81 → 83 ms). The per-element trap branch is a data-dependent
+exit the vectorizer won't cross, so the checked loop stays scalar. The asm is
+unambiguous: at `-O2`, `ring_sum_runs` unsafe has 6 vector loads + 60 vector adds and
+no `brk`; the safe build has zero vector ops and one `brk`. The check cost grows from
+~1.6× to ~9.6× not because the check got slower but because the baseline got 6× faster
+and the checked build couldn't follow.
+
+So the model takes a third factor:
+
+> **cost ≈ (elided?) × (hidden by a stall?) × (blocks vectorization?)**
+
+At `-Os` that third factor is ~1 — the baseline isn't vectorized either — which is why
+every probe in this exploration measured only a modest flag cost. **`-Os` flatters
+`-fbounds-safety`.** At `-O2`/`-O3` the third factor dominates for any vectorizable
+loop with an un-elided per-element check: the check pins the safe build to scalar
+while the baseline pulls away. The register-residency wins ([the pipeline's
+channels](pixel-pipelines.md), [the `vtbl` table](gather-lut.md)) are immune — no
+per-element check, nothing to block the vectorizer — so "keep the hot index in the
+canonical `i < count` form, or move the data into registers" matters *more* at
+production optimization than `-Os` alone let on.
