@@ -25,12 +25,43 @@ docs/bounds-safety.md. The shader is embedded with C23 #embed (--embed-dir=shade
 
 import os
 import glob
+import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def rel(p):
     return os.path.relpath(p, HERE)
+
+
+def homebrew_clang():
+    """Resolve Homebrew clang + the macOS SDK for the libFuzzer fuzz targets, or
+    None if Homebrew llvm isn't installed.
+
+    The fuzz targets are the one corner of the build that does NOT use Apple clang:
+    Apple clang can't link the libFuzzer runtime (it ships only with Homebrew
+    clang), and the fuzz build drops -fbounds-safety (Apple-clang-only) the same way
+    the `unsafe` variant does -- the annotations vanish via fuzz/shim/ptrcheck.h.
+    Homebrew clang needs -isysroot pointed at the SDK explicitly (Apple clang finds
+    it implicitly).  When llvm isn't installed we return None and the `fuzz` target
+    is simply not emitted, so a bare `ninja` is unaffected (`ninja fuzz` needs
+    `brew install llvm`).  $CC overrides the compiler."""
+    cc = os.environ.get("CC")
+    if not cc:
+        try:
+            cc = os.path.join(subprocess.run(
+                ["brew", "--prefix", "llvm"], capture_output=True, text=True,
+                check=True).stdout.strip(), "bin", "clang")
+        except (OSError, subprocess.CalledProcessError):
+            cc = "/opt/homebrew/opt/llvm/bin/clang"
+    if not os.path.exists(cc):
+        return None
+    try:
+        sdk = subprocess.run(["xcrun", "--show-sdk-path"], capture_output=True,
+                             text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return cc, sdk
 
 
 CSTD = "-std=c23"
@@ -113,6 +144,27 @@ _DEBUG = ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all
 # declaration macro-expands onto the wrapper, so size tracking is preserved.
 OOM_DEFINES = ("-Dmalloc=cnvs_oom_malloc -Drealloc=cnvs_oom_realloc "
                "-Dcalloc=cnvs_oom_calloc")
+
+# --- libFuzzer fuzz targets (opt-in `ninja fuzz`; see homebrew_clang() above) ----
+# fuzzer-no-link instruments every TU for SanitizerCoverage; the libFuzzer driver
+# is pulled in only at the final link.  The use-after-{scope,return} flags match the
+# debug variant's temporal ASan; -fno-sanitize-recover=all so a UBSan finding aborts
+# and libFuzzer records it.  -Wno-unknown-warning-option tolerates Apple-only flags.
+FUZZ_SAN_COMMON = ("-fsanitize=address,undefined -fno-sanitize-recover=all "
+                   "-fsanitize-address-use-after-scope "
+                   "-fsanitize-address-use-after-return=always")
+FUZZ_COMPILE_SAN = "-fsanitize=fuzzer-no-link " + FUZZ_SAN_COMMON
+FUZZ_LINK_SAN = "-fsanitize=fuzzer " + FUZZ_SAN_COMMON
+FUZZ_CFLAGS = ("-std=c23 -g -O1 -fno-omit-frame-pointer -Ifuzz/shim -Ifuzz "
+               "-Iinclude -Isrc -Wall -Wno-unknown-warning-option")
+# Modules the libFuzzer harnesses do NOT link: the pixvm VM, the colour LUT, and
+# the ring buffer aren't reached by any harness.  The fuzz core is otherwise the
+# whole canvas render core (core_c, globbed) plus the CPU compositor backend -- so
+# a new cnvs_*.c module is picked up automatically.  Kept as an *exclude* set
+# because it's small and stable, where the include list grows with every feature
+# (and silently drifting out of date is exactly how the old hand-listed CORE rotted).
+FUZZ_CORE_EXCLUDE = {"lut.c", "ring.c", "pixvm_pipe.c", "pixvm_switch.c",
+                     "pixvm_thread.c"}
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?, backend).
 # The -cpu variants run the test suite against the software compositor,
@@ -373,6 +425,70 @@ def main():
         w(f"build {fuzz_stamp}: corpus_replay {' '.join(fuzz_corpus)} | {fuzz_replay}")
         w(f"  bin = ./{fuzz_replay}")
         w(f"build fuzzcorpus: phony {fuzz_stamp}")
+
+    # `ninja fuzz`: build the libFuzzer harnesses (opt-in -- needs Homebrew clang;
+    # see homebrew_clang()).  This is the whole fuzz build, folded in from the old
+    # fuzz/build.sh so `ninja` is the single entry point: native per-TU edges (real
+    # incremental + parallel builds, header deps tracked via -MMD), not a serial
+    # shell loop.  Harnesses are globbed (fuzz/fuzz_*.c), so adding one needs no
+    # edit here.  Each links the FUZZ_CORE objects + libFuzzer + ASan/UBSan; the
+    # seed generator runs into the gitignored fuzz/seeds/.  Stays opt-in (not in
+    # `all`): it's a campaign-prep step needing `brew install llvm`, not a gate --
+    # the in-`all` regression is `fuzzcorpus`, which replays the committed corpus
+    # under Apple clang above.
+    hb = homebrew_clang()
+    fuzz_harnesses = sorted(os.path.splitext(os.path.basename(p))[0]
+                            for p in glob.glob(os.path.join(HERE, "fuzz", "fuzz_*.c")))
+    if hb and fuzz_harnesses:
+        fuzz_cc, fuzz_sdk = hb
+        w("")
+        w(f"fuzzcc = {fuzz_cc}")
+        w(f"fuzzsdk = {fuzz_sdk}")
+        w("")
+        # One compile rule; $fuzzdef is empty for core TUs, -DFUZZ_NO_MAIN for the
+        # harnesses (so libFuzzer supplies main, not their file-replay main()).
+        w("rule cc_fuzz")
+        w(f"  command = $fuzzcc {FUZZ_CFLAGS} {FUZZ_COMPILE_SAN} -isysroot $fuzzsdk "
+          "$fuzzdef -MMD -MF $out.d -c $in -o $out")
+        w("  depfile = $out.d")
+        w("  deps = gcc")
+        w("")
+        w("rule link_fuzz")
+        w(f"  command = $fuzzcc {FUZZ_LINK_SAN} -isysroot $fuzzsdk $in "
+          f"{BASE_FRAMEWORKS} -o $out")
+        w("")
+        # seed_gen is a plain host tool (no sanitizers); it writes seeds into the
+        # gitignored fuzz/seeds/, which it does not create -- so mkdir first.
+        w("rule cc_seedgen")
+        w("  command = cc -std=c23 -O2 -Ifuzz $in -o $out")
+        w("")
+        w("rule gen_seeds")
+        w("  command = mkdir -p fuzz/seeds && $bin fuzz/seeds && touch $out")
+        w("")
+        # The canvas render core (core_c) minus the unreached subsystems, plus the
+        # CPU compositor backend (core_c excludes both backends).
+        fuzz_core_srcs = [c for c in core_c
+                          if os.path.basename(c) not in FUZZ_CORE_EXCLUDE]
+        fuzz_core_srcs.append(BACKENDS["cpu"][0])
+        fuzz_core_objs = []
+        for c in fuzz_core_srcs:
+            stem = os.path.splitext(os.path.basename(c))[0]
+            o = f"build/fuzz/obj/{stem}.o"
+            w(f"build {o}: cc_fuzz {c}")
+            fuzz_core_objs.append(o)
+        core_args = " ".join(fuzz_core_objs)
+        fuzz_bins = []
+        for h in fuzz_harnesses:
+            ho = f"build/fuzz/obj/{h}.o"
+            w(f"build {ho}: cc_fuzz fuzz/{h}.c")
+            w("  fuzzdef = -DFUZZ_NO_MAIN")
+            w(f"build build/fuzz/{h}: link_fuzz {core_args} {ho}")
+            fuzz_bins.append(f"build/fuzz/{h}")
+        w("build build/fuzz/seed_gen: cc_seedgen fuzz/seed_gen.c")
+        w("build build/fuzz/seeds.stamp: gen_seeds build/fuzz/seed_gen")
+        w("  bin = ./build/fuzz/seed_gen")
+        w(f"build fuzz: phony {' '.join(fuzz_bins)} build/fuzz/seeds.stamp")
+
     # `backenddiff`: render the diff scenes on both backends (release = Metal,
     # release-cpu = software) and assert they agree per channel within a tolerance
     # ratchet.  Geometry/AA/gradient/unpremultiply are shared CPU code, so any delta
