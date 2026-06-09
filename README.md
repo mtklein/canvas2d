@@ -392,16 +392,16 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 7.9 ms | 7.9 ms | **1.00×** |
-| `bench_blur_v` — box blur, vertical pass (stride `w`; memory-bound) | 93 ms | 93 ms | **1.00×** |
-| `bench_flatten` — cubic-Bézier flattening | 120 ms | 118 ms | **1.01×** |
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.3 ms | 9.1 ms | **1.02×** |
-| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 78 ms | 75 ms | **1.03×** |
-| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 13.4 ms | 13.1 ms | **1.03×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 51 ms | 49 ms | **1.03×** |
-| `bench` — end-to-end | 47 ms | 44 ms | **1.07×** |
-| `bench_fill` — analytic coverage fill (signed-area accumulate + 8-wide resolve) | 37 ms | 33 ms | **1.12×** |
-| `bench_blur_h` — box blur, horizontal pass (contiguous; compute-visible) | 51 ms | 34 ms | **1.52×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 8.6 ms | 8.6 ms | **1.00×** |
+| `bench_blur_v` — box blur, vertical pass (stride `w`; memory-bound) | 88 ms | 88 ms | **1.00×** |
+| `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 7.0 ms | 6.9 ms | **1.01×** |
+| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 13.0 ms | 12.8 ms | **1.01×** |
+| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 75 ms | 74 ms | **1.02×** |
+| `bench_flatten` — cubic-Bézier flattening | 120 ms | 117 ms | **1.02×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 50 ms | 49 ms | **1.03×** |
+| `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 32 ms | 30 ms | **1.07×** |
+| `bench` — end-to-end | 42 ms | 39 ms | **1.07×** |
+| `bench_blur_h` — box blur, horizontal pass (contiguous; compute-visible) | 50 ms | 32 ms | **1.55×** |
 
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
 overhead tracks how much it indexes vs how much it computes — **and the same
@@ -411,17 +411,18 @@ pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
 `memcpy` made it **13× faster and dropped the safety overhead to ~1.0×** — one span
 check per row instead of eight per pixel. PNG encode did the same when its CRC
 moved from a byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, also
-1.00×). The coverage fill got the same treatment on its resolve half — the prefix
-sum, fill-rule fold, and 8-bit convert run 8-wide with one whole-vector check per
-block — taking `bench_fill` from 1.22× to **1.12×**; what remains is the
-accumulate's scattered per-edge writes (`acc[base + col] += …`), which have no
-contiguous run to collapse. Gradients got both treatments — a 1024-entry colour
+1.00×). The coverage fill got the same treatment twice — the resolve (prefix sum,
+fill-rule fold, 8-bit convert) runs 8-wide, and the accumulate telescopes each row
+span's interior columns into a contiguous constant-add, also 8-wide with one
+whole-vector check per block — taking `bench_fill` from 1.22× to **1.07×**; the
+only writes still scattered are the one or two partial columns at each span's
+ends. Gradients got both treatments — a 1024-entry colour
 ramp built per fill (turning the per-pixel stop scan into one indexed lookup,
 ≤1/255 of colour error) *and* an 8-wide radial parameter solve — so
 `bench_gradient_fill` (the renderer's actual path) is **~5.8× faster** than the
-naive per-pixel scan (`bench_gradient`), at ~1.03× overhead: the SIMD parameter
+naive per-pixel scan (`bench_gradient`), at ~1.01× overhead: the SIMD parameter
 solve stores eight lanes per `memcpy`, one bounds check instead of eight. The
-standing worst case is the **horizontal blur pass (1.52×)**, the shadow pipeline's
+standing worst case is the **horizontal blur pass (1.55×)**, the shadow pipeline's
 sliding-window sum: contiguous, so the loads aren't hidden by memory latency, and
 almost no arithmetic to hide three checked reads + a checked write per pixel — its
 strided twin `bench_blur_v` is memory-bound and pays nothing. The full anatomy of

@@ -233,15 +233,15 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
 | phase | overhead |
 |---|---|
-| PNG encode | 1.00× |
+| 2D RGBA8 blit | 1.00× |
 | box blur, vertical pass | 1.00× |
-| cubic-Bézier flattening | 1.01× |
-| 2D RGBA8 blit | 1.02× |
-| gradient eval / gradient fill | 1.03× |
+| PNG encode | 1.01× |
+| gradient eval / gradient fill | 1.01–1.02× |
+| cubic-Bézier flattening | 1.02× |
 | stroke expansion | 1.03× |
+| analytic coverage fill | 1.07× |
 | end-to-end | 1.07× |
-| analytic coverage fill | **1.12×** |
-| box blur, horizontal pass | **1.52×** |
+| box blur, horizontal pass | **1.55×** |
 
 The isolation matters. The end-to-end ~1.07× is a blend that hides a wide spread
 between phases — and a regression in a fast phase could disappear into it. What
@@ -257,12 +257,13 @@ the spread shows:
   encode tells the same story: its CRC went from a byte-at-a-time table to ARMv8's
   `crc32` instruction (~7× faster, also 1.00×). The check you can hoist out of the
   hot loop stops costing.
-- **The coverage fill (~1.12×, down from ~1.22×)** got the same treatment on its
-  resolve half: the per-row prefix sum, fill-rule fold, and 8-bit convert run
-  8-wide with one whole-vector check per block. What remains is the accumulate's
-  per-edge writes, which scatter across the row (`acc[base + col] += …`) with no
-  contiguous run to collapse — that's the honest residual.
-- **The horizontal blur pass (~1.52×) is the standing worst case**: a contiguous
+- **The coverage fill (~1.07×, down from ~1.22×)** got the same treatment twice:
+  the resolve (per-row prefix sum, fill-rule fold, 8-bit convert) runs 8-wide,
+  and the accumulate telescopes each row span's interior columns — all depositing
+  the same constant area — into a contiguous add, also one whole-vector check per
+  block. The only writes still scattered (`acc[base + col] += …`) are the partial
+  columns at each span's ends, one or two per row segment.
+- **The horizontal blur pass (~1.55×) is the standing worst case**: a contiguous
   sliding-window sum with almost no arithmetic to hide three checked loads and a
   checked store per pixel. Its strided twin — the vertical pass, identical math a
   row apart — is memory-bound, so its checks are free. The pair is dissected in
