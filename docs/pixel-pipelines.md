@@ -16,7 +16,9 @@ where does `-fbounds-safety` help, and where does it fight back?
 They share an ISA ([../src/pixvm.h](../src/pixvm.h)): a register file of
 `PIXVM_N`-wide `_Float16` vectors, RGBA8 load/store ops, and `splat`/`mov`/`add`/`sub`/
 `mul`/`mad`. Designs 2 and 3 reuse the ISA and the test programs so the comparison
-is apples-to-apples — same work, different dispatch.
+is apples-to-apples — same work, different dispatch. A fourth design, **D**, then
+re-spells the fastest (C) with no unsafe pointers, to find how much of it survives
+strict `-fbounds-safety`. *(all implemented)*
 
 ## Design A — one big switch (implemented)
 
@@ -233,41 +235,65 @@ return trips `-Wpedantic`, the B gotcha again). The short final chunk is the one
 place lane-wise writes appear, into *local* channel vectors that don't alias
 anything — cold, and harmless.
 
-## The three together
+But is the unchecked dispatch actually *necessary* for the speed? Design D refuses
+the unsafe seams and finds out.
+
+## Design D — the register pipeline, fully checked
+
+[../src/pixvm_pipe_checked.c](../src/pixvm_pipe_checked.c) is C with both unsafe
+seams removed — strict `-fbounds-safety`, no `__unsafe_indexable`, no forge. It keeps
+the part that matters (channels still thread as `_Float16x8` `musttail` arguments, in
+registers) and replaces the seams with bounds-safety-legal constructs:
+
+- The raw program pointer becomes a `__counted_by` stage array in a struct, walked by
+  a checked `int` index threaded through `musttail`. A counted *pointer* still can't
+  thread through `musttail`, but a plain index can, and `prog[idx]` is bounds-checked.
+- The `void *ctx` becomes a typed `union` in the stage struct. Its buffer members keep
+  `uint8_t *__counted_by(len)` with a sibling `len`, so after a plain (typed) union
+  access the pixel loads/stores stay checked — no forge. Counted pointers inside a
+  union compile and check fine.
+
+Both compile clean under `-Weverything -fbounds-safety` and in the unsafe build.
+
+## All four together
 
 Same source-over program, same 256×256 tile, `-Os`, `_Float16` channels, `A`-vs-`A`
-control 1.00×:
+control 1.00×, one hyperfine run:
 
 | design | dispatch | channels | bounds-safe | unsafe | cost of checks |
 |---|---|---|---|---|---|
-| A — switch | `for`/`switch` | register file (stack) | 59.6 ms | 42.5 ms | **1.40×** |
-| B — threaded | `musttail` chain | register file (struct) | 88.5 ms | 49.7 ms | **1.78×** |
-| C — pipeline | `musttail` chain | function arguments | **31.6 ms** | 31.4 ms | **~1.0×** |
+| A — switch | `for`/`switch` | register file (stack) | 60.5 ms | 42.6 ms | **1.42×** |
+| B — threaded | `musttail` chain | register file (struct) | 88.2 ms | 50.3 ms | **1.75×** |
+| C — pipeline, unsafe seams | `musttail`, raw ptr + `void*` | function arguments | 32.9 ms | 31.5 ms | **1.04×** |
+| D — pipeline, fully checked | `musttail`, counted index + union | function arguments | 32.9 ms | 32.9 ms | **~1.0×** |
 
-Read as one axis, the three are a spectrum of *what `-fbounds-safety` is allowed to
-see*:
+The headline is **D ≈ C**: refusing the unsafe seams costs nothing measurable. So
+the earlier reading of C — "fastest because it took the dispatch out from under the
+flag" — was wrong about *why*. The win is entirely **channels in registers**, which
+needs no unsafe code at all: with the channels in `musttail` arguments there is no
+indexed register file, so the per-access `reg[d]` checks that A and B pay simply
+don't exist. C's raw program pointer and `void*` forge bought ~nothing on top of
+that — the checked index walk and the typed union are free here, because the program
+is only five coarse stages, so the per-stage dispatch re-check that taxed B at
+seventeen fine-grained ops is negligible.
 
-- **A** checks the dispatch and every register access, but runs in one function, so
-  the optimizer hoists the register-file base and the `for (pc < prog_len)` loop
-  proves the program fetch in-bounds and elides it. Cheap-ish — until fp16 shrank
-  the data and pushed the fixed-cost checks up to 1.40×.
-- **B** checks the same things but reaches each handler by an indirect `musttail`
-  the optimizer can't see across, so it re-checks the program fetch and reloads the
-  counted pointer *per opcode*. Same safety as A, ~1.8× the cost.
-- **C** has almost nothing left to check on the hot path: channels in registers
-  mean **no indexed register file** (A and B bounds-check every `reg[d]`), and the
-  raw program pointer means **no dispatch check**. Only three per-chunk buffer
-  `memcpy` checks remain, amortized over eight pixels — so the flag costs ~nothing,
-  and C is also ~1.9× faster than A outright.
+So the corrected spectrum, read as *what `-fbounds-safety` taxes*:
 
-The catch is the headline: **C is fastest and least-taxed precisely because it took
-the dispatch and the register file out from under the flag.** Its pixel memory — the
-part that actually touches large buffers — stays checked, but the program walk and
-the per-stage ctx unwrap are unchecked forges. That is the real choice the
-comparison surfaces: `-fbounds-safety` is close to free when the hot path is dense
-indexed-buffer work it can prove or amortize (A), it taxes you when the structure
-hides the checks from the optimizer (B), and it gets out of the way entirely only
-when you move the hot work into registers and accept an unchecked dispatch (C). For
-this renderer the C shape is the one to reach for — registers for the channels, a
-checked counted buffer for the pixels, and a small trusted (unchecked) program walk
-is a sound place to spend the one unsafe seam.
+- It taxes a hot path that **indexes a register file** — every `reg[d]` is a check (A,
+  B). fp16 makes this worse, not better: it shrinks the data under the fixed-cost
+  checks (A 1.08× → 1.42×).
+- It taxes **structure the optimizer can't see through** — B's per-opcode dispatch
+  re-check across an indirect `musttail`, un-hoistable, ~1.8×.
+- It costs **~nothing** when the hot values live in registers and the only checked
+  memory is a handful of per-chunk buffer accesses that amortize over the vector (C,
+  D). And reaching that does **not** require giving up checking: D is as fast as C and
+  fully bounds-safe.
+
+The practical lesson for this renderer: reach for the register-pipeline shape (D) —
+channels threaded in registers, the program a counted array walked by index, pixel
+buffers `__counted_by`, contexts typed. It is the fastest design *and* the fully
+checked one. The unsafe pointer C used was a transcription habit from how
+SkRasterPipeline is written in C++, not a requirement; under `-fbounds-safety` the
+checked spelling is right there and just as fast. (The caveat is stage count: D's
+checked index walk is free at five coarse stages; a pipeline of *many* stages would
+start paying B's per-stage tax — but pixel pipelines are short.)
