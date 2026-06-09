@@ -93,7 +93,7 @@ BACKEND_SRCS = {os.path.basename(src) for src, _fw in BACKENDS.values()}
 
 # Platform-boundary C sources: built without -fbounds-safety at -Wall -Wextra (like
 # the .m shim) because they bind un-annotated system headers, behind a bounds-safe ABI.
-BOUNDARY_C = {"cnvs_font_ct.c"}
+BOUNDARY_C = {"cnvs_font_ct.c", "cnvs_shape_ct.c"}
 
 # Benches that drive the full canvas API through the compositor (not isolated
 # kernels), so they're worth building on *both* compositor backends -- `ninja
