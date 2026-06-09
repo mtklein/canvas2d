@@ -15,6 +15,9 @@ The point of the project is twofold:
 
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
+For a focused four-design study of where `-fbounds-safety` interferes with
+performance (a vectorized pixel-processing VM, three ways), see
+**[docs/pixel-pipelines.md](docs/pixel-pipelines.md)**.
 
 ## Gallery
 
