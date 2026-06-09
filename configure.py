@@ -98,7 +98,7 @@ BOUNDARY_C = {"cnvs_font_ct.c", "cnvs_shape_ct.c"}
 # Benches that drive the full canvas API through the compositor (not isolated
 # kernels), so they're worth building on *both* compositor backends -- `ninja
 # rendercmp` compares metal vs cpu end-to-end, and both are the shipping path.
-PIPELINE_BENCHES = {"bench_render"}
+PIPELINE_BENCHES = {"bench_render", "bench_render_large"}
 
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
 # (stack use-after-scope and use-after-return) -- the class -fbounds-safety
@@ -404,17 +404,26 @@ def main():
     # a high fixed run count + extra warmup: enough samples that the mean + its
     # confidence interval are trustworthy.  (benchcmp stays at the default low count:
     # those are CPU kernels with tight variance.)
+    # Small canvas / many tiny fills (per-draw overhead dominates -> cpu wins) and a
+    # large canvas / few full-canvas fills (millions of pixels per draw -> the GPU's
+    # parallelism is meant to cross over ahead of the per-pixel software blend).  Each
+    # in both readback shapes.  rc: high run count for the noisy small bench; rcl: the
+    # large bench is heavier per run and steadier, so fewer runs keep rendercmp's
+    # wall time sane.
     rc = "--warmup 8 --runs 50"
-    render_metal = "build/release/bench_render"
-    render_cpu = "build/release-cpu/bench_render"
+    rcl = "--warmup 3 --runs 20"
+    sm, smc = "build/release/bench_render", "build/release-cpu/bench_render"
+    lg, lgc = "build/release/bench_render_large", "build/release-cpu/bench_render_large"
     rendercmp_cmd = (
-        f'hyperfine {rc} -N '
-        f'-n "render metal (per-frame readback)" ./{render_metal} '
-        f'-n "render cpu (per-frame readback)" ./{render_cpu} ; '
-        f'hyperfine {rc} '
-        f'-n "render metal (1 readback)" "BENCH_READBACK=end ./{render_metal}" '
-        f'-n "render cpu (1 readback)" "BENCH_READBACK=end ./{render_cpu}"')
-    w(f"build rendercmp: rendercmp {render_metal} {render_cpu}")
+        f'hyperfine {rc} -N -n "small metal (per-frame readback)" ./{sm} '
+        f'-n "small cpu (per-frame readback)" ./{smc} ; '
+        f'hyperfine {rc} -n "small metal (1 readback)" "BENCH_READBACK=end ./{sm}" '
+        f'-n "small cpu (1 readback)" "BENCH_READBACK=end ./{smc}" ; '
+        f'hyperfine {rcl} -N -n "large metal (per-frame readback)" ./{lg} '
+        f'-n "large cpu (per-frame readback)" ./{lgc} ; '
+        f'hyperfine {rcl} -n "large metal (1 readback)" "BENCH_READBACK=end ./{lg}" '
+        f'-n "large cpu (1 readback)" "BENCH_READBACK=end ./{lgc}"')
+    w(f"build rendercmp: rendercmp {sm} {smc} {lg} {lgc}")
     w(f"  cmd = {rendercmp_cmd}")
     # `analyze` runs the static analyzer over the checked C (core + the cpu backend;
     # the ObjC Metal shim is out of scope).  One stamp per TU so it's incremental
