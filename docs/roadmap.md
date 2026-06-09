@@ -59,13 +59,14 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
 - **Glyph outlines** are re-fetched from Core Text on every `fill_text` — no cache.
-- **Shadows** are cast from fills, strokes, and text — the op's coverage is
-  blurred (a CPU box-blur, three passes ≈ Gaussian, [blur.c](../src/blur.c)),
-  tinted, offset, and composited under the shape, all in checked C so the two
-  backends stay bit-identical. Not yet wired for `drawImage`; the offset is
-  rounded to whole device pixels; and the shadow's silhouette is the coverage
-  (exact for opaque paint, an approximation for semi-transparent gradient/pattern
-  alpha).
+- **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
+  coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
+  [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in
+  checked C so the two backends stay bit-identical. The blur approximates the
+  spec's Gaussian; the offset is rounded to whole device pixels; and the shadow's
+  silhouette is the op's coverage (exact for opaque paint/images, an
+  approximation for semi-transparent gradient/pattern alpha or a sprite's own
+  alpha shape).
 
 ## Missing entirely
 

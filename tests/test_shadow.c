@@ -80,6 +80,20 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, W, 32, 24), 0, 255, 0, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 12, 24), 255, 0, 0, 255, 2));  // stroke only
 
+    // drawImage casts a shadow too (from the destination-quad coverage): a 2x2
+    // opaque red image scaled to [8,24) casts a blue shadow at +12,+12 -> [20,36).
+    uint8_t img[16] = { 255, 0, 0, 255, 255, 0, 0, 255,
+                        255, 0, 0, 255, 255, 0, 0, 255 };
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_shadow_offset_x(cv, 12.0f);
+    canvas_set_shadow_offset_y(cv, 12.0f);
+    canvas_draw_image_scaled(cv, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // image only
+    CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
+    CHECK(px_near(pixel_at(px, len, W, 45, 45), 0, 0, 0, 0, 2));      // neither
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

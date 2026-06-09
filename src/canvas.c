@@ -1802,6 +1802,12 @@ void canvas_draw_image_subrect(canvas *__single cv,
     cover_edge(cv, b, q[3], q[0]);
     cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
 
+    // Cast the shadow from the destination-quad coverage before sampling the image
+    // (the sample loop reuses cv->tile).  As for fills, the shadow is the op's
+    // silhouette -- exact for an opaque image; a transparent sprite still shadows
+    // its whole quad rather than its alpha shape.
+    emit_shadow(cv, b);
+
     cnvs_mat inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float ga = cv->cur.global_alpha;
     bool smooth = cv->cur.image_smoothing_enabled;
