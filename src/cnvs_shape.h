@@ -86,3 +86,15 @@ void cnvs_glyph_outline(void *__single font, uint16_t glyph, float ox, float oy,
 // within (w,h) -- a pixel buffer crossing checked->boundary, mirror of the glyph run.
 void cnvs_glyph_draw(void *__single font, uint16_t glyph, float x, float y,
                      uint8_t *__counted_by(w * h * 4) px, int w, int h);
+
+// Whether `font` is a color (bitmap-glyph) font, e.g. the AppleColorEmoji a mixed
+// string falls back to.  Its glyphs have no outline and must be drawn with
+// cnvs_glyph_draw rather than cnvs_glyph_outline.  Boundary helper.
+bool cnvs_run_is_color(void const *__single font);
+
+// One glyph's tight ink bounding box in font px, baseline-relative, y up (x0,y0 =
+// bottom-left, x1,y1 = top-right).  All zero for a blank glyph.  Boundary helper:
+// sizes and places the buffer cnvs_glyph_draw fills.
+void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
+                       float *__single x0, float *__single y0,
+                       float *__single x1, float *__single y1);

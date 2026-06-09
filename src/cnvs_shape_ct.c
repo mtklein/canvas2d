@@ -148,6 +148,29 @@ void cnvs_glyph_draw(void *font, uint16_t glyph, float x, float y,
     CGColorSpaceRelease(cs);
 }
 
+bool cnvs_run_is_color(void const *font) {
+    if (!font) {
+        return false;
+    }
+    return (CTFontGetSymbolicTraits((CTFontRef)font) & kCTFontTraitColorGlyphs) != 0;
+}
+
+void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
+                       float *x1, float *y1) {
+    *x0 = 0.0f; *y0 = 0.0f; *x1 = 0.0f; *y1 = 0.0f;
+    if (!font) {
+        return;
+    }
+    CGGlyph g = (CGGlyph)glyph;
+    CGRect r = CTFontGetBoundingRectsForGlyphs((CTFontRef)font,
+                                               kCTFontOrientationDefault, &g, NULL, 1);
+    if (CGRectIsNull(r) || CGRectIsEmpty(r)) {
+        return;
+    }
+    *x0 = (float)CGRectGetMinX(r); *y0 = (float)CGRectGetMinY(r);
+    *x1 = (float)CGRectGetMaxX(r); *y1 = (float)CGRectGetMaxY(r);
+}
+
 cnvs_shaped *cnvs_shape(char const *name, float size_px, char const *text) {
     CFStringRef cfname = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
     CFStringRef str = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);

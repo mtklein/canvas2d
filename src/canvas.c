@@ -12,6 +12,7 @@
 #include "cnvs_path.h"
 #include "cnvs_png.h"
 #include "cnvs_record.h"
+#include "cnvs_shape.h"
 #include "cnvs_stroke.h"
 
 #include <limits.h>
@@ -1634,22 +1635,111 @@ static cnvs_mat text_layout_max(canvas *__single cv, cnvs_font *__single f,
     return cnvs_mat_mul(cv->cur.ctm, cond);
 }
 
-// Lay out `text` from the pen origin through `to_device` and fill the glyph
-// outlines (nonzero winding: overlapping contours fill solid).
-static void fill_text_at(canvas *__single cv, cnvs_font *__single f,
-                         char const *__counted_by(len) text, int len,
-                         float ox, float oy, cnvs_mat to_device) {
-    cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, len, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
-    fill_device_path(cv, &cv->text_path, CNVS_NONZERO);
+// Render one color (emoji) glyph as a bitmap: ask the boundary for its ink box,
+// draw it into a checked RGBA8 buffer, unpremultiply, flip to top-row-first, then
+// composite it through the CTM with canvas_draw_image_subrect -- so the emoji takes
+// the transform, clip, global alpha, and shadow like any other image.
+static void draw_color_glyph(canvas *__single cv, void *__single font,
+                             uint16_t glyph, float pen_x, float baseline_y) {
+    float x0, y0, x1, y1;
+    cnvs_glyph_bounds(font, glyph, &x0, &y0, &x1, &y1);
+    if (x1 <= x0 || y1 <= y0) {
+        return;  // blank glyph (e.g. a space in the color font)
+    }
+    int const margin = 1;
+    float bw = ceilf(x1 - x0);
+    float bh = ceilf(y1 - y0);
+    int gw = (int)bw + 2 * margin;
+    int gh = (int)bh + 2 * margin;
+    if (gw < 1 || gh < 1 || gw > 4096 || gh > 4096) {
+        return;
+    }
+    int glen = gw * gh * 4;
+    uint8_t *buf = malloc((size_t)glen);
+    if (!buf) {
+        return;
+    }
+    memset(buf, 0, (size_t)glen);
+    // Draw with the glyph origin placed so its ink box sits `margin` px inside the
+    // buffer (cnvs_glyph_draw is bitmap space: y up from the bottom).
+    cnvs_glyph_draw(font, glyph, (float)margin - x0, (float)margin - y0, buf, gw, gh);
+    // CGBitmapContext is premultiplied and bottom-up; canvas_draw_image_subrect
+    // wants straight-alpha, top-row-first.  Unpremultiply, then flip rows.
+    for (int i = 0; i < glen; i += 4) {
+        int a = buf[i + 3];
+        if (a > 0 && a < 255) {
+            buf[i + 0] = (uint8_t)((buf[i + 0] * 255 + a / 2) / a);
+            buf[i + 1] = (uint8_t)((buf[i + 1] * 255 + a / 2) / a);
+            buf[i + 2] = (uint8_t)((buf[i + 2] * 255 + a / 2) / a);
+        }
+    }
+    int rowb = gw * 4;
+    for (int r = 0; r < gh / 2; r++) {
+        for (int k = 0; k < rowb; k++) {
+            uint8_t t = buf[r * rowb + k];
+            buf[r * rowb + k] = buf[(gh - 1 - r) * rowb + k];
+            buf[(gh - 1 - r) * rowb + k] = t;
+        }
+    }
+    // The buffer maps to a user-space rect: its left edge is `margin` px left of
+    // the glyph ink, its top edge `gh - margin + y0` glyph-px above the baseline.
+    float dest_x = pen_x + x0 - (float)margin;
+    float dest_y = baseline_y - ((float)gh - (float)margin + y0);
+    canvas_draw_image_subrect(cv, buf, gw, gh, 0.0f, 0.0f, (float)gw, (float)gh,
+                              dest_x, dest_y, (float)gw, (float)gh);
+    free(buf);
 }
 
-static void stroke_text_at(canvas *__single cv, cnvs_font *__single f,
-                           char const *__counted_by(len) text, int len,
-                           float ox, float oy, cnvs_mat to_device) {
+// Lay out `text` with the shaper (so Core Text font fallback and color emoji work)
+// from the pen origin through `to_device`: accumulate outline glyphs into one path
+// (filled or stroked), and composite color-glyph runs (emoji) as bitmaps.
+static void paint_text(canvas *__single cv, char const *__counted_by(len) text,
+                       int len, float ox, float oy, cnvs_mat to_device, bool stroke) {
+    char *tz = malloc((size_t)len + 1);
+    if (!tz) {
+        return;
+    }
+    memcpy(tz, text, (size_t)len);
+    tz[len] = '\0';
+    cnvs_shaped *__single s = cnvs_shape("Libian TC", cv->cur.font_size,
+                                         __unsafe_null_terminated_from_indexable(tz));
+    free(tz);
+    if (!s) {
+        return;
+    }
     cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, len, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
-    stroke_device_path(cv, &cv->text_path);
+    float pen = ox;
+    for (int r = 0; r < s->nruns; r++) {
+        cnvs_glyph_run run = s->run[r];
+        bool color = cnvs_run_is_color(run.font);
+        for (int i = 0; i < run.count; i++) {
+            if (color) {
+                draw_color_glyph(cv, run.font, run.glyph[i], pen, oy);
+            } else {
+                cnvs_glyph_outline(run.font, run.glyph[i], pen, oy, to_device,
+                                   CANVAS_FLATTEN_TOL, &cv->text_path);
+            }
+            pen += run.xadv[i];
+        }
+    }
+    cnvs_shaped_free(s);
+    if (stroke) {
+        stroke_device_path(cv, &cv->text_path);
+    } else {
+        fill_device_path(cv, &cv->text_path, CNVS_NONZERO);
+    }
+}
+
+// Lay out `text` from the pen origin through `to_device` and fill the glyph
+// outlines (nonzero winding: overlapping contours fill solid).
+static void fill_text_at(canvas *__single cv, char const *__counted_by(len) text,
+                         int len, float ox, float oy, cnvs_mat to_device) {
+    paint_text(cv, text, len, ox, oy, to_device, false);
+}
+
+static void stroke_text_at(canvas *__single cv, char const *__counted_by(len) text,
+                           int len, float ox, float oy, cnvs_mat to_device) {
+    paint_text(cv, text, len, ox, oy, to_device, true);
 }
 
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
@@ -1697,7 +1787,7 @@ void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
     }
     float ox, oy;
     text_origin(cv, f, text, len, x, y, &ox, &oy);
-    fill_text_at(cv, f, text, len, ox, oy, cv->cur.ctm);
+    fill_text_at(cv, text, len, ox, oy, cv->cur.ctm);
 }
 
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
@@ -1717,7 +1807,7 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     float ox, oy;
     cnvs_mat td = text_layout_max(cv, f, t, len, x, y, max_width, &ox, &oy);
-    fill_text_at(cv, f, t, len, ox, oy, td);
+    fill_text_at(cv, t, len, ox, oy, td);
 }
 
 void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,
@@ -1729,7 +1819,7 @@ void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) tex
     }
     float ox, oy;
     text_origin(cv, f, text, len, x, y, &ox, &oy);
-    stroke_text_at(cv, f, text, len, ox, oy, cv->cur.ctm);
+    stroke_text_at(cv, text, len, ox, oy, cv->cur.ctm);
 }
 
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
@@ -1749,7 +1839,7 @@ void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated t
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     float ox, oy;
     cnvs_mat td = text_layout_max(cv, f, t, len, x, y, max_width, &ox, &oy);
-    stroke_text_at(cv, f, t, len, ox, oy, td);
+    stroke_text_at(cv, t, len, ox, oy, td);
 }
 
 // Bilinear sample of an RGBA8 source at source-pixel (fx, fy), unpremultiplied,
