@@ -343,13 +343,14 @@ def main():
     # `backenddiff`: render the diff scenes on both backends (release = Metal,
     # release-cpu = software) and assert they agree per channel within a tolerance
     # ratchet.  Geometry/AA/gradient/unpremultiply are shared CPU code, so any delta
-    # isolates the compositor (blend math + float->_Float16 rounding).  Today they
-    # agree exactly on gradients and image sampling and to <=1/255 on blended/AA
-    # pixels, so the gate is 1; the goal is to bend the software compositor toward
-    # exact (0) reproduction of Metal.  diff_render/diff_compare build boundary-style
-    # (no -fbounds-safety, -Wall -Wextra); the comparator links no core (it only
-    # reads the dumps), so link_release just supplies the C runtime.
-    BACKEND_DIFF_TOL = 1
+    # isolates the compositor (blend math + float->_Float16 rounding).  They now
+    # agree *bit-for-bit*: compositor_cpu.c rounds its half stores toward zero to
+    # mirror Metal's RGBA16Float store (see to_half_rtz there), so the gate is 0 --
+    # any divergence (a regression, or a GPU whose store rounds differently) fails
+    # the build.  diff_render/diff_compare build boundary-style (no -fbounds-safety,
+    # -Wall -Wextra); the comparator links no core (it only reads the dumps), so
+    # link_release just supplies the C runtime.
+    BACKEND_DIFF_TOL = 0
     dr_obj = lambda v: f"build/{v}/obj/diff_render.o"
     dr_bin = lambda v: f"build/{v}/diff_render"
     dump = lambda v: f"build/{v}/diffdump"
