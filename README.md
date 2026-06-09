@@ -95,6 +95,7 @@ ninja test               # just the tests (subset of the default build)
 ninja images             # just (re)render the gallery PNGs (subset of default)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
+ninja coverage           # llvm-cov line/region/branch report over src/ (all tests)
 ```
 
 Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,

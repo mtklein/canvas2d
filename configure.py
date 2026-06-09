@@ -414,6 +414,63 @@ def main():
       " | tests/leaks.entitlements")
     w("  bin = ./build/release-cpu/test_leak")
     w("build leakcheck: phony build/release-cpu/test_leak.leakok")
+
+    # `coverage` (opt-in: `ninja coverage`): source-based coverage of the checked
+    # C core.  Instrument core + tests with -fprofile-instr-generate
+    # -fcoverage-mapping at -O0 (accurate region/line mapping), run every test
+    # writing its own .profraw, merge, and print an llvm-cov report over src/.
+    # cpu backend (GPU-free, deterministic).  Like benchcmp/profile it's a
+    # measurement, not a gate -- always reruns, console output, NOT in `all`.
+    COV = "-O0 -fprofile-instr-generate -fcoverage-mapping"
+    w("rule cc_cov")
+    w(f"  command = clang $cstd {BOUNDS} $cwarn $cinc {COV} -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    w("rule cc_cov_boundary")
+    w(f"  command = clang $cstd $objcwarn $cinc {COV} -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    w("rule link_cov")
+    w(f"  command = clang {COV} $in {BASE_FRAMEWORKS} -o $out")
+    w("")
+    w("rule cov_run")  # run a test, writing its coverage profile to $out
+    w("  command = LLVM_PROFILE_FILE=$out $bin")
+    w("")
+    w("rule coverage")  # merge the profiles and print the report (always reruns)
+    w("  command = xcrun llvm-profdata merge -sparse $in -o $profdata && "
+      "xcrun llvm-cov report $mainbin $objargs -instr-profile=$profdata src")
+    w("  pool = console")
+    w("")
+    cov_lib = []
+    for c in core_c:
+        o = obj("cov", c)
+        ccrule = "cc_cov_boundary" if os.path.basename(c) in BOUNDARY_C else "cc_cov"
+        w(f"build {o}: {ccrule} {c}")
+        cov_lib.append(o)
+    cov_bsrc = BACKENDS["cpu"][0]
+    cov_bo = obj("cov", cov_bsrc)
+    w(f"build {cov_bo}: cc_cov {cov_bsrc}")
+    cov_lib.append(cov_bo)
+    cov_raws, cov_exes = [], []
+    for t in tests:
+        stem = os.path.splitext(os.path.basename(t))[0]
+        o = obj("cov", t)
+        exe = os.path.join("build", "cov", stem)
+        raw = os.path.join("build", "cov", "raw", stem + ".profraw")
+        w(f"build {o}: cc_cov {t}")
+        w(f"build {exe}: link_cov {o} {' '.join(cov_lib)}")
+        w(f"build {raw}: cov_run {exe}")
+        w(f"  bin = ./{exe}")
+        cov_raws.append(raw)
+        cov_exes.append(exe)
+    w(f"build coverage: coverage {' '.join(cov_raws)} | {' '.join(cov_exes)}")
+    w("  profdata = build/cov/coverage.profdata")
+    w(f"  mainbin = {cov_exes[0]}")
+    w(f"  objargs = {' '.join('-object ' + e for e in cov_exes[1:])}")
+    w("")
+
     # The default `all` builds every variant's executables -- tests, benches and
     # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
     # (`images`) so they track the renderer in lockstep, replays the fuzz corpus
