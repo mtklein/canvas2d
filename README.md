@@ -49,7 +49,8 @@ self-intersecting star, each masking the same flood of stripes (coverage mask):
 
 Gradients — a diagonal linear fill (outlined with a cyan→yellow gradient
 *stroke*), an off-centre radial "sphere", and a multi-stop rainbow ramp
-(evaluated exactly per pixel on the CPU):
+(sampled per pixel on the CPU from a precomputed 1024-entry ramp, within 1/255 of
+the exact piecewise-linear colour):
 
 ![gradients](gallery/gradients.png)
 
@@ -203,7 +204,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits) | ◑ no dirty-rect / colorSpace |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
-| Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ exact per-pixel |
+| Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware | ◑ RGBA8 source only, always bilinear |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform | ◑ no align/baseline/family, `measureText` is width-only |
@@ -244,7 +245,8 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 |---|---|---|---|
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.8 ms | 9.7 ms | **1.00×** |
 | `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 6.8 ms | 6.8 ms | **1.00×** |
-| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 83 ms | 87 ms | **1.00×** |
+| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 83 ms | 87 ms | **1.00×** |
+| `bench_gradient_fill` — gradient fill via a precomputed ramp (radial solve + ramp index) | 23 ms | 23 ms | **1.00×** |
 | `bench_stroke` — stroke expansion (joins/caps) | 54 ms | 54 ms | **1.00×** |
 | `bench_flatten` — cubic-Bézier flattening | 120 ms | 118 ms | **1.02×** |
 | `bench` — end-to-end | 65 ms | 59 ms | **1.10×** |
@@ -259,8 +261,12 @@ pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
 check per row instead of eight per pixel. PNG encode did the same when its CRC
 moved from a byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, also
 1.00×). What's left at the top is `bench_fill` (**1.22×**): a signed-area
-accumulate whose scattered per-pixel writes haven't been vectorized yet. Real
-canvas rendering is GPU-bound, so the end-to-end cost of safety is smaller still;
+accumulate whose scattered per-pixel writes haven't been vectorized yet. The same
+precompute-once idea sped gradients up too — building a 1024-entry colour ramp per
+fill turns the per-pixel stop scan (`bench_gradient`) into a single indexed lookup
+(`bench_gradient_fill`, the renderer's actual path), ~3.4× faster for ≤1/255 of
+colour error. Real canvas rendering is GPU-bound, so the end-to-end cost of safety
+is smaller still;
 these are the honest prices on the hottest pure-C kernels, two commands to
 re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase
 spends its time).
