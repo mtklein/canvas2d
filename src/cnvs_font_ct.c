@@ -159,3 +159,62 @@ float cnvs_font_advance(cnvs_font *f, char const *text) {
     }
     return pen;
 }
+
+void cnvs_font_measure(cnvs_font *f, char const *text, cnvs_text_metrics *m) {
+    CTFontRef font = f->font;
+
+    // Font-wide metrics (independent of the text).  Core Text reports ascent and
+    // descent as positive magnitudes from the baseline.
+    double ascent = CTFontGetAscent(font);
+    double descent = CTFontGetDescent(font);
+    double size = CTFontGetSize(font);
+    m->font_ascent = (float)ascent;
+    m->font_descent = (float)descent;
+    // Split the em square (height == size) by the ascent/descent ratio; the two
+    // sum to the em size by construction.
+    double denom = ascent + descent;
+    double em_asc = denom > 0.0 ? size * ascent / denom : size;
+    m->em_ascent = (float)em_asc;
+    m->em_descent = (float)(size - em_asc);
+    // Baseline offsets relative to the alphabetic baseline (the reference).
+    m->alphabetic_baseline = 0.0f;
+    m->hanging_baseline = (float)ascent;       // ~top of the ascenders
+    m->ideographic_baseline = -(float)descent;  // ~bottom of the descenders
+
+    // Walk the glyphs, summing advances and unioning each glyph's tight bounding
+    // rect (glyph space: y up, baseline at 0) offset by the running pen.
+    double pen = 0.0;
+    bool any = false;
+    double minx = 0.0, maxx = 0.0, miny = 0.0, maxy = 0.0;
+    for (unsigned char const *s = (unsigned char const *)text; *s;) {
+        CGGlyph g = glyph_for_cp(font, utf8_next(&s));
+        CGRect r =
+            CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationHorizontal,
+                                            &g, NULL, 1);
+        if (!CGRectIsNull(r) && !CGRectIsEmpty(r)) {
+            double x0 = pen + r.origin.x;
+            double x1 = x0 + r.size.width;
+            double y0 = r.origin.y;             // bottom (y up)
+            double y1 = y0 + r.size.height;     // top
+            if (!any) {
+                minx = x0; maxx = x1; miny = y0; maxy = y1;
+                any = true;
+            } else {
+                if (x0 < minx) { minx = x0; }
+                if (x1 > maxx) { maxx = x1; }
+                if (y0 < miny) { miny = y0; }
+                if (y1 > maxy) { maxy = y1; }
+            }
+        }
+        CGSize adv = { 0.0, 0.0 };
+        CTFontGetAdvancesForGlyphs(font, kCTFontOrientationHorizontal, &g, &adv, 1);
+        pen += adv.width;
+    }
+    m->width = (float)pen;
+    // Bounding-box edges -> TextMetrics sign conventions (left/ascent positive
+    // toward -x / +y of the origin).
+    m->actual_left = any ? (float)(-minx) : 0.0f;
+    m->actual_right = any ? (float)maxx : 0.0f;
+    m->actual_ascent = any ? (float)maxy : 0.0f;
+    m->actual_descent = any ? (float)(-miny) : 0.0f;
+}

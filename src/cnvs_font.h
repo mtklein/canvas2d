@@ -23,3 +23,20 @@ float cnvs_font_outline(cnvs_font *__single f, char const *__null_terminated tex
 
 // Advance width of `text` (UTF-8) in user px (Canvas measureText().width).
 float cnvs_font_advance(cnvs_font *__single f, char const *__null_terminated text);
+
+// Full text metrics, all in user px, baseline-relative and laid out from a pen
+// origin at x = 0 (the Canvas measureText() defaults: textAlign start / left,
+// textBaseline alphabetic).  Sign conventions match TextMetrics: *_left/_ascent
+// are positive going left/up, *_right/_descent positive going right/down.
+typedef struct {
+    float width;                  // advance width
+    float actual_left, actual_right;     // actual glyph-ink bounding box (this text)
+    float actual_ascent, actual_descent;
+    float font_ascent, font_descent;     // font-wide ascent/descent
+    float em_ascent, em_descent;         // em square split by the ascent/descent ratio
+    float alphabetic_baseline;           // 0 (the reference baseline)
+    float hanging_baseline, ideographic_baseline;
+} cnvs_text_metrics;
+
+void cnvs_font_measure(cnvs_font *__single f, char const *__null_terminated text,
+                       cnvs_text_metrics *__single out);

@@ -37,9 +37,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 
 ## Partial — implemented but narrower than spec
 
-- **`measureText`** returns only `.width`. The real `TextMetrics` also carries
-  `actualBoundingBoxLeft/Right/Ascent/Descent`, `fontBoundingBoxAscent/Descent`,
-  `emHeightAscent/Descent`, and the baseline offsets.
 - **Text styling** is `set_font_size` only. No font-family selection (pinned to
   Libian TC), weight, style, or the CSS `font` shorthand; and none of
   `textAlign`, `textBaseline`, `direction`, `letterSpacing`, `wordSpacing`,

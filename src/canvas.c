@@ -995,6 +995,30 @@ float canvas_measure_text(canvas *__single cv, char const *__null_terminated tex
     return f ? cnvs_font_advance(f, text) : 0.0f;
 }
 
+canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
+                                             char const *__null_terminated text) {
+    canvas_text_metrics m;
+    memset(&m, 0, sizeof m);  // all-zero if the font can't be built
+    cnvs_font *__single f = ensure_font(cv);
+    if (f) {
+        cnvs_text_metrics tm;
+        cnvs_font_measure(f, text, &tm);
+        m.width = tm.width;
+        m.actual_bounding_box_left = tm.actual_left;
+        m.actual_bounding_box_right = tm.actual_right;
+        m.actual_bounding_box_ascent = tm.actual_ascent;
+        m.actual_bounding_box_descent = tm.actual_descent;
+        m.font_bounding_box_ascent = tm.font_ascent;
+        m.font_bounding_box_descent = tm.font_descent;
+        m.em_height_ascent = tm.em_ascent;
+        m.em_height_descent = tm.em_descent;
+        m.alphabetic_baseline = tm.alphabetic_baseline;
+        m.hanging_baseline = tm.hanging_baseline;
+        m.ideographic_baseline = tm.ideographic_baseline;
+    }
+    return m;
+}
+
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
                       float x, float y) {
     cnvs_font *__single f = ensure_font(cv);

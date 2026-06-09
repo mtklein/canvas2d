@@ -174,6 +174,23 @@ void canvas_draw_image_subrect(canvas *__single cv,
 // and global alpha all apply.  measure_text returns the advance width in user px.
 void canvas_set_font_size(canvas *__single cv, float px);
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text);
+
+// Full measureText() TextMetrics, all in user px, relative to the text's origin
+// and the alphabetic baseline (the defaults: textAlign start, textBaseline
+// alphabetic).  Sign conventions match the web TextMetrics: *_left and *_ascent
+// are positive measured leftward / upward from the origin, *_right and *_descent
+// positive rightward / downward.  `width` equals canvas_measure_text.
+typedef struct {
+    float width;
+    float actual_bounding_box_left, actual_bounding_box_right;
+    float actual_bounding_box_ascent, actual_bounding_box_descent;
+    float font_bounding_box_ascent, font_bounding_box_descent;
+    float em_height_ascent, em_height_descent;
+    float alphabetic_baseline, hanging_baseline, ideographic_baseline;
+} canvas_text_metrics;
+
+canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
+                                             char const *__null_terminated text);
 void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
                       float x, float y);
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
