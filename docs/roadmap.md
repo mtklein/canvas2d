@@ -70,7 +70,7 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`Path2D`** — no constructible path object, no `addPath`, no SVG path-data
   string, and none of the `fill/stroke/clip/isPointIn*` overloads that take one.
 - **Hit testing** — `isPointInPath`, `isPointInStroke`.
-- **State/readback** — `reset`, `isContextLost`.
+- **State/readback** — `isContextLost`.
 - **Image smoothing** — `imageSmoothingEnabled` (no nearest-neighbour) and
   `imageSmoothingQuality`.
 - **`createImageData`** — allocate a blank ImageData.

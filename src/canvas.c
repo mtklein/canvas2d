@@ -97,6 +97,36 @@ struct canvas {
 };
 
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
+static bool ensure_tile(canvas *__single cv, int npix);
+
+// The initial drawing state (Canvas defaults): identity transform, opaque black
+// fill/stroke, source-over, 1px miter strokes, no dash, 10px text, open clip.
+// Shared by canvas_create and canvas_reset so the two can't drift.  Assigned
+// field by field (not an init list): a compound literal of side-effecting calls
+// has indeterminate evaluation order, which -fbounds-safety flags for a struct
+// carrying a __counted_by member.  Clearing the gradient scratch isn't needed --
+// fill_grad/stroke_grad are read only when the *_is_gradient flag is set.
+static void state_defaults(struct canvas_state *s) {
+    s->ctm = cnvs_mat_identity();
+    s->fill = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
+    s->fill_is_gradient = 0;
+    s->stroke = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
+    s->stroke_is_gradient = 0;
+    s->global_alpha = 1.0f;
+    s->composite = COMPOSITOR_SRC_OVER;
+    s->line_width = 1.0f;
+    s->fill_rule = CNVS_NONZERO;
+    s->line_join = CNVS_JOIN_MITER;
+    s->line_cap = CNVS_CAP_BUTT;
+    s->miter_limit = 10.0f;
+    s->dash_count = 0;
+    s->dash_offset = 0.0f;
+    s->font_size = 10.0f;
+    // Drop the clip: zero the count before NULLing the pointer so the
+    // __counted_by(clip_len) invariant never sees NULL with a positive count.
+    s->clip_len = 0;
+    s->clip_mask = NULL;
+}
 
 canvas *__single canvas_create(int width, int height) {
     if (width <= 0 || height <= 0 ||
@@ -115,23 +145,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->comp = comp;
     cv->width = width;
     cv->height = height;
-    cv->cur.ctm = cnvs_mat_identity();
-    cv->cur.fill = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
-    cv->cur.fill_is_gradient = 0;
-    cv->cur.stroke = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
-    cv->cur.stroke_is_gradient = 0;
-    cv->cur.global_alpha = 1.0f;
-    cv->cur.composite = COMPOSITOR_SRC_OVER;
-    cv->cur.line_width = 1.0f;
-    cv->cur.fill_rule = CNVS_NONZERO;
-    cv->cur.line_join = CNVS_JOIN_MITER;
-    cv->cur.line_cap = CNVS_CAP_BUTT;
-    cv->cur.miter_limit = 10.0f;
-    cv->cur.dash_count = 0;
-    cv->cur.dash_offset = 0.0f;
-    cv->cur.font_size = 10.0f;
-    cv->cur.clip_mask = NULL;
-    cv->cur.clip_len = 0;
+    state_defaults(&cv->cur);
     cv->stack = NULL;
     cv->stack_len = 0;
     cv->stack_cap = 0;
@@ -206,6 +220,32 @@ void canvas_restore(canvas *__single cv) {
         free(cv->cur.clip_mask);
         cv->cur = cv->stack[cv->stack_len];  // adopts the saved clip mask
         compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
+    }
+}
+
+void canvas_reset(canvas *__single cv) {
+    // Empty the saved-state stack (each entry may own a clip-mask copy); keep the
+    // backing allocation for reuse.
+    for (int i = 0; i < cv->stack_len; i++) {
+        free(cv->stack[i].clip_mask);
+    }
+    cv->stack_len = 0;
+    // Drop the current clip mask and restore every state field to its default.
+    free(cv->cur.clip_mask);
+    state_defaults(&cv->cur);
+    // Discard the current path.
+    cnvs_path_reset(&cv->path);
+    cv->cur_user = (cnvs_vec2){ .x = 0.0f, .y = 0.0f };
+    // Open the clip, then clear the whole bitmap to transparent black: a
+    // destination-out of a unit-alpha tile leaves dst*(1 - 1) = 0 everywhere.
+    compositor_set_clip(cv->comp, NULL, 0);
+    int npix = cv->width * cv->height;
+    if (ensure_tile(cv, npix)) {
+        for (int i = 0; i < npix; i++) {
+            cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = (_Float16)1.0f };
+        }
+        compositor_blend(cv->comp, 0, 0, cv->width, cv->height, cv->tile,
+                         COMPOSITOR_DST_OUT);
     }
 }
 

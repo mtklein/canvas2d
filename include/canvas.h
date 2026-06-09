@@ -37,6 +37,10 @@ void canvas_destroy(canvas *__single cv);
 
 void canvas_save(canvas *__single cv);
 void canvas_restore(canvas *__single cv);
+// Reset the context to its initial state: empty the save/restore stack, restore
+// every drawing-state field to its default, discard the current path, open the
+// clip, and clear the bitmap to transparent black.
+void canvas_reset(canvas *__single cv);
 
 void canvas_translate(canvas *__single cv, float tx, float ty);
 void canvas_scale(canvas *__single cv, float sx, float sy);
