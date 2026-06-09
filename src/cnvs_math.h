@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits.h>
 #include <stdint.h>
 
 // 2D affine transforms (HTML Canvas 2D convention).  A matrix maps (x, y) to
@@ -55,5 +56,27 @@ cnvs_mat cnvs_mat_invert(cnvs_mat m);
 // Saturating float->integer conversions for the rasterizer.  Plain float->int is
 // undefined behaviour when the value is non-finite or out of range; these clamp
 // instead (NaN -> 0), keeping the device-space casts total on adversarial input.
-int cnvs_f2i(float v);
-uint8_t cnvs_f2u8(float v);
+// static inline: they sit in the innermost rasterizer loops (every device-space
+// cast); out-of-line they showed up at ~6% of the fill's self-time.
+static inline int cnvs_f2i(float v) {
+    if (v != v) {                  // NaN
+        return 0;
+    }
+    if (v >= (float)INT_MAX) {     // (float)INT_MAX rounds to 2^31, just above it
+        return INT_MAX;
+    }
+    if (v <= (float)INT_MIN) {
+        return INT_MIN;
+    }
+    return (int)v;
+}
+
+static inline uint8_t cnvs_f2u8(float v) {
+    if (!(v > 0.0f)) {             // <= 0, or NaN
+        return 0;
+    }
+    if (v >= 255.0f) {
+        return 255;
+    }
+    return (uint8_t)v;
+}
