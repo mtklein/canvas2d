@@ -393,13 +393,22 @@ def main():
     # Two shapes: per-frame readback (the getImageData/PNG-export workload, a sync per
     # frame) and one-readback-at-the-end (BENCH_READBACK=end -- the GPU pipelines
     # frames, Metal's strength).  The env-prefixed run drops -N so a shell expands it.
+    #
+    # The GPU path's per-run time is noisy (scheduler jitter, shared-machine
+    # contention), so a low run count gives an unreliable mean -- a single short run
+    # once even reported a real speedup as a slowdown.  hyperfine has no run
+    # interleaving (it runs all of one command, then the other), so the mitigation is
+    # a high fixed run count + extra warmup: enough samples that the mean + its
+    # confidence interval are trustworthy.  (benchcmp stays at the default low count:
+    # those are CPU kernels with tight variance.)
+    rc = "--warmup 8 --runs 50"
     render_metal = "build/release/bench_render"
     render_cpu = "build/release-cpu/bench_render"
     rendercmp_cmd = (
-        'hyperfine --warmup 3 -N '
+        f'hyperfine {rc} -N '
         f'-n "render metal (per-frame readback)" ./{render_metal} '
         f'-n "render cpu (per-frame readback)" ./{render_cpu} ; '
-        'hyperfine --warmup 3 '
+        f'hyperfine {rc} '
         f'-n "render metal (1 readback)" "BENCH_READBACK=end ./{render_metal}" '
         f'-n "render cpu (1 readback)" "BENCH_READBACK=end ./{render_cpu}"')
     w(f"build rendercmp: rendercmp {render_metal} {render_cpu}")
