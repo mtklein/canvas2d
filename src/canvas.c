@@ -849,8 +849,12 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
     int r = shadow_radius(cv->cur.shadow_blur);
     int offx = shadow_offset(cv->cur.shadow_offset_x);
     int offy = shadow_offset(cv->cur.shadow_offset_y);
-    int sx0 = b.x + offx - r, sy0 = b.y + offy - r;
-    int sx1 = b.x + b.w + offx + r, sy1 = b.y + b.h + offy + r;
+    // Three box passes each spread the blur by r, so the falloff reaches ~0 only
+    // at 3r beyond the shape -- the mask region must include that whole spread or
+    // the soft edge gets clipped to a rectangle.
+    int margin = 3 * r;
+    int sx0 = b.x + offx - margin, sy0 = b.y + offy - margin;
+    int sx1 = b.x + b.w + offx + margin, sy1 = b.y + b.h + offy + margin;
     if (sx0 < 0) { sx0 = 0; }
     if (sy0 < 0) { sy0 = 0; }
     if (sx1 > cv->width) { sx1 = cv->width; }
