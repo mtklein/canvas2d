@@ -192,6 +192,17 @@ def main():
     w("  command = $bin $in >$out.log 2>&1 && { touch $out ; rm -f $out.log ; } "
       "|| { cat $out.log >&2 ; rm -f $out.log ; exit 1 ; }")
     w("")
+    # Backend differential: render the diff scenes into a scratch dir, then diff
+    # the two backends' dumps.  render_diff wipes the dir so a removed scene can't
+    # linger; diff_compare is silent within tolerance and prints the per-scene
+    # divergence report only when it's exceeded (run it by hand to see the report).
+    w("rule render_diff")
+    w("  command = rm -rf $dir && mkdir -p $dir && $bin $dir && touch $out")
+    w("")
+    w("rule diff_compare")
+    w("  command = $bin $a $b $tol >$out.log 2>&1 && { touch $out ; rm -f $out.log ; } "
+      "|| { cat $out.log >&2 ; rm -f $out.log ; exit 1 ; }")
+    w("")
     w("rule benchcmp")
     w("  command = $cmd")
     w("  pool = console")
@@ -307,6 +318,35 @@ def main():
         w(f"build {fuzz_stamp}: corpus_replay {' '.join(fuzz_corpus)} | {fuzz_replay}")
         w(f"  bin = ./{fuzz_replay}")
         w(f"build fuzzcorpus: phony {fuzz_stamp}")
+    # `backenddiff`: render the diff scenes on both backends (release = Metal,
+    # release-cpu = software) and assert they agree per channel within a tolerance
+    # ratchet.  Geometry/AA/gradient/unpremultiply are shared CPU code, so any delta
+    # isolates the compositor (blend math + float->_Float16 rounding).  Today they
+    # agree exactly on gradients and image sampling and to <=1/255 on blended/AA
+    # pixels, so the gate is 1; the goal is to bend the software compositor toward
+    # exact (0) reproduction of Metal.  diff_render/diff_compare build boundary-style
+    # (no -fbounds-safety, -Wall -Wextra); the comparator links no core (it only
+    # reads the dumps), so link_release just supplies the C runtime.
+    BACKEND_DIFF_TOL = 1
+    dr_obj = lambda v: f"build/{v}/obj/diff_render.o"
+    dr_bin = lambda v: f"build/{v}/diff_render"
+    dump = lambda v: f"build/{v}/diffdump"
+    dump_stamp = lambda v: f"build/{v}/diffdump.stamp"
+    for v in ("release", "release-cpu"):
+        w(f"build {dr_obj(v)}: cc_boundary_{v} diff/diff_render.c")
+        w(f"build {dr_bin(v)}: link_{v} {dr_obj(v)} {' '.join(variant_lib_objs[v])}")
+        w(f"build {dump_stamp(v)}: render_diff | {dr_bin(v)}")
+        w(f"  bin = ./{dr_bin(v)}")
+        w(f"  dir = {dump(v)}")
+    w("build build/diff/obj/diff_compare.o: cc_boundary_release diff/diff_compare.c")
+    w("build build/diff/diff_compare: link_release build/diff/obj/diff_compare.o")
+    w(f"build build/backend_diff.runok: diff_compare {dump_stamp('release')} "
+      f"{dump_stamp('release-cpu')} | build/diff/diff_compare")
+    w("  bin = ./build/diff/diff_compare")
+    w(f"  a = {dump('release')}")
+    w(f"  b = {dump('release-cpu')}")
+    w(f"  tol = {BACKEND_DIFF_TOL}")
+    w("build backenddiff: phony build/backend_diff.runok")
     # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
@@ -331,13 +371,14 @@ def main():
     # The default `all` builds every variant's executables -- tests, benches and
     # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
     # (`images`) so they track the renderer in lockstep, replays the fuzz corpus
-    # (`fuzzcorpus`), and runs the security gates `analyze` (static UAF/double-free/
-    # leak) and `leakcheck` (the macOS `leaks` tool).  A bare `ninja` is meant to do
-    # everything, so all of these gate it; the gates are idempotent (stamps), so a
-    # clean tree is still "no work to do".  Only the always-rerun measurement
-    # targets (benchcmp, profile) stay opt-in.
+    # (`fuzzcorpus`), checks the two compositor backends agree (`backenddiff`), and
+    # runs the security gates `analyze` (static UAF/double-free/leak) and `leakcheck`
+    # (the macOS `leaks` tool).  A bare `ninja` is meant to do everything, so all of
+    # these gate it; the gates are idempotent (stamps), so a clean tree is still
+    # "no work to do".  Only the always-rerun measurement targets (benchcmp, profile)
+    # stay opt-in.
     all_targets = ("release debug unsafe release-cpu debug-cpu test images "
-                   "analyze leakcheck")
+                   "analyze leakcheck backenddiff")
     if fuzz_corpus:
         all_targets += " fuzzcorpus"
     w(f"build all: phony {all_targets}")
