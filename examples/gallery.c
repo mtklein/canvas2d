@@ -1187,6 +1187,94 @@ static void porterduff(void) {
     save(c, "gallery/porterduff.png");
 }
 
+// drawImage subrect: build a sprite atlas on a scratch canvas, read it back to
+// RGBA8, then pull individual tiles out of it with the source-rect overload --
+// the atlas on the left, four tiles extracted and enlarged on the right.
+static void subrect(void) {
+    int const AW = 160, AH = 80;  // 4x2 tiles of 40px
+    uint8_t atlas[160 * 80 * 4];
+    canvas *__single ac = canvas_create(AW, AH);
+    if (ac) {
+        for (int k = 0; k < 8; k++) {
+            int tx = k % 4, ty = k / 4;
+            float ox = (float)(tx * 40), oy = (float)(ty * 40);
+            float cx = ox + 20.0f, cy = oy + 20.0f;
+            float t = (float)k / 8.0f;
+            canvas_set_fill_rgba(ac, 0.5f + 0.5f * cosf(TAU * t),
+                                 0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                                 0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+            canvas_fill_rect(ac, ox, oy, 40.0f, 40.0f);
+            canvas_set_fill_rgba(ac, 0.98f, 0.99f, 1.0f, 0.92f);
+            switch (k % 4) {
+                case 0:  // circle
+                    canvas_begin_path(ac);
+                    canvas_arc(ac, cx, cy, 14.0f, 0.0f, TAU, false);
+                    canvas_fill(ac);
+                    break;
+                case 1:  // square
+                    canvas_fill_rect(ac, cx - 13.0f, cy - 13.0f, 26.0f, 26.0f);
+                    break;
+                case 2:  // triangle
+                    canvas_begin_path(ac);
+                    canvas_move_to(ac, cx, cy - 15.0f);
+                    canvas_line_to(ac, cx + 14.0f, cy + 12.0f);
+                    canvas_line_to(ac, cx - 14.0f, cy + 12.0f);
+                    canvas_close_path(ac);
+                    canvas_fill(ac);
+                    break;
+                default:  // star
+                    star(ac, cx, cy, 16.0f);
+                    canvas_fill(ac);
+                    break;
+            }
+        }
+        canvas_read_rgba(ac, atlas, AW * AH * 4);
+        canvas_destroy(ac);
+    }
+
+    canvas *__single c = canvas_create(468, 196);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 196.0f);
+
+    // Left: the whole atlas at 1.5x, with a grid showing the tile cells.
+    canvas_draw_image_scaled(c, atlas, AW, AH, 20.0f, 30.0f, 240.0f, 120.0f);
+    canvas_set_stroke_rgba(c, 0.20f, 0.22f, 0.28f, 0.9f);
+    canvas_set_line_width(c, 1.0f);
+    for (int i = 1; i < 4; i++) {
+        canvas_begin_path(c);
+        canvas_move_to(c, 20.0f + (float)i * 60.0f, 30.0f);
+        canvas_line_to(c, 20.0f + (float)i * 60.0f, 150.0f);
+        canvas_stroke(c);
+    }
+    canvas_begin_path(c);
+    canvas_move_to(c, 20.0f, 90.0f);
+    canvas_line_to(c, 260.0f, 90.0f);
+    canvas_stroke(c);
+
+    // Right: four chosen tiles pulled out via draw_image_subrect, enlarged 2x2.
+    int const pick[4] = { 1, 6, 3, 4 };
+    float const ts = 66.0f, gap = 8.0f, dx0 = 300.0f, dy0 = 30.0f;
+    for (int m = 0; m < 4; m++) {
+        int k = pick[m], tx = k % 4, ty = k / 4;
+        float dx = dx0 + (float)(m % 2) * (ts + gap);
+        float dy = dy0 + (float)(m / 2) * (ts + gap);
+        canvas_draw_image_subrect(c, atlas, AW, AH, (float)(tx * 40),
+                                  (float)(ty * 40), 40.0f, 40.0f, dx, dy, ts, ts);
+    }
+
+    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "sprite atlas", 140.0f, 178.0f);
+    canvas_fill_text(c, "pulled via subrect", 370.0f, 178.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/subrect.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1508,6 +1596,7 @@ int main(void) {
     batching();
     drawimage();
     smoothing();
+    subrect();
     text();
     textgrid();
     textmetrics();

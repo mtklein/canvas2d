@@ -105,6 +105,11 @@ and scaled + rotated (AA quad edges from the coverage rasterizer):
 
 ![smoothing](gallery/smoothing.png)
 
+`drawImage` (source-rect overload) — a sprite atlas built on a scratch canvas and
+read back to RGBA8, with four tiles pulled out by source rectangle and enlarged:
+
+![subrect](gallery/subrect.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
