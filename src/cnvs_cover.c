@@ -170,28 +170,45 @@ static covu8x8 cover_to_u8x8(cnvs_fill_rule rule, covf8 run) {
     return __builtin_convertvector(v, covu8x8);
 }
 
+// Inclusive prefix sum across the 8 lanes, in-register (Hillis-Steele: 3 shift-add
+// steps, each adding the lane d positions back, low lanes zero-filled).  This breaks
+// the per-pixel carried-dependency that made a scalar row scan latency-bound: the
+// only serial chain that survives is the carry between 8-lane blocks (depth w/8), and
+// consecutive blocks' in-register scans are independent and pipeline.  The tree
+// association differs from a left-to-right scalar sum, so the float rounding differs
+// by <=1 ULP before the 8-bit quantize -- fine here: coverage runs identically on
+// both backends (it feeds paint_tile on the CPU for each), so the backend diff can't
+// see it, and test_cover is tolerance-based.
+static inline covf8 prefix_sum8(covf8 v) {
+    covf8 z = (covf8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+    v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1 (zero-fill)
+    v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
+    v += __builtin_shufflevector(v, z, 8, 8, 8, 8, 0, 1, 2, 3);  // += lane-4
+    return v;
+}
+
 void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
                         uint8_t *__counted_by(w * h) out) {
-    // The prefix sum is serial (each pixel depends on the last), but the coverage
-    // fold + 8-bit convert -- the bulk of the cost -- is per-pixel independent.  So
-    // do them in two passes: a scalar prefix sum (rewriting the accumulator in
-    // place), then an 8-wide convert.  Output is identical to a per-pixel convert.
+    // Fold each row's signed-area deltas to coverage in one pass: an 8-wide in-register
+    // prefix sum (plus a running scalar carry from earlier blocks) feeds the coverage
+    // fold + 8-bit convert directly, so the prefix sum is no longer a separate serial
+    // scan and the accumulator is never rewritten/reread.
     for (int y = 0; y < h; y++) {
         int base = y * w;
-        float run = 0.0f;
-        for (int x = 0; x < w; x++) {  // serial prefix sum, in place
-            run += c->acc[base + x];
-            c->acc[base + x] = run;
-        }
+        float carry = 0.0f;  // running total of all deltas before this block, this row
         int x = 0;
-        for (; x + 8 <= w; x += 8) {  // vectorized coverage fold + convert
-            covf8 r;
-            memcpy(&r, c->acc + base + x, sizeof r);  // bounds-checked vector load
-            covu8x8 b = cover_to_u8x8(rule, r);
+        for (; x + 8 <= w; x += 8) {
+            covf8 v;
+            memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
+            v = prefix_sum8(v) + carry;               // inclusive prefix sum + carry-in
+            covu8x8 b = cover_to_u8x8(rule, v);
             memcpy(out + base + x, &b, sizeof b);      // bounds-checked vector store
+            carry = v[7];                              // running total through this block
         }
-        for (; x < w; x++) {  // scalar tail (acc already holds the prefix sum)
-            out[base + x] = cover_to_u8(rule, c->acc[base + x]);
+        float run = carry;
+        for (; x < w; x++) {  // scalar tail: continue the running sum
+            run += c->acc[base + x];
+            out[base + x] = cover_to_u8(rule, run);
         }
     }
 }
