@@ -12,6 +12,7 @@
 #include "cnvs_png.h"
 #include "cnvs_stroke.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -20,6 +21,21 @@
 // Maximum chord deviation (device pixels) when flattening curves.
 #define CANVAS_FLATTEN_TOL 0.25f
 #define CANVAS_MAX_DASH 16
+
+// Cap canvas dimensions so width*height and width*height*4 stay well within a
+// positive int -- the whole pipeline's RGBA8 size math is `int`.  Mirrors the
+// cnvs_png.c clamp and the Metal max-texture limit (a larger canvas would fail
+// texture creation anyway).
+#define CANVAS_MAX_DIM 16384
+
+// A caller-supplied image rectangle (get/put_image_data region, drawImage
+// source) is honoured only if its RGBA8 byte size fits a positive int: that is
+// what makes the `w * h * 4` size arithmetic at the call sites overflow-free.
+// (Canvas dims are already bounded by CANVAS_MAX_DIM; these come straight from
+// the caller and are otherwise unbounded.)
+static bool rgba8_dims_ok(int w, int h) {
+    return w > 0 && h > 0 && (int64_t)w * (int64_t)h <= (int64_t)INT_MAX / 4;
+}
 
 struct canvas_state {
     cnvs_mat ctm;
@@ -71,7 +87,8 @@ struct canvas {
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
 
 canvas *__single canvas_create(int width, int height) {
-    if (width <= 0 || height <= 0) {
+    if (width <= 0 || height <= 0 ||
+        width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
         return NULL;
     }
     compositor *__single comp = compositor_create(width, height);
@@ -837,7 +854,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
                                int sw, int sh, float sx, float sy,
                                float sww, float shh, float dx, float dy,
                                float dw, float dh) {
-    if (sw <= 0 || sh <= 0 || dw <= 0.0f || dh <= 0.0f) {
+    if (!rgba8_dims_ok(sw, sh) || dw <= 0.0f || dh <= 0.0f) {
         return;
     }
     // The dest rect transforms to a (possibly rotated) device-space quad.
@@ -934,7 +951,7 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
 
 void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
                            uint8_t *__counted_by(len) out, int len) {
-    if (w <= 0 || h <= 0 || len < w * h * 4) {
+    if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
         return;
     }
     memset(out, 0, (size_t)len);  // pixels outside the canvas stay transparent
@@ -951,7 +968,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
 void canvas_put_image_data(canvas *__single cv,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy) {
-    if (w <= 0 || h <= 0 || len < w * h * 4) {
+    if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
         return;
     }
     int cx0 = dx < 0 ? 0 : dx;
