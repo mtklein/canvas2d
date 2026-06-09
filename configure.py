@@ -115,6 +115,10 @@ def main():
     # new PNGs alongside the code.  Declaring them as outputs (input = the binary)
     # makes ninja re-render exactly when the renderer changes, no more.
     gallery_pngs = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "gallery", "*.png")))
+    # Committed fuzz regression corpus (distinct from the gitignored fuzz/seeds/
+    # scratch).  `ninja` replays every input under the debug-cpu sanitizers, so a
+    # crasher -- once reduced and dropped in here -- stays a permanent regression.
+    fuzz_corpus = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "fuzz", "corpus", "*.bin")))
 
     n = []
     w = n.append
@@ -163,6 +167,13 @@ def main():
     w("rule run")
     w("  command = $bin && touch $out")
     w("")
+    # Replay the fuzz corpus through the harness.  Unlike `run`, the replay binary
+    # is chatty (one `ok:` per input), so capture its output and surface it only on
+    # a finding -- a clean replay stays silent, a crash dumps the ASan/UBSan report.
+    w("rule corpus_replay")
+    w("  command = $bin $in >$out.log 2>&1 && { touch $out ; rm -f $out.log ; } "
+      "|| { cat $out.log >&2 ; rm -f $out.log ; exit 1 ; }")
+    w("")
     w("rule benchcmp")
     w("  command = $cmd")
     w("  pool = console")
@@ -181,6 +192,7 @@ def main():
     bench_variants = [v for v, cfg in VARIANTS.items() if cfg[3]]
 
     test_stamps = []
+    variant_lib_objs = {}
     for variant, (_opt, _bounds, do_tests, do_bench, backend) in VARIANTS.items():
         lib_objs = []
         for c in core_c:
@@ -193,6 +205,7 @@ def main():
         bo = obj(variant, bsrc)
         w(f"build {bo}: {'objc' if bsrc.endswith('.m') else 'cc'}_{variant} {bsrc}")
         lib_objs.append(bo)
+        variant_lib_objs[variant] = list(lib_objs)
         w("")
 
         produced = []
@@ -247,6 +260,22 @@ def main():
     w(f"build {' '.join(gallery_pngs)}: run_gallery build/release/gallery")
     w("  bin = ./build/release/gallery")
     w(f"build images: phony {' '.join(gallery_pngs)}")
+    # `fuzzcorpus`: replay the committed fuzz corpus through the API harness under
+    # the debug-cpu sanitizers (ASan/UBSan, software backend), turning every seed
+    # and reduced crasher into a permanent, libFuzzer-free regression.  fuzz_api.c
+    # builds like a boundary file (cc_boundary: no -fbounds-safety, -Wall -Wextra)
+    # since it isn't -Weverything clean; it links the bounds-safe debug-cpu core,
+    # which keeps that core's -fbounds-safety traps under the same replay.
+    if fuzz_corpus:
+        fuzz_obj = "build/debug-cpu/obj/fuzz_api.o"
+        fuzz_replay = "build/debug-cpu/fuzz_replay"
+        fuzz_stamp = "build/debug-cpu/fuzz_corpus.runok"
+        w(f"build {fuzz_obj}: cc_boundary_debug-cpu fuzz/fuzz_api.c")
+        w(f"build {fuzz_replay}: link_debug-cpu {fuzz_obj} "
+          f"{' '.join(variant_lib_objs['debug-cpu'])}")
+        w(f"build {fuzz_stamp}: corpus_replay {' '.join(fuzz_corpus)} | {fuzz_replay}")
+        w(f"  bin = ./{fuzz_replay}")
+        w(f"build fuzzcorpus: phony {fuzz_stamp}")
     # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
@@ -254,14 +283,18 @@ def main():
     release_bench_exes = [f"build/release/{s}" for s in bench_stems]
     w(f"build profile: profile {' '.join(release_bench_exes)}")
     # The default `all` builds every variant's executables -- tests, benches and
-    # examples -- runs the whole test suite (`test`), and re-renders the gallery
-    # PNGs (`images`) so they track the renderer in lockstep.  Listing all five
-    # variant phonies covers every buildable artifact (release/unsafe carry the
-    # benches; release/release-cpu carry the examples).  A passing build is
-    # silent, so a green `ninja` shows only its progress -- a rendering change
-    # instead surfaces as a dirtied gallery/*.png.  The always-rerun measurement
-    # targets (benchcmp, profile) stay opt-in -- not in `all`.
-    w("build all: phony release debug unsafe release-cpu debug-cpu test images")
+    # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
+    # (`images`) so they track the renderer in lockstep, and replays the fuzz
+    # corpus (`fuzzcorpus`).  Listing all five variant phonies covers every
+    # buildable artifact (release/unsafe carry the benches; release/release-cpu
+    # carry the examples).  A passing build is silent, so a green `ninja` shows
+    # only its progress -- a rendering change instead surfaces as a dirtied
+    # gallery/*.png.  The always-rerun measurement targets (benchcmp, profile)
+    # stay opt-in -- not in `all`.
+    all_targets = "release debug unsafe release-cpu debug-cpu test images"
+    if fuzz_corpus:
+        all_targets += " fuzzcorpus"
+    w(f"build all: phony {all_targets}")
     w("default all")
     w("")
 
