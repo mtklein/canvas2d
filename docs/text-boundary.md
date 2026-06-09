@@ -148,3 +148,30 @@ outline. Outlining a lone emoji therefore yields a real *advance* but an *empty 
 (`test_shape` asserts `pt_len == 0`). Outlines are a dead end for color glyphs; they
 need to be **drawn**, not traced — which is a different boundary shape (a pixel buffer
 the boundary fills), taken up next.
+
+## Color emoji: the bitmap boundary
+
+Since a color glyph has no outline, it is rendered into a pixel buffer.
+`cnvs_glyph_draw` is the second boundary shape: the checked core owns a
+`uint8_t *__counted_by(w * h * 4)` RGBA8 buffer and hands `(px, w, h)` to the boundary,
+which wraps it in a `CGBitmapContext` (`bytesPerRow = w*4`, `h` rows) and draws the
+glyph with `CTFontDrawGlyphs`.
+
+- **A pixel buffer crosses checked → boundary** — the 2D mirror of the glyph-run
+  hand-off (and of the font-name output buffer). `(ptr, dims)` go in; the boundary
+  writes *within* the dimensions it was told (`w*4 × h = w*h*4` bytes). Same `(ptr,
+  count)` trust model, opposite direction, **no forge**. Bounded data now crosses this
+  boundary in every shape we've needed: glyph arrays in, name/pixel buffers out.
+- **Color works.** On current macOS `CTFontDrawGlyphs` renders the emoji *in colour*
+  (the test asserts non-grayscale pixels and real alpha), so the outline gap is fully
+  covered. Text rendering therefore has exactly two boundary shapes — **vector outline**
+  for normal glyphs, **raster draw-into-buffer** for color glyphs — and both pass
+  bounded data across cleanly.
+- **ASan-clean.** Drawing into the checked heap buffer through CoreGraphics does not
+  trip AddressSanitizer; CG writes inside the dimensions, so the boundary's contract
+  ("dims match the buffer") holds at runtime too.
+
+So the whole text path — shape, fall back, lay out, outline or draw — keeps its
+index-heavy logic on the checked side and its irreducibly-CT work (shaping, glyph
+paths, glyph rasterization) on the unsafe side, with every crossing a plain
+`(pointer, count)` and not one forge among them.
