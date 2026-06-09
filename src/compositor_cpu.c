@@ -15,10 +15,29 @@
 // un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.  Switches run over
 // (int)mode to avoid -Wswitch-enum.
 
+// Metal's RGBA16Float store rounds toward zero (truncates) where C's (_Float16)
+// cast rounds to nearest-even.  To make this software backend reproduce the GPU
+// bit-for-bit (so `ninja`'s backenddiff gate holds at 0), match that: round every
+// half store toward zero too.  This is deliberately *less* accurate than
+// nearest-even (up to ~1 half-ULP low) -- the goal is parity with Metal, not
+// numerical correctness.  It also couples this output to the GPU's store
+// behaviour: a device that rounds-to-nearest would diverge (the differential
+// would catch it).  See diff/ and docs.
+static _Float16 to_half_rtz(float v) {  // v >= 0 here, so toward-zero == floor
+    _Float16 n = (_Float16)v;
+    if ((float)n > v) {  // nearest-even overshot -- step one ULP back toward zero
+        uint16_t bits;
+        memcpy(&bits, &n, sizeof bits);
+        bits -= 1;
+        memcpy(&n, &bits, sizeof bits);
+    }
+    return n;
+}
+
 static _Float16 clamp16(float v, float hi) {
     if (v < 0.0f) { v = 0.0f; }
     if (v > hi) { v = hi; }
-    return (_Float16)v;
+    return to_half_rtz(v);
 }
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
@@ -171,7 +190,7 @@ static cnvs_premul blend(cnvs_premul src, cnvs_premul dst, compositor_blend_mode
 
     float aoc = fminf(ao, 1.0f);  // additive 'lighter' can exceed 1
     return (cnvs_premul){ .r = clamp16(cor, aoc), .g = clamp16(cog, aoc),
-                          .b = clamp16(cob, aoc), .a = (_Float16)aoc };
+                          .b = clamp16(cob, aoc), .a = to_half_rtz(aoc) };
 }
 
 struct compositor {
