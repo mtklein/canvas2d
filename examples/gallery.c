@@ -1088,6 +1088,105 @@ static void path2d_demo(void) {
     save(c, "gallery/path2d.png");
 }
 
+// Paint a transparency checkerboard *behind* whatever is already in [x,y,w,h]
+// (destination-over), so a Porter-Duff result's transparent areas read clearly.
+static void checker_behind(canvas *__single c, float x, float y, float w, float h) {
+    canvas_set_global_composite_operation(c, CANVAS_OP_DESTINATION_OVER);
+    int const t = 13;
+    for (int j = 0; (float)(j * t) < h; j++) {
+        for (int i = 0; (float)(i * t) < w; i++) {
+            if (((i + j) & 1) == 0) {
+                canvas_set_fill_rgba(c, 0.84f, 0.85f, 0.88f, 1.0f);
+            } else {
+                canvas_set_fill_rgba(c, 0.68f, 0.70f, 0.75f, 1.0f);
+            }
+            canvas_fill_rect(c, x + (float)(i * t), y + (float)(j * t), (float)t,
+                             (float)t);
+        }
+    }
+    canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
+}
+
+static void pd_dst(canvas *__single c, float ox, float oy) {  // blue square
+    canvas_set_fill_rgba(c, 0.20f, 0.55f, 0.90f, 1.0f);
+    canvas_fill_rect(c, ox + 16.0f, oy + 12.0f, 50.0f, 50.0f);
+}
+
+static void pd_src(canvas *__single c, float ox, float oy) {  // orange disc
+    canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, ox + 62.0f, oy + 52.0f, 27.0f, 0.0f, TAU, false);
+    canvas_fill(c);
+}
+
+// The 11 Porter-Duff compositing operators (how source alpha combines with the
+// destination), each in its own cell: clip + clear to transparent, draw the blue
+// "destination" square, then the orange "source" disc under the operator, then a
+// checkerboard behind so the surviving regions read.  A legend names the shapes.
+static void porterduff(void) {
+    float const M = 16.0f, cellW = 118.0f, cellH = 99.0f;
+    canvas *__single c = canvas_create(504, 329);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 504.0f, 329.0f);
+
+    canvas_composite_op const ops[11] = {
+        CANVAS_OP_SOURCE_OVER,      CANVAS_OP_SOURCE_IN,
+        CANVAS_OP_SOURCE_OUT,       CANVAS_OP_SOURCE_ATOP,
+        CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
+        CANVAS_OP_DESTINATION_OUT,  CANVAS_OP_DESTINATION_ATOP,
+        CANVAS_OP_LIGHTER,          CANVAS_OP_XOR,
+        CANVAS_OP_COPY,
+    };
+    char const *const names[11] = {
+        "source-over",      "source-in",       "source-out",
+        "source-atop",      "destination-over", "destination-in",
+        "destination-out",  "destination-atop", "lighter",
+        "xor",              "copy",
+    };
+
+    for (int idx = 0; idx < 11; idx++) {
+        int col = idx % 4, row = idx / 4;
+        float ox = M + (float)col * cellW, oy = M + (float)row * cellH;
+        canvas_save(c);
+        canvas_begin_path(c);
+        canvas_rect(c, ox + 3.0f, oy + 3.0f, 112.0f, 78.0f);
+        canvas_clip(c);
+        canvas_clear_rect(c, ox + 3.0f, oy + 3.0f, 112.0f, 78.0f);
+        pd_dst(c, ox, oy);  // destination (source-over)
+        canvas_set_global_composite_operation(c, ops[idx]);
+        pd_src(c, ox, oy);  // source under the operator
+        checker_behind(c, ox + 3.0f, oy + 3.0f, 112.0f, 78.0f);
+        canvas_restore(c);
+
+        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_font_size(c, 11.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_fill_text(c, names[idx], ox + cellW * 0.5f, oy + 93.0f);
+    }
+
+    // Legend cell (bottom-right): the two shapes and what they are.
+    float lox = M + 3.0f * cellW, loy = M + 2.0f * cellH;
+    pd_dst(c, lox, loy - 4.0f);
+    canvas_set_fill_rgba(c, 0.20f, 0.55f, 0.90f, 1.0f);
+    canvas_fill_rect(c, lox + 20.0f, loy + 14.0f, 30.0f, 22.0f);
+    canvas_set_fill_rgba(c, 0.85f, 0.88f, 0.93f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_fill_text(c, "destination", lox + 56.0f, loy + 30.0f);
+    canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, lox + 35.0f, loy + 58.0f, 13.0f, 0.0f, TAU, false);
+    canvas_fill(c);
+    canvas_set_fill_rgba(c, 0.85f, 0.88f, 0.93f, 1.0f);
+    canvas_fill_text(c, "source", lox + 56.0f, loy + 62.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/porterduff.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1401,6 +1500,7 @@ int main(void) {
     textgrid();
     textmetrics();
     textmaxwidth();
+    porterduff();
     hittest();
     blend();
     shadows();
