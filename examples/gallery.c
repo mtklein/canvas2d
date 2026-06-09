@@ -1387,50 +1387,62 @@ static void text(void) {
     save(c, "gallery/text.png");
 }
 
-// globalCompositeOperation: two overlapping discs over a gradient, under a range of
-// blend modes.
+// globalCompositeOperation: all fifteen blend modes -- the eleven separable plus
+// the four non-separable -- each compositing two overlapping discs over the same
+// diagonal gradient backdrop (the W3C composite+blend formula, in a
+// framebuffer-fetch shader on Metal / the checked-C blend kernel on the CPU).
 static void blend(void) {
-    struct { canvas_composite_op op; char const *name; } cell[6] = {
-        { CANVAS_OP_MULTIPLY, "multiply" },   { CANVAS_OP_SCREEN, "screen" },
-        { CANVAS_OP_OVERLAY, "overlay" },     { CANVAS_OP_DIFFERENCE, "difference" },
-        { CANVAS_OP_HUE, "hue" },             { CANVAS_OP_LUMINOSITY, "luminosity" },
+    struct { canvas_composite_op op; char const *name; } const cell[15] = {
+        { CANVAS_OP_MULTIPLY, "multiply" },       { CANVAS_OP_SCREEN, "screen" },
+        { CANVAS_OP_OVERLAY, "overlay" },         { CANVAS_OP_DARKEN, "darken" },
+        { CANVAS_OP_LIGHTEN, "lighten" },         { CANVAS_OP_COLOR_DODGE, "color-dodge" },
+        { CANVAS_OP_COLOR_BURN, "color-burn" },   { CANVAS_OP_HARD_LIGHT, "hard-light" },
+        { CANVAS_OP_SOFT_LIGHT, "soft-light" },   { CANVAS_OP_DIFFERENCE, "difference" },
+        { CANVAS_OP_EXCLUSION, "exclusion" },     { CANVAS_OP_HUE, "hue" },
+        { CANVAS_OP_SATURATION, "saturation" },   { CANVAS_OP_COLOR, "color" },
+        { CANVAS_OP_LUMINOSITY, "luminosity" },
     };
-    int const cw = 120, n = 6;
-    canvas *__single c = canvas_create(cw * n, 150);
+    float const M = 12.0f, cellW = 140.0f, cellH = 124.0f;
+    canvas *__single c = canvas_create(724, 396);
     if (!c) {
         return;
     }
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, (float)(cw * n), 150.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 724.0f, 396.0f);
 
-    for (int i = 0; i < n; i++) {
-        float ox = (float)(i * cw);
+    for (int i = 0; i < 15; i++) {
+        int col = i % 5, row = i / 5;
+        float ox = M + (float)col * cellW, oy = M + (float)row * cellH;
+
         // Backdrop: a diagonal gradient block (always source-over).
         canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
-        canvas_set_fill_linear_gradient(c, ox + 12.0f, 18.0f, ox + 108.0f, 112.0f);
+        canvas_set_fill_linear_gradient(c, ox + 18.0f, oy + 12.0f, ox + 122.0f,
+                                        oy + 100.0f);
         canvas_add_fill_color_stop(c, 0.0f, 0.20f, 0.65f, 0.95f, 1.0f);
         canvas_add_fill_color_stop(c, 1.0f, 0.98f, 0.85f, 0.30f, 1.0f);
         canvas_begin_path(c);
-        canvas_round_rect(c, ox + 12.0f, 18.0f, 96.0f, 94.0f, 12.0f);
+        canvas_round_rect(c, ox + 18.0f, oy + 12.0f, 104.0f, 88.0f, 12.0f);
         canvas_fill(c);
 
         // Two overlapping discs under this cell's blend mode.
         canvas_set_global_composite_operation(c, cell[i].op);
         canvas_set_fill_rgba(c, 0.92f, 0.26f, 0.21f, 1.0f);
         canvas_begin_path(c);
-        canvas_arc(c, ox + 48.0f, 56.0f, 28.0f, 0.0f, TAU, false);
+        canvas_arc(c, ox + 54.0f, oy + 42.0f, 26.0f, 0.0f, TAU, false);
         canvas_fill(c);
         canvas_set_fill_rgba(c, 0.18f, 0.85f, 0.42f, 1.0f);
         canvas_begin_path(c);
-        canvas_arc(c, ox + 72.0f, 78.0f, 28.0f, 0.0f, TAU, false);
+        canvas_arc(c, ox + 80.0f, oy + 66.0f, 26.0f, 0.0f, TAU, false);
         canvas_fill(c);
 
         // Label.
         canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
         canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
-        canvas_set_font_size(c, 15.0f);
-        canvas_fill_text(c, cell[i].name, ox + 12.0f, 134.0f);
+        canvas_set_font_size(c, 13.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_fill_text(c, cell[i].name, ox + cellW * 0.5f, oy + 116.0f);
     }
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
 
     save(c, "gallery/blend.png");
 }

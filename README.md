@@ -147,9 +147,11 @@ transparency checkerboard:
 
 ![porterduff](gallery/porterduff.png)
 
-`globalCompositeOperation`, the blend modes — the same two discs over a gradient
-(`source-over` is the GPU's fixed-function blend; the rest run the W3C
-composite+blend formula in a framebuffer-fetch shader):
+`globalCompositeOperation`, the blend modes — all fifteen (eleven separable plus
+the four non-separable), each compositing the same two discs over a gradient via
+the W3C composite+blend formula (a framebuffer-fetch shader on Metal, the
+checked-C blend kernel on the CPU). With the eleven Porter-Duff operators above,
+that's all 26 modes:
 
 ![blend](gallery/blend.png)
 
