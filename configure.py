@@ -390,11 +390,18 @@ def main():
     w("  cmd = sh bench/profile.sh build/release ; sh bench/profile.sh build/release-cpu")
     # `rendercmp` pits the two shipping compositor backends against each other on the
     # real-pipeline bench (metal vs cpu); names no output file, so it always reruns.
+    # Two shapes: per-frame readback (the getImageData/PNG-export workload, a sync per
+    # frame) and one-readback-at-the-end (BENCH_READBACK=end -- the GPU pipelines
+    # frames, Metal's strength).  The env-prefixed run drops -N so a shell expands it.
     render_metal = "build/release/bench_render"
     render_cpu = "build/release-cpu/bench_render"
-    rendercmp_cmd = ('hyperfine --warmup 3 -N '
-                     f'-n "render metal" ./{render_metal} '
-                     f'-n "render cpu" ./{render_cpu}')
+    rendercmp_cmd = (
+        'hyperfine --warmup 3 -N '
+        f'-n "render metal (per-frame readback)" ./{render_metal} '
+        f'-n "render cpu (per-frame readback)" ./{render_cpu} ; '
+        'hyperfine --warmup 3 '
+        f'-n "render metal (1 readback)" "BENCH_READBACK=end ./{render_metal}" '
+        f'-n "render cpu (1 readback)" "BENCH_READBACK=end ./{render_cpu}"')
     w(f"build rendercmp: rendercmp {render_metal} {render_cpu}")
     w(f"  cmd = {rendercmp_cmd}")
     # `analyze` runs the static analyzer over the checked C (core + the cpu backend;

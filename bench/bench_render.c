@@ -87,14 +87,27 @@ int main(void) {
         return 1;
     }
 
+    // BENCH_READBACK=end renders every frame but reads back only once at the very
+    // end -- the render-without-per-frame-readback case, where the GPU pipelines
+    // frames instead of syncing each one (Metal's strength).  Default reads each
+    // frame (the getImageData / PNG-export shape, which forces a sync per frame).
+    char const *__null_terminated rb = getenv("BENCH_READBACK");
+    bool read_each = !(rb && rb[0] == 'e');
+
     double sink = 0.0;
     int reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
-            canvas_read_rgba(cv, px, len);  // readback: compositor_read + unpremultiply
-            sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
+            if (read_each) {
+                canvas_read_rgba(cv, px, len);  // readback: compositor_read + unpremultiply
+                sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
+            }
         }
+    }
+    if (!read_each) {
+        canvas_read_rgba(cv, px, len);  // a single readback at the end
+        sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
 
     free(px);
