@@ -191,6 +191,13 @@ so emoji mix inline with Latin + Chinese and take the transform and shadow:
 
 ![emoji](gallery/emoji.png)
 
+Text shaping + fallback — one `fill_text` per line, each a greeting in a different
+script. Core Text picks the right fallback font per run (eight faces here), shapes
+Devanagari conjuncts, and renders color emoji — all through the same coverage
+rasterizer:
+
+![shaping](gallery/shaping.png)
+
 ## Quick start
 
 ```sh

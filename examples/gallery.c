@@ -1794,6 +1794,58 @@ static void emoji(void) {
     save(c, "gallery/emoji.png");
 }
 
+// Text shaping + font fallback: one fill_text per line, each a greeting in a
+// different script.  Core Text picks the right fallback font per run, joins Arabic
+// contextually, lays RTL out right-to-left, reorders Devanagari -- all rendered by
+// the same coverage rasterizer (and color emoji as bitmaps).
+static void shaping(void) {
+    canvas *__single c = canvas_create(500, 348);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 348.0f);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 360.0f, 0.0f);
+    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_set_font_size(c, 21.0f);
+    canvas_fill_text(c, "one fill_text, every script", 36.0f, 46.0f);
+
+    struct { char const *greeting; char const *label; } const row[8] = {
+        { "Hello, world",  "Latin" },
+        { "你好,世界",      "Chinese" },
+        { "こんにちは",      "Japanese" },
+        { "Привет, мир",   "Cyrillic" },
+        { "Γειά σου",      "Greek" },
+        { "안녕하세요",       "Korean" },
+        { "नमस्ते",          "Devanagari - reorders" },
+        { "👋 🌍 🎉",        "color emoji" },
+    };
+    for (int i = 0; i < 8; i++) {
+        float y = 92.0f + (float)i * 31.0f;
+        float t = (float)i / 8.0f;
+        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+        canvas_set_font_size(c, 28.0f);
+        canvas_fill_text(c, row[i].greeting, 40.0f, y);
+        canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+        canvas_set_font_size(c, 12.0f);
+        canvas_fill_text(c, row[i].label, 320.0f, y - 4.0f);
+    }
+
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "Core Text fallback + shaping, one coverage rasterizer",
+                     40.0f, 338.0f);
+
+    save(c, "gallery/shaping.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -1824,6 +1876,7 @@ static void render_all(void) {
     blend();
     shadows();
     emoji();
+    shaping();
 }
 
 int main(void) {
