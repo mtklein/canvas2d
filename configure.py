@@ -64,20 +64,37 @@ CWARN = "-Werror -Weverything " + " ".join(
 
 CINC = "-Iinclude -Isrc"
 OBJCWARN = "-Wall -Wextra"
-FRAMEWORKS = ("-framework Metal -framework Foundation "
-              "-framework CoreText -framework CoreGraphics -framework CoreFoundation")
+
+# Frameworks every variant needs (the Core Text font shim).
+BASE_FRAMEWORKS = "-framework CoreText -framework CoreGraphics -framework CoreFoundation"
+
+# Mutually-exclusive compositor backends -- a binary links exactly one.  metal is
+# the GPU shim (ObjC + ARC); cpu is the pure checked-C software compositor, which
+# needs no frameworks at all (a genuinely GPU-free build).  backend -> (source,
+# extra link frameworks).
+BACKENDS = {
+    "metal": ("src/compositor_metal.m", "-framework Metal -framework Foundation"),
+    "cpu":   ("src/compositor_cpu.c", ""),
+}
+BACKEND_SRCS = {os.path.basename(src) for src, _fw in BACKENDS.values()}
 
 # C sources that are platform boundaries: built without -fbounds-safety and at
 # -Wall -Wextra (like the .m shim), because they bind un-annotated system
 # framework headers.  They expose a bounds-safe C ABI to the checked core.
 BOUNDARY_C = {"cnvs_font_ct.c"}
 
-# variant -> (opt flags, bounds-safety?, build tests?, build bench?)
+_DEBUG = "-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all"
+
+# variant -> (opt flags, bounds-safety?, build tests?, build bench?, backend).
+# The -cpu variants run the whole test suite against the software compositor, so
+# every pixel test cross-validates the two backends and the GPU-free path stays
+# green.  The benchmark measures backend-agnostic CPU kernels, so it stays metal.
 VARIANTS = {
-    "release": ("-Os", True, True, True),
-    "debug": ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all",
-              True, True, False),
-    "unsafe": ("-Os", False, False, True),
+    "release":     ("-Os", True,  True,  True,  "metal"),
+    "debug":       (_DEBUG, True, True,  False, "metal"),
+    "unsafe":      ("-Os", False, False, True,  "metal"),
+    "release-cpu": ("-Os", True,  True,  False, "cpu"),
+    "debug-cpu":   (_DEBUG, True, True,  False, "cpu"),
 }
 
 
@@ -87,8 +104,8 @@ def obj(variant, src):
 
 
 def main():
-    core_c = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.c")))
-    shim_m = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.m")))
+    core_c = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.c"))
+                    if os.path.basename(p) not in BACKEND_SRCS)
     tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c")))
     benches = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "bench", "*.c")))
     examples = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "examples", "*.c")))
@@ -103,15 +120,15 @@ def main():
     w(f"cwarn = {CWARN}")
     w(f"cinc = {CINC}")
     w(f"objcwarn = {OBJCWARN}")
-    w(f"frameworks = {FRAMEWORKS}")
     w("")
     w("# Rationale for each disabled warning:")
     for name, why in CWARN_DISABLED:
         w(f"#   -Wno-{name}: {why}")
     w("")
 
-    for variant, (opt, bounds, _tests, _bench) in VARIANTS.items():
+    for variant, (opt, bounds, _tests, _bench, backend) in VARIANTS.items():
         bflag = (BOUNDS + " ") if bounds else ""
+        frameworks = (BASE_FRAMEWORKS + " " + BACKENDS[backend][1]).strip()
         w(f"rule cc_{variant}")
         w(f"  command = clang $cstd {bflag}$cwarn $cinc {opt} -MMD -MF $out.d -c $in -o $out")
         w("  depfile = $out.d")
@@ -134,7 +151,7 @@ def main():
         w(f"  description = OBJC({variant}) $out")
         w("")
         w(f"rule link_{variant}")
-        w(f"  command = clang {opt} $in $frameworks -o $out")
+        w(f"  command = clang {opt} $in {frameworks} -o $out")
         w(f"  description = LINK({variant}) $out")
         w("")
 
@@ -158,17 +175,19 @@ def main():
     bench_variants = [v for v, cfg in VARIANTS.items() if cfg[3]]
 
     test_stamps = []
-    for variant, (_opt, _bounds, do_tests, do_bench) in VARIANTS.items():
+    for variant, (_opt, _bounds, do_tests, do_bench, backend) in VARIANTS.items():
         lib_objs = []
         for c in core_c:
             o = obj(variant, c)
             ccrule = "cc_boundary" if os.path.basename(c) in BOUNDARY_C else "cc"
             w(f"build {o}: {ccrule}_{variant} {c}")
             lib_objs.append(o)
-        for m in shim_m:
-            o = obj(variant, m)
-            w(f"build {o}: objc_{variant} {m}")
-            lib_objs.append(o)
+        # The chosen compositor backend: the ObjC Metal shim, or the checked-C
+        # software compositor (built like any core .c).
+        bsrc = BACKENDS[backend][0]
+        bo = obj(variant, bsrc)
+        w(f"build {bo}: {'objc' if bsrc.endswith('.m') else 'cc'}_{variant} {bsrc}")
+        lib_objs.append(bo)
         w("")
 
         produced = []
@@ -192,7 +211,7 @@ def main():
                 w(f"build {o}: cc_{variant} {b}")
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
                 produced.append(exe)
-        if variant == "release":
+        if variant in ("release", "release-cpu"):
             for e in examples:
                 stem = os.path.splitext(os.path.basename(e))[0]
                 o = obj(variant, e)
@@ -224,13 +243,13 @@ def main():
     # (after building the binaries it depends on).
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
     w(f"  cmd = {benchcmp_cmd}")
-    w("build all: phony release debug")
+    w("build all: phony release debug release-cpu debug-cpu")
     w("default all")
     w("")
 
     with open(os.path.join(HERE, "build.ninja"), "w") as f:
         f.write("\n".join(n))
-    print(f"wrote build.ninja: {len(core_c)} core .c, {len(shim_m)} shim .m, "
+    print(f"wrote build.ninja: {len(core_c)} core .c, {len(BACKENDS)} backends, "
           f"{len(tests)} test(s), {len(benches)} bench(es)")
 
 

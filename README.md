@@ -95,16 +95,19 @@ Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
 [hyperfine](https://github.com/sharkdp/hyperfine). No offline Metal toolchain
 component is needed — the shader is embedded with `#embed` and compiled at runtime.
 
-Three variants are produced from one source tree:
+Variants are produced from one source tree, crossing the optimisation/safety
+flags with the compositor backend (`-cpu` links the software compositor and no GPU
+frameworks):
 
 | Variant | Flags | Story |
 |---|---|---|
 | `release` | `-Os -fbounds-safety` | the shipping build; bounds checks still trap |
 | `debug` | `-O0 -g -fbounds-safety -fsanitize=address,integer,undefined -fno-sanitize-recover=all` | any sanitizer finding is fatal |
 | `unsafe` | `-Os` | identical to release minus `-fbounds-safety`; the benchmark baseline |
+| `release-cpu` / `debug-cpu` | as above, software compositor | GPU-free; cross-validates the Metal backend |
 
-`ninja test` runs all test binaries in `release` and `debug`. The PNGs land in
-`build/` (e.g. `build/m1_demo.png`).
+`ninja test` runs every test binary in all four checked variants, so each pixel
+test runs against *both* backends. The PNGs land in `build/`.
 
 ## Architecture
 
@@ -129,6 +132,8 @@ Three variants are produced from one source tree:
    compositor_metal.m  ── unsafe boundary #1: composites premultiplied tiles onto
                           a single-sample target under a blend mode, masked by a
                           clip coverage texture, batched + read back  (ObjC + ARC)
+   compositor_cpu.c   ── OR the software backend: the same ABI, one checked-C
+                          blend kernel over __counted_by tiles (no GPU, no frameworks)
 ```
 
 Everything above the two ABI lines is pure C23 under `-fbounds-safety`. There are
@@ -138,8 +143,12 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   geometry, **analytic antialiasing**, gradient evaluation, and clipping happen on
   the CPU in checked C and bake into finished `_Float16` RGBA16F tiles (colour's
   lingua franca here — native on this hardware, 8-bit only at the spec-mandated
-  edges), so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific;
-  a CPU backend could implement `compositor.h` identically.
+  edges), so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific:
+  the [software compositor](src/compositor_cpu.c) implements `compositor.h`
+  identically in ~100 lines of checked C (its per-pixel blend kernel, shared via
+  [cnvs_blend.h](src/cnvs_blend.h), is the same premultiplied math the Metal shader
+  runs), selected instead of Metal at build time. The two agree to ≤1/255 per
+  channel, and the `-cpu` build links no GPU frameworks at all.
 - The [Core Text font shim](src/cnvs_font_ct.c) turns a system typeface into
   ordinary device-space `cnvs_path` outlines, which the *same* coverage rasterizer
   then fills/strokes — so text gets gradients, transforms, clips and AA for free.
@@ -274,7 +283,7 @@ What we deliberately **won't** do:
 ```
 configure.py             generates build.ninja (release, debug, unsafe)
 include/canvas.h         public API
-src/                     C core + two boundary shims (Metal .m, Core Text .c)
+src/                     C core; compositor backends (Metal .m / software .c); Core Text shim
 shaders/compositor.metal tile vertex+fragment shaders (embedded via #embed)
 tests/                   unit + pixel tests + a bounds-safety trap test
 bench/bench.c            CPU-only benchmark (release vs unsafe)

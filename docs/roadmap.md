@@ -20,11 +20,13 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    in the Metal backend: source-over on fixed-function blend, the rest in a
    framebuffer-fetch shader. The blend *math* isn't in checked C yet — that's the
    next item.
-2. **A software compositor backend** — `compositor_cpu.c`, a checked-C
-   implementation of the same `compositor.h` ABI, with all 26 composite/blend
-   modes as one per-pixel `blend(src, dst, mode)` over two `__counted_by` tiles.
-   This is the bounds-safety showcase (and makes a GPU-free build/test path real);
-   it's where the blend kernel finally lives in checked C.
+2. ~~**A software compositor backend**~~ — **done**.
+   [compositor_cpu.c](../src/compositor_cpu.c) implements the same `compositor.h`
+   ABI in ~100 lines of checked C; the per-pixel `cnvs_blend(src, dst, mode)`
+   kernel ([cnvs_blend.h](../src/cnvs_blend.h)) is all 26 composite/blend modes,
+   premultiplied, over `__counted_by` tiles. Chosen instead of Metal at build time
+   (the `-cpu` variants), it links no GPU frameworks and cross-validates the Metal
+   backend — every pixel test runs against both, and they agree to ≤1/255.
 3. **Shadows / `filter` blur** — a separable Gaussian (or box) convolution: a
    horizontal then vertical pass over a coverage/colour buffer, every tap an
    indexed read against a `__counted_by` row. The canonical stencil loop.
