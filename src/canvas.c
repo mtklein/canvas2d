@@ -1631,7 +1631,7 @@ static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, i
         return;
     }
     int const n = cv->width * cv->height;
-    cnvs_premul *__counted_by(n) buf = malloc((size_t)n * sizeof *buf);
+    cnvs_premul *__counted_by_or_null(n) buf = malloc((size_t)n * sizeof *buf);
     if (!buf) {
         return;
     }
@@ -1664,7 +1664,7 @@ void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int l
 
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     int const len = cv->width * cv->height * 4;
-    uint8_t *__counted_by(len) out = malloc((size_t)len);
+    uint8_t *__counted_by_or_null(len) out = malloc((size_t)len);
     if (!out) {
         return false;
     }
@@ -1681,7 +1681,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     }
     memset(out, 0, (size_t)len);  // pixels outside the canvas stay transparent
     int const clen = cv->width * cv->height * 4;
-    uint8_t *__counted_by(clen) buf = malloc((size_t)clen);
+    uint8_t *__counted_by_or_null(clen) buf = malloc((size_t)clen);
     if (!buf) {
         return;
     }

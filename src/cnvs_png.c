@@ -152,7 +152,7 @@ bool cnvs_png_write(char const *__null_terminated path,
     size_t const rawlen = (size_t)height * (size_t)(stride + 1);
 
     // Each row is prefixed by a filter-type byte (0 = None).
-    uint8_t *__counted_by(rawlen) raw = malloc(rawlen);
+    uint8_t *__counted_by_or_null(rawlen) raw = malloc(rawlen);
     if (!raw) {
         return false;
     }
@@ -172,7 +172,7 @@ bool cnvs_png_write(char const *__null_terminated path,
                        + (12u + 13u)              // IHDR
                        + (12u + zlib_len)          // IDAT
                        + 12u;                      // IEND
-    uint8_t *__counted_by(total) out = malloc(total);
+    uint8_t *__counted_by_or_null(total) out = malloc(total);
     if (!out) {
         free(raw);
         return false;

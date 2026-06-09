@@ -294,7 +294,7 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
         return false;
     }
     size_t const n = (size_t)sz;
-    char *__counted_by(n) buf = malloc(n > 0 ? n : 1);
+    char *__counted_by_or_null(n) buf = malloc(n > 0 ? n : 1);
     if (!buf) {
         (void)fclose(f);
         return false;

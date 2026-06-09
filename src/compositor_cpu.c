@@ -211,7 +211,7 @@ compositor *__single compositor_create(int width, int height) {
         return NULL;
     }
     int const n = width * height;
-    cnvs_premul *__counted_by(n) t = calloc((size_t)n, sizeof *t);
+    cnvs_premul *__counted_by_or_null(n) t = calloc((size_t)n, sizeof *t);
     if (!t) {
         free(c);
         return NULL;
@@ -248,7 +248,7 @@ void compositor_set_clip(compositor *__single c,
         return;
     }
     if (!c->clip) {
-        uint8_t *__counted_by(n) m = malloc((size_t)n);
+        uint8_t *__counted_by_or_null(n) m = malloc((size_t)n);
         if (!m) {
             return;
         }
