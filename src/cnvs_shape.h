@@ -46,6 +46,21 @@ void cnvs_shaped_free(cnvs_shaped *__single s);
 float cnvs_shaped_width(cnvs_shaped const *__single s);                // sum of advances
 int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x);    // hit-test -> UTF-16 index, or -1
 
+// A visual x range [x0,x1) in user px from the line start (a selection highlight rect).
+typedef struct {
+    float x0, x1;
+} cnvs_xspan;
+
+// Caret: visual x for a logical UTF-16 index (the leading visual edge of that glyph).
+float cnvs_shaped_x_at_index(cnvs_shaped const *__single s, int index);
+
+// Selection: visual x-spans covering the logical range [lo,hi).  A bidi range maps to
+// non-contiguous visual positions and so splits into multiple spans; writes up to
+// `max`, returns the count.  Pure index logic: the cluster map drives it and every
+// access is bounds-checked, no forge -- this is where the checked side earns its keep.
+int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
+                          cnvs_xspan *__counted_by(max) out, int max);
+
 // Copy a run's font name into `buf` (UTF-8, NUL-terminated within `cap`); returns the
 // byte length, or -1.  Boundary helper: the opaque font handle goes in, an output
 // buffer the boundary fills within `cap` comes back.  Used to confirm fallback (a run

@@ -143,6 +143,39 @@ static void check_emoji_draw(void) {
     cnvs_shaped_free(s);
 }
 
+static void check_bidi(void) {
+    cnvs_shaped *s = cnvs_shape("Helvetica", 20.0f, "Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!");
+    CHECK(s != NULL);
+    if (!s) {
+        return;
+    }
+    float w = cnvs_shaped_width(s);
+    cnvs_xspan sp[8];
+
+    // Full selection collapses to one span covering the whole line.
+    int nfull = cnvs_shaped_selection(s, 0, s->text_len, sp, 8);
+    CHECK(nfull == 1);
+    CHECK(sp[0].x0 == 0.0f && sp[0].x1 > w - 0.5f && sp[0].x1 < w + 0.5f);
+
+    // A logical range crossing the LTR<->RTL boundary maps to non-contiguous visual
+    // positions, so it splits into >= 2 spans (the point of bidi selection).
+    int nsplit = cnvs_shaped_selection(s, 1, 5, sp, 8);
+    CHECK(nsplit >= 2);
+    for (int k = 0; k < nsplit; k++) {
+        CHECK(sp[k].x0 <= sp[k].x1 && sp[k].x0 >= 0.0f && sp[k].x1 <= w + 0.5f);
+    }
+
+    // The output cap is respected even when more spans exist.
+    CHECK(cnvs_shaped_selection(s, 1, 5, sp, 1) <= 1);
+
+    // Caret at the line start is 0; an index past the end is the line width.
+    CHECK(cnvs_shaped_x_at_index(s, 0) == 0.0f);
+    float xe = cnvs_shaped_x_at_index(s, s->text_len);
+    CHECK(xe > w - 0.5f && xe < w + 0.5f);
+
+    cnvs_shaped_free(s);
+}
+
 int main(void) {
     check_shape("ffi waffle", false);             // Latin with ligatures (cluster gaps)
     check_shape("a\xF0\x9F\x98\x80""b", false);   // a + U+1F600 emoji + b (multi-run)
@@ -151,5 +184,6 @@ int main(void) {
     check_fallback();
     check_outline();
     check_emoji_draw();
+    check_bidi();
     return TEST_REPORT();
 }

@@ -39,6 +39,53 @@ int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x) {
     return -1;
 }
 
+float cnvs_shaped_x_at_index(cnvs_shaped const *__single s, int index) {
+    if (!s) {
+        return 0.0f;
+    }
+    float pen = 0.0f;
+    for (int r = 0; r < s->nruns; r++) {
+        cnvs_glyph_run run = s->run[r];
+        for (int i = 0; i < run.count; i++) {
+            if (run.cluster[i] == index) {
+                return pen;  // leading visual edge of the glyph at this logical index
+            }
+            pen += run.xadv[i];
+        }
+    }
+    return pen;  // index past the last glyph -> end of the line
+}
+
+int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
+                          cnvs_xspan *__counted_by(max) out, int max) {
+    if (!s || max <= 0 || hi <= lo) {
+        return 0;
+    }
+    int n = 0;
+    float pen = 0.0f, start = 0.0f;
+    bool in = false;  // currently inside a selected visual run of glyphs
+    for (int r = 0; r < s->nruns; r++) {
+        cnvs_glyph_run run = s->run[r];
+        for (int i = 0; i < run.count; i++) {
+            bool sel = run.cluster[i] >= lo && run.cluster[i] < hi;
+            if (sel && !in) {
+                start = pen;
+                in = true;
+            } else if (!sel && in) {
+                if (n < max) {
+                    out[n++] = (cnvs_xspan){ start, pen };
+                }
+                in = false;
+            }
+            pen += run.xadv[i];
+        }
+    }
+    if (in && n < max) {
+        out[n++] = (cnvs_xspan){ start, pen };
+    }
+    return n;
+}
+
 float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
                           cnvs_mat to_device, float tol, cnvs_path *__single out) {
     if (!s) {
