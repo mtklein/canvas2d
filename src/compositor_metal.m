@@ -237,8 +237,11 @@ void compositor_set_clip(compositor *c, uint8_t const *mask, int len) {
         if (mask && len < o.width * o.height) {
             return;
         }
-        submit_batch(o);  // commit pending blends (no CPU wait); they keep the old
-                          // clip texture alive while the new one is installed
+        // No batch break: the clip is bound per draw (draw_tile), and set_clip_bytes
+        // installs a *fresh* texture, so draws already encoded keep sampling the old
+        // clip while later draws in the same render pass sample the new one (the open
+        // command buffer retains both until it completes).  A frame's fills, clips,
+        // and composites thus stay in one render pass, drained only at the readback.
         set_clip_bytes(o, mask);
     }
 }
