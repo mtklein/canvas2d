@@ -89,3 +89,32 @@ same code mallocs and counts. Everything downstream of that — including untrus
 *values* like cluster indices — is either bounds-checked or explicitly range-checked.
 So the unsafe surface for real text shaping is small and fixed (the CT calls plus the
 copy), and grows with feature richness far slower than the per-codepoint design would.
+
+## Font fallback: opaque handles, output buffers, and the string-model bridge
+
+A mixed string shows fallback directly — `"A😀Z"` splits into three runs with fonts
+**Helvetica / AppleColorEmoji / Helvetica**. Each run carries its own font so it can
+be outlined or measured later, which adds two more boundary shapes.
+
+- **An opaque handle crosses for free.** The per-run font is a `CTFontRef`, stored as
+  `void *__single font` and passed back to the boundary for CT calls. It needs **no
+  forge** — an opaque handle carries no bounds metadata to lose, so it isn't an
+  `__unsafe_indexable` problem at all. Its only cost is *lifetime*: `CFRetain` when
+  copied out of the `CTLine`, `CFRelease` in `cnvs_shaped_free`. (Contrast the tagged
+  pointer, where the *value* was the bound and the round-trip destroyed it.)
+- **Output buffers cross the other direction, same ABI.** `cnvs_run_font_name` hands
+  the boundary `(buf, cap)` and the boundary fills within `cap` (`CFStringGetCString`
+  respects it). It is the mirror of the glyph-run hand-off: `(ptr, count)` in, the
+  unchecked side trusting the caller's `cap`. Bounded data crosses cleanly in *both*
+  directions.
+- **The string-model bridge is asymmetric.** Text is full of C strings, and this is
+  where the `__null_terminated` model meets the `__counted_by` one. `strcmp`/`strlen`
+  are typed `__null_terminated` (`__terminated_by(0)`); a plain indexable `char[N]`
+  does **not** implicitly convert — you must assert termination with
+  `__unsafe_null_terminated_from_indexable`, which the compiler can't verify. The
+  conversion is one-way-safe: **null-terminated → indexable is safe** (it scans for
+  the NUL within the known bounds), but **indexable → null-terminated is unsafe** (it
+  trusts you that a NUL is there). The lesson for self-owned buffers: stay in the
+  *sized* model — compare with the returned length + `memcmp` (which is `__sized_by`
+  and converts from indexable safely) rather than reaching for `str*()`. The test does
+  exactly this; `str*()` on your own buffers buys an unnecessary unsafe assertion.
