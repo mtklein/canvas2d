@@ -37,6 +37,15 @@ static bool rgba8_dims_ok(int w, int h) {
     return w > 0 && h > 0 && (int64_t)w * (int64_t)h <= (int64_t)INT_MAX / 4;
 }
 
+// Colour components and the global alpha clamp to [0,1] (Canvas spec); NaN -> 0.
+// Keeps non-finite/out-of-range paint out of the float->_Float16->uint8 pipeline.
+static float clamp01(float v) {
+    if (!(v > 0.0f)) {   // <= 0, or NaN
+        return 0.0f;
+    }
+    return v > 1.0f ? 1.0f : v;
+}
+
 struct canvas_state {
     cnvs_mat ctm;
     cnvs_unpremul fill;
@@ -228,7 +237,7 @@ void canvas_reset_transform(canvas *__single cv) {
 }
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.fill = cnvs_unpremul_of(r, g, b, a);
+    cv->cur.fill = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.fill_is_gradient = 0;
 }
 
@@ -275,8 +284,8 @@ void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
 
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
-    cnvs_gradient_add_stop(&cv->cur.fill_grad, offset,
-                           cnvs_unpremul_of(r, g, b, a));
+    cnvs_gradient_add_stop(&cv->cur.fill_grad, clamp01(offset),
+                           cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
 
 void canvas_set_stroke_linear_gradient(canvas *__single cv,
@@ -293,12 +302,12 @@ void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
 
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
-    cnvs_gradient_add_stop(&cv->cur.stroke_grad, offset,
-                           cnvs_unpremul_of(r, g, b, a));
+    cnvs_gradient_add_stop(&cv->cur.stroke_grad, clamp01(offset),
+                           cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
-    cv->cur.global_alpha = alpha;
+    cv->cur.global_alpha = clamp01(alpha);
 }
 
 // canvas_composite_op mirrors compositor_blend_mode value-for-value (canvas.h
@@ -335,7 +344,7 @@ static cbbox points_bbox(canvas *__single cv,
     }
     float fx0 = floorf(minx), fy0 = floorf(miny);
     float fx1 = ceilf(maxx), fy1 = ceilf(maxy);
-    int x0 = (int)fx0, y0 = (int)fy0, x1 = (int)fx1, y1 = (int)fy1;
+    int x0 = cnvs_f2i(fx0), y0 = cnvs_f2i(fy0), x1 = cnvs_f2i(fx1), y1 = cnvs_f2i(fy1);
     if (x0 < 0) { x0 = 0; }
     if (y0 < 0) { y0 = 0; }
     if (x1 > cv->width) { x1 = cv->width; }
@@ -527,14 +536,16 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
                     bool anticlockwise) {
     float two_pi = 2.0f * (float)M_PI;
     float sweep = end_angle - start_angle;
-    if (!anticlockwise) {
-        while (sweep < 0.0f) {
-            sweep += two_pi;
-        }
-    } else {
-        while (sweep > 0.0f) {
-            sweep -= two_pi;
-        }
+    if (!isfinite(sweep)) {
+        return;  // non-finite angle: no arc (Canvas spec ignores non-finite args)
+    }
+    // Bring `sweep` to the sign the winding direction needs.  A repeated +/-2pi
+    // loop never terminates for huge magnitudes (the step falls below the float
+    // ULP, and +/-inf never crosses zero), so fold it in one step.
+    if (!anticlockwise && sweep < 0.0f) {
+        sweep -= two_pi * floorf(sweep / two_pi);   // -> [0, 2pi)
+    } else if (anticlockwise && sweep > 0.0f) {
+        sweep -= two_pi * ceilf(sweep / two_pi);     // -> (-2pi, 0]
     }
     float arx = rx < 0.0f ? -rx : rx;
     float ary = ry < 0.0f ? -ry : ry;
@@ -545,7 +556,7 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
         dstep = 1e-4f;  // guard against tiny/NaN step
     }
     float fsegs = ceilf(fabsf(sweep) / dstep);
-    int segs = (int)fsegs;
+    int segs = cnvs_f2i(fsegs);
     if (segs < 2) {
         segs = 2;
     }
@@ -715,7 +726,7 @@ void canvas_clip(canvas *__single cv) {
 }
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.stroke = cnvs_unpremul_of(r, g, b, a);
+    cv->cur.stroke = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.stroke_is_gradient = 0;
 }
 
@@ -875,7 +886,7 @@ static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
     (void)slen;
     float gx = fx - 0.5f, gy = fy - 0.5f;
     float fxx = floorf(gx), fyy = floorf(gy);
-    int x0 = (int)fxx, y0 = (int)fyy;
+    int x0 = cnvs_f2i(fxx), y0 = cnvs_f2i(fyy);
     int x1 = x0 + 1, y1 = y0 + 1;
     float tx = gx - fxx, ty = gy - fyy;
     if (x0 < 0) { x0 = 0; } else if (x0 > sw - 1) { x0 = sw - 1; }
@@ -969,10 +980,10 @@ static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, i
     compositor_read(cv->comp, buf, n);
     for (int i = 0; i < n; i++) {
         cnvs_unpremul s = cnvs_unpremultiply(buf[i]);
-        out[i * 4]     = (uint8_t)((float)s.r * 255.0f + 0.5f);
-        out[i * 4 + 1] = (uint8_t)((float)s.g * 255.0f + 0.5f);
-        out[i * 4 + 2] = (uint8_t)((float)s.b * 255.0f + 0.5f);
-        out[i * 4 + 3] = (uint8_t)((float)s.a * 255.0f + 0.5f);
+        out[i * 4]     = cnvs_f2u8((float)s.r * 255.0f + 0.5f);
+        out[i * 4 + 1] = cnvs_f2u8((float)s.g * 255.0f + 0.5f);
+        out[i * 4 + 2] = cnvs_f2u8((float)s.b * 255.0f + 0.5f);
+        out[i * 4 + 3] = cnvs_f2u8((float)s.a * 255.0f + 0.5f);
     }
     free(buf);
 }

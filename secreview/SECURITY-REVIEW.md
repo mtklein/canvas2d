@@ -143,7 +143,7 @@ compile-time net, so they deserve the heaviest fuzzing (Section 4).
 
 **Severity:** undefined behavior (float-cast-overflow); not spatial, so
 `-fbounds-safety` does **not** cover it — it is UBSan-fatal in debug and silent
-in release. **Confidence: verified, fuzzer-found + reproduced.** **Status: OPEN.**
+in release. **Confidence: verified, fuzzer-found + reproduced.** **Status: FIXED.**
 
 The public path/rect API takes coordinates as `float` with no finiteness or range
 check, and the device-space transform plus the `(int)` casts overflow on
@@ -162,12 +162,57 @@ src/canvas.c:334:29: runtime error: 9.35078e+13 is outside the range of
     #1 canvas_clear_rect  canvas.c:418   (any fill/clip/rect path reaches it)
 ```
 
-Per the Canvas 2D spec, path-building ops with non-finite arguments are no-ops.
-**Suggested fix:** reject non-finite coordinates at the public path/rect entry
-points (`move_to`, `line_to`, `rect`, `quadratic/bezier_curve_to`, `arc`,
-`ellipse`, `round_rect`, `arc_to`, `fill_rect`, `clear_rect`), and clamp the
-device-space bbox to the canvas before the `(int)` cast so a finite-but-huge
-transformed coordinate can't overflow either.
+The class turned out broader than the first two sites: float→int casts also live
+in the coverage rasterizer ([`cnvs_cover.c`](../src/cnvs_cover.c): 56, 81, 82,
+119, 120), the stroker ([`cnvs_stroke.c`](../src/cnvs_stroke.c):36), and the
+float→uint8 colour quantization ([`canvas.c`](../src/canvas.c) read-back, and
+`cnvs_cover.c`:152). Stroke vertices in particular bypass the transform chokepoint
+`xf` (they are width×miter offsets), so a per-entry non-finite check alone would
+miss them — and the crash value was *finite*-huge anyway.
+
+**Fix (the saturating-conversion approach):** a shared
+`cnvs_f2i`/`cnvs_f2u8` ([`cnvs_math.c`](../src/cnvs_math.c)) makes every float→int
+and float→uint8 conversion in the renderer total (NaN→0, out-of-range clamps) —
+this is exactly Rust's `as`-cast semantics, hand-written. Colour components clamp
+to `[0,1]` at the public setters ([`canvas.c`](../src/canvas.c) `clamp01`). The
+gradient evaluator is already NaN-robust (returns a finite stop). Regression test
+[`tests/test_sanitize.c`](../tests/test_sanitize.c). (A strict per-entry no-op on
+non-finite args, for exact Canvas-spec parity, remains an optional refinement on
+top.)
+
+### Finding 5 — Unbounded vertex allocation in dashed stroking (fuzzer-found)
+
+**Severity:** resource-exhaustion DoS (not memory corruption — the `realloc` is
+null-checked, so it degrades to a no-op if the allocation fails). **Confidence:
+verified, fuzzer-found.** **Status: OPEN.**
+
+A pathological dashed stroke drives the vertex buffer to ~2^28 elements (a ~2 GB
+`realloc`): `cnvs_stroke_dashed` → `emit_quad` → `cnvs_verts_tri` →
+`verts_reserve` ([`cnvs_geom.c:12`](../src/cnvs_geom.c)). Surfaced by libFuzzer
+*after* the Finding 4 fix unlocked deeper coverage (`malloc(2147483648)`). With
+[[Finding 2]] fixed the growth no longer overflows, so it cleanly reaches the OOM
+rather than wrapping. **Suggested fix:** cap the dash-segment / vertex count (or
+the stroked length relative to the device bounds) and stop emitting past it.
+
+### Finding 6 — Infinite loop in `canvas_ellipse` angle normalization (fuzzer-found)
+
+**Severity:** non-termination DoS (hang). **Confidence: verified, found by the
+Finding-4 regression test.** **Status: FIXED.**
+
+[`canvas_ellipse`](../src/canvas.c) normalized the sweep with
+`while (sweep < 0) sweep += 2π` / `while (sweep > 0) sweep -= 2π`. For a
+huge-magnitude or infinite angle the step falls below the float ULP (and `±inf`
+never crosses zero), so the loop never terminates — a hang on any thread that
+strokes/fills such an arc. Found when `test_sanitize` passed `-3e30`/`-INFINITY`
+as an end angle and hung (the test doing its job). **Fix:** fold the sign
+correction in one step with `floorf`/`ceilf` and no-op on a non-finite sweep —
+behaviour-identical for finite inputs, O(1), can't hang. Covered by
+[`tests/test_sanitize.c`](../tests/test_sanitize.c).
+
+Note (vs. Rust): neither Finding 5 nor Finding 6 is a memory-safety bug, and
+**neither Rust nor `-fbounds-safety` catches them** — termination and resource
+bounds are outside both. They are logic bugs that only fuzzing (or timeouts /
+allocation limits) surfaces.
 
 ### Non-findings (checked, clean)
 

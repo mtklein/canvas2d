@@ -1,5 +1,7 @@
 #include "cnvs_cover.h"
 
+#include "cnvs_math.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,7 +57,7 @@ static void accum_row(cnvs_cover *c, int w, int y,
 
     if (xhi - xlo < 1e-7f) {  // vertical within the row: all cover in one column
         float colf = floorf(xlo);
-        deposit(c, base, w, (int)colf, xlo - colf, dir * dyt);
+        deposit(c, base, w, cnvs_f2i(colf), xlo - colf, dir * dyt);
         return;
     }
 
@@ -80,8 +82,8 @@ static void accum_row(cnvs_cover *c, int w, int y,
 
     float clof = floorf(xlo);
     float chif = floorf(xhi);
-    int clo = (int)clof;
-    int chi = (int)chif;
+    int clo = cnvs_f2i(clof);
+    int chi = cnvs_f2i(chif);
     for (int col = clo; col <= chi && col < w; col++) {
         float a = (float)col > xlo ? (float)col : xlo;
         float b = (float)(col + 1) < xhi ? (float)(col + 1) : xhi;
@@ -118,8 +120,8 @@ void cnvs_cover_add_edge(cnvs_cover *c, int w, int h,
     }
     float row0f = floorf(ya);
     float row1f = ceilf(yb);
-    int row0 = (int)row0f;
-    int row1 = (int)row1f;
+    int row0 = cnvs_f2i(row0f);
+    int row1 = cnvs_f2i(row1f);
     for (int y = row0; y < row1 && y < h; y++) {
         float rtop = ya > (float)y ? ya : (float)y;
         float rbot = yb < (float)(y + 1) ? yb : (float)(y + 1);
@@ -151,7 +153,7 @@ void cnvs_cover_resolve(cnvs_cover const *c, int w, int h, cnvs_fill_rule rule,
                     cov = 1.0f;
                 }
             }
-            out[base + x] = (uint8_t)(cov * 255.0f + 0.5f);
+            out[base + x] = cnvs_f2u8(cov * 255.0f + 0.5f);
         }
     }
 }

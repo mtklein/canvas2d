@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 // 2D affine transforms (HTML Canvas 2D convention).  A matrix maps (x, y) to
 //     (a*x + c*y + e,  b*x + d*y + f),
 // the (a, b, c, d, e, f) of CanvasRenderingContext2D.setTransform().
@@ -49,3 +51,9 @@ cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p);
 
 // Inverse; identity if (near-)singular.
 cnvs_mat cnvs_mat_invert(cnvs_mat m);
+
+// Saturating float->integer conversions for the rasterizer.  Plain float->int is
+// undefined behaviour when the value is non-finite or out of range; these clamp
+// instead (NaN -> 0), keeping the device-space casts total on adversarial input.
+int cnvs_f2i(float v);
+uint8_t cnvs_f2u8(float v);

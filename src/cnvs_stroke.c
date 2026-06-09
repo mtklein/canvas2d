@@ -33,7 +33,7 @@ static int disc_segs(float r) {
         dtheta = 1e-3f;
     }
     float fs = ceilf(TAU / dtheta);
-    int s = (int)fs;
+    int s = cnvs_f2i(fs);
     if (s < 8) {
         s = 8;
     }

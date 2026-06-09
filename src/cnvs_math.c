@@ -1,6 +1,30 @@
 #include "cnvs_math.h"
 
+#include <limits.h>
 #include <math.h>
+
+int cnvs_f2i(float v) {
+    if (v != v) {                  // NaN
+        return 0;
+    }
+    if (v >= (float)INT_MAX) {     // (float)INT_MAX rounds to 2^31, just above it
+        return INT_MAX;
+    }
+    if (v <= (float)INT_MIN) {
+        return INT_MIN;
+    }
+    return (int)v;
+}
+
+uint8_t cnvs_f2u8(float v) {
+    if (!(v > 0.0f)) {             // <= 0, or NaN
+        return 0;
+    }
+    if (v >= 255.0f) {
+        return 255;
+    }
+    return (uint8_t)v;
+}
 
 cnvs_mat cnvs_mat_identity(void) {
     return (cnvs_mat){ .a = 1.0f, .b = 0.0f, .c = 0.0f,
