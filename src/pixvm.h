@@ -57,3 +57,10 @@ void pixvm_run_threaded(pixop const *__counted_by(prog_len) prog, int prog_len,
                         uint8_t *__counted_by(n * 4) dst,
                         uint8_t const *__counted_by_or_null(n * 4) src,
                         uint8_t const *__counted_by_or_null(n) cov, int n);
+
+// Design C: an SkRasterPipeline-style register pipeline (channels threaded in
+// registers, not a register file).  It runs a fixed program -- premultiplied
+// source-over of a constant colour (premul green, 0.5 alpha) scaled by `cov` onto
+// dst -- the same computation A and B express as a source-over bytecode program.
+void pixvm_run_pipe(uint8_t *__counted_by(n * 4) dst,
+                    uint8_t const *__counted_by_or_null(n) cov, int n);
