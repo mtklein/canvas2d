@@ -146,11 +146,14 @@ compile-time net, so they deserve the heaviest fuzzing (Section 4).
 in release. **Confidence: verified, fuzzer-found + reproduced.** **Status: OPEN.**
 
 The public path/rect API takes coordinates as `float` with no finiteness or range
-check. [`points_bbox`](../src/canvas.c) converts `floorf`/`ceilf` results with
-`int x0 = (int)fx0; ...` ([`canvas.c:334`](../src/canvas.c)); a non-finite or
-out-of-`int`-range coordinate makes that cast UB. Found by the Role-A API fuzzer
-([`fuzz/`](../fuzz/)) on the **second** random input, reproduced under the
-diagnostic build:
+check, and the device-space transform plus the `(int)` casts overflow on
+non-finite/huge values. It is a **class spanning multiple sites**, two confirmed:
+[`points_bbox`](../src/canvas.c) at [`canvas.c:334`](../src/canvas.c)
+(`int x0 = (int)fx0; ...`) and the transform helper `xf` at
+[`canvas.c:504`](../src/canvas.c) (reached via `canvas_ellipse`/`draw_image`).
+Found by the Role-A API fuzzer ([`fuzz/`](../fuzz/)) — first on the second random
+input (coverage-less), then re-found by the libFuzzer build with coverage in
+seconds — and reproduced under the diagnostic build:
 
 ```
 src/canvas.c:334:29: runtime error: 9.35078e+13 is outside the range of
@@ -189,29 +192,23 @@ transformed coordinate can't overflow either.
 
 | Tool | Status here | Use |
 |---|---|---|
-| **ASan** | ✅ ships with Apple clang (debug build uses it) | temporal bugs + the OOB the feature would trap; the oracle for the `unsafe` build |
-| **UBSan** (`integer,undefined`) | ✅ (debug build uses it) | **the** tool for Finding-1's class — catches the overflow at its source |
-| **`-fbounds-safety`** | ✅ Apple clang 21 | the release oracle: OOB → trap |
-| **libFuzzer** | ❌ **runtime not shipped** with this Apple clang | coverage-guided fuzzing |
-| **AFL++** | ❌ not installed | alternative coverage-guided engine |
+| **ASan** | ✅ Apple + Homebrew clang | temporal bugs + the OOB the feature would trap; the oracle for the non-`-fbounds-safety` build |
+| **UBSan** (`integer,undefined`) | ✅ both | **the** tool for the integer/float-cast classes (Findings 1, 2, 4) — catches the UB at its source |
+| **`-fbounds-safety`** | ✅ Apple clang 21 only | the release oracle: OOB → trap |
+| **libFuzzer** | ✅ **via Homebrew clang** (runtime bundled) | coverage-guided, **in-process, rootless** — the chosen engine |
+| **AFL++** | ⚠️ installed, but **rejected** | coverage needs `sudo afl-system-config` (SysV shm); root not used here |
 
-The catch: `clang -fsanitize=fuzzer` **fails to link** here —
-`libclang_rt.fuzzer_osx.a` is absent from the Xcode toolchain — and there's no
-Homebrew LLVM or AFL++. Instrumentation-only (`-fsanitize=fuzzer-no-link`) *does*
-compile, so the gap is just the driver runtime. Two ways forward:
+The resolution, after trying both engines: Apple clang lacks the libFuzzer
+runtime, and AFL++ on macOS needs root to raise the SysV shm limits — but
+**Homebrew clang ships libFuzzer**, which runs in-process with no shm/forkserver/
+sudo. Since `-fbounds-safety` is Apple-clang-only (Homebrew clang rejects it), the
+duties split, and that split is a feature, not a workaround (Section 4):
 
-1. **Works today, zero install** — write standard `LLVMFuzzerTestOneInput`
-   harnesses plus a ~10-line `main()` that replays a corpus through them, built
-   with the project's existing debug flags (`-fbounds-safety` +
-   `-fsanitize=address,integer,undefined`). No coverage feedback, but it makes
-   ASan/UBSan/bounds-safety the oracle immediately and runs in CI. Drive it with
-   a dumb mutator or recorded corpora.
-2. **Coverage-guided** — `brew install llvm` (bundles the libFuzzer runtime) or
-   `brew install afl++`. **Caveat to verify:** `-fbounds-safety` is an
-   Apple/upstream-LLVM feature; confirm the Homebrew clang you install accepts it.
-   If it doesn't, fuzz the **`unsafe` + ASan** build for *discovery* (ASan is the
-   oracle), then **replay every crash in the `-fbounds-safety` build** to confirm
-   the trap fires. That split is a feature, not a workaround — see Section 4.
+1. **Discovery** — Homebrew clang + libFuzzer + ASan + UBSan, CPU backend, no
+   `-fbounds-safety` (annotations vanish via a stub `ptrcheck.h`). Coverage-guided,
+   diagnostics inline. This is [`fuzz/`](../fuzz/); it found Finding 4.
+2. **Confirmation** — replay each crasher under the Apple-clang `-fbounds-safety`
+   build to confirm an OOB-write class becomes a deterministic trap.
 
 ---
 
