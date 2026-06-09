@@ -269,6 +269,74 @@ static void paths(void) {
     save(c, "gallery/paths.png");
 }
 
+// roundRect with per-corner elliptical radii: four cards, each a different recipe
+// of eight (x,y) corner radii, plus a wide capsule whose 200px radii are far
+// bigger than its 36px height -- the CSS overlap rule scales them down to a clean
+// half-height pill.
+static void roundrect(void) {
+    canvas *__single c = canvas_create(548, 232);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 548.0f, 232.0f);
+
+    float const cw = 110.0f, ch = 120.0f, gap = 20.0f, x0 = 24.0f, y0 = 24.0f;
+    struct {
+        float r[8];          // tl_x,tl_y, tr_x,tr_y, br_x,br_y, bl_x,bl_y
+        float c0[3], c1[3];  // gradient endpoint colours (rgb)
+    } const card[4] = {
+        // uniform circular corners
+        { { 24.0f, 24.0f, 24.0f, 24.0f, 24.0f, 24.0f, 24.0f, 24.0f },
+          { 0.99f, 0.74f, 0.28f }, { 0.95f, 0.40f, 0.30f } },
+        // elliptical: wide-flat corners (rx != ry)
+        { { 52.0f, 22.0f, 52.0f, 22.0f, 52.0f, 22.0f, 52.0f, 22.0f },
+          { 0.40f, 0.85f, 0.55f }, { 0.15f, 0.55f, 0.62f } },
+        // leaf: two opposite corners rounded big, the other two sharp
+        { { 54.0f, 54.0f, 0.0f, 0.0f, 54.0f, 54.0f, 0.0f, 0.0f },
+          { 0.45f, 0.72f, 0.98f }, { 0.28f, 0.40f, 0.95f } },
+        // asymmetric grab-bag: every corner different
+        { { 6.0f, 6.0f, 50.0f, 22.0f, 12.0f, 46.0f, 34.0f, 34.0f },
+          { 0.92f, 0.55f, 0.96f }, { 0.58f, 0.28f, 0.86f } },
+    };
+
+    for (int i = 0; i < 4; i++) {
+        float x = x0 + (float)i * (cw + gap);
+        for (int pass = 0; pass < 2; pass++) {
+            canvas_begin_path(c);
+            canvas_round_rect_radii(c, x, y0, cw, ch,
+                                    card[i].r[0], card[i].r[1], card[i].r[2],
+                                    card[i].r[3], card[i].r[4], card[i].r[5],
+                                    card[i].r[6], card[i].r[7]);
+            if (pass == 0) {
+                canvas_set_fill_linear_gradient(c, x, y0, x + cw, y0 + ch);
+                canvas_add_fill_color_stop(c, 0.0f, card[i].c0[0], card[i].c0[1],
+                                           card[i].c0[2], 1.0f);
+                canvas_add_fill_color_stop(c, 1.0f, card[i].c1[0], card[i].c1[1],
+                                           card[i].c1[2], 1.0f);
+                canvas_fill(c);
+            } else {
+                canvas_set_stroke_rgba(c, 0.96f, 0.97f, 0.99f, 0.9f);
+                canvas_set_line_width(c, 2.0f);
+                canvas_stroke(c);
+            }
+        }
+    }
+
+    // Wide capsule: huge radii everywhere, clamped by the overlap rule.
+    float const bx = 24.0f, by = 178.0f, bw = 500.0f, bh = 36.0f;
+    canvas_set_fill_linear_gradient(c, bx, 0.0f, bx + bw, 0.0f);
+    canvas_add_fill_color_stop(c, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_begin_path(c);
+    canvas_round_rect_radii(c, bx, by, bw, bh, 200.0f, 200.0f, 200.0f, 200.0f,
+                            200.0f, 200.0f, 200.0f, 200.0f);
+    canvas_fill(c);
+
+    save(c, "gallery/roundrect.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -524,6 +592,7 @@ int main(void) {
     imagedata();
     joinscaps();
     paths();
+    roundrect();
     clipping();
     gradients();
     batching();

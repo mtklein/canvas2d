@@ -47,6 +47,12 @@ Path primitives — a filled ellipse and a rounded rectangle (filled + outlined)
 
 ![paths](gallery/paths.png)
 
+`roundRect` with per-corner elliptical radii — uniform, flattened (rx≠ry), a leaf
+(opposite corners sharp), and an all-different grab-bag, plus a wide capsule whose
+oversized radii are scaled down by the CSS overlap rule:
+
+![roundrect](gallery/roundrect.png)
+
 Clipping — a circular window, the intersection of two discs, and a
 self-intersecting star, each masking the same flood of stripes (coverage mask):
 
