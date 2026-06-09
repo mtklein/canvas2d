@@ -197,6 +197,7 @@ ninja profile            # sample(1): per-kernel self-time within each bench
 ninja profile-scene      # sample(1): self-time across the whole gallery (real scenes)
 ninja rendercmp          # hyperfine: real-pipeline render, metal vs cpu compositor
 ninja gputime            # Metal GPU execution time (ns total, us/dispatch)
+ninja throughput         # size-normalised render throughput (Mpx/s, ns/px)
 ninja coverage           # refresh docs/coverage.md (llvm-cov over src/, all tests)
 ```
 

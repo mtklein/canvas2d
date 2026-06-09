@@ -72,6 +72,7 @@ int main(void) {
 
     double sink = 0.0;
     int reps = bench_reps();
+    double t0 = bench_now_s();
     for (int rep = 0; rep < reps; rep++) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
@@ -85,7 +86,11 @@ int main(void) {
         canvas_read_rgba(cv, px, len);
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
+    double secs = bench_now_s() - t0;
 
+    // Output pixels produced: one finished DIM*DIM canvas per frame (finished-frame
+    // throughput, comparable across canvas sizes and backends).
+    bench_report_throughput(secs, (double)DIM * (double)DIM * (double)FRAMES * (double)reps);
     bench_report_gpu_timing(cv);  // Metal GPU profile when CANVAS_GPU_TIMING is set
     free(px);
     canvas_destroy(cv);

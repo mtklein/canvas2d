@@ -240,6 +240,11 @@ def main():
     w("  pool = console")
     w("  description = Metal GPU execution time (ns total, us/dispatch)")
     w("")
+    w("rule throughput")
+    w("  command = $cmd")
+    w("  pool = console")
+    w("  description = size-normalised render throughput (Mpx/s, ns/px)")
+    w("")
     w("rule run_gallery")
     w("  command = $bin")
     w("")
@@ -461,6 +466,22 @@ def main():
         f'echo "# large, 1 readback (batched)" ; CANVAS_GPU_TIMING=1 BENCH_READBACK=end ./{lg}')
     w(f"build gputime: gputime {sm} {lg}")
     w(f"  cmd = {gputime_cmd}")
+    # `throughput` normalises wall time to pixels: each render bench self-times its rep
+    # loop (BENCH_THROUGHPUT) and reports Mpx/s + ns/px over the finished-frame pixels
+    # it produced.  Unlike rendercmp's raw wall-clock (which scales with the scene), a
+    # per-pixel rate is comparable across canvas sizes and between backends -- the
+    # apples-to-apples answer to "how many pixels/second does this pipeline push".  A
+    # high BENCH_REPS amortises the cold first rep; both benches, both backends, in the
+    # per-frame-readback shape (the getImageData/PNG-export workload).  hyperfine still
+    # owns the rigorous wall-clock A/B in rendercmp; this is the normalised companion.
+    tp_sm, tp_lg = "BENCH_THROUGHPUT=1 BENCH_REPS=50", "BENCH_THROUGHPUT=1 BENCH_REPS=20"
+    throughput_cmd = (
+        f'echo "# small metal" ; {tp_sm} ./{sm} ; '
+        f'echo "# small cpu"   ; {tp_sm} ./{smc} ; '
+        f'echo "# large metal" ; {tp_lg} ./{lg} ; '
+        f'echo "# large cpu"   ; {tp_lg} ./{lgc}')
+    w(f"build throughput: throughput {sm} {smc} {lg} {lgc}")
+    w(f"  cmd = {throughput_cmd}")
     # `analyze` runs the static analyzer over the checked C (core + the cpu backend;
     # the ObjC Metal shim is out of scope).  One stamp per TU so it's incremental
     # and parallel; gated by -analyzer-werror in the rule.
