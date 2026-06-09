@@ -118,3 +118,33 @@ be outlined or measured later, which adds two more boundary shapes.
   *sized* model — compare with the returned length + `memcmp` (which is `__sized_by`
   and converts from indexable safely) rather than reaching for `str*()`. The test does
   exactly this; `str*()` on your own buffers buys an unnecessary unsafe assertion.
+
+## Positioned outlines: layout checked, the outline at the boundary
+
+`cnvs_shaped_outline` renders a shaped line by walking the runs and outlining each
+glyph at its pen position. The split falls out naturally:
+
+- **Layout is checked.** The pen advance — `pen += run.xadv[i]` over the visual-order
+  glyphs — runs in the core, every `xadv[i]` bounds-checked. (Visual order means the
+  same left-to-right sweep places RTL runs correctly, no special case.)
+- **The outline is the thin boundary op.** Per glyph, the core calls back to
+  `cnvs_glyph_outline(run.font, glyph, x, y, …)`, which does the two things that need
+  the un-annotated headers: `CTFontCreatePathForGlyph` and the `CGPathApply` walk. The
+  opaque font handle is finally *used* here (passed back to CT), confirming the
+  handle-plus-lifetime model end to end. The `CGPathApply` callback takes a `void *`
+  context — the same shape that needed `__unsafe_forge_single` in checked code — but
+  in the unsafe boundary TU it is just a plain `void *` cast, no forge. So the one
+  genuinely awkward CT idiom (the callback) costs nothing precisely because it lives on
+  the unsafe side of a boundary the run already crossed cheaply.
+
+This is the architecture the boundary findings argued for: the index-heavy work
+(layout) is checked; only the irreducibly-CT bits (path fetch, callback walk) are
+unsafe, and they're per-glyph leaves with no bounds logic of their own.
+
+### The color-glyph gap
+
+`CTFontCreatePathForGlyph` returns `NULL` for a color (emoji) glyph — there is no
+outline. Outlining a lone emoji therefore yields a real *advance* but an *empty path*
+(`test_shape` asserts `pt_len == 0`). Outlines are a dead end for color glyphs; they
+need to be **drawn**, not traced — which is a different boundary shape (a pixel buffer
+the boundary fills), taken up next.
