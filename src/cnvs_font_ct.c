@@ -85,9 +85,11 @@ static void emit(void *info, CGPathElement const *e) {
     }
 }
 
-// Decode one UTF-8 sequence at *p (NUL-terminated) and advance *p past it.
-// Malformed bytes decode as U+FFFD; the scan never reads past the terminator.
-static uint32_t utf8_next(unsigned char const **p) {
+// Decode one UTF-8 sequence at *p (with `end` one past the last byte) and advance
+// *p past it.  Malformed or truncated bytes decode as U+FFFD; the scan is bounded
+// by `end`, so it never reads past the buffer even without a NUL terminator.
+// Callers guarantee *p < end on entry.
+static uint32_t utf8_next(unsigned char const **p, unsigned char const *end) {
     unsigned char const *s = *p;
     uint32_t c = s[0];
     if (c < 0x80) {
@@ -101,7 +103,7 @@ static uint32_t utf8_next(unsigned char const **p) {
     else if ((c & 0xF8) == 0xF0) { n = 3; cp = c & 0x07; }
     else { *p = s + 1; return 0xFFFD; }
     for (int i = 1; i <= n; i++) {
-        if ((s[i] & 0xC0) != 0x80) {  // truncated or invalid (stops at the NUL)
+        if (s + i >= end || (s[i] & 0xC0) != 0x80) {  // past end, truncated, or invalid
             *p = s + i;
             return 0xFFFD;
         }
@@ -128,11 +130,13 @@ static CGGlyph glyph_for_cp(CTFontRef font, uint32_t cp) {
     return g;
 }
 
-float cnvs_font_outline(cnvs_font *f, char const *text, float ox, float oy,
+float cnvs_font_outline(cnvs_font *f, char const *text, int len, float ox, float oy,
                         cnvs_mat to_device, float tol, cnvs_path *out) {
     float pen = 0.0f;
-    for (unsigned char const *s = (unsigned char const *)text; *s;) {
-        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s));
+    unsigned char const *s = (unsigned char const *)text;
+    unsigned char const *end = s + (len > 0 ? len : 0);
+    while (s < end) {
+        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s, end));
 
         CGPathRef path = CTFontCreatePathForGlyph(f->font, g, NULL);  // NULL for blanks
         if (path) {
@@ -149,10 +153,12 @@ float cnvs_font_outline(cnvs_font *f, char const *text, float ox, float oy,
     return pen;
 }
 
-float cnvs_font_advance(cnvs_font *f, char const *text) {
+float cnvs_font_advance(cnvs_font *f, char const *text, int len) {
     float pen = 0.0f;
-    for (unsigned char const *s = (unsigned char const *)text; *s;) {
-        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s));
+    unsigned char const *s = (unsigned char const *)text;
+    unsigned char const *end = s + (len > 0 ? len : 0);
+    while (s < end) {
+        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s, end));
         CGSize adv = { 0.0, 0.0 };
         CTFontGetAdvancesForGlyphs(f->font, kCTFontOrientationHorizontal, &g, &adv, 1);
         pen += (float)adv.width;
@@ -160,7 +166,7 @@ float cnvs_font_advance(cnvs_font *f, char const *text) {
     return pen;
 }
 
-void cnvs_font_measure(cnvs_font *f, char const *text, cnvs_text_metrics *m) {
+void cnvs_font_measure(cnvs_font *f, char const *text, int len, cnvs_text_metrics *m) {
     CTFontRef font = f->font;
 
     // Font-wide metrics (independent of the text).  Core Text reports ascent and
@@ -186,8 +192,10 @@ void cnvs_font_measure(cnvs_font *f, char const *text, cnvs_text_metrics *m) {
     double pen = 0.0;
     bool any = false;
     double minx = 0.0, maxx = 0.0, miny = 0.0, maxy = 0.0;
-    for (unsigned char const *s = (unsigned char const *)text; *s;) {
-        CGGlyph g = glyph_for_cp(font, utf8_next(&s));
+    unsigned char const *s = (unsigned char const *)text;
+    unsigned char const *end = s + (len > 0 ? len : 0);
+    while (s < end) {
+        CGGlyph g = glyph_for_cp(font, utf8_next(&s, end));
         CGRect r =
             CTFontGetBoundingRectsForGlyphs(font, kCTFontOrientationHorizontal,
                                             &g, NULL, 1);

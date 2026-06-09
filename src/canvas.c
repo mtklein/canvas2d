@@ -1606,10 +1606,10 @@ static float text_baseline_offset(canvas *__single cv, cnvs_font *__single f) {
 // by the alignment fraction of the advance (measured only when not left/start),
 // y by the baseline offset.
 static void text_origin(canvas *__single cv, cnvs_font *__single f,
-                        char const *__null_terminated text,
+                        char const *__counted_by(len) text, int len,
                         float x, float y, float *__single ox, float *__single oy) {
     float frac = text_align_frac(cv->cur.text_align);
-    *ox = frac != 0.0f ? x - frac * cnvs_font_advance(f, text) : x;
+    *ox = frac != 0.0f ? x - frac * cnvs_font_advance(f, text, len) : x;
     *oy = y + text_baseline_offset(cv, f);
 }
 
@@ -1618,10 +1618,10 @@ static void text_origin(canvas *__single cv, cnvs_font *__single f,
 // anchor.  Writes the pen origin and returns the device-space layout matrix (the
 // CTM with the condense folded in).
 static cnvs_mat text_layout_max(canvas *__single cv, cnvs_font *__single f,
-                                char const *__null_terminated text,
+                                char const *__counted_by(len) text, int len,
                                 float x, float y, float max_width,
                                 float *__single ox, float *__single oy) {
-    float advance = cnvs_font_advance(f, text);
+    float advance = cnvs_font_advance(f, text, len);
     float sx = 1.0f;
     if (isfinite(max_width) && max_width > 0.0f && advance > max_width) {
         sx = max_width / advance;
@@ -1637,24 +1637,29 @@ static cnvs_mat text_layout_max(canvas *__single cv, cnvs_font *__single f,
 // Lay out `text` from the pen origin through `to_device` and fill the glyph
 // outlines (nonzero winding: overlapping contours fill solid).
 static void fill_text_at(canvas *__single cv, cnvs_font *__single f,
-                         char const *__null_terminated text,
+                         char const *__counted_by(len) text, int len,
                          float ox, float oy, cnvs_mat to_device) {
     cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
+    cnvs_font_outline(f, text, len, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
     fill_device_path(cv, &cv->text_path, CNVS_NONZERO);
 }
 
 static void stroke_text_at(canvas *__single cv, cnvs_font *__single f,
-                           char const *__null_terminated text,
+                           char const *__counted_by(len) text, int len,
                            float ox, float oy, cnvs_mat to_device) {
     cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
+    cnvs_font_outline(f, text, len, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
     stroke_device_path(cv, &cv->text_path);
 }
 
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
     cnvs_font *__single f = ensure_font(cv);
-    return f ? cnvs_font_advance(f, text) : 0.0f;
+    if (!f) {
+        return 0.0f;
+    }
+    int len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
+    return cnvs_font_advance(f, t, len);
 }
 
 canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
@@ -1663,8 +1668,10 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
     memset(&m, 0, sizeof m);  // all-zero if the font can't be built
     cnvs_font *__single f = ensure_font(cv);
     if (f) {
+        int len = (int)strlen(text);
+        char const *__counted_by(len) t = __null_terminated_to_indexable(text);
         cnvs_text_metrics tm;
-        cnvs_font_measure(f, text, &tm);
+        cnvs_font_measure(f, t, len, &tm);
         m.width = tm.width;
         m.actual_bounding_box_left = tm.actual_left;
         m.actual_bounding_box_right = tm.actual_right;
@@ -1688,9 +1695,11 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
     if (!f) {
         return;
     }
+    int len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     float ox, oy;
-    text_origin(cv, f, text, x, y, &ox, &oy);
-    fill_text_at(cv, f, text, ox, oy, cv->cur.ctm);
+    text_origin(cv, f, t, len, x, y, &ox, &oy);
+    fill_text_at(cv, f, t, len, ox, oy, cv->cur.ctm);
 }
 
 void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
@@ -1699,9 +1708,11 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
     if (!f) {
         return;
     }
+    int len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     float ox, oy;
-    cnvs_mat td = text_layout_max(cv, f, text, x, y, max_width, &ox, &oy);
-    fill_text_at(cv, f, text, ox, oy, td);
+    cnvs_mat td = text_layout_max(cv, f, t, len, x, y, max_width, &ox, &oy);
+    fill_text_at(cv, f, t, len, ox, oy, td);
 }
 
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
@@ -1711,9 +1722,11 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
     if (!f) {
         return;
     }
+    int len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     float ox, oy;
-    text_origin(cv, f, text, x, y, &ox, &oy);
-    stroke_text_at(cv, f, text, ox, oy, cv->cur.ctm);
+    text_origin(cv, f, t, len, x, y, &ox, &oy);
+    stroke_text_at(cv, f, t, len, ox, oy, cv->cur.ctm);
 }
 
 void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
@@ -1722,9 +1735,11 @@ void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated t
     if (!f) {
         return;
     }
+    int len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     float ox, oy;
-    cnvs_mat td = text_layout_max(cv, f, text, x, y, max_width, &ox, &oy);
-    stroke_text_at(cv, f, text, ox, oy, td);
+    cnvs_mat td = text_layout_max(cv, f, t, len, x, y, max_width, &ox, &oy);
+    stroke_text_at(cv, f, t, len, ox, oy, td);
 }
 
 // Bilinear sample of an RGBA8 source at source-pixel (fx, fy), unpremultiplied,
