@@ -129,7 +129,10 @@ def obj(variant, src):
 def main():
     core_c = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.c"))
                     if os.path.basename(p) not in BACKEND_SRCS)
-    tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c")))
+    # test_oom.c is built only by the `oom` target (it needs the fault-injecting
+    # allocator and the malloc redefines), not the normal suite.
+    tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c"))
+                   if os.path.basename(p) != "test_oom.c")
     benches = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "bench", "*.c")))
     examples = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "examples", "*.c")))
     # The gallery PNGs are committed build artifacts.  A bare `ninja` re-renders
@@ -487,17 +490,70 @@ def main():
     w(f"  objargs = {' '.join('-object ' + e for e in cov_exes[1:])}")
     w("")
 
+    # `oom` (fault-injection gate): recompile the core with malloc/realloc/calloc
+    # redefined to a fault injector (tests/oom_alloc.c), then test_oom.c sweeps each
+    # allocation of a set of canvas ops failing in turn.  Every allocation-failure
+    # cleanup path must degrade gracefully -- no crash, no corruption -- which the
+    # debug-cpu config's -fbounds-safety + ASan/UBSan enforce.  This reaches the
+    # `if (!p) return false` OOM guards that coverage flagged as the dominant
+    # untaken branch class; the normal suite never fails an allocation.  The macro
+    # redefine is invisible to -fbounds-safety: stdlib.h's malloc declaration (with
+    # __sized_by_or_null/alloc_size) macro-expands onto cnvs_oom_malloc, so size
+    # tracking is preserved.  cpu backend; folded into `all`.
+    OOM_DEF = ("-Dmalloc=cnvs_oom_malloc -Drealloc=cnvs_oom_realloc "
+               "-Dcalloc=cnvs_oom_calloc")
+    w("rule cc_oom")
+    w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn $cinc {OOM_DEF} -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    w("rule cc_oom_boundary")
+    w(f"  command = clang $cstd {_DEBUG} $objcwarn $cinc {OOM_DEF} -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    # The injector and the test are NOT redefined (they reach the real allocator),
+    # and need tests/ on the include path for oom_alloc.h.
+    w("rule cc_oom_harness")
+    # -Wno-allocator-wrappers: oom_alloc.c is *deliberately* a malloc/realloc/calloc
+    # wrapper -- that's the whole point.
+    w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn -Wno-allocator-wrappers $cinc "
+      "-Itests -MMD -MF $out.d -c $in -o $out")
+    w("  depfile = $out.d")
+    w("  deps = gcc")
+    w("")
+    w("rule link_oom")
+    w(f"  command = clang {_DEBUG} $in {BASE_FRAMEWORKS} -o $out")
+    w("")
+    oom_objs = []
+    for c in core_c:
+        o = obj("oom", c)
+        ccrule = "cc_oom_boundary" if os.path.basename(c) in BOUNDARY_C else "cc_oom"
+        w(f"build {o}: {ccrule} {c}")
+        oom_objs.append(o)
+    oom_bsrc = BACKENDS["cpu"][0]
+    oom_bo = obj("oom", oom_bsrc)
+    w(f"build {oom_bo}: cc_oom {oom_bsrc}")
+    oom_objs.append(oom_bo)
+    w("build build/oom/obj/oom_alloc.o: cc_oom_harness tests/oom_alloc.c")
+    w("build build/oom/obj/test_oom.o: cc_oom_harness tests/test_oom.c")
+    w(f"build build/oom/test_oom: link_oom build/oom/obj/test_oom.o "
+      f"build/oom/obj/oom_alloc.o {' '.join(oom_objs)}")
+    w("build build/oom/test_oom.runok: run build/oom/test_oom")
+    w("  bin = build/oom/test_oom")
+    w("build oom: phony build/oom/test_oom.runok")
+
     # The default `all` builds every variant's executables -- tests, benches and
     # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
     # (`images`) so they track the renderer in lockstep, replays the fuzz corpus
-    # (`fuzzcorpus`), checks the two compositor backends agree (`backenddiff`), and
-    # runs the security gates `analyze` (static UAF/double-free/leak) and `leakcheck`
-    # (the macOS `leaks` tool).  A bare `ninja` is meant to do everything, so all of
-    # these gate it; the gates are idempotent (stamps), so a clean tree is still
-    # "no work to do".  Only the always-rerun measurement targets (benchcmp, profile)
-    # stay opt-in.
+    # (`fuzzcorpus`), checks the two compositor backends agree (`backenddiff`), runs
+    # the security gates `analyze` (static UAF/double-free/leak) and `leakcheck`
+    # (the macOS `leaks` tool), and sweeps allocation failures (`oom`).  A bare
+    # `ninja` is meant to do everything, so all of these gate it; the gates are
+    # idempotent (stamps), so a clean tree is still "no work to do".  Only the
+    # always-rerun measurement targets (benchcmp, profile, coverage) stay opt-in.
     all_targets = ("release debug unsafe release-cpu debug-cpu test images "
-                   "analyze leakcheck backenddiff")
+                   "analyze leakcheck backenddiff oom")
     if fuzz_corpus:
         all_targets += " fuzzcorpus"
     w(f"build all: phony {all_targets}")
