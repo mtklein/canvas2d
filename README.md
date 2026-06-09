@@ -50,6 +50,12 @@ Line joins (miter / round / bevel) and caps (butt / round / square):
 
 ![joins](gallery/joins.png)
 
+`miterLimit` and `lineDashOffset` — one sharp V at four miter limits (below the
+spike's ratio the join bevels, above it the miter survives), and one dash pattern
+at five offsets (the phase marching left, a frozen marching-ants animation):
+
+![miterdash](gallery/miterdash.png)
+
 Path primitives — a filled ellipse and a rounded rectangle (filled + outlined):
 
 ![paths](gallery/paths.png)

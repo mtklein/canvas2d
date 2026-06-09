@@ -1340,6 +1340,80 @@ static void affine(void) {
     save(c, "gallery/affine.png");
 }
 
+// miterLimit and lineDashOffset.  Top: one sharp V stroked at four miter limits --
+// below the spike's ratio (~4.7) the join falls back to a bevel, above it the
+// miter spike survives.  Bottom: one dash pattern at five offsets, the phase
+// marching left (a frozen marching-ants animation).
+static void miterdash(void) {
+    canvas *__single c = canvas_create(480, 258);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 258.0f);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "miterLimit", 16.0f, 28.0f);
+
+    // Four identical sharp Vs (miter ratio ~4.7), at increasing miter limits.
+    float const solid[1] = { 1.0f };
+    float const limits[4] = { 2.0f, 4.0f, 6.0f, 10.0f };
+    char const *const mlabel[4] = { "limit 2", "limit 4", "limit 6", "limit 10" };
+    canvas_set_line_dash(c, solid, 0);
+    canvas_set_line_join(c, CANVAS_JOIN_MITER);
+    canvas_set_line_cap(c, CANVAS_CAP_BUTT);
+    canvas_set_line_width(c, 14.0f);
+    for (int i = 0; i < 4; i++) {
+        float cx = 90.0f + (float)i * 100.0f;
+        canvas_set_miter_limit(c, limits[i]);
+        canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.30f, 1.0f);
+        canvas_begin_path(c);
+        canvas_move_to(c, cx - 16.0f, 44.0f);
+        canvas_line_to(c, cx, 112.0f);
+        canvas_line_to(c, cx + 16.0f, 44.0f);
+        canvas_stroke(c);
+        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_font_size(c, 12.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_fill_text(c, mlabel[i], cx, 164.0f);
+    }
+    canvas_set_miter_limit(c, 10.0f);  // restore default
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "lineDashOffset", 16.0f, 186.0f);
+
+    // One dash pattern, five offsets: the phase marches across the rows.
+    float const dash[2] = { 18.0f, 10.0f };
+    float const offs[5] = { 0.0f, 6.0f, 12.0f, 18.0f, 24.0f };
+    char const *const olabel[5] = { "0", "6", "12", "18", "24" };
+    canvas_set_line_dash(c, dash, 2);
+    canvas_set_line_width(c, 6.0f);
+    canvas_set_line_cap(c, CANVAS_CAP_BUTT);
+    for (int i = 0; i < 5; i++) {
+        float y = 200.0f + (float)i * 12.0f;
+        canvas_set_line_dash_offset(c, offs[i]);
+        canvas_set_stroke_rgba(c, 0.40f, 0.82f, 0.95f, 1.0f);
+        canvas_begin_path(c);
+        canvas_move_to(c, 80.0f, y);
+        canvas_line_to(c, 462.0f, y);
+        canvas_stroke(c);
+        canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+        canvas_set_font_size(c, 11.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_RIGHT);
+        canvas_fill_text(c, olabel[i], 68.0f, y + 4.0f);
+    }
+    canvas_set_line_dash(c, solid, 0);
+    canvas_set_line_dash_offset(c, 0.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/miterdash.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1651,6 +1725,7 @@ int main(void) {
     imagedata();
     dirtyrect();
     joinscaps();
+    miterdash();
     paths();
     roundrect();
     strokerect();
