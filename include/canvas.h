@@ -8,6 +8,10 @@
 
 typedef struct canvas canvas;
 
+// The six components of a 2D affine transform: (x,y) maps to
+// (a*x + c*y + e, b*x + d*y + f) -- the argument order of canvas_set_transform.
+typedef struct { float a, b, c, d, e, f; } canvas_matrix;
+
 typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
 typedef enum { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL } canvas_line_join;
 typedef enum { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE } canvas_line_cap;
@@ -42,6 +46,9 @@ void canvas_transform(canvas *__single cv,
 void canvas_set_transform(canvas *__single cv,
                           float a, float b, float c, float d, float e, float f);
 void canvas_reset_transform(canvas *__single cv);
+// The current transform (matching getTransform): the matrix built up by
+// translate/scale/rotate/transform and reset by set_transform/reset_transform.
+canvas_matrix canvas_get_transform(canvas *__single cv);
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a);
 void canvas_set_global_alpha(canvas *__single cv, float alpha);

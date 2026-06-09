@@ -181,7 +181,7 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
 ```c
 canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under -fbounds-safety)
 canvas_save / canvas_restore
-canvas_translate / scale / rotate / transform / set_transform / reset_transform
+canvas_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
 canvas_set_global_composite_operation                        // 26 GCO modes
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
@@ -208,7 +208,7 @@ complete, honest gap inventory (missing + partial + what's next).
 
 | Area | Status |
 |---|---|
-| Transforms, save/restore, alpha blending | ✅ (no `getTransform`) |
+| Transforms, save/restore, alpha blending | ✅ |
 | `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export | ✅ |
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: one scalar radius) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |

@@ -236,6 +236,12 @@ void canvas_reset_transform(canvas *__single cv) {
     cv->cur.ctm = cnvs_mat_identity();
 }
 
+canvas_matrix canvas_get_transform(canvas *__single cv) {
+    cnvs_mat m = cv->cur.ctm;
+    return (canvas_matrix){ .a = m.a, .b = m.b, .c = m.c,
+                            .d = m.d, .e = m.e, .f = m.f };
+}
+
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
     cv->cur.fill = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.fill_is_gradient = 0;
