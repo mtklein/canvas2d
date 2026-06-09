@@ -942,7 +942,9 @@ void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
     cv->cur.dash_offset = offset;
 }
 
-static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
+// Build the stroke triangles for `p` into cv->scratch_verts under the current
+// line styles (width/join/cap/dash, CTM scale baked in).  False on alloc failure.
+static bool build_stroke_verts(canvas *__single cv, cnvs_path const *p) {
     cnvs_verts_reset(&cv->scratch_verts);
     // Line width and dash lengths are in user units; bake the CTM scale in.
     float scale = ctm_scale(cv->cur.ctm);
@@ -970,10 +972,14 @@ static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
                                              cv->cur.miter_limit,
                                              &cv->scratch_verts);
         if (!ok) {
-            return;
+            return false;
         }
     }
-    if (cv->scratch_verts.len < 3) {
+    return true;
+}
+
+static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
+    if (!build_stroke_verts(cv, p) || cv->scratch_verts.len < 3) {
         return;
     }
     cbbox b = points_bbox(cv, cv->scratch_verts.data, cv->scratch_verts.len);
@@ -1003,6 +1009,45 @@ static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
 
 void canvas_stroke(canvas *__single cv) {
     stroke_device_path(cv, &cv->path);
+}
+
+// Twice the signed area of triangle (a,b,c); its sign is the winding, zero means
+// the three points are collinear (a degenerate triangle).
+static float orient(cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+// Whether q lies in triangle (a,b,c) -- on the same side of all three edges,
+// winding-agnostic, boundary counts as inside.  A degenerate triangle has no
+// interior, so it never reports a hit (guards against the stroker's zero-area
+// triangles swallowing every query).
+static bool point_in_tri(cnvs_vec2 q, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
+    if (orient(a, b, c) == 0.0f) {
+        return false;
+    }
+    float d1 = orient(a, b, q), d2 = orient(b, c, q), d3 = orient(c, a, q);
+    bool neg = d1 < 0.0f || d2 < 0.0f || d3 < 0.0f;
+    bool pos = d1 > 0.0f || d2 > 0.0f || d3 > 0.0f;
+    return !(neg && pos);
+}
+
+bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
+    if (!isfinite(x) || !isfinite(y)) {
+        return false;
+    }
+    // Build the same stroke triangles canvas_stroke would paint, then test the
+    // (transformed) query point against their union -- inside any triangle hits.
+    if (!build_stroke_verts(cv, &cv->path)) {
+        return false;
+    }
+    cnvs_vec2 q = xf(cv, x, y);
+    for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
+        if (point_in_tri(q, cv->scratch_verts.data[i], cv->scratch_verts.data[i + 1],
+                         cv->scratch_verts.data[i + 2])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h) {

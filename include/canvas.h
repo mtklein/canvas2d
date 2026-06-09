@@ -145,6 +145,10 @@ void canvas_clip(canvas *__single cv);
 // the same user space as the path hits.  Non-finite coordinates return false.
 bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
                              canvas_fill_rule rule);
+// Whether (x, y) is inside the stroked area of the current path under the current
+// line styles (width/join/cap/dash).  (x, y) is transformed by the current
+// transform, as for is_point_in_path; non-finite coordinates return false.
+bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y);
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a);
 // Gradient stroke paint, mirroring the fill gradient calls; stroke() uses it

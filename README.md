@@ -192,7 +192,7 @@ canvas_set_line_dash / get_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / round_rect_radii / arc_to / close_path
-canvas_fill / canvas_stroke / canvas_clip / is_point_in_path
+canvas_fill / canvas_stroke / canvas_clip / is_point_in_path / is_point_in_stroke
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
@@ -223,7 +223,8 @@ complete, honest gap inventory (missing + partial + what's next).
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
-| Shadows, `filter`, patterns, conic gradients, `Path2D`, hit-testing | ❌ see [roadmap](docs/roadmap.md) |
+| Hit testing — `isPointInPath` / `isPointInStroke` | ✅ winding + even-odd, transform-aware |
+| Shadows, `filter`, patterns, conic gradients, `Path2D` | ❌ see [roadmap](docs/roadmap.md) |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
