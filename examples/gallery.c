@@ -616,6 +616,84 @@ static void smoothing(void) {
     save(c, "gallery/smoothing.png");
 }
 
+// textAlign / textBaseline.  Top: three words placed at one vertical anchor (each
+// word names its own alignment).  Bottom: "Hg" set six ways against one horizontal
+// baseline guide, so each mode's vertical shift is visible.
+static void textgrid(void) {
+    canvas *__single c = canvas_create(520, 256);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 256.0f);
+
+    // --- textAlign: a vertical anchor, three self-naming words ---
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "textAlign", 24.0f, 34.0f);
+
+    canvas_set_stroke_rgba(c, 0.85f, 0.40f, 0.85f, 0.75f);
+    canvas_set_line_width(c, 1.5f);
+    canvas_begin_path(c);
+    canvas_move_to(c, 270.0f, 44.0f);
+    canvas_line_to(c, 270.0f, 124.0f);
+    canvas_stroke(c);
+
+    canvas_text_align const aligns[3] = { CANVAS_ALIGN_LEFT, CANVAS_ALIGN_CENTER,
+                                          CANVAS_ALIGN_RIGHT };
+    char const *const atext[3] = { "left", "center", "right" };
+    float const ay[3] = { 64.0f, 92.0f, 120.0f };
+    for (int i = 0; i < 3; i++) {
+        canvas_set_text_align(c, aligns[i]);
+        canvas_set_font_size(c, 24.0f);
+        canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+        canvas_fill_text(c, atext[i], 270.0f, ay[i]);
+        canvas_set_fill_rgba(c, 0.40f, 0.85f, 0.95f, 1.0f);
+        canvas_begin_path(c);
+        canvas_arc(c, 270.0f, ay[i], 3.0f, 0.0f, TAU, false);
+        canvas_fill(c);
+    }
+
+    // --- textBaseline: one horizontal baseline, "Hg" set six ways ---
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "textBaseline", 24.0f, 154.0f);
+
+    canvas_set_stroke_rgba(c, 0.40f, 0.85f, 0.95f, 0.75f);
+    canvas_set_line_width(c, 1.5f);
+    canvas_begin_path(c);
+    canvas_move_to(c, 24.0f, 200.0f);
+    canvas_line_to(c, 496.0f, 200.0f);
+    canvas_stroke(c);
+
+    canvas_text_baseline const bl[6] = {
+        CANVAS_BASELINE_TOP, CANVAS_BASELINE_HANGING, CANVAS_BASELINE_MIDDLE,
+        CANVAS_BASELINE_ALPHABETIC, CANVAS_BASELINE_IDEOGRAPHIC,
+        CANVAS_BASELINE_BOTTOM,
+    };
+    char const *const bname[6] = { "top",        "hang", "middle",
+                                   "alphabetic", "ideo", "bottom" };
+    for (int i = 0; i < 6; i++) {
+        float cx = 30.0f + ((float)i + 0.5f) * ((490.0f - 30.0f) / 6.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_set_text_baseline(c, bl[i]);
+        canvas_set_font_size(c, 28.0f);
+        canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+        canvas_fill_text(c, "Hg", cx, 200.0f);
+        canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+        canvas_set_font_size(c, 11.0f);
+        canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+        canvas_fill_text(c, bname[i], cx, 246.0f);
+    }
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    save(c, "gallery/textgrid.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -881,6 +959,7 @@ int main(void) {
     drawimage();
     smoothing();
     text();
+    textgrid();
     blend();
     return 0;
 }

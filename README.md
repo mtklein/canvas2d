@@ -109,6 +109,12 @@ one `fill_text` mixes Latin and Chinese (UTF-8):
 
 ![text](gallery/text.png)
 
+`textAlign` / `textBaseline` — three words placed at one vertical anchor (each
+names its own alignment), and "Hg" set six ways against one horizontal baseline
+guide so each mode's vertical shift is visible:
+
+![textgrid](gallery/textgrid.png)
+
 `globalCompositeOperation` — the same two discs over a gradient under six modes
 (`source-over` is the GPU's fixed-function blend; the rest run the W3C
 composite+blend formula in a framebuffer-fetch shader):
