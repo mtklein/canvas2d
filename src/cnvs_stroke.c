@@ -112,7 +112,25 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
         return true;
     }
     float hw = half_width;
-    int nseg = closed ? n : n - 1;
+    // A closed loop whose last vertex (nearly) coincides with the first -- e.g. a
+    // full-circle arc that returns to its start, where sinf(2*pi) leaves a sub-
+    // pixel gap -- would stroke a microscopic closing segment.  That segment is
+    // too short to skip (it clears seg_dir's degeneracy cutoff) yet too short to
+    // stroke cleanly, so it splits the seam into two bad joins and bites a notch
+    // out of the outline.  Drop such trailing duplicates (within 0.01 px -- far
+    // below any real vertex spacing, well above the float noise even at the max
+    // canvas size) so the real closing chord is stroked instead.  `m` is the
+    // working count; pts stays bounded by n (m <= n), so every index is in range.
+    int m = n;
+    while (closed && m > 2) {
+        float dx = pts[m - 1].x - pts[0].x;
+        float dy = pts[m - 1].y - pts[0].y;
+        if (dx * dx + dy * dy > 1e-4f) {
+            break;
+        }
+        m -= 1;
+    }
+    int nseg = closed ? m : m - 1;
 
     bool have_prev = false;
     bool have_first = false;
@@ -123,7 +141,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
 
     for (int s = 0; s < nseg; s++) {
         cnvs_vec2 p0 = pts[s];
-        cnvs_vec2 p1 = pts[(s + 1) % n];
+        cnvs_vec2 p1 = pts[(s + 1) % m];
         cnvs_vec2 dir;
         float len;
         if (!seg_dir(p0, p1, &dir, &len)) {
