@@ -6,11 +6,13 @@
 // A Metal backend implements this today; nothing here is GPU-specific, so a pure
 // CPU backend could implement the same ABI.
 //
-// Colour tiles are tightly packed *premultiplied* RGBA16F (_Float16 channels),
+// Colour tiles are tightly packed premultiplied RGBA16F (cnvs_premul pixels),
 // row-major, top row first; the target is premultiplied too, and read_rgba
 // un-premultiplies to the straight RGBA8 the Canvas API speaks.  putImageData
 // (replace) tiles are straight RGBA8 (premultiplied on entry).  All regions must
 // lie within the target (the caller clips to it).
+
+#include "cnvs_math.h"  // cnvs_premul
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -67,7 +69,7 @@ void compositor_set_clip(compositor *__single c,
 // stroke (colour and coverage already baked in).  COMPOSITOR_SRC_OVER is the fast
 // path.
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
-                      _Float16 const *__counted_by(w * h * 4) tile,
+                      cnvs_premul const *__counted_by(w * h) tile,
                       compositor_blend_mode mode);
 
 // Overwrite a w*h region at (x,y) with the RGBA8 tile (no blend, ignores the

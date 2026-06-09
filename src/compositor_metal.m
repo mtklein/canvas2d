@@ -267,7 +267,7 @@ static id<MTLTexture> upload_tile(CmpImpl *o, MTLPixelFormat fmt, int w, int h,
 }
 
 void compositor_blend(compositor *c, int x, int y, int w, int h,
-                      _Float16 const *tile, compositor_blend_mode mode) {
+                      cnvs_premul const *tile, compositor_blend_mode mode) {
     if (!c || !tile || w <= 0 || h <= 0) {
         return;
     }
@@ -277,7 +277,7 @@ void compositor_blend(compositor *c, int x, int y, int w, int h,
             return;
         }
         id<MTLTexture> tex = upload_tile(o, MTLPixelFormatRGBA16Float, w, h, tile,
-                                         (NSUInteger)w * 4 * sizeof(_Float16));
+                                         (NSUInteger)w * sizeof(cnvs_premul));
         // Source-over takes the fixed-function fast path; every other mode goes
         // through the framebuffer-fetch composite shader with a mode uniform.
         if (mode == COMPOSITOR_SRC_OVER) {
@@ -327,27 +327,23 @@ void compositor_read_rgba(compositor *c, uint8_t *out, int len) {
             return;
         }
         flush_batch(o);  // execute pending ops so the readback sees them
-        // The target is RGBA16Float; read it and quantize to 8-bit (the edge).
-        _Float16 *halfs = malloc((size_t)n * 4 * sizeof(_Float16));
-        if (!halfs) {
+        // The target is premultiplied RGBA16Float; the Canvas API speaks straight
+        // alpha, so un-premultiply each pixel and quantize to 8-bit (the edge).
+        cnvs_premul *pix = malloc((size_t)n * sizeof(cnvs_premul));
+        if (!pix) {
             return;
         }
-        [o.target getBytes:halfs
-               bytesPerRow:(NSUInteger)o.width * 4 * sizeof(_Float16)
+        [o.target getBytes:pix
+               bytesPerRow:(NSUInteger)o.width * sizeof(cnvs_premul)
                 fromRegion:MTLRegionMake2D(0, 0, (NSUInteger)o.width, (NSUInteger)o.height)
                mipmapLevel:0];
-        // The target is premultiplied; the Canvas API speaks straight alpha, so
-        // un-premultiply (divide out alpha) on the way out.
         for (int i = 0; i < n; i++) {
-            float a = (float)halfs[i * 4 + 3];
-            a = a < 0.0f ? 0.0f : a > 1.0f ? 1.0f : a;
-            for (int k = 0; k < 3; k++) {
-                float v = a > 0.0f ? (float)halfs[i * 4 + k] / a : 0.0f;
-                v = v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v;
-                out[i * 4 + k] = (uint8_t)(v * 255.0f + 0.5f);
-            }
-            out[i * 4 + 3] = (uint8_t)(a * 255.0f + 0.5f);
+            cnvs_unpremul s = cnvs_unpremultiply(pix[i]);  // straight, channels in [0,1]
+            out[i * 4]     = (uint8_t)((float)s.r * 255.0f + 0.5f);
+            out[i * 4 + 1] = (uint8_t)((float)s.g * 255.0f + 0.5f);
+            out[i * 4 + 2] = (uint8_t)((float)s.b * 255.0f + 0.5f);
+            out[i * 4 + 3] = (uint8_t)((float)s.a * 255.0f + 0.5f);
         }
-        free(halfs);
+        free(pix);
     }
 }

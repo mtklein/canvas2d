@@ -17,16 +17,16 @@ int main(void) {
         .r1 = (float)DIM * 0.6f,
         .stop_count = 0,
     };
-    cnvs_gradient_add_stop(&gr, 0.00f, cnvs_rgba_of(1.0f, 1.0f, 1.0f, 1.0f));
-    cnvs_gradient_add_stop(&gr, 0.35f, cnvs_rgba_of(0.3f, 0.6f, 0.95f, 1.0f));
-    cnvs_gradient_add_stop(&gr, 0.70f, cnvs_rgba_of(0.9f, 0.3f, 0.4f, 1.0f));
-    cnvs_gradient_add_stop(&gr, 1.00f, cnvs_rgba_of(0.05f, 0.1f, 0.3f, 1.0f));
+    cnvs_gradient_add_stop(&gr, 0.00f, cnvs_unpremul_of(1.0f, 1.0f, 1.0f, 1.0f));
+    cnvs_gradient_add_stop(&gr, 0.35f, cnvs_unpremul_of(0.3f, 0.6f, 0.95f, 1.0f));
+    cnvs_gradient_add_stop(&gr, 0.70f, cnvs_unpremul_of(0.9f, 0.3f, 0.4f, 1.0f));
+    cnvs_gradient_add_stop(&gr, 1.00f, cnvs_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
 
     double sink = 0.0;
     for (int it = 0; it < ITERS; it++) {
         for (int y = 0; y < DIM; y++) {
             for (int x = 0; x < DIM; x++) {
-                cnvs_rgba c = cnvs_gradient_sample(
+                cnvs_unpremul c = cnvs_gradient_sample(
                     &gr, (cnvs_vec2){ .x = (float)x + 0.5f, .y = (float)y + 0.5f }, 1.0f);
                 sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
             }

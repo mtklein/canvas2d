@@ -23,10 +23,10 @@
 
 struct canvas_state {
     cnvs_mat ctm;
-    cnvs_rgba fill;
+    cnvs_unpremul fill;
     int fill_is_gradient;  // 0 = solid `fill`; 1 = `fill_grad`
     cnvs_gradient fill_grad;
-    cnvs_rgba stroke;
+    cnvs_unpremul stroke;
     int stroke_is_gradient;  // 0 = solid `stroke`; 1 = `stroke_grad`
     cnvs_gradient stroke_grad;
     float global_alpha;
@@ -64,7 +64,7 @@ struct canvas {
     cnvs_cover cover;
     uint8_t *__counted_by(cov_cap) cov;     // per-pixel coverage for the current op's bbox
     int cov_cap;
-    _Float16 *__counted_by(tile_cap) tile;  // RGBA16F tile for the current op's bbox (4 chans/pixel)
+    cnvs_premul *__counted_by(tile_cap) tile;  // premultiplied tile for the current op's bbox
     int tile_cap;
 };
 
@@ -87,9 +87,9 @@ canvas *__single canvas_create(int width, int height) {
     cv->width = width;
     cv->height = height;
     cv->cur.ctm = cnvs_mat_identity();
-    cv->cur.fill = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 1.0f);
+    cv->cur.fill = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
     cv->cur.fill_is_gradient = 0;
-    cv->cur.stroke = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 1.0f);
+    cv->cur.stroke = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
     cv->cur.stroke_is_gradient = 0;
     cv->cur.global_alpha = 1.0f;
     cv->cur.composite = COMPOSITOR_SRC_OVER;
@@ -207,7 +207,7 @@ void canvas_reset_transform(canvas *__single cv) {
 }
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.fill = cnvs_rgba_of(r, g, b, a);
+    cv->cur.fill = cnvs_unpremul_of(r, g, b, a);
     cv->cur.fill_is_gradient = 0;
 }
 
@@ -255,7 +255,7 @@ void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.fill_grad, offset,
-                           cnvs_rgba_of(r, g, b, a));
+                           cnvs_unpremul_of(r, g, b, a));
 }
 
 void canvas_set_stroke_linear_gradient(canvas *__single cv,
@@ -273,7 +273,7 @@ void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, offset,
-                           cnvs_rgba_of(r, g, b, a));
+                           cnvs_unpremul_of(r, g, b, a));
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
@@ -334,23 +334,15 @@ static bool ensure_tile(canvas *__single cv, int npix) {
         cv->cov = nc;
         cv->cov_cap = npix;
     }
-    int tneed = npix * 4;
-    if (tneed > cv->tile_cap) {
-        _Float16 *nt = realloc(cv->tile, (size_t)tneed * sizeof *nt);
+    if (npix > cv->tile_cap) {  // one premultiplied pixel per cell
+        cnvs_premul *nt = realloc(cv->tile, (size_t)npix * sizeof *nt);
         if (!nt) {
             return false;
         }
         cv->tile = nt;
-        cv->tile_cap = tneed;
+        cv->tile_cap = npix;
     }
     return true;
-}
-
-// Clamp a colour channel to [0,1] and narrow to the tile's _Float16.
-static _Float16 f16c(float v) {
-    if (v < 0.0f) { v = 0.0f; }
-    if (v > 1.0f) { v = 1.0f; }
-    return (_Float16)v;
 }
 
 // Add a path edge to the coverage rasterizer, translated into the tile's frame.
@@ -376,13 +368,13 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
 // Build an RGBA16F tile from the coverage in cv->cov and the given paint, then
 // composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage.
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
-                       cnvs_gradient const *gr, cnvs_rgba solid) {
+                       cnvs_gradient const *gr, cnvs_unpremul solid) {
     float ga = cv->cur.global_alpha;
     for (int py = 0; py < b.h; py++) {
         for (int px = 0; px < b.w; px++) {
             int i = py * b.w + px;
             float covf = (float)cv->cov[i] / 255.0f;
-            cnvs_rgba col;
+            cnvs_unpremul col;
             float a;
             if (is_grad) {
                 col = cnvs_gradient_sample(
@@ -393,11 +385,11 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                 col = solid;
                 a = (float)col.a * ga;
             }
-            float alpha = a * covf;  // tiles are premultiplied: colour *= alpha
-            cv->tile[i * 4] = f16c((float)col.r * alpha);
-            cv->tile[i * 4 + 1] = f16c((float)col.g * alpha);
-            cv->tile[i * 4 + 2] = f16c((float)col.b * alpha);
-            cv->tile[i * 4 + 3] = f16c(alpha);
+            // Fold coverage and global alpha into the paint's alpha, then
+            // premultiply -- the tile stores premultiplied pixels.
+            float alpha = a * covf;
+            cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
+                .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
         }
     }
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
@@ -601,7 +593,7 @@ void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
 // Rasterize a device-space path under `rule` and paint it over its clamped bbox.
 static void fill_device_path(canvas *__single cv, cnvs_path const *p,
                              cnvs_fill_rule rule, int is_grad,
-                             cnvs_gradient const *gr, cnvs_rgba solid) {
+                             cnvs_gradient const *gr, cnvs_unpremul solid) {
     cbbox b = points_bbox(cv, p->pts, p->pt_len);
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
@@ -652,7 +644,7 @@ void canvas_clip(canvas *__single cv) {
 }
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
-    cv->cur.stroke = cnvs_rgba_of(r, g, b, a);
+    cv->cur.stroke = cnvs_unpremul_of(r, g, b, a);
     cv->cur.stroke_is_gradient = 0;
 }
 
@@ -856,10 +848,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
             int i = py * b.w + px;
             float covf = (float)cv->cov[i] / 255.0f;
             if (covf <= 0.0f) {
-                cv->tile[i * 4] = (_Float16)0.0f;
-                cv->tile[i * 4 + 1] = (_Float16)0.0f;
-                cv->tile[i * 4 + 2] = (_Float16)0.0f;
-                cv->tile[i * 4 + 3] = (_Float16)0.0f;
+                cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = 0 };
                 continue;
             }
             // Device pixel centre -> user space -> dest-rect uv -> source coords.
@@ -870,11 +859,8 @@ void canvas_draw_image_subrect(canvas *__single cv,
             float fsy = sy + ((u.y - dy) / dh) * shh;
             float s[4];
             sample_src(src, sw * sh * 4, sw, sh, fsx, fsy, s);
-            float alpha = s[3] * ga * covf;  // premultiplied tile
-            cv->tile[i * 4] = f16c(s[0] * alpha);
-            cv->tile[i * 4 + 1] = f16c(s[1] * alpha);
-            cv->tile[i * 4 + 2] = f16c(s[2] * alpha);
-            cv->tile[i * 4 + 3] = f16c(alpha);
+            float alpha = s[3] * ga * covf;
+            cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
         }
     }
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);

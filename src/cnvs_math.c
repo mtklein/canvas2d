@@ -55,7 +55,29 @@ cnvs_mat cnvs_mat_invert(cnvs_mat m) {
     return r;
 }
 
-cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a) {
-    return (cnvs_rgba){ .r = (_Float16)r, .g = (_Float16)g,
-                        .b = (_Float16)b, .a = (_Float16)a };
+cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {
+    return (cnvs_unpremul){ .r = (_Float16)r, .g = (_Float16)g,
+                            .b = (_Float16)b, .a = (_Float16)a };
+}
+
+// Clamp to [0,1] and narrow float -> _Float16.
+static _Float16 clamp16(float v) {
+    if (v < 0.0f) { v = 0.0f; }
+    if (v > 1.0f) { v = 1.0f; }
+    return (_Float16)v;
+}
+
+cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
+    float a = (float)c.a;
+    return (cnvs_premul){ .r = clamp16((float)c.r * a), .g = clamp16((float)c.g * a),
+                          .b = clamp16((float)c.b * a), .a = clamp16(a) };
+}
+
+cnvs_unpremul cnvs_unpremultiply(cnvs_premul c) {
+    float a = (float)c.a;
+    if (a <= 0.0f) {
+        return (cnvs_unpremul){ .r = 0, .g = 0, .b = 0, .a = 0 };
+    }
+    return (cnvs_unpremul){ .r = clamp16((float)c.r / a), .g = clamp16((float)c.g / a),
+                            .b = clamp16((float)c.b / a), .a = clamp16(a) };
 }

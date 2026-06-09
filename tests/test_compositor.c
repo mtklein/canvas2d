@@ -5,19 +5,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Premultiplied RGBA16F blend tile from a straight colour (channels in [0,1]).
-static _Float16 *__counted_by(w * h * 4) make_tile16(int w, int h,
-                                                     float r, float g, float b, float a) {
-    int len = w * h * 4;
-    _Float16 *t = malloc((size_t)len * sizeof(_Float16));
+// Premultiplied blend tile from a straight colour (channels in [0,1]).
+static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
+                                                    float r, float g, float b, float a) {
+    int n = w * h;
+    cnvs_premul *t = malloc((size_t)n * sizeof *t);
     if (!t) {
         return NULL;
     }
-    for (int i = 0; i < w * h; i++) {
-        t[i * 4] = (_Float16)(r * a);  // premultiplied
-        t[i * 4 + 1] = (_Float16)(g * a);
-        t[i * 4 + 2] = (_Float16)(b * a);
-        t[i * 4 + 3] = (_Float16)a;
+    cnvs_premul p = cnvs_premultiply(cnvs_unpremul_of(r, g, b, a));
+    for (int i = 0; i < n; i++) {
+        t[i] = p;
     }
     return t;
 }
@@ -54,7 +52,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 0));
 
     // Blend an opaque red tile over a 4x4 region.
-    _Float16 *red = make_tile16(4, 4, 1.0f, 0.0f, 0.0f, 1.0f);
+    cnvs_premul *red = make_tile16(4, 4, 1.0f, 0.0f, 0.0f, 1.0f);
     if (red) {
         compositor_blend(c, 2, 2, 4, 4, red, COMPOSITOR_SRC_OVER);
         compositor_read_rgba(c, px, len);
@@ -81,7 +79,7 @@ int main(void) {
     // Translucent over transparent must read back STRAIGHT: a half-alpha red tile
     // is stored premultiplied (0.5,0,0,0.5) but un-premultiplies to (255,0,0,128).
     // (This is the case that exposes a premultiplied/straight mix-up.)
-    _Float16 *half_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 0.5f);
+    cnvs_premul *half_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 0.5f);
     if (half_red) {
         compositor_blend(c, 0, 0, w, h, half_red, COMPOSITOR_SRC_OVER);
         compositor_read_rgba(c, px, len);
@@ -99,7 +97,7 @@ int main(void) {
             }
         }
         compositor_set_clip(c, mask, w * h);
-        _Float16 *green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 1.0f);
+        cnvs_premul *green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 1.0f);
         if (green) {
             compositor_blend(c, 0, 0, w, h, green, COMPOSITOR_SRC_OVER);
             compositor_read_rgba(c, px, len);
@@ -113,8 +111,8 @@ int main(void) {
     // Re-open the clip and check source-over compositing of a half-alpha tile.
     compositor_set_clip(c, NULL, 0);
     compositor_clear(c, 0, 0, w, h);
-    _Float16 *opaque_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 1.0f);
-    _Float16 *half_green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 0.5f);
+    cnvs_premul *opaque_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 1.0f);
+    cnvs_premul *half_green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 0.5f);
     if (opaque_red && half_green) {
         compositor_blend(c, 0, 0, w, h, opaque_red, COMPOSITOR_SRC_OVER);
         compositor_blend(c, 0, 0, w, h, half_green, COMPOSITOR_SRC_OVER);

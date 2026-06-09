@@ -12,7 +12,7 @@ static float clamp01(float v) {
     return v;
 }
 
-void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_rgba color) {
+void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color) {
     if (gr->stop_count >= CNVS_MAX_STOPS) {
         return;
     }
@@ -28,10 +28,10 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_rgba color) {
     gr->stop_count += 1;
 }
 
-cnvs_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
+cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     int n = gr->stop_count;
     if (n == 0) {
-        return cnvs_rgba_of(0.0f, 0.0f, 0.0f, 0.0f);
+        return cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
     t = clamp01(t);
     if (t <= gr->stops[0].offset) {
@@ -46,8 +46,8 @@ cnvs_rgba cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         if (t <= hi.offset) {
             float span = hi.offset - lo.offset;
             float u = span > 1e-9f ? (t - lo.offset) / span : 0.0f;
-            // Interpolate in float, then narrow once via cnvs_rgba_of.
-            return cnvs_rgba_of(
+            // Interpolate in float, then narrow once via cnvs_unpremul_of.
+            return cnvs_unpremul_of(
                 (float)lo.color.r + ((float)hi.color.r - (float)lo.color.r) * u,
                 (float)lo.color.g + ((float)hi.color.g - (float)lo.color.g) * u,
                 (float)lo.color.b + ((float)hi.color.b - (float)lo.color.b) * u,
@@ -113,13 +113,13 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
     return true;
 }
 
-cnvs_rgba cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
+cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
     float t;
-    cnvs_rgba c;
+    cnvs_unpremul c;
     if (cnvs_gradient_param(gr, p, &t)) {
         c = cnvs_gradient_color_at(gr, t);
     } else {
-        c = cnvs_rgba_of(0.0f, 0.0f, 0.0f, 0.0f);
+        c = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
     c.a = (_Float16)((float)c.a * alpha);
     return c;

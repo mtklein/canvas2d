@@ -15,16 +15,31 @@ typedef struct {
     float x, y;
 } cnvs_vec2;
 
-// Straight-alpha colour.  Channels are _Float16 -- the project's lingua franca
-// for colour: native on this hardware, half the footprint of float32 in the
-// pixel tiles, and a direct match for Metal's `half` / RGBA16Float.  Plenty of
-// precision for [0,1] colour (and headroom past it); 8-bit only at the edges.
-typedef struct {
+// Colour channels are _Float16 -- the project's lingua franca for colour: native
+// on this hardware, half the footprint of float32 in the pixel tiles, and a direct
+// match for Metal's `half` / RGBA16Float.  Plenty of precision for [0,1] colour
+// (and headroom past it); 8-bit only at the edges.
+//
+// Two distinct types so premultiplied and straight colour can never be confused:
+// cnvs_unpremul is what the Canvas API speaks (r,g,b independent of a); cnvs_premul
+// is what every internal pixel buffer holds (r,g,b already scaled by a).  Convert
+// only through cnvs_premultiply / cnvs_unpremultiply -- never by reinterpreting one
+// as the other, even though they share a layout.
+typedef struct cnvs_unpremul {
     _Float16 r, g, b, a;
-} cnvs_rgba;
+} cnvs_unpremul;
 
-// Build a colour from float components (the only place float -> _Float16 narrows).
-cnvs_rgba cnvs_rgba_of(float r, float g, float b, float a);
+typedef struct cnvs_premul {
+    _Float16 r, g, b, a;
+} cnvs_premul;
+
+// Build a straight colour from float components (the float -> _Float16 narrow site).
+cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a);
+
+// The explicit conversions.  premultiply scales r,g,b by a; unpremultiply divides
+// it back out (a == 0 yields all-zero).  Both clamp channels to [0,1].
+cnvs_premul cnvs_premultiply(cnvs_unpremul c);
+cnvs_unpremul cnvs_unpremultiply(cnvs_premul c);
 
 typedef struct {
     float a, b, c, d, e, f;
