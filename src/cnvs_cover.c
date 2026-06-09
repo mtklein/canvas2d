@@ -27,8 +27,10 @@ bool cnvs_cover_reset(cnvs_cover *c, int w, int h) {
 // Deposit one cell of signed cover: the edge crosses column `col` at fraction
 // `xmf` in [0,1], leaving cover `d` to its right (the rest propagates via the
 // prefix sum).  Left of the raster, full cover lumps into column 0; at or past the
-// right edge, nothing lands on-screen.
-static void deposit(cnvs_cover *c, int base, int w, int col, float xmf, float d) {
+// right edge, nothing lands on-screen.  always_inline: it's the innermost step of
+// the per-edge loop and -Os otherwise leaves it out-of-line (~6% of the fill).
+__attribute__((always_inline))
+static inline void deposit(cnvs_cover *c, int base, int w, int col, float xmf, float d) {
     if (col < 0) {
         c->acc[base] += d;
     } else if (col < w) {
@@ -138,10 +140,10 @@ void cnvs_cover_resolve(cnvs_cover const *c, int w, int h, cnvs_fill_rule rule,
             run += c->acc[base + x];
             float cov;
             if (rule == CNVS_EVENODD) {
-                float m = fmodf(run, 2.0f);
-                if (m < 0.0f) {
-                    m += 2.0f;
-                }
+                // Triangle wave of period 2: fold the winding count to coverage
+                // without fmodf's libm call (floorf lowers to a single frintm).
+                float t = run * 0.5f;
+                float m = (t - floorf(t)) * 2.0f;  // in [0, 2) for any sign of run
                 cov = m > 1.0f ? 2.0f - m : m;
             } else {
                 cov = fabsf(run);
