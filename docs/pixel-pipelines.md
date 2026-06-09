@@ -22,18 +22,24 @@ is apples-to-apples — same work, different dispatch.
 
 [../src/pixvm_switch.c](../src/pixvm_switch.c) is `pixvm_run_switch`: an outer loop
 over `PIXVM_N`-pixel chunks, an inner loop over the program, a switch on the opcode.
-Load/store ops deinterleave RGBA8 to/from four channel registers per lane;
-arithmetic ops are whole-vector. [../tests/test_pixvm.c](../tests/test_pixvm.c)
-checks a copy round-trip, a premultiplied source-over program, and the trap below.
+Load/store ops deinterleave RGBA8 to/from four channel vectors with shuffles (a
+`memcpy` vector load plus `__builtin_shufflevector`), with a scalar fallback for the
+final short chunk; arithmetic ops are whole-vector.
+[../tests/test_pixvm.c](../tests/test_pixvm.c) checks a copy round-trip, a
+premultiplied source-over program, and the trap below.
 
 ### What's frictionless
 
 Everything indexed. The program is a `pixop *__counted_by(prog_len)`, the register
 file is a plain `pixv reg[PIXVM_REGS]` local, the pixel buffers are `__counted_by`
 parameters — and the whole interpreter (program fetch, runtime-indexed register
-reads/writes, per-lane pixel loads and stores) compiles under `-Weverything`
-`-fbounds-safety` with zero annotation gymnastics. This is the indexed-buffer-dense
-case the flag is built for, and a VM is nothing but indexed-buffer-dense.
+reads/writes, vector pixel loads/stores) compiles under `-Weverything`
+`-fbounds-safety` with zero annotation gymnastics. The vector load is the adler32
+trick from [bounds-safety.md](bounds-safety.md): `memcpy(&raw, src + x*4, 32)` stays
+bounds-checked (the SDK annotates `memcpy` `__sized_by`) and lowers to one unaligned
+vector load — so eight pixels cost a single bounds check, not 32 per-byte ones. This
+is the indexed-buffer-dense case the flag is built for, and a VM is nothing but
+indexed-buffer-dense.
 
 ### The safety payoff is real and exactly where you want it
 
@@ -68,42 +74,42 @@ only if the program then indexes it). A small gotcha, but a real one: the "(ptr,
 count) parameter" pattern the project leans on has a nullable variant you have to
 reach for deliberately.
 
-### What it costs: not yet measurable — the benchmark hit a codegen artifact
+### What it costs: ~8% at `-Os`
 
-The first numbers looked impossible: release (`-Os -fbounds-safety`) ran **1.65×
-faster** than unsafe (`-Os`) on a source-over program over a 256×256 tile
-([../bench/bench_pixvm.c](../bench/bench_pixvm.c)), same source. That is not a
-bounds-safety property, and the benchmark as written measures the wrong thing.
+A source-over program over a 256×256 tile
+([../bench/bench_pixvm.c](../bench/bench_pixvm.c)), release (`-Os -fbounds-safety`)
+vs unsafe (`-Os`), same source, the `A`-vs-`A` hyperfine control at 1.00×:
 
-The cause is an `-Os` alias-analysis pessimization in the *unsafe* build. The
-register file is a stack array of vectors (`pixv reg[16]`), and the RGBA8
-deinterleave writes it one lane at a time (`reg[d][lane] = dst[...] / 255`). Plain
-`-Os` cannot prove that scalar store stays inside one 32-byte slot, so it assumes it
-may clobber the other register-file entries it is holding in NEON registers and
-spills/reloads them around *every* lane write — `stp`/`ldp` thrash (50/39 store/load
-pairs in the hot function vs 26/17 in the bounds-safe build). `-fbounds-safety`'s
-access carries a provably in-bounds offset (the lane masked `& 7`), which feeds
-alias analysis enough to keep the file in registers and skip the spill.
+| opt | bounds-safe | unsafe | cost of checks |
+|---|---|---|---|
+| `-Os` | 63.8 ms | 58.7 ms | **1.08×** |
+| `-O2` | 66.5 ms | 54.6 ms | **1.22×** |
 
-It is an artifact, not the cost of the checks — ruled out one suspect at a time:
+That is the expected shape: a small overhead at `-Os` (the shipping config), growing
+to ~22% at `-O2` because the unsafe build optimizes the surrounding work better, so
+the checks are a larger slice of a smaller total. The kernel lands between the
+project's flatten (1.07×) and blit (2.55×) kernels — the once-per-eight-pixels
+`memcpy` bounds check and the register-index checks amortize against the vector
+arithmetic, nowhere near the per-byte blit worst case.
 
-- the *same* binary as both A and B in hyperfine reports 1.00× — not CPU contention;
-- a standalone `clang` with explicit flags reproduces it — not a `build.ninja` mistake;
-- `-fno-vectorize -fno-slp-vectorize` leaves it unchanged — not autovectorization;
-- the disassembly shows the `stp/ldp`-around-every-lane-store pattern in the unsafe
-  build only;
-- `-O2` (better alias analysis) shrinks the gap to 1.14×, and de-aliasing the
-  deinterleave through locals collapses it toward 1.15× — both consistent with an
-  aliasing pessimization, not a check cost.
+#### How we got here: a lane-store artifact, and why it mattered
 
-So the honest statement is that **the cost of the checks here is below what this
-benchmark can resolve**: the lane-wise register-file store dominates and swings the
-result by codegen quirk. Isolating the real cost needs the deinterleave rewritten to
-avoid lane stores (vector shuffles — which is what design C will do by carrying
-channels in registers). Until then no cost number from this VM is trustworthy. (One
-genuine secondary finding survives: bounds annotations can *help* codegen by handing
-the optimizer no-alias facts — workload-specific, not a blanket win. Contrast the
-2.55× worst case for a plain RGBA8 blit in [bounds-safety.md](bounds-safety.md).)
+The first version of this kernel deinterleaved RGBA8 one lane at a time
+(`reg[d][lane] = src[...] / 255`), and benchmarked **backwards** — bounds-safe ran
+1.65× *faster* than unsafe at `-Os`. That was not a bounds-safety property; it was an
+`-Os` alias-analysis pessimization in the *unsafe* build. A scalar store into the
+stack-resident vector register file aliases the other slots the compiler holds in
+NEON registers, so plain `-Os` spilled and reloaded the whole file (`stp`/`ldp`)
+around every lane write; `-fbounds-safety`'s provably in-bounds offset (lane masked
+`& 7`) let its alias analysis skip the spill. Ruled out the alternatives one at a
+time — `A`-vs-`A` was 1.00× (not contention), a standalone `clang` reproduced it (not
+the build config), `-fno-vectorize` left it unchanged (not autovectorization), the
+disassembly showed the spill/reload only in the unsafe build, and `-O2` shrank the
+gap. The lesson is design-level and carries into B and C: **lane-wise writes into a
+stack vector register file are codegen-hostile** — keep loads/stores whole-vector
+(shuffles), which is what the rewrite above does and what C gets for free by holding
+channels in function arguments. A real secondary finding survives too: bounds
+annotations can *help* codegen by handing the optimizer no-alias facts.
 
 ### What it sets up for B and C
 
@@ -112,6 +118,10 @@ bytecode can't live in registers (the index is dynamic), so the file is stack
 memory and every op round-trips through it. Design C exists precisely to remove
 that — carrying r,g,b,a as function arguments so they stay in SIMD registers across
 the pipeline. Measuring A against C will show that cost directly.
+
+A's baseline for that comparison: **63.8 ms** for the 300-iteration source-over
+bench at `-Os` bounds-safe (~310 Mpix/s). B and C run the same program over the same
+tile, so the three numbers are directly comparable.
 
 ## Design B — tail-call threaded VM (planned)
 
