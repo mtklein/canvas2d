@@ -74,6 +74,26 @@ v->data = nd;        // pointer and its count, updated together
 v->cap = newcap;
 ```
 
+**Structure-of-arrays carves cleanly — it's just normal C.** We probed whether
+splitting an array-of-padded-structs into parallel arrays fights the flag. It
+doesn't. Three `__counted_by(cap)` arrays sharing one `cap` is the easy shape:
+`realloc` each, then assign the three pointers and `cap` adjacently. Packing all
+three into *one* allocation also works — slicing the block into typed
+`__counted_by(cap)` sub-pointers keeps each one's bound with **no forge**:
+
+```c
+int  *__counted_by(cap) a = blk;          // [cap ints | cap ints | cap bools]
+int  *__counted_by(cap) b = blk + cap;
+bool *__counted_by(cap) c = (bool *)(blk + 2 * cap);
+```
+
+The only friction is general C, not bounds-safety: casting `char*`→`int*` trips
+`-Wcast-align`, so you order the **largest-alignment array first** and type the
+block as that element, letting the smaller arrays cast *down*. (`-fbounds-safety`
+adds nothing here a careful C programmer wouldn't already do; the single-block
+form also has to copy on growth, since the sub-array offsets move with `cap`,
+which is why we kept things array-of-structs where padding is negligible.)
+
 **The runtime guarantee is real and cheap.** An out-of-bounds index traps
 (`SIGTRAP`, exit 133) **even at `-Os`**, and the check is elided where the
 compiler can prove safety. Our `test_bounds_safety` forks a child that writes
