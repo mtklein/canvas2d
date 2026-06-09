@@ -279,8 +279,11 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   the [software compositor](src/compositor_cpu.c) implements `compositor.h`
   identically in ~100 lines of checked C (its per-pixel blend kernel, shared via
   [cnvs_blend.h](src/cnvs_blend.h), is the same premultiplied math the Metal shader
-  runs), selected instead of Metal at build time. The two agree to ≤1/255 per
-  channel, and the `-cpu` build links no GPU frameworks at all.
+  runs), selected instead of Metal at build time. The two agree **bit-for-bit**
+  — the software blend rounds its half stores toward zero to match Metal's
+  RGBA16Float store, and the `backenddiff` gate holds the match at tolerance 0
+  (see [docs/backend-differential.md](docs/backend-differential.md)) — and the
+  `-cpu` build links no GPU frameworks at all.
 - The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with font
   fallback) and turns each glyph into either a device-space `cnvs_path` outline —
   which the *same* coverage rasterizer fills/strokes, so text gets gradients,

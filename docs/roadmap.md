@@ -26,7 +26,9 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    kernel ([cnvs_blend.h](../src/cnvs_blend.h)) is all 26 composite/blend modes,
    premultiplied, over `__counted_by` tiles. Chosen instead of Metal at build time
    (the `-cpu` variants), it links no GPU frameworks and cross-validates the Metal
-   backend — every pixel test runs against both, and they agree to ≤1/255.
+   backend — every pixel test runs against both, and they agree bit-for-bit
+   (the software blend rounds half stores toward zero to match Metal's
+   RGBA16Float store; see [backend-differential.md](backend-differential.md)).
 3. ~~**Shadows**~~ — **done** (fills/strokes/text). The op's coverage mask is
    blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
