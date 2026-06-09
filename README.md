@@ -186,8 +186,8 @@ canvas_save / canvas_restore / canvas_reset
 canvas_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
 canvas_set_global_composite_operation                        // 26 GCO modes
-canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
-canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / add_stroke_color_stop
+canvas_set_fill_linear_gradient / set_fill_radial_gradient / set_fill_conic_gradient / add_fill_color_stop
+canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / set_stroke_conic_gradient / add_stroke_color_stop
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
 canvas_set_line_dash / get_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect / stroke_rect
@@ -219,13 +219,13 @@ complete, honest gap inventory (missing + partial + what's next).
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData) | ◑ no colorSpace |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
-| Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
+| Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Hit testing — `isPointInPath` / `isPointInStroke` | ✅ winding + even-odd, transform-aware |
-| Shadows, `filter`, patterns, conic gradients, `Path2D` | ❌ see [roadmap](docs/roadmap.md) |
+| Shadows, `filter`, patterns, `Path2D` | ❌ see [roadmap](docs/roadmap.md) |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy

@@ -95,6 +95,11 @@ void canvas_set_fill_linear_gradient(canvas *__single cv,
                                      float x0, float y0, float x1, float y1);
 void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
                                      float r0, float x1, float y1, float r1);
+// Conic gradient (createConicGradient): colours sweep clockwise around (x, y)
+// from `start_angle` radians (measured from the +x axis).  Stops are added with
+// canvas_add_fill_color_stop, as for the linear/radial gradients.
+void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
+                                    float x, float y);
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a);
 
@@ -164,6 +169,8 @@ void canvas_set_stroke_linear_gradient(canvas *__single cv,
                                        float x0, float y0, float x1, float y1);
 void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
                                        float r0, float x1, float y1, float r1);
+void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
+                                      float x, float y);
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a);
 void canvas_set_line_width(canvas *__single cv, float width);

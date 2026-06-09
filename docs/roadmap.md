@@ -47,8 +47,8 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`fill`/`stroke`/`clip`** have no `Path2D` overload, and the fill rule is taken
   from state rather than an explicit argument.
 - **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color
-  strings) plus linear/radial gradients — and the gradients are state setters, not
-  reusable first-class objects.
+  strings) plus linear/radial/conic gradients — and the gradients are state
+  setters, not reusable first-class objects.
 - **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
@@ -59,8 +59,7 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **Shadows** — `shadowColor`, `shadowBlur`, `shadowOffsetX`, `shadowOffsetY`.
 - **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
   `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).
-- **`createPattern`** (image patterns + `repeat`/`repeat-x`/`repeat-y`/`no-repeat`)
-  and **`createConicGradient`**.
+- **`createPattern`** — image patterns + `repeat`/`repeat-x`/`repeat-y`/`no-repeat`.
 - **`Path2D`** — no constructible path object, no `addPath`, no SVG path-data
   string, and none of the `fill/stroke/clip/isPointIn*` overloads that take one.
 

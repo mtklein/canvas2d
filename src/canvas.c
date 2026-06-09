@@ -335,6 +335,7 @@ static void grad_set_linear(canvas *__single cv, cnvs_gradient *gr,
     gr->p1 = xf(cv, x1, y1);
     gr->r0 = 0.0f;
     gr->r1 = 0.0f;
+    gr->angle = 0.0f;
     gr->stop_count = 0;
 }
 
@@ -346,6 +347,25 @@ static void grad_set_radial(canvas *__single cv, cnvs_gradient *gr, float x0,
     gr->p1 = xf(cv, x1, y1);
     gr->r0 = r0 * s;
     gr->r1 = r1 * s;
+    gr->angle = 0.0f;
+    gr->stop_count = 0;
+}
+
+// Rotation angle (radians) of the CTM's x-axis basis, for baking a conic
+// gradient's start angle into device space.  Exact for similarity transforms;
+// skew / non-uniform scale distort the angles (as they do the radial circles).
+static float ctm_rotation(cnvs_mat m) {
+    return atan2f(m.b, m.a);
+}
+
+static void grad_set_conic(canvas *__single cv, cnvs_gradient *gr,
+                           float start_angle, float cx, float cy) {
+    gr->kind = CNVS_GRAD_CONIC;
+    gr->p0 = xf(cv, cx, cy);  // centre in device space
+    gr->p1 = gr->p0;
+    gr->r0 = 0.0f;
+    gr->r1 = 0.0f;
+    gr->angle = start_angle + ctm_rotation(cv->cur.ctm);
     gr->stop_count = 0;
 }
 
@@ -358,6 +378,12 @@ void canvas_set_fill_linear_gradient(canvas *__single cv,
 void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
                                      float r0, float x1, float y1, float r1) {
     grad_set_radial(cv, &cv->cur.fill_grad, x0, y0, r0, x1, y1, r1);
+    cv->cur.fill_is_gradient = 1;
+}
+
+void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
+                                    float x, float y) {
+    grad_set_conic(cv, &cv->cur.fill_grad, start_angle, x, y);
     cv->cur.fill_is_gradient = 1;
 }
 
@@ -376,6 +402,12 @@ void canvas_set_stroke_linear_gradient(canvas *__single cv,
 void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
                                        float r0, float x1, float y1, float r1) {
     grad_set_radial(cv, &cv->cur.stroke_grad, x0, y0, r0, x1, y1, r1);
+    cv->cur.stroke_is_gradient = 1;
+}
+
+void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
+                                      float x, float y) {
+    grad_set_conic(cv, &cv->cur.stroke_grad, start_angle, x, y);
     cv->cur.stroke_is_gradient = 1;
 }
 

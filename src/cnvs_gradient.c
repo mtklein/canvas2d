@@ -74,6 +74,15 @@ void cnvs_gradient_build_ramp(cnvs_gradient const *gr,
 }
 
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t) {
+    if (gr->kind == CNVS_GRAD_CONIC) {
+        // Angle of p about the centre, measured clockwise from +x (device space is
+        // y-down, so atan2 already increases clockwise), minus the start angle;
+        // wrapped into [0,1).  Every point has a parameter, so this never misses.
+        float ang = atan2f(p.y - gr->p0.y, p.x - gr->p0.x) - gr->angle;
+        float v = ang * 0.15915494309189535f;  // * 1/(2*pi)
+        *t = v - floorf(v);
+        return true;
+    }
     if (gr->kind == CNVS_GRAD_LINEAR) {
         float dx = gr->p1.x - gr->p0.x;
         float dy = gr->p1.y - gr->p0.y;
@@ -177,7 +186,7 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
             gradf8 v = vclamp01((px * dx + cy) * inv);  // clamp01(((p-p0).d)/|d|^2)
             memcpy(t_out + i, &v, sizeof v);            // bounds-checked vector store
         }
-    } else {
+    } else if (gr->kind == CNVS_GRAD_RADIAL) {
         float cdx = gr->p1.x - gr->p0.x;
         float cdy = gr->p1.y - gr->p0.y;
         float dr = gr->r1 - gr->r0;
@@ -214,7 +223,9 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
             memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
         }
     }
-    for (; i < n; i++) {  // tail: reuse the scalar solver for n % 8
+    // Tail: the scalar solver for the n % 8 remainder -- and, since the conic kind
+    // takes neither vector branch above (i stays 0), the whole row for conic.
+    for (; i < n; i++) {
         float t;
         cnvs_vec2 p = { .x = (float)x0 + (float)i + 0.5f, .y = y };
         t_out[i] = cnvs_gradient_param(gr, p, &t) ? t : -1.0f;
