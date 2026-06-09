@@ -195,6 +195,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
 canvas_fill / canvas_stroke / canvas_clip
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
+canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline
 canvas_measure_text / measure_text_full / fill_text / stroke_text  // Libian TC, UTF-8
 canvas_destroy(cv);
@@ -219,7 +220,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage` — transform/clip/alpha-aware | ◑ RGBA8 source only, always bilinear |
+| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Shadows, `filter`, patterns, conic gradients, `Path2D`, hit-testing | ❌ see [roadmap](docs/roadmap.md) |

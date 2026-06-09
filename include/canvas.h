@@ -26,6 +26,11 @@ typedef enum {
     CANVAS_BASELINE_MIDDLE, CANVAS_BASELINE_IDEOGRAPHIC, CANVAS_BASELINE_BOTTOM,
 } canvas_text_baseline;
 
+// imageSmoothingQuality (a hint; see canvas_set_image_smoothing_quality).
+typedef enum {
+    CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
+} canvas_image_smoothing_quality;
+
 // globalCompositeOperation.  Order mirrors compositor_blend_mode (src/compositor.h)
 // value-for-value; the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
@@ -163,7 +168,17 @@ void canvas_stroke(canvas *__single cv);
 // bilinearly, transformed by the current transform, composited source-over under
 // the current global alpha and clip.  The three forms mirror the Canvas 2D
 // overloads; the subrect form samples source rect [sx,sy,sw',sh'] into dest rect
-// [dx,dy,dw,dh] (both user space).
+// [dx,dy,dw,dh] (both user space).  Sampling is bilinear unless image smoothing
+// is disabled (then nearest-neighbour).
+//
+// imageSmoothingEnabled: when true (default), drawImage samples bilinearly; when
+// false, nearest-neighbour -- crisp, blocky upscaling with no blending.
+void canvas_set_image_smoothing_enabled(canvas *__single cv, bool enabled);
+// imageSmoothingQuality: a hint (low/medium/high) that applies only while
+// smoothing is enabled.  Stored for API parity; our sampler is one bilinear
+// quality, so it does not change the output.
+void canvas_set_image_smoothing_quality(canvas *__single cv,
+                                        canvas_image_smoothing_quality quality);
 void canvas_draw_image(canvas *__single cv,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy);

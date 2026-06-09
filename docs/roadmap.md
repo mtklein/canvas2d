@@ -50,8 +50,8 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   strings) plus linear/radial gradients — and the gradients are state setters, not
   reusable first-class objects.
 - **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
-- **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source),
-  and always samples bilinearly.
+- **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
+  it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
 - **Glyph outlines** are re-fetched from Core Text on every `fill_text` — no cache.
 
 ## Missing entirely
@@ -64,8 +64,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`Path2D`** — no constructible path object, no `addPath`, no SVG path-data
   string, and none of the `fill/stroke/clip/isPointIn*` overloads that take one.
 - **Hit testing** — `isPointInPath`, `isPointInStroke`.
-- **Image smoothing** — `imageSmoothingEnabled` (no nearest-neighbour) and
-  `imageSmoothingQuality`.
 - **Canvas resize** — width/height are fixed at create (the spec's resize also
   clears the bitmap and resets state).
 

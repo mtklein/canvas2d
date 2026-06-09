@@ -67,6 +67,8 @@ struct canvas_state {
     float font_size;  // text size in user px (Canvas default 10px)
     canvas_text_align text_align;
     canvas_text_baseline text_baseline;
+    bool image_smoothing_enabled;
+    canvas_image_smoothing_quality image_smoothing_quality;
     // Clip coverage, one byte per canvas pixel (NULL = open).  Held by value in
     // the state, so save() snapshots it and restore() brings it back; clip()
     // intersects the current path's coverage into it.
@@ -126,6 +128,8 @@ static void state_defaults(struct canvas_state *s) {
     s->font_size = 10.0f;
     s->text_align = CANVAS_ALIGN_START;
     s->text_baseline = CANVAS_BASELINE_ALPHABETIC;
+    s->image_smoothing_enabled = true;
+    s->image_smoothing_quality = CANVAS_SMOOTHING_LOW;
     // Drop the clip: zero the count before NULLing the pointer so the
     // __counted_by(clip_len) invariant never sees NULL with a positive count.
     s->clip_len = 0;
@@ -1132,6 +1136,37 @@ static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
     }
 }
 
+// Nearest-neighbour sample of an RGBA8 source at source-pixel (fx, fy),
+// unpremultiplied, clamp-to-edge: pick the pixel whose cell contains the point.
+static void sample_src_nearest(uint8_t const *__counted_by(slen) src, int slen,
+                               int sw, int sh, float fx, float fy,
+                               float *__counted_by(4) out) {
+    (void)slen;
+    int x = cnvs_f2i(floorf(fx));
+    int y = cnvs_f2i(floorf(fy));
+    if (x < 0) { x = 0; } else if (x > sw - 1) { x = sw - 1; }
+    if (y < 0) { y = 0; } else if (y > sh - 1) { y = sh - 1; }
+    int o = (y * sw + x) * 4;
+    for (int k = 0; k < 4; k++) {
+        out[k] = (float)src[o + k] / 255.0f;
+    }
+}
+
+void canvas_set_image_smoothing_enabled(canvas *__single cv, bool enabled) {
+    cv->cur.image_smoothing_enabled = enabled;
+}
+
+void canvas_set_image_smoothing_quality(canvas *__single cv,
+                                        canvas_image_smoothing_quality quality) {
+    switch (quality) {
+        case CANVAS_SMOOTHING_LOW:
+        case CANVAS_SMOOTHING_MEDIUM:
+        case CANVAS_SMOOTHING_HIGH:
+            cv->cur.image_smoothing_quality = quality;
+            break;
+    }
+}
+
 void canvas_draw_image_subrect(canvas *__single cv,
                                uint8_t const *__counted_by(sw * sh * 4) src,
                                int sw, int sh, float sx, float sy,
@@ -1156,6 +1191,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
 
     cnvs_mat inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float ga = cv->cur.global_alpha;
+    bool smooth = cv->cur.image_smoothing_enabled;
     for (int py = 0; py < b.h; py++) {
         for (int px = 0; px < b.w; px++) {
             int i = py * b.w + px;
@@ -1171,7 +1207,11 @@ void canvas_draw_image_subrect(canvas *__single cv,
             float fsx = sx + ((u.x - dx) / dw) * sww;
             float fsy = sy + ((u.y - dy) / dh) * shh;
             float s[4];
-            sample_src(src, sw * sh * 4, sw, sh, fsx, fsy, s);
+            if (smooth) {
+                sample_src(src, sw * sh * 4, sw, sh, fsx, fsy, s);
+            } else {
+                sample_src_nearest(src, sw * sh * 4, sw, sh, fsx, fsy, s);
+            }
             float alpha = s[3] * ga * covf;
             cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
         }
