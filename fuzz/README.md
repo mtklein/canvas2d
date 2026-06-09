@@ -66,14 +66,30 @@ Note: float-cast UB (Finding 4) is *not* spatial — it shows up as UBSan in the
 diagnostic build and is unaffected by `-fbounds-safety`; the trap differential is
 for the OOB-write classes.
 
+## Harnesses
+
+- **`fuzz_api.c`** — broad public-API state machine (spatial + value classes);
+  also the binary the in-`all` `fuzzcorpus` gate replays the committed corpus
+  through under ASan.
+- **`fuzz_state.c`** — focused *temporal* stress: a small op set that hammers the
+  ownership transfers (deep save/restore nesting, `clip()` mask alloc/copy/free,
+  the font-cache destroy-then-recreate, image-data buffers), so a coverage fuzzer
+  reaches the interprocedural lifetime paths the static analyzer can't follow.
+  ASan use-after-free / -scope / -return is the oracle.
+
+The fuzz build enables `-fsanitize-address-use-after-scope` and
+`-fsanitize-address-use-after-return=always`, matching the debug variant.
+
 ## Files
 
-- `fuzz_ops.h` — opcode enum, shared by harness and seed generator.
-- `fuzz_api.c` — the harness (`LLVMFuzzerTestOneInput`) + a file-replay `main`
-  (engine-agnostic; the `main` is behind `#ifndef FUZZ_NO_MAIN`).
+- `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
+- `fuzz_api.c`, `fuzz_state.c` — the harnesses (`LLVMFuzzerTestOneInput` + a
+  file-replay `main` behind `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
-- `build.sh` — builds the libFuzzer target + seeds.
+- `build.sh` — builds both libFuzzer targets + seeds.
 
 Not yet done: PNG-encoder and Core-Text harnesses; Role B (a strict on-disk
-format with a bounds-safe validating parser, a fuzz target in its own right).
+format with a bounds-safe validating parser, a fuzz target in its own right);
+adding `fuzz_state` to the committed-corpus replay gate (coordinate with
+`fuzzcorpus`, which currently replays `fuzz_api` only).
