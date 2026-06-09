@@ -139,6 +139,33 @@ for the same reason as Finding 1: don't rely on "UB happens to trap downstream."
 These are small and correct today, but they are where a *future* edit has no
 compile-time net, so they deserve the heaviest fuzzing (Section 4).
 
+### Finding 4 — Non-finite/huge float coordinates cause `(int)`-cast UB in `points_bbox` (fuzzer-found)
+
+**Severity:** undefined behavior (float-cast-overflow); not spatial, so
+`-fbounds-safety` does **not** cover it — it is UBSan-fatal in debug and silent
+in release. **Confidence: verified, fuzzer-found + reproduced.** **Status: OPEN.**
+
+The public path/rect API takes coordinates as `float` with no finiteness or range
+check. [`points_bbox`](../src/canvas.c) converts `floorf`/`ceilf` results with
+`int x0 = (int)fx0; ...` ([`canvas.c:334`](../src/canvas.c)); a non-finite or
+out-of-`int`-range coordinate makes that cast UB. Found by the Role-A API fuzzer
+([`fuzz/`](../fuzz/)) on the **second** random input, reproduced under the
+diagnostic build:
+
+```
+src/canvas.c:334:29: runtime error: 9.35078e+13 is outside the range of
+                     representable values of type 'int'
+    #0 points_bbox        canvas.c:334
+    #1 canvas_clear_rect  canvas.c:418   (any fill/clip/rect path reaches it)
+```
+
+Per the Canvas 2D spec, path-building ops with non-finite arguments are no-ops.
+**Suggested fix:** reject non-finite coordinates at the public path/rect entry
+points (`move_to`, `line_to`, `rect`, `quadratic/bezier_curve_to`, `arc`,
+`ellipse`, `round_rect`, `arc_to`, `fill_rect`, `clear_rect`), and clamp the
+device-space bbox to the canvas before the `(int)` cast so a finite-but-huge
+transformed coordinate can't overflow either.
+
 ### Non-findings (checked, clean)
 
 - **PNG encoder** ([`cnvs_png.c`](../src/cnvs_png.c)) is the strongest example of

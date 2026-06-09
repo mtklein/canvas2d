@@ -4,3 +4,7 @@
 /.ninja_log
 /.ninja_deps
 .DS_Store
+
+# Fuzzing: generated seed corpus and AFL findings (regenerate with fuzz/build.sh).
+/fuzz/seeds/
+/fuzz/findings/
