@@ -56,6 +56,11 @@ CWARN_DISABLED = [
     # C-only, where implicit void*<->T* conversion is idiomatic (the calloc/
     # realloc idiom); it does NOT weaken -fbounds-safety's runtime size checks.
     ("implicit-void-ptr-cast", "C-only project; idiomatic void* conversion"),
+    # We prefer *exhaustive* enum switches with no default: -Wswitch-enum (kept)
+    # makes the compiler enforce that every case is handled, so a default is dead
+    # weight that -Wcovered-switch-default (kept) would flag anyway.  Requiring one
+    # only collides with that.
+    ("switch-default", "we write exhaustive enum switches; -Wswitch-enum guards them"),
 ]
 
 CWARN = "-Werror -Weverything " + " ".join(

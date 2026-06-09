@@ -221,6 +221,8 @@ rationale in [configure.py](configure.py):
 - `-Wno-pre-c23-compat` — we deliberately target C23
 - `-Wno-implicit-void-ptr-cast` — C-only project; the idiomatic `calloc` cast
   (it does not weaken `-fbounds-safety`, which still traps undersized allocs)
+- `-Wno-switch-default` — we write *exhaustive* enum switches with no default;
+  `-Wswitch-enum` (kept) makes the compiler enforce that every case is handled
 
 ## Benchmarking — what does `-fbounds-safety` cost?
 

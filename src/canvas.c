@@ -594,7 +594,10 @@ void canvas_close_path(canvas *__single cv) {
 }
 
 void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
-    cv->cur.fill_rule = (rule == CANVAS_EVENODD) ? CNVS_EVENODD : CNVS_NONZERO;
+    switch (rule) {
+        case CANVAS_NONZERO: cv->cur.fill_rule = CNVS_NONZERO; break;
+        case CANVAS_EVENODD: cv->cur.fill_rule = CNVS_EVENODD; break;
+    }
 }
 
 // Rasterize a device-space path under `rule` and paint it over its clamped bbox.
@@ -660,15 +663,19 @@ void canvas_set_line_width(canvas *__single cv, float width) {
 }
 
 void canvas_set_line_join(canvas *__single cv, canvas_line_join join) {
-    cv->cur.line_join = (join == CANVAS_JOIN_ROUND)   ? CNVS_JOIN_ROUND
-                        : (join == CANVAS_JOIN_BEVEL) ? CNVS_JOIN_BEVEL
-                                                      : CNVS_JOIN_MITER;
+    switch (join) {
+        case CANVAS_JOIN_MITER: cv->cur.line_join = CNVS_JOIN_MITER; break;
+        case CANVAS_JOIN_ROUND: cv->cur.line_join = CNVS_JOIN_ROUND; break;
+        case CANVAS_JOIN_BEVEL: cv->cur.line_join = CNVS_JOIN_BEVEL; break;
+    }
 }
 
 void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap) {
-    cv->cur.line_cap = (cap == CANVAS_CAP_ROUND)    ? CNVS_CAP_ROUND
-                       : (cap == CANVAS_CAP_SQUARE) ? CNVS_CAP_SQUARE
-                                                    : CNVS_CAP_BUTT;
+    switch (cap) {
+        case CANVAS_CAP_BUTT:   cv->cur.line_cap = CNVS_CAP_BUTT;   break;
+        case CANVAS_CAP_ROUND:  cv->cur.line_cap = CNVS_CAP_ROUND;  break;
+        case CANVAS_CAP_SQUARE: cv->cur.line_cap = CNVS_CAP_SQUARE; break;
+    }
 }
 
 void canvas_set_miter_limit(canvas *__single cv, float limit) {
