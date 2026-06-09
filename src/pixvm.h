@@ -2,8 +2,9 @@
 
 // A small vectorized VM for per-pixel processing, built to probe how
 // -fbounds-safety interacts with three dispatch styles.  This header is the shared
-// ISA; pixvm_run_switch (one big switch) and pixvm_run_threaded (tail-call threaded)
-// are two backends, with an SkRasterPipeline-style register pipeline to follow.
+// ISA; pixvm_run_switch (one big switch), pixvm_run_threaded (tail-call threaded),
+// and pixvm_run_pipe (an SkRasterPipeline-style register pipeline) are the three
+// backends.
 //
 // A run walks `n` pixels PIXVM_N at a time.  Colour channels are _Float16 in [0,1]
 // (the project's colour type, and native 128-bit NEON at 8 wide), held in a

@@ -1,4 +1,4 @@
-# canvas2d fuzzing (Role A: API state-machine fuzzer)
+# canvas2d fuzzing
 
 A coverage-guided fuzz target for the public `canvas_*` API. The input is decoded
 by a **total** byte→op stream (`fuzz_api.c`): every byte string is a valid
@@ -60,7 +60,7 @@ harness's `main` (compiled *without* `-DFUZZ_NO_MAIN`) replays files:
 python3 configure.py && ninja build/release-cpu/test_png   # builds release-cpu core objects
 cc -std=c23 -Os -Iinclude -Isrc -c fuzz/fuzz_api.c -o /tmp/h.o      # Apple clang, no -fbounds-safety
 cc -Os /tmp/h.o \
-   build/release-cpu/obj/{canvas,cnvs_cover,cnvs_font_ct,cnvs_geom,cnvs_gradient,cnvs_image,cnvs_math,cnvs_mem,cnvs_path,cnvs_png,cnvs_stroke,compositor_cpu}.o \
+   build/release-cpu/obj/{canvas,blur,cnvs_cover,cnvs_geom,cnvs_gradient,cnvs_image,cnvs_math,cnvs_mem,cnvs_path,cnvs_png,cnvs_record,cnvs_replay,cnvs_stroke,cnvs_text,cnvs_text_ct,compositor_cpu}.o \
    -framework CoreText -framework CoreGraphics -framework CoreFoundation -o /tmp/fuzz_replay
 ./tmp/fuzz_replay <crash-file>     # OOB-write classes -> exit 133 (SIGTRAP)
 ```
@@ -79,7 +79,7 @@ for the OOB-write classes.
   the font-cache destroy-then-recreate, image-data buffers), so a coverage fuzzer
   reaches the interprocedural lifetime paths the static analyzer can't follow.
   ASan use-after-free / -scope / -return is the oracle.
-- **`fuzz_text.c`** — the **unchecked Core Text shim** (`cnvs_font_ct.c`, built
+- **`fuzz_text.c`** — the **unchecked Core Text shim** (`cnvs_text_ct.c`, built
   *without* `-fbounds-safety`) via the public text API: adversarial UTF-8 through
   the hand-written `utf8_next` decoder, surrogate composition, and the
   `CGPathApply`→`emit` glyph-outline callback. ASan is the *only* net in that TU,
@@ -90,6 +90,11 @@ for the OOB-write classes.
   (`rawlen`/`nseg`/`zlib_len`/`total`), the pre-sized write cursor, and the SIMD
   `adler32`/CRC32 paths. With `-fbounds-safety` off here, ASan independently
   witnesses the cursor never overruns. (83k execs: clean.)
+- **`fuzz_replay.c`** — the text canvas-program parser ([cnvs_replay.c](../src/cnvs_replay.c))
+  on adversarial raw bytes (need not be UTF-8 or NUL-terminated): tokenizing,
+  number parsing, line handling, and the `__null_terminated` seam — a classic C
+  text-parsing attack surface, and the "Role B" strict-format validating parser
+  (bounds-safe, zero forges) as a fuzz target in its own right.
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
 `-fsanitize-address-use-after-return=always`, matching the debug variant.
@@ -107,7 +112,6 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 There's no build script here: `ninja fuzz` builds every harness (Homebrew clang +
 libFuzzer) straight from the main ninja graph — see configure.py's `fuzz` target.
 
-Not yet done: Role B (a strict on-disk format with a bounds-safe validating
-parser, a fuzz target in its own right); adding `fuzz_state`/`fuzz_text`/`fuzz_png`
+Not yet done: adding `fuzz_state`/`fuzz_text`/`fuzz_png`/`fuzz_replay`
 to the committed-corpus replay gate (coordinate with `fuzzcorpus`, which currently
 replays `fuzz_api` only).

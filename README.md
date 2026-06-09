@@ -8,7 +8,7 @@ The point of the project is twofold:
 1. **Learn `-fbounds-safety`** — Clang's spatial-memory-safety extension — by
    building something real with it.
 2. **Show that C can play with the modern big boys (Rust).** The whole codebase
-   compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only five
+   compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only six
    warnings disabled (each documented), and the interesting work — path math,
    curve flattening, analytic-coverage antialiasing, stroking, gradients, a PNG
    encoder — lives in bounds-checked C. Metal is just a tile compositor.
@@ -201,10 +201,11 @@ rasterizer:
 ## Quick start
 
 ```sh
-python3 configure.py     # generate build.ninja
+python3 configure.py     # generate build.ninja (first run; it self-regenerates after)
 ninja                    # build every variant, run the suite, re-render the gallery
 ninja test               # just the tests (subset of the default build)
 ninja images             # just (re)render the gallery PNGs (subset of default)
+ninja fuzz               # build the libFuzzer harnesses (needs brew llvm; fuzz/README.md)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
 ninja profile-scene      # sample(1): self-time across the whole gallery (real scenes)
@@ -251,11 +252,14 @@ shows only its progress line; a failing test prints the offending `CHECK` to std
       │  ├── cnvs_math     2x3 affine transforms
       │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
       │  ├── cnvs_cover     analytic (signed-area) coverage → per-pixel alpha
-      │  ├── cnvs_gradient linear/radial ramp, evaluated per pixel into a tile
+      │  ├── cnvs_gradient linear/radial/conic ramp, evaluated per pixel into a tile
       │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
+      │  ├── blur          separable box blur (shadow masks, ≈ Gaussian)
       │  ├── cnvs_geom     growable vertex/int buffers
       │  ├── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
+      │  ├── cnvs_record   draw calls → text canvas-program (the write side)
+      │  ├── cnvs_replay   text canvas-program → draw calls (the read side)
       │  │
       │  ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
       │  cnvs_text_ct.c  ── unsafe boundary #2: Core Text shaping + glyphs (C, no ARC)
@@ -277,7 +281,7 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   lingua franca here — native on this hardware, 8-bit only at the spec-mandated
   edges), so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific:
   the [software compositor](src/compositor_cpu.c) implements `compositor.h`
-  identically in ~100 lines of checked C (its per-pixel blend kernel, shared via
+  identically in ~350 lines of checked C (its per-pixel blend kernel, shared via
   [cnvs_blend.h](src/cnvs_blend.h), is the same premultiplied math the Metal shader
   runs), selected instead of Metal at build time. The two agree **bit-for-bit**
   — the software blend rounds its half stores toward zero to match Metal's
@@ -388,32 +392,42 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.8 ms | 9.7 ms | **1.00×** |
-| `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 6.8 ms | 6.8 ms | **1.00×** |
-| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 83 ms | 87 ms | **1.00×** |
-| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 12 ms | 12 ms | **1.00×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 54 ms | 54 ms | **1.00×** |
-| `bench_flatten` — cubic-Bézier flattening | 120 ms | 118 ms | **1.02×** |
-| `bench` — end-to-end | 65 ms | 59 ms | **1.10×** |
-| `bench_fill` — analytic coverage fill (signed-area accumulate + resolve) | 29 ms | 24 ms | **1.22×** |
+| `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 7.9 ms | 7.9 ms | **1.00×** |
+| `bench_blur_v` — box blur, vertical pass (stride `w`; memory-bound) | 93 ms | 93 ms | **1.00×** |
+| `bench_flatten` — cubic-Bézier flattening | 120 ms | 118 ms | **1.01×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.3 ms | 9.1 ms | **1.02×** |
+| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 78 ms | 75 ms | **1.03×** |
+| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 13.4 ms | 13.1 ms | **1.03×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 51 ms | 49 ms | **1.03×** |
+| `bench` — end-to-end | 47 ms | 44 ms | **1.07×** |
+| `bench_fill` — analytic coverage fill (signed-area accumulate + 8-wide resolve) | 37 ms | 33 ms | **1.12×** |
+| `bench_blur_h` — box blur, horizontal pass (contiguous; compute-visible) | 51 ms | 34 ms | **1.52×** |
 
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
 overhead tracks how much it indexes vs how much it computes — **and the same
 vectorization that speeds a tight loop up amortizes its checks away too.** The 2D
 blit used to be the worst case at **2.5×** (four checked byte loads and stores per
 pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
-`memcpy` made it **13× faster and dropped the safety overhead to 1.00×** — one span
+`memcpy` made it **13× faster and dropped the safety overhead to ~1.0×** — one span
 check per row instead of eight per pixel. PNG encode did the same when its CRC
 moved from a byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, also
-1.00×). What's left at the top is `bench_fill` (**1.22×**): a signed-area
-accumulate whose scattered per-pixel writes haven't been vectorized yet. Gradients
-got both treatments — a 1024-entry colour ramp built per fill (turning the per-pixel
-stop scan into one indexed lookup, ≤1/255 of colour error) *and* an 8-wide radial
-parameter solve — so `bench_gradient_fill` (the renderer's actual path) is **~6.4×
-faster** than the naive per-pixel scan (`bench_gradient`), at 1.00× overhead: the
-SIMD parameter solve stores eight lanes per `memcpy`, one bounds check instead of
-eight. Real canvas rendering is GPU-bound, so the end-to-end cost of safety
-is smaller still;
+1.00×). The coverage fill got the same treatment on its resolve half — the prefix
+sum, fill-rule fold, and 8-bit convert run 8-wide with one whole-vector check per
+block — taking `bench_fill` from 1.22× to **1.12×**; what remains is the
+accumulate's scattered per-edge writes (`acc[base + col] += …`), which have no
+contiguous run to collapse. Gradients got both treatments — a 1024-entry colour
+ramp built per fill (turning the per-pixel stop scan into one indexed lookup,
+≤1/255 of colour error) *and* an 8-wide radial parameter solve — so
+`bench_gradient_fill` (the renderer's actual path) is **~5.8× faster** than the
+naive per-pixel scan (`bench_gradient`), at ~1.03× overhead: the SIMD parameter
+solve stores eight lanes per `memcpy`, one bounds check instead of eight. The
+standing worst case is the **horizontal blur pass (1.52×)**, the shadow pipeline's
+sliding-window sum: contiguous, so the loads aren't hidden by memory latency, and
+almost no arithmetic to hide three checked reads + a checked write per pixel — its
+strided twin `bench_blur_v` is memory-bound and pays nothing. The full anatomy of
+that pair (including a prefetch variant) is
+[docs/stencil-blur.md](docs/stencil-blur.md). Real canvas rendering is GPU-bound,
+so the end-to-end cost of safety is smaller still;
 these are the honest prices on the hottest pure-C kernels, two commands to
 re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase
 spends its time).
@@ -423,12 +437,14 @@ spends its time).
 [docs/roadmap.md](docs/roadmap.md) is the full gap inventory. Because the project
 exists to exercise `-fbounds-safety`, the near-term picks are the ones whose hot
 path is dense indexed-buffer work, where bounds checking actually has something to
-say (and which vectorize well):
+say (and which vectorize well). The previous picks on those grounds —
+`globalCompositeOperation`, the software compositor, shadows — are done; what's
+next:
 
-- **`globalCompositeOperation`** — per-pixel Porter-Duff + blend-mode math over two
-  checked tile buffers (today: source-over only).
-- **Shadows / `filter` blur** — a separable convolution, the canonical stencil
-  loop: every tap an indexed read against a `__counted_by` row.
+- **`filter`** — the CSS filter functions. `blur()` and `drop-shadow()` reuse the
+  shadow pipeline's separable box blur ([blur.c](src/blur.c)); the colour functions
+  (`brightness`, `contrast`, `grayscale`, `hue-rotate`, …) are per-pixel kernels
+  over checked tiles.
 
 What we deliberately **won't** do:
 
@@ -443,16 +459,22 @@ What we deliberately **won't** do:
 ## Layout
 
 ```
-configure.py             generates build.ninja (release, debug, unsafe)
+configure.py             generates build.ninja (all variants + gates; self-regenerates)
 include/canvas.h         public API
 src/                     C core; compositor backends (Metal .m / software .c); Core Text shim
 shaders/compositor.metal tile vertex+fragment shaders (embedded via #embed)
-tests/                   unit + pixel tests + a bounds-safety trap test
-bench/bench.c            CPU-only benchmark (release vs unsafe)
+tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep
+bench/                   isolated kernel benches + end-to-end (ninja benchcmp / profile / throughput)
 diff/                    backend differential: render on both backends, diff (ninja backenddiff)
+fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzz)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs
+secreview/               point-in-time security review + proof-of-concept
 docs/bounds-safety.md    the write-up
 docs/backend-differential.md  making the Metal + software backends bit-identical
 docs/roadmap.md          Canvas 2D gap inventory (missing + partial + what's next)
+docs/coverage.md         checked-in coverage report (ninja coverage regenerates)
+docs/*.md                the probe field notes: pixel pipelines, stencil blur,
+                         gather LUT, range folding, tag pointers, sparse coverage,
+                         the text boundary
 ```

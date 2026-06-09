@@ -1,6 +1,6 @@
 # Building with `-fbounds-safety`: what worked, what fought back
 
-This is a field report from writing the `canvas2d` core — ~2k lines of C23 —
+This is a field report from writing the `canvas2d` core — ~6.5k lines of C23 —
 entirely under `-std=c23 -fbounds-safety -Werror -Weverything`. It's opinionated
 and specific; the goal is to capture what we actually learned, including the
 sharp edges, while it's fresh.
@@ -233,15 +233,17 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
 | phase | overhead |
 |---|---|
-| 2D RGBA8 blit | 1.00× |
 | PNG encode | 1.00× |
-| gradient eval | 1.00× |
-| stroke expansion | 1.00× |
-| cubic-Bézier flattening | 1.02× |
-| end-to-end | 1.10× |
-| analytic coverage fill | **1.22×** |
+| box blur, vertical pass | 1.00× |
+| cubic-Bézier flattening | 1.01× |
+| 2D RGBA8 blit | 1.02× |
+| gradient eval / gradient fill | 1.03× |
+| stroke expansion | 1.03× |
+| end-to-end | 1.07× |
+| analytic coverage fill | **1.12×** |
+| box blur, horizontal pass | **1.52×** |
 
-The isolation matters. The end-to-end ~1.1× is a blend that hides a wide spread
+The isolation matters. The end-to-end ~1.07× is a blend that hides a wide spread
 between phases — and a regression in a fast phase could disappear into it. What
 the spread shows:
 
@@ -251,15 +253,21 @@ the spread shows:
   checks — the canonical C buffer-bug pattern, and the strongest case for having
   the checks at all. But each clipped row is one contiguous run, so the inner loop
   is really a `memcpy`; collapsing the eight per-pixel checks into a single per-row
-  span check ran **13× faster, and dropped the overhead to 1.00×**. PNG
+  span check ran **13× faster, and dropped the overhead to ~1.0×**. PNG
   encode tells the same story: its CRC went from a byte-at-a-time table to ARMv8's
   `crc32` instruction (~7× faster, also 1.00×). The check you can hoist out of the
   hot loop stops costing.
-- **What's left at the top is analytic coverage fill (~1.22×)**: a signed-area
-  accumulate whose per-edge writes scatter across the row (`acc[base + col] += …`),
-  so the checks can't yet be hoisted the way a straight-line copy's can. That's the
-  honest residual — and the next thing to vectorize.
-- **Flattening is nearly free (~2%)**: lots of float arithmetic (de Casteljau
+- **The coverage fill (~1.12×, down from ~1.22×)** got the same treatment on its
+  resolve half: the per-row prefix sum, fill-rule fold, and 8-bit convert run
+  8-wide with one whole-vector check per block. What remains is the accumulate's
+  per-edge writes, which scatter across the row (`acc[base + col] += …`) with no
+  contiguous run to collapse — that's the honest residual.
+- **The horizontal blur pass (~1.52×) is the standing worst case**: a contiguous
+  sliding-window sum with almost no arithmetic to hide three checked loads and a
+  checked store per pixel. Its strided twin — the vertical pass, identical math a
+  row apart — is memory-bound, so its checks are free. The pair is dissected in
+  [stencil-blur.md](stencil-blur.md).
+- **Flattening is nearly free (~1%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.
 - Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety is

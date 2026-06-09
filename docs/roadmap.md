@@ -16,13 +16,13 @@ say, over features that are mostly plumbing or string parsing.
 Chosen because their kernels are exactly the kind of dense, per-pixel,
 indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
 
-1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes). It currently runs
-   in the Metal backend: source-over on fixed-function blend, the rest in a
-   framebuffer-fetch shader. The blend *math* isn't in checked C yet — that's the
-   next item.
+1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes). On the Metal
+   backend it runs as source-over on fixed-function blend plus a framebuffer-fetch
+   shader for the rest; the same math lives in checked C as the software backend's
+   blend kernel (item 2).
 2. ~~**A software compositor backend**~~ — **done**.
    [compositor_cpu.c](../src/compositor_cpu.c) implements the same `compositor.h`
-   ABI in ~100 lines of checked C; the per-pixel `cnvs_blend(src, dst, mode)`
+   ABI in ~350 lines of checked C; the per-pixel `cnvs_blend(src, dst, mode)`
    kernel ([cnvs_blend.h](../src/cnvs_blend.h)) is all 26 composite/blend modes,
    premultiplied, over `__counted_by` tiles. Chosen instead of Metal at build time
    (the `-cpu` variants), it links no GPU frameworks and cross-validates the Metal
