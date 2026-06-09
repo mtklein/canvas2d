@@ -123,6 +123,11 @@ void canvas_set_miter_limit(canvas *__single cv, float limit);
 // `pattern` lists alternating on/off lengths (user units); count 0 = solid.
 void canvas_set_line_dash(canvas *__single cv,
                           float const *__counted_by(count) pattern, int count);
+// Copy the current dash pattern into `out` (up to `cap` entries) and return its
+// full length.  Pass cap 0 (out may be NULL) to query the length, then size a
+// buffer; the returned float values are a copy, so mutating them is harmless.
+int canvas_get_line_dash(canvas *__single cv,
+                         float *__counted_by(cap) out, int cap);
 void canvas_set_line_dash_offset(canvas *__single cv, float offset);
 void canvas_stroke(canvas *__single cv);
 

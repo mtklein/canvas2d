@@ -187,7 +187,7 @@ canvas_set_global_composite_operation                        // 26 GCO modes
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / add_fill_color_stop
 canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / add_stroke_color_stop
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
-canvas_set_line_dash / set_line_dash_offset
+canvas_set_line_dash / get_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / arc_to / close_path

@@ -774,6 +774,18 @@ void canvas_set_line_dash(canvas *__single cv,
     cv->cur.dash_count = m;
 }
 
+int canvas_get_line_dash(canvas *__single cv,
+                         float *__counted_by(cap) out, int cap) {
+    int n = cv->cur.dash_count;
+    // Copy at most `cap` entries; never write past the caller's buffer, and never
+    // mutate `cap` itself (it bounds `out`).  A negative cap copies nothing.
+    int m = cap < n ? cap : n;
+    for (int i = 0; i < m; i++) {
+        out[i] = cv->cur.dash[i];
+    }
+    return n;
+}
+
 void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
     cv->cur.dash_offset = offset;
 }
