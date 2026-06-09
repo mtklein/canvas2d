@@ -87,6 +87,7 @@ python3 configure.py     # generate build.ninja
 ninja                    # build the release + debug variants
 ninja test               # build + run every test in both variants
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
+ninja profile            # sample(1): per-kernel self-time within each bench
 ninja images             # regenerate the gallery/*.png shown above
 ```
 
@@ -232,6 +233,7 @@ vs `unsafe` comparison:
 
 ```sh
 ninja benchcmp     # hyperfine: each phase + e2e, release vs unsafe
+ninja profile      # sample(1): per-kernel self-time *within* a phase
 ```
 
 The hot paths are benchmarked **in isolation** ([bench/](bench/)) so a slow phase
@@ -240,23 +242,28 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 82 ms | 82 ms | **1.00×** |
-| `bench_flatten` — cubic-Bézier flattening | 118 ms | 110 ms | **1.07×** |
-| `bench_png` — PNG encode (SIMD adler32 + CRC) | 44 ms | 41 ms | **1.08×** |
-| `bench` — end-to-end | 84 ms | 76 ms | **1.10×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 53 ms | 48 ms | **1.11×** |
-| `bench_fill` — analytic coverage fill (signed-area accumulate + resolve) | 27 ms | 24 ms | **1.16×** |
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 125 ms | 49 ms | **2.55×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.8 ms | 9.7 ms | **1.00×** |
+| `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 6.8 ms | 6.8 ms | **1.00×** |
+| `bench_gradient` — gradient eval (radial solve + multi-stop ramp lookup) | 83 ms | 87 ms | **1.00×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 54 ms | 54 ms | **1.00×** |
+| `bench_flatten` — cubic-Bézier flattening | 120 ms | 118 ms | **1.02×** |
+| `bench` — end-to-end | 65 ms | 59 ms | **1.10×** |
+| `bench_fill` — analytic coverage fill (signed-area accumulate + resolve) | 29 ms | 24 ms | **1.22×** |
 
-The spread is the point: the 2D blit — four bounds-checked byte loads and stores
-per pixel across two buffers, with no arithmetic to amortize them — pays the most
-at **~2.5×**, while gradient evaluation and flattening (lots of float math between
-a few indexed reads) are essentially free (**0–7%**). The cost is concentrated in
-*per-element* checks, so a kernel's overhead tracks how much it indexes vs how
-much it computes — and the same vectorization that speeds a tight loop up tends to
-amortize its checks away too. Real canvas rendering is GPU-bound, so the
-end-to-end cost of safety is smaller still; these are the honest prices on the
-hottest pure-C kernels, one command to re-measure.
+The lesson is that *per-element* bounds checks are what cost, so a kernel's
+overhead tracks how much it indexes vs how much it computes — **and the same
+vectorization that speeds a tight loop up amortizes its checks away too.** The 2D
+blit used to be the worst case at **2.5×** (four checked byte loads and stores per
+pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
+`memcpy` made it **13× faster and dropped the safety overhead to 1.00×** — one span
+check per row instead of eight per pixel. PNG encode did the same when its CRC
+moved from a byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, also
+1.00×). What's left at the top is `bench_fill` (**1.22×**): a signed-area
+accumulate whose scattered per-pixel writes haven't been vectorized yet. Real
+canvas rendering is GPU-bound, so the end-to-end cost of safety is smaller still;
+these are the honest prices on the hottest pure-C kernels, two commands to
+re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase
+spends its time).
 
 ## Roadmap
 

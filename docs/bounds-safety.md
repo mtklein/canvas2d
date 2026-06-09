@@ -217,23 +217,33 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 
 | phase | overhead |
 |---|---|
+| 2D RGBA8 blit | 1.00× |
+| PNG encode | 1.00× |
 | gradient eval | 1.00× |
-| cubic-Bézier flattening | 1.07× |
-| PNG encode | 1.08× |
+| stroke expansion | 1.00× |
+| cubic-Bézier flattening | 1.02× |
 | end-to-end | 1.10× |
-| stroke expansion | 1.11× |
-| analytic coverage fill | 1.16× |
-| 2D RGBA8 blit | **2.55×** |
+| analytic coverage fill | **1.22×** |
 
 The isolation matters. The end-to-end ~1.1× is a blend that hides a wide spread
 between phases — and a regression in a fast phase could disappear into it. What
 the spread shows:
 
-- **The 2D blit pays the most (~2.5×)** because it is *only* checked indexing:
-  four byte loads and four stores per pixel across two buffers, with no arithmetic
-  between them to amortize the checks. This is the canonical C buffer-bug
-  pattern — and the strongest case for having the checks at all.
-- **Flattening is nearly free (~7%)**: lots of float arithmetic (de Casteljau
+- **Per-element checks are the whole cost, and vectorizing amortizes them away.**
+  The 2D blit *used* to be the worst case at **2.55×**: four byte loads and four
+  stores per pixel across two buffers, with no arithmetic between them to hide the
+  checks — the canonical C buffer-bug pattern, and the strongest case for having
+  the checks at all. But each clipped row is one contiguous run, so the inner loop
+  is really a `memcpy`; collapsing the eight per-pixel checks into a single per-row
+  span check ran **13× faster, and dropped the overhead to 1.00×**. PNG
+  encode tells the same story: its CRC went from a byte-at-a-time table to ARMv8's
+  `crc32` instruction (~7× faster, also 1.00×). The check you can hoist out of the
+  hot loop stops costing.
+- **What's left at the top is analytic coverage fill (~1.22×)**: a signed-area
+  accumulate whose per-edge writes scatter across the row (`acc[base + col] += …`),
+  so the checks can't yet be hoisted the way a straight-line copy's can. That's the
+  honest residual — and the next thing to vectorize.
+- **Flattening is nearly free (~2%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.
 - Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety is
