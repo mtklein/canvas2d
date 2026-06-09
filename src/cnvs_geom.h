@@ -13,7 +13,6 @@ typedef struct {
     int cap;
 } cnvs_verts;
 
-bool cnvs_verts_push(cnvs_verts *v, cnvs_vec2 p);
 bool cnvs_verts_tri(cnvs_verts *v, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c);
 void cnvs_verts_reset(cnvs_verts *v);
 void cnvs_verts_free(cnvs_verts *v);
