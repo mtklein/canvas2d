@@ -184,15 +184,18 @@ top.)
 
 **Severity:** resource-exhaustion DoS (not memory corruption — the `realloc` is
 null-checked, so it degrades to a no-op if the allocation fails). **Confidence:
-verified, fuzzer-found.** **Status: OPEN.**
+verified, fuzzer-found.** **Status: FIXED.**
 
 A pathological dashed stroke drives the vertex buffer to ~2^28 elements (a ~2 GB
 `realloc`): `cnvs_stroke_dashed` → `emit_quad` → `cnvs_verts_tri` →
 `verts_reserve` ([`cnvs_geom.c:12`](../src/cnvs_geom.c)). Surfaced by libFuzzer
 *after* the Finding 4 fix unlocked deeper coverage (`malloc(2147483648)`). With
 [[Finding 2]] fixed the growth no longer overflows, so it cleanly reaches the OOM
-rather than wrapping. **Suggested fix:** cap the dash-segment / vertex count (or
-the stroked length relative to the device bounds) and stop emitting past it.
+rather than wrapping. **Fix:** a span cap in `cnvs_stroke_dashed`
+([`cnvs_stroke.c`](../src/cnvs_stroke.c)) bounds the inner dash loop (it also
+stops the CPU spin from the "off" spans), truncating a pathological dash after a
+bounded amount instead of allocating ~2 GB. Regression test in
+[`tests/test_sanitize.c`](../tests/test_sanitize.c).
 
 ### Finding 6 — Infinite loop in `canvas_ellipse` angle normalization (fuzzer-found)
 

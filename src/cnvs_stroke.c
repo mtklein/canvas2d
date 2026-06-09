@@ -187,6 +187,14 @@ bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed
     float remain = dash[di] - phase;
     bool on = (di % 2) == 0;
 
+    // A pathological dash (sub-pixel lengths, or a path whose transformed length
+    // is enormous) would iterate the inner loop unboundedly and emit a quad per
+    // span -- a memory/CPU DoS (a ~2GB vertex buffer was reachable this way).
+    // Cap the total spans; past it the dashing carries no visual information
+    // anyway, so truncating is the safe, graceful choice.
+    int spans = 0;
+    int const span_cap = 1 << 20;
+
     int nseg = closed ? n : n - 1;
     for (int s = 0; s < nseg; s++) {
         cnvs_vec2 a = pts[s];
@@ -214,6 +222,9 @@ bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed
             }
             pos += step;
             remain -= step;
+            if (++spans > span_cap) {
+                return true;  // pathological dash: stop after a bounded amount
+            }
             if (remain <= 1e-6f) {
                 do {
                     di = (di + 1) % ndash;

@@ -45,6 +45,18 @@ int main(void) {
         canvas_set_global_alpha(cv, v);
     }
 
+    // Finding 5: a sub-pixel dash over a long path must not spin or blow up the
+    // vertex buffer (a ~2GB alloc was reachable).  The span cap bounds it, so
+    // this returns promptly instead of hanging/OOMing.
+    canvas_set_line_width(cv, 2.0f);
+    float const tiny_dash[] = { 1.0e-4f, 1.0e-4f };
+    canvas_set_line_dash(cv, tiny_dash, 2);
+    canvas_begin_path(cv);
+    canvas_move_to(cv, 0.0f, 0.0f);
+    canvas_line_to(cv, 1.0e6f, 1.0e6f);
+    canvas_stroke(cv);
+    canvas_set_line_dash(cv, NULL, 0);  // back to solid
+
     // After all that abuse a normal draw + readback still works, and the
     // float->uint8 quantization in read-back stays in range.
     canvas_set_global_alpha(cv, 1.0f);
