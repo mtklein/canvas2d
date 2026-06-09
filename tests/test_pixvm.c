@@ -27,23 +27,19 @@ static pixop const srcover[] = {
     { .kind = PIXOP_STORE, .dst = 8 },
 };
 
-// An out-of-range register operand must trap.  STORE reads reg[20..23] of a
-// 16-register file and writes the result to dst, so the OOB read is live (no DCE)
-// and -fbounds-safety catches it.  Returns normally only if no trap fired.
-static void run_bad_register(void) {
-    int const n = PIXVM_N;
-    int const len = n * 4;
-    uint8_t *__counted_by(len) dst = calloc((size_t)len, 1);
-    if (!dst) {
-        return;
+static void run_vm(int threaded, pixop const *__counted_by(prog_len) prog, int prog_len,
+                   uint8_t *__counted_by(n * 4) dst,
+                   uint8_t const *__counted_by_or_null(n * 4) src,
+                   uint8_t const *__counted_by_or_null(n) cov, int n) {
+    if (threaded) {
+        pixvm_run_threaded(prog, prog_len, dst, src, cov, n);
+    } else {
+        pixvm_run_switch(prog, prog_len, dst, src, cov, n);
     }
-    volatile int bad = PIXVM_REGS + 4;
-    pixop prog[1] = { { .kind = PIXOP_STORE, .dst = (uint8_t)bad } };
-    pixvm_run_switch(prog, 1, dst, NULL, NULL, n);
-    free(dst);
 }
 
-int main(void) {
+// Same programs and assertions for both backends; they must agree bit-for-bit.
+static void check_backend(int threaded) {
     // Copy round-trip (LOAD_SRC then STORE); n is not a multiple of PIXVM_N, so the
     // final short chunk is exercised too.
     int const n = 20;
@@ -60,7 +56,7 @@ int main(void) {
             { .kind = PIXOP_LOAD_SRC, .dst = 0 },
             { .kind = PIXOP_STORE, .dst = 0 },
         };
-        pixvm_run_switch(copy, 2, dst, src, NULL, n);
+        run_vm(threaded, copy, 2, dst, src, NULL, n);
         bool same = true;
         for (int i = 0; i < len; i++) {
             if (dst[i] != src[i]) {
@@ -85,7 +81,7 @@ int main(void) {
             px[i * 4] = 0; px[i * 4 + 1] = 0; px[i * 4 + 2] = 255; px[i * 4 + 3] = 255;
             cov[i] = 255;
         }
-        pixvm_run_switch(srcover, nops, px, NULL, cov, m);
+        run_vm(threaded, srcover, nops, px, NULL, cov, m);
         CHECK(px[0] == 0 && px[1] == 128 && px[2] == 128 && px[3] == 255);
         CHECK(px[(m - 1) * 4 + 1] == 128 && px[(m - 1) * 4 + 2] == 128);
 
@@ -93,26 +89,55 @@ int main(void) {
         for (int i = 0; i < m; i++) {
             px[i * 4] = 0; px[i * 4 + 1] = 0; px[i * 4 + 2] = 255; px[i * 4 + 3] = 255;
         }
-        pixvm_run_switch(srcover, nops, px, NULL, NULL, m);
+        run_vm(threaded, srcover, nops, px, NULL, NULL, m);
         CHECK(px[1] == 128 && px[2] == 128 && px[3] == 255);
     }
     free(px);
     free(cov);
+}
 
+// Run a one-instruction program under `threaded` in a child; return its wait status.
+static int run_in_child(int threaded, pixop prog0) {
     pid_t pid = fork();
-    CHECK(pid >= 0);
     if (pid == 0) {
-        run_bad_register();
-        _exit(0);  // reached only if no trap fired
+        int const n = PIXVM_N;
+        int const len = n * 4;
+        uint8_t *__counted_by(len) dst = calloc((size_t)len, 1);
+        if (dst) {
+            pixop prog[1] = { prog0 };
+            run_vm(threaded, prog, 1, dst, NULL, NULL, n);
+            free(dst);
+        }
+        _exit(0);  // reached only if nothing trapped
     }
     int status = 0;
     (void)waitpid(pid, &status, 0);
-    bool trapped = WIFSIGNALED(status);
-    CHECK(trapped);  // bytecode register index is bounds-checked at runtime
-    if (!trapped && WIFEXITED(status)) {
-        (void)fprintf(stderr, "bad-register child exited %d without trapping\n",
-                      WEXITSTATUS(status));
-    }
+    return status;
+}
+
+int main(void) {
+    check_backend(0);  // switch
+    check_backend(1);  // threaded
+
+    // An out-of-range register operand traps in both backends: STORE reads
+    // reg[20..23] of a 16-register file and writes the result to dst, so the OOB
+    // read is live and -fbounds-safety catches it.
+    volatile int bad_reg = PIXVM_REGS + 4;
+    pixop store_bad = { .kind = PIXOP_STORE, .dst = (uint8_t)bad_reg };
+    int reg_sw = run_in_child(0, store_bad);  // WIF* macros need an lvalue
+    int reg_th = run_in_child(1, store_bad);
+    CHECK(WIFSIGNALED(reg_sw));  // switch traps
+    CHECK(WIFSIGNALED(reg_th));  // threaded traps
+
+    // An out-of-range opcode traps only in the threaded backend, where the bytecode
+    // value indexes the bounds-checked handler table.  The switch's `default` makes
+    // it a silent no-op -- a real safety difference between the dispatch styles.
+    volatile int bad_op = PIXOP_KIND_COUNT + 3;
+    pixop op_bad = { .kind = (uint8_t)bad_op, .dst = 0 };
+    int sw = run_in_child(0, op_bad);
+    int th = run_in_child(1, op_bad);
+    CHECK(WIFEXITED(sw) && WEXITSTATUS(sw) == 0);  // switch: no trap (default: break)
+    CHECK(WIFSIGNALED(th));                        // threaded: handler-table index traps
 
     return TEST_REPORT();
 }

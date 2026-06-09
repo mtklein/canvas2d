@@ -1,0 +1,54 @@
+#pragma once
+
+// RGBA8 <-> planar float channel vectors, shared by the pixel-VM backends so they
+// (de)interleave identically -- the A/B/C comparison must differ only in dispatch,
+// not in pixel I/O.  static inline because this is the per-chunk hot path in every
+// backend: it has to inline, and it stays whole-vector -- lane-wise writes into a
+// register file alias its other slots and make -Os spill the file (the artifact
+// chased down in docs/pixel-pipelines.md).
+
+#include "pixvm.h"
+
+typedef uint8_t u8x8  __attribute__((ext_vector_type(PIXVM_N)));
+typedef uint8_t u8x16 __attribute__((ext_vector_type(PIXVM_N * 2)));
+typedef uint8_t u8x32 __attribute__((ext_vector_type(PIXVM_N * 4)));
+static_assert(PIXVM_N == 8, "the RGBA8 (de)interleave shuffles assume 8 lanes");
+
+static inline pixv pixio_unit(u8x8 v) {
+    return __builtin_convertvector(v, pixv) / 255.0f;
+}
+
+static inline pixv pixio_clamp01(pixv v) {
+    pixv lo = 0.0f, hi = 1.0f;
+    return __builtin_elementwise_min(__builtin_elementwise_max(v, lo), hi);
+}
+
+// 8 RGBA8 pixels (r0g0b0a0 r1g1b1a1 ...) -> four unit-range channel vectors.
+static inline void pixio_unpack(u8x32 raw, pixv *r, pixv *g, pixv *b, pixv *a) {
+    *r = pixio_unit(__builtin_shufflevector(raw, raw, 0, 4,  8, 12, 16, 20, 24, 28));
+    *g = pixio_unit(__builtin_shufflevector(raw, raw, 1, 5,  9, 13, 17, 21, 25, 29));
+    *b = pixio_unit(__builtin_shufflevector(raw, raw, 2, 6, 10, 14, 18, 22, 26, 30));
+    *a = pixio_unit(__builtin_shufflevector(raw, raw, 3, 7, 11, 15, 19, 23, 27, 31));
+}
+
+// Four channel vectors -> 8 interleaved RGBA8 pixels, clamped and quantized.
+static inline u8x32 pixio_pack(pixv r, pixv g, pixv b, pixv a) {
+    u8x8 r8 = __builtin_convertvector(pixio_clamp01(r) * 255.0f + 0.5f, u8x8);
+    u8x8 g8 = __builtin_convertvector(pixio_clamp01(g) * 255.0f + 0.5f, u8x8);
+    u8x8 b8 = __builtin_convertvector(pixio_clamp01(b) * 255.0f + 0.5f, u8x8);
+    u8x8 a8 = __builtin_convertvector(pixio_clamp01(a) * 255.0f + 0.5f, u8x8);
+    u8x16 rg = __builtin_shufflevector(r8, g8, 0, 8, 1, 9, 2, 10, 3, 11,
+                                               4, 12, 5, 13, 6, 14, 7, 15);
+    u8x16 ba = __builtin_shufflevector(b8, a8, 0, 8, 1, 9, 2, 10, 3, 11,
+                                               4, 12, 5, 13, 6, 14, 7, 15);
+    return __builtin_shufflevector(rg, ba, 0, 1, 16, 17, 2, 3, 18, 19,
+                                           4, 5, 20, 21, 6, 7, 22, 23,
+                                           8, 9, 24, 25, 10, 11, 26, 27,
+                                           12, 13, 28, 29, 14, 15, 30, 31);
+}
+
+static inline uint8_t pixio_to_u8(float v) {
+    if (v < 0.0f) { v = 0.0f; }
+    if (v > 1.0f) { v = 1.0f; }
+    return (uint8_t)(v * 255.0f + 0.5f);
+}

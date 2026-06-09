@@ -8,7 +8,7 @@ where does `-fbounds-safety` help, and where does it fight back?
 1. **One big switch** — a bytecode program; a `for pc { switch(op) }` loop runs it,
    `PIXVM_N` pixels per step. *(implemented)*
 2. **Tail-call threaded VM** — same bytecode, but each opcode is a handler that does
-   its work and `[[clang::musttail]]`-returns the next handler. *(planned)*
+   its work and `[[clang::musttail]]`-returns the next handler. *(implemented)*
 3. **SkRasterPipeline-style pipeline** — stages carry the current r,g,b,a (and x)
    as explicit vector arguments and tail-call the next stage, so the channels stay
    in registers across the whole program. *(planned)*
@@ -123,19 +123,76 @@ A's baseline for that comparison: **63.8 ms** for the 300-iteration source-over
 bench at `-Os` bounds-safe (~310 Mpix/s). B and C run the same program over the same
 tile, so the three numbers are directly comparable.
 
-## Design B — tail-call threaded VM (planned)
+## Design B — tail-call threaded VM (implemented)
 
-Same bytecode; replace the switch with one handler function per opcode, each ending
-in `[[clang::musttail]] return next(...)`. The `-fbounds-safety` questions:
+[../src/pixvm_thread.c](../src/pixvm_thread.c) is `pixvm_run_threaded`: same ISA and
+semantics as A, but no switch and no loop. Each opcode is a handler that does its
+work and `[[clang::musttail]]`-jumps to the next handler through a function-pointer
+table; the chain of tail jumps *is* the interpreter. This is the design
+`-fbounds-safety` shapes the most, in three ways.
 
-- Threading a `__counted_by(prog_len)` program pointer (and the pc) through every
-  tail call, advancing it without tripping the counted-local restrictions.
-- The handler table is an array of function pointers whose parameters carry bounds
-  attributes. The strict function-pointer check
-  (`-Wincompatible-function-pointer-types-strict`) already bit the Core Text
-  callback ([bounds-safety.md](bounds-safety.md)); a homemade dispatch table is a
-  clean place to see whether *our own* annotated signatures match without a fight.
-- Whether `musttail` survives the bounds-check instrumentation the flag inserts.
+### `musttail` can't carry a `__counted_by` pointer whose bound changes
+
+The natural threaded VM keeps the instruction pointer in a register and threads it as
+an argument: `op(st, ip, rem) -> musttail op'(st, ip + 1, rem - 1)`. Under
+`-fbounds-safety` that **does not compile**:
+
+```
+error: 'clang::musttail' attribute requires that the return value is the
+       result of a function call
+```
+
+Passing `ip + 1` into a `__counted_by(rem - 1)` parameter inserts a bound-narrowing
+check, so the call's result isn't returned *directly* and `musttail` (which needs an
+exact tail position) is refused. It compiles fine without the flag, and a fat
+`__bidi_indexable` ip threads fine *with* it (it carries its own bounds, no per-call
+narrowing) — but `__bidi_indexable` isn't spellable in the unsafe build, so it can't
+be used in source compiled both ways. The resolution: keep the counted `prog` in the
+state struct (checked there) and thread only the `__single` state pointer plus a
+plain `int pc`. So the flag pushes the instruction pointer's *bound* out of a
+register and into memory — the opposite of the threaded-VM performance idiom.
+
+(A smaller snag, not bounds-safety's fault: handlers must return non-void. A
+void-returning `[[clang::musttail]] return next();` trips `-Wpedantic`'s "void
+function should not return void expression," so the handlers return `int`.)
+
+### The dispatch table is friction-free, and a bad opcode traps for free
+
+The two worries didn't materialize. The function-pointer table compiled with **no
+strict-fn-ptr fight**: unlike the un-adopted `CGPathApplierFunction`
+([bounds-safety.md](bounds-safety.md)), every handler signature is emitted by our own
+checked TU with the same `__single`/`int` flavors, so they match `pixop_fn` exactly.
+And indexing `handlers[prog[pc].kind]` is a bounds-checked array access, so a
+bytecode opcode out of range **traps** — opcode validation for free. The switch gets
+the opposite default: its `default: break` silently ignores an unknown opcode.
+`test_pixvm` asserts both (bad opcode: threaded traps, switch is a no-op).
+
+### The cost: bounds-safety taxes threading ~6× harder than the switch
+
+Same source-over program and tile as A, release vs unsafe, `A`-vs-`A` control 1.00×:
+
+| backend | bounds-safe `-Os` | unsafe `-Os` | cost of checks |
+|---|---|---|---|
+| A — switch | 62.4 ms | 57.3 ms | **1.09×** |
+| B — threaded | 93.6 ms | 60.5 ms | **1.55×** |
+
+Unchecked, the two dispatch styles are within 6% (threading's indirect jumps vs the
+switch's jump table). But the checks add ~5 ms to A and **~33 ms** to B — and that
+gap is the finding. In A the whole program runs in one function: the optimizer hoists
+the register-file base, keeps `prog_len` in a register, and the `for (pc < prog_len)`
+loop *proves the program fetch in-bounds*, so that check is elided. In B each handler
+is a separate function reached by an indirect `musttail`; the optimizer can't see
+across it, so every handler reloads `st->prog`/`st->prog_len` from the (escaping)
+state struct and **re-checks the program fetch** — visible in the disassembly as a
+`cmp`/`b.hi`-to-trap at the top of every `op_*`. The bounds checks A amortizes once,
+B pays per opcode.
+
+So under `-fbounds-safety` — the shipping config — the threaded VM is **1.5× slower
+than the switch** despite near-parity unchecked. The flag penalizes the design it
+can't see through. (Threaded dispatch may still win for a *larger* ISA, where the
+switch's jump table mispredicts more; this small kernel doesn't reach that regime.)
+The A and B numbers above are one hyperfine run; the ~1.5 ms spread from A's 63.8 ms
+baseline is run-to-run noise.
 
 ## Design C — SkRasterPipeline-style register pipeline (planned)
 

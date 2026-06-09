@@ -2,8 +2,8 @@
 
 // A small vectorized VM for per-pixel processing, built to probe how
 // -fbounds-safety interacts with three dispatch styles.  This header is the shared
-// ISA; pixvm_run_switch (one big switch) is the first backend, with a tail-call
-// threaded VM and an SkRasterPipeline-style register pipeline to follow.
+// ISA; pixvm_run_switch (one big switch) and pixvm_run_threaded (tail-call threaded)
+// are two backends, with an SkRasterPipeline-style register pipeline to follow.
 //
 // A run walks `n` pixels PIXVM_N at a time.  Channels are float in [0,1] held in a
 // register file of PIXVM_N-wide vectors; load/store ops convert to and from
@@ -48,3 +48,10 @@ void pixvm_run_switch(pixop const *__counted_by(prog_len) prog, int prog_len,
                       uint8_t *__counted_by(n * 4) dst,
                       uint8_t const *__counted_by_or_null(n * 4) src,
                       uint8_t const *__counted_by_or_null(n) cov, int n);
+
+// Design B: same ISA and semantics as pixvm_run_switch, dispatched by tail-call
+// threading instead of a switch.
+void pixvm_run_threaded(pixop const *__counted_by(prog_len) prog, int prog_len,
+                        uint8_t *__counted_by(n * 4) dst,
+                        uint8_t const *__counted_by_or_null(n * 4) src,
+                        uint8_t const *__counted_by_or_null(n) cov, int n);

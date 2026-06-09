@@ -1,5 +1,8 @@
-// Isolated benchmark: the one-big-switch pixel VM running a premultiplied
-// source-over program over a tile (load dst, scale src by coverage, blend, store).
+// Isolated benchmark: the one-big-switch pixel VM (design A) running a
+// premultiplied source-over program over a tile (load dst, scale src by coverage,
+// blend, store).  Pairs with bench_pixvm_thread.c (same program, threaded dispatch).
+#include "bench_reps.h"
+
 #include "pixvm.h"
 
 #include <stdint.h>
@@ -46,9 +49,12 @@ int main(void) {
     int const nops = (int)(sizeof prog / sizeof prog[0]);
 
     double sink = 0.0;
-    for (int it = 0; it < ITERS; it++) {
-        pixvm_run_switch(prog, nops, px, NULL, cov, n);
-        sink += (double)px[(n / 2) * 4 + 1];
+    int reps = bench_reps();
+    for (int rep = 0; rep < reps; rep++) {
+        for (int it = 0; it < ITERS; it++) {
+            pixvm_run_switch(prog, nops, px, NULL, cov, n);
+            sink += (double)px[(n / 2) * 4 + 1];
+        }
     }
 
     free(px);
