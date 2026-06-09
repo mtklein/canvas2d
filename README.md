@@ -121,6 +121,12 @@ hanging/alphabetic/ideographic baselines, and the origin point:
 
 ![textmetrics](gallery/textmetrics.png)
 
+`fillText` `maxWidth` — the same phrase unconstrained (it overflows the right
+marker) and with a `maxWidth` equal to the marked span (condensed horizontally in
+x to fit):
+
+![textmaxwidth](gallery/textmaxwidth.png)
+
 `globalCompositeOperation` — the same two discs over a gradient under six modes
 (`source-over` is the GPU's fixed-function blend; the rest run the W3C
 composite+blend formula in a framebuffer-fetch shader):

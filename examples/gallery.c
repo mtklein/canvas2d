@@ -788,6 +788,78 @@ static void textmetrics(void) {
     save(c, "gallery/textmetrics.png");
 }
 
+// maxWidth: the same phrase drawn unconstrained (it overflows the right marker)
+// and with a maxWidth equal to the marked span (condensed horizontally to fit).
+static void textmaxwidth(void) {
+    canvas *__single c = canvas_create(520, 188);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 188.0f);
+
+    char const *const phrase = "Condense me to fit the box!";
+    float const L = 40.0f, maxw = 258.0f, R = L + maxw;
+    float const gy0 = 18.0f, gy1 = 150.0f;
+
+    // Shade the overflow zone (right of the marker) faint red.
+    canvas_set_fill_rgba(c, 0.90f, 0.30f, 0.32f, 0.10f);
+    canvas_fill_rect(c, R, gy0, 520.0f - R, gy1 - gy0);
+
+    // The two maxWidth markers (dashed vertical guides).
+    float const dash[2] = { 5.0f, 4.0f };
+    canvas_set_line_dash(c, dash, 2);
+    canvas_set_line_width(c, 1.4f);
+    canvas_set_stroke_rgba(c, 0.55f, 0.59f, 0.68f, 0.85f);
+    for (int k = 0; k < 2; k++) {
+        float gx = k == 0 ? L : R;
+        canvas_begin_path(c);
+        canvas_move_to(c, gx, gy0);
+        canvas_line_to(c, gx, gy1);
+        canvas_stroke(c);
+    }
+    float const solid[1] = { 1.0f };
+    canvas_set_line_dash(c, solid, 0);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    // Row A: no limit -> natural advance, spilling into the overflow zone.
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "without maxWidth", L, 40.0f);
+    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_fill_text(c, phrase, L, 74.0f);
+
+    // Row B: maxWidth == the marked span -> condensed in x about the left anchor.
+    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "with maxWidth (condensed to fit)", L, 104.0f);
+    canvas_set_fill_rgba(c, 0.45f, 0.88f, 0.55f, 1.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_fill_text_max(c, phrase, L, 138.0f, maxw);
+
+    // The maxWidth span bracket.
+    canvas_set_stroke_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_line_width(c, 1.4f);
+    canvas_begin_path(c);
+    canvas_move_to(c, L, gy1 - 4.0f);
+    canvas_line_to(c, L, gy1 + 4.0f);
+    canvas_move_to(c, L, gy1);
+    canvas_line_to(c, R, gy1);
+    canvas_move_to(c, R, gy1 - 4.0f);
+    canvas_line_to(c, R, gy1 + 4.0f);
+    canvas_stroke(c);
+    canvas_set_fill_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "maxWidth", (L + R) * 0.5f, gy1 + 20.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/textmaxwidth.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1055,6 +1127,7 @@ int main(void) {
     text();
     textgrid();
     textmetrics();
+    textmaxwidth();
     blend();
     return 0;
 }
