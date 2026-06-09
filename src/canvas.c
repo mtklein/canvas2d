@@ -262,6 +262,26 @@ void canvas_reset(canvas *__single cv) {
     }
 }
 
+bool canvas_resize(canvas *__single cv, int width, int height) {
+    if (width <= 0 || height <= 0 ||
+        width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
+        return false;
+    }
+    // Build the new-sized compositor first; on failure leave the canvas intact.
+    compositor *__single nc = compositor_create(width, height);
+    if (!nc) {
+        return false;
+    }
+    compositor_destroy(cv->comp);
+    cv->comp = nc;
+    cv->width = width;
+    cv->height = height;
+    // reset() drops the (now wrong-sized) clip masks and saved stack, restores the
+    // default state, and clears the fresh bitmap to transparent black.
+    canvas_reset(cv);
+    return true;
+}
+
 void canvas_translate(canvas *__single cv, float tx, float ty) {
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_translate(tx, ty));
 }

@@ -55,6 +55,12 @@ void canvas_destroy(canvas *__single cv);
 // false; provided for API parity.
 bool canvas_is_context_lost(canvas *__single cv);
 
+// Resize the canvas to width x height (like assigning canvas.width/height): the
+// bitmap is reallocated and cleared to transparent black, and the drawing state
+// is reset to its defaults -- both per the spec.  Returns false, leaving the
+// canvas untouched, on invalid dimensions or allocation failure.
+bool canvas_resize(canvas *__single cv, int width, int height);
+
 void canvas_save(canvas *__single cv);
 void canvas_restore(canvas *__single cv);
 // Reset the context to its initial state: empty the save/restore stack, restore
