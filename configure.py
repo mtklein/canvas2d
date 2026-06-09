@@ -247,7 +247,14 @@ def main():
     # `profile` samples the release benches in place (no output file, always reruns).
     release_bench_exes = [f"build/release/{s}" for s in bench_stems]
     w(f"build profile: profile {' '.join(release_bench_exes)}")
-    w("build all: phony release debug release-cpu debug-cpu")
+    # The default `all` builds every variant's executables -- tests, benches and
+    # examples -- and runs the whole test suite (`test`).  Listing all five
+    # variant phonies covers every buildable artifact (release/unsafe carry the
+    # benches; release/release-cpu carry the examples); `test` adds the run
+    # stamps.  Tests are silent on success, so a green `ninja` shows only its
+    # progress.  The measurement/regen targets (benchcmp, profile, images) are
+    # always-rerun and stay opt-in -- not in `all`.
+    w("build all: phony release debug unsafe release-cpu debug-cpu test")
     w("default all")
     w("")
 

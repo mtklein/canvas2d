@@ -85,8 +85,8 @@ composite+blend formula in a framebuffer-fetch shader):
 
 ```sh
 python3 configure.py     # generate build.ninja
-ninja                    # build the release + debug variants
-ninja test               # build + run every test in both variants
+ninja                    # build every variant and run the whole test suite
+ninja test               # just the tests (subset of the default build)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
 ninja images             # regenerate the gallery/*.png shown above
@@ -108,8 +108,10 @@ frameworks):
 | `unsafe` | `-Os` | identical to release minus `-fbounds-safety`; the benchmark baseline |
 | `release-cpu` / `debug-cpu` | as above, software compositor | GPU-free; cross-validates the Metal backend |
 
-`ninja test` runs every test binary in all four checked variants, so each pixel
-test runs against *both* backends. The PNGs land in `build/`.
+The default build runs every test binary in all four checked variants (so each
+pixel test runs against *both* backends); `ninja test` is the same set on its own.
+Tests are silent on success — a green `ninja` shows only its progress line, and a
+failure prints the offending `CHECK` to stderr. The PNGs land in `build/`.
 
 ## Architecture
 
