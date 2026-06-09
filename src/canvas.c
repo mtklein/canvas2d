@@ -46,14 +46,34 @@ static float clamp01(float v) {
     return v > 1.0f ? 1.0f : v;
 }
 
+// Which paint a fill/stroke uses.  SOLID reads the `fill`/`stroke` colour,
+// GRADIENT the `*_grad`, PATTERN the `*_pattern`.
+typedef enum {
+    CNVS_PAINT_SOLID, CNVS_PAINT_GRADIENT, CNVS_PAINT_PATTERN
+} cnvs_paint_kind;
+
+// An image pattern paint.  The source is borrowed (the caller owns it); `len`
+// (== w*h*4) bounds it for -fbounds-safety.  `to_pattern` maps a device point to
+// pattern-image space (the inverse of the CTM captured when the pattern was set),
+// so the pattern is pinned in device space like the gradients.
+typedef struct {
+    uint8_t const *__counted_by(len) data;
+    int len;
+    int w, h;
+    canvas_pattern_repeat repeat;
+    cnvs_mat to_pattern;
+} cnvs_pattern;
+
 struct canvas_state {
     cnvs_mat ctm;
     cnvs_unpremul fill;
-    int fill_is_gradient;  // 0 = solid `fill`; 1 = `fill_grad`
+    cnvs_paint_kind fill_kind;
     cnvs_gradient fill_grad;
+    cnvs_pattern fill_pattern;
     cnvs_unpremul stroke;
-    int stroke_is_gradient;  // 0 = solid `stroke`; 1 = `stroke_grad`
+    cnvs_paint_kind stroke_kind;
     cnvs_gradient stroke_grad;
+    cnvs_pattern stroke_pattern;
     float global_alpha;
     compositor_blend_mode composite;  // globalCompositeOperation
     float line_width;
@@ -103,19 +123,34 @@ struct canvas {
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
 static bool ensure_tile(canvas *__single cv, int npix);
 
+// Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
+// be paired with a positive count under -fbounds-safety.  An empty pattern stays
+// consistent across the state copies that save/restore make.
+static void pattern_clear(cnvs_pattern *p) {
+    p->len = 0;
+    p->data = NULL;
+    p->w = 0;
+    p->h = 0;
+    p->repeat = CANVAS_NO_REPEAT;
+    p->to_pattern = cnvs_mat_identity();
+}
+
 // The initial drawing state (Canvas defaults): identity transform, opaque black
 // fill/stroke, source-over, 1px miter strokes, no dash, 10px text, open clip.
 // Shared by canvas_create and canvas_reset so the two can't drift.  Assigned
 // field by field (not an init list): a compound literal of side-effecting calls
 // has indeterminate evaluation order, which -fbounds-safety flags for a struct
-// carrying a __counted_by member.  Clearing the gradient scratch isn't needed --
-// fill_grad/stroke_grad are read only when the *_is_gradient flag is set.
+// carrying a __counted_by member.  Clearing the gradient scratch isn't needed
+// (read only when the kind is GRADIENT), but the patterns must be cleared so the
+// borrowed-buffer (data, len) pair stays consistent when the state is copied.
 static void state_defaults(struct canvas_state *s) {
     s->ctm = cnvs_mat_identity();
     s->fill = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
-    s->fill_is_gradient = 0;
+    s->fill_kind = CNVS_PAINT_SOLID;
+    pattern_clear(&s->fill_pattern);
     s->stroke = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
-    s->stroke_is_gradient = 0;
+    s->stroke_kind = CNVS_PAINT_SOLID;
+    pattern_clear(&s->stroke_pattern);
     s->global_alpha = 1.0f;
     s->composite = COMPOSITOR_SRC_OVER;
     s->line_width = 1.0f;
@@ -317,7 +352,7 @@ canvas_matrix canvas_get_transform(canvas *__single cv) {
 
 void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
     cv->cur.fill = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
-    cv->cur.fill_is_gradient = 0;
+    cv->cur.fill_kind = CNVS_PAINT_SOLID;
 }
 
 // Average CTM scale, used to bake user-space radii into device space.
@@ -327,7 +362,7 @@ static float ctm_scale(cnvs_mat m) {
 }
 
 // Initialise a gradient struct in device space (the CTM is baked in now); the
-// caller flips the matching is_gradient flag.
+// caller sets the matching paint kind to GRADIENT.
 static void grad_set_linear(canvas *__single cv, cnvs_gradient *gr,
                             float x0, float y0, float x1, float y1) {
     gr->kind = CNVS_GRAD_LINEAR;
@@ -369,22 +404,37 @@ static void grad_set_conic(canvas *__single cv, cnvs_gradient *gr,
     gr->stop_count = 0;
 }
 
+// Configure `p` to tile `src` (borrowed) with `repeat`, pinned in device space
+// via the inverse of the current CTM.  The (data, len) pair is set together so
+// -fbounds-safety can verify the __counted_by(len) invariant: src is itself
+// __counted_by(w*h*4), exactly the new len.
+static void pattern_set(canvas *__single cv, cnvs_pattern *p,
+                        uint8_t const *__counted_by(w * h * 4) src, int w, int h,
+                        canvas_pattern_repeat repeat) {
+    p->data = src;
+    p->len = w * h * 4;
+    p->w = w;
+    p->h = h;
+    p->repeat = repeat;
+    p->to_pattern = cnvs_mat_invert(cv->cur.ctm);  // device -> pattern image space
+}
+
 void canvas_set_fill_linear_gradient(canvas *__single cv,
                                      float x0, float y0, float x1, float y1) {
     grad_set_linear(cv, &cv->cur.fill_grad, x0, y0, x1, y1);
-    cv->cur.fill_is_gradient = 1;
+    cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
                                      float r0, float x1, float y1, float r1) {
     grad_set_radial(cv, &cv->cur.fill_grad, x0, y0, r0, x1, y1, r1);
-    cv->cur.fill_is_gradient = 1;
+    cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
                                     float x, float y) {
     grad_set_conic(cv, &cv->cur.fill_grad, start_angle, x, y);
-    cv->cur.fill_is_gradient = 1;
+    cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
@@ -393,28 +443,48 @@ void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                            cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
 
+void canvas_set_fill_pattern(canvas *__single cv,
+                             uint8_t const *__counted_by(w * h * 4) src,
+                             int w, int h, canvas_pattern_repeat repeat) {
+    if (!rgba8_dims_ok(w, h)) {
+        return;  // invalid dimensions: leave the fill paint unchanged
+    }
+    pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
+    cv->cur.fill_kind = CNVS_PAINT_PATTERN;
+}
+
 void canvas_set_stroke_linear_gradient(canvas *__single cv,
                                        float x0, float y0, float x1, float y1) {
     grad_set_linear(cv, &cv->cur.stroke_grad, x0, y0, x1, y1);
-    cv->cur.stroke_is_gradient = 1;
+    cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
                                        float r0, float x1, float y1, float r1) {
     grad_set_radial(cv, &cv->cur.stroke_grad, x0, y0, r0, x1, y1, r1);
-    cv->cur.stroke_is_gradient = 1;
+    cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
                                       float x, float y) {
     grad_set_conic(cv, &cv->cur.stroke_grad, start_angle, x, y);
-    cv->cur.stroke_is_gradient = 1;
+    cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, clamp01(offset),
                            cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
+}
+
+void canvas_set_stroke_pattern(canvas *__single cv,
+                               uint8_t const *__counted_by(w * h * 4) src,
+                               int w, int h, canvas_pattern_repeat repeat) {
+    if (!rgba8_dims_ok(w, h)) {
+        return;
+    }
+    pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
+    cv->cur.stroke_kind = CNVS_PAINT_PATTERN;
 }
 
 void canvas_set_global_alpha(canvas *__single cv, float alpha) {
@@ -576,6 +646,100 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
+// Map a sample index onto an axis of length n: wrap mod n for a repeating axis
+// (handling negatives), else clamp to [0, n-1].
+static int wrap_idx(int i, int n, bool repeat) {
+    if (repeat) {
+        i %= n;
+        return i < 0 ? i + n : i;
+    }
+    return i < 0 ? 0 : (i > n - 1 ? n - 1 : i);
+}
+
+// Sample a pattern at pattern-image coordinate (u, v), unpremultiplied into out.
+// A point outside the image on a non-repeating axis is transparent; otherwise the
+// per-tap indices wrap (repeat) or clamp (no-repeat).  Bilinear when `smooth`.
+static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
+                           float *__counted_by(4) out) {
+    bool rx = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_X;
+    bool ry = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_Y;
+    if ((!rx && (u < 0.0f || u >= (float)p->w)) ||
+        (!ry && (v < 0.0f || v >= (float)p->h))) {
+        out[0] = out[1] = out[2] = out[3] = 0.0f;
+        return;
+    }
+    int w = p->w, h = p->h;
+    if (smooth) {
+        float gu = u - 0.5f, gv = v - 0.5f;
+        float fu = floorf(gu), fv = floorf(gv);
+        float tu = gu - fu, tv = gv - fv;
+        int u0 = wrap_idx(cnvs_f2i(fu), w, rx), u1 = wrap_idx(cnvs_f2i(fu) + 1, w, rx);
+        int v0 = wrap_idx(cnvs_f2i(fv), h, ry), v1 = wrap_idx(cnvs_f2i(fv) + 1, h, ry);
+        for (int k = 0; k < 4; k++) {
+            float c00 = (float)p->data[(v0 * w + u0) * 4 + k];
+            float c10 = (float)p->data[(v0 * w + u1) * 4 + k];
+            float c01 = (float)p->data[(v1 * w + u0) * 4 + k];
+            float c11 = (float)p->data[(v1 * w + u1) * 4 + k];
+            float top = c00 + (c10 - c00) * tu;
+            float bot = c01 + (c11 - c01) * tu;
+            out[k] = (top + (bot - top) * tv) / 255.0f;
+        }
+    } else {
+        int iu = wrap_idx(cnvs_f2i(floorf(u)), w, rx);
+        int iv = wrap_idx(cnvs_f2i(floorf(v)), h, ry);
+        int o = (iv * w + iu) * 4;
+        for (int k = 0; k < 4; k++) {
+            out[k] = (float)p->data[o + k] / 255.0f;
+        }
+    }
+}
+
+// Paint the resolved coverage (cv->cov over b) with an image pattern: each device
+// pixel maps through the pattern's device->image transform, samples (bilinear or
+// nearest per image smoothing), and folds in global alpha and coverage.
+static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const *p) {
+    float ga = cv->cur.global_alpha;
+    bool smooth = cv->cur.image_smoothing_enabled;
+    for (int py = 0; py < b.h; py++) {
+        for (int px = 0; px < b.w; px++) {
+            int i = py * b.w + px;
+            float covf = (float)cv->cov[i] / 255.0f;
+            if (covf <= 0.0f) {
+                cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = 0 };
+                continue;
+            }
+            cnvs_vec2 d = { .x = (float)b.x + (float)px + 0.5f,
+                            .y = (float)b.y + (float)py + 0.5f };
+            cnvs_vec2 uv = cnvs_mat_apply(p->to_pattern, d);
+            float s[4];
+            pattern_sample(p, uv.x, uv.y, smooth, s);
+            float alpha = s[3] * ga * covf;
+            cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
+        }
+    }
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
+}
+
+// Paint the resolved coverage with the current fill / stroke paint, dispatching
+// on its kind (solid and gradient share paint_tile; pattern has its own loop).
+static void paint_fill(canvas *__single cv, cbbox b) {
+    if (cv->cur.fill_kind == CNVS_PAINT_PATTERN) {
+        paint_tile_pattern(cv, b, &cv->cur.fill_pattern);
+    } else {
+        paint_tile(cv, b, cv->cur.fill_kind == CNVS_PAINT_GRADIENT,
+                   &cv->cur.fill_grad, cv->cur.fill);
+    }
+}
+
+static void paint_stroke(canvas *__single cv, cbbox b) {
+    if (cv->cur.stroke_kind == CNVS_PAINT_PATTERN) {
+        paint_tile_pattern(cv, b, &cv->cur.stroke_pattern);
+    } else {
+        paint_tile(cv, b, cv->cur.stroke_kind == CNVS_PAINT_GRADIENT,
+                   &cv->cur.stroke_grad, cv->cur.stroke);
+    }
+}
+
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) {
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
@@ -605,7 +769,7 @@ void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
     cover_edge(cv, b, q[2], q[3]);
     cover_edge(cv, b, q[3], q[0]);
     cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
-    paint_tile(cv, b, cv->cur.fill_is_gradient, &cv->cur.fill_grad, cv->cur.fill);
+    paint_fill(cv, b);
 }
 
 void canvas_begin_path(canvas *__single cv) {
@@ -836,10 +1000,10 @@ void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
     }
 }
 
-// Rasterize a device-space path under `rule` and paint it over its clamped bbox.
+// Rasterize a device-space path under `rule` and paint it with the fill paint
+// over its clamped bbox.
 static void fill_device_path(canvas *__single cv, cnvs_path const *p,
-                             cnvs_fill_rule rule, int is_grad,
-                             cnvs_gradient const *gr, cnvs_unpremul solid) {
+                             cnvs_fill_rule rule) {
     cbbox b = points_bbox(cv, p->pts, p->pt_len);
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
@@ -847,12 +1011,11 @@ static void fill_device_path(canvas *__single cv, cnvs_path const *p,
     }
     cover_path_edges(cv, b, p);
     cnvs_cover_resolve(&cv->cover, b.w, b.h, rule, cv->cov);
-    paint_tile(cv, b, is_grad, gr, solid);
+    paint_fill(cv, b);
 }
 
 void canvas_fill(canvas *__single cv) {
-    fill_device_path(cv, &cv->path, cv->cur.fill_rule, cv->cur.fill_is_gradient,
-                     &cv->cur.fill_grad, cv->cur.fill);
+    fill_device_path(cv, &cv->path, cv->cur.fill_rule);
 }
 
 // Point-in-path for hit testing.  Each subpath is treated as implicitly closed
@@ -937,7 +1100,7 @@ void canvas_clip(canvas *__single cv) {
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
     cv->cur.stroke = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
-    cv->cur.stroke_is_gradient = 0;
+    cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
 
 void canvas_set_line_width(canvas *__single cv, float width) {
@@ -1056,7 +1219,7 @@ static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
         cover_edge(cv, b, p2, p0);
     }
     cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
-    paint_tile(cv, b, cv->cur.stroke_is_gradient, &cv->cur.stroke_grad, cv->cur.stroke);
+    paint_stroke(cv, b);
 }
 
 void canvas_stroke(canvas *__single cv) {
@@ -1238,8 +1401,7 @@ static void fill_text_at(canvas *__single cv, cnvs_font *__single f,
                          float ox, float oy, cnvs_mat to_device) {
     cnvs_path_reset(&cv->text_path);
     cnvs_font_outline(f, text, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
-    fill_device_path(cv, &cv->text_path, CNVS_NONZERO, cv->cur.fill_is_gradient,
-                     &cv->cur.fill_grad, cv->cur.fill);
+    fill_device_path(cv, &cv->text_path, CNVS_NONZERO);
 }
 
 static void stroke_text_at(canvas *__single cv, cnvs_font *__single f,

@@ -31,6 +31,11 @@ typedef enum {
     CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
 } canvas_image_smoothing_quality;
 
+// createPattern repetition mode.
+typedef enum {
+    CANVAS_REPEAT, CANVAS_REPEAT_X, CANVAS_REPEAT_Y, CANVAS_NO_REPEAT,
+} canvas_pattern_repeat;
+
 // globalCompositeOperation.  Order mirrors compositor_blend_mode (src/compositor.h)
 // value-for-value; the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
@@ -102,6 +107,15 @@ void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
                                     float x, float y);
 void canvas_add_fill_color_stop(canvas *__single cv, float offset,
                                 float r, float g, float b, float a);
+// Image pattern fill paint (createPattern): the tightly packed RGBA8 source
+// (w*h, top row first) tiles the plane per `repeat`.  The source is *borrowed* --
+// the caller must keep it alive while it remains the fill paint (including across
+// save/restore) -- and the pattern is pinned in device space at the current
+// transform, like the gradients.  Sampling honours image smoothing (bilinear vs
+// nearest).  Ignored if the dimensions are non-positive or overflow.
+void canvas_set_fill_pattern(canvas *__single cv,
+                             uint8_t const *__counted_by(w * h * 4) src,
+                             int w, int h, canvas_pattern_repeat repeat);
 
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h);
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h);
@@ -173,6 +187,10 @@ void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
                                       float x, float y);
 void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
                                   float r, float g, float b, float a);
+// Image pattern stroke paint, mirroring canvas_set_fill_pattern.
+void canvas_set_stroke_pattern(canvas *__single cv,
+                               uint8_t const *__counted_by(w * h * 4) src,
+                               int w, int h, canvas_pattern_repeat repeat);
 void canvas_set_line_width(canvas *__single cv, float width);
 void canvas_set_line_join(canvas *__single cv, canvas_line_join join);
 void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap);
