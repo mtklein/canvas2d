@@ -1,10 +1,10 @@
 // Text canvas-program parser + replayer (the cnvs_replay.h core, and
 // canvas_replay_from()).  Parses untrusted text by index over a __counted_by
 // buffer -- the bounds-safe-parsing exercise -- and dispatches to the public
-// canvas_* API.  The __null_terminated conversions the C library forces at
-// strtof()/fill_text() are confined to two small leaves (a copied numeric token
-// and the copied text tail), each a sound forge over a buffer we just
-// NUL-terminated; the bulk of the parser never leaves the indexable world.
+// canvas_* API.  No forges and no __null_terminated: numbers are parsed in place
+// by index (no strtof), and the text tail is passed as a slice to the
+// length-counted canvas_*_text_n; the parser stays entirely in the indexable
+// world.  (docs/bounds-safety.md walks through what that took.)
 
 #include "cnvs_replay.h"
 
@@ -17,7 +17,6 @@
 
 #define REPLAY_LINE_MAX 4096u        // over-long line -> reject (DoS guard)
 #define REPLAY_FILE_MAX (64u << 20)  // 64 MiB file cap
-#define REPLAY_NUM_MAX  64u          // longest numeric token
 #define REPLAY_DASH_MAX 64           // max dash segments from one line
 
 static bool is_ws(char c) {
@@ -56,26 +55,54 @@ static bool tok_eq(char const *__counted_by(le) data, size_t le, size_t ts,
     return *lit == '\0';  // exact-length match: literal ends right here too
 }
 
-// Next token parsed as a float; the whole token must be consumed (strict).
+// Next token parsed as a float, in place by index -- no strtof, no
+// __null_terminated, no forge.  Stricter than strtof: the whole token must be a
+// number (sign? digits, optional .fraction, optional e[+-]exp).
 static bool read_float(char const *__counted_by(le) data, size_t le,
                        size_t *__single jp, float *__single out) {
     size_t ts, tlen;
-    if (!read_token(data, le, jp, &ts, &tlen) || tlen == 0 || tlen >= REPLAY_NUM_MAX) {
+    if (!read_token(data, le, jp, &ts, &tlen) || tlen == 0) {
         return false;
     }
-    char num[REPLAY_NUM_MAX];
-    for (size_t k = 0; k < tlen; k++) {
-        num[k] = data[ts + k];
+    size_t i = ts, te = ts + tlen;
+    bool neg = false;
+    if (i < te && (data[i] == '+' || data[i] == '-')) { neg = data[i] == '-'; i++; }
+    double mant = 0.0;
+    int fexp = 0;
+    bool any = false;
+    while (i < te && data[i] >= '0' && data[i] <= '9') {
+        mant = mant * 10.0 + (data[i] - '0'); i++; any = true;
     }
-    num[tlen] = '\0';
-    // Sound: num is a fixed array we just NUL-terminated at tlen < REPLAY_NUM_MAX.
-    char *__null_terminated np = __unsafe_forge_null_terminated(char *, num);
-    char *__null_terminated end = np;
-    float v = strtof(np, &end);
-    if (end == np || *end != '\0') {  // parsed nothing, or trailing junk in the token
-        return false;
+    if (i < te && data[i] == '.') {
+        i++;
+        while (i < te && data[i] >= '0' && data[i] <= '9') {
+            mant = mant * 10.0 + (data[i] - '0'); fexp--; i++; any = true;
+        }
     }
-    *out = v;
+    if (!any) {
+        return false;  // ".", "+", "e3" -- no digits
+    }
+    int eexp = 0;
+    if (i < te && (data[i] == 'e' || data[i] == 'E')) {
+        i++;
+        bool eneg = false, eany = false;
+        if (i < te && (data[i] == '+' || data[i] == '-')) { eneg = data[i] == '-'; i++; }
+        while (i < te && data[i] >= '0' && data[i] <= '9') { eexp = eexp * 10 + (data[i] - '0'); i++; eany = true; }
+        if (!eany) {
+            return false;
+        }
+        if (eneg) { eexp = -eexp; }
+    }
+    if (i != te) {
+        return false;  // trailing junk in the token (e.g. "1.5.2", "1x")
+    }
+    // Scale by 10^(fexp+eexp).  Exact for canvas-range values; for extreme
+    // exponents this loop drifts where strtof is correctly-rounded (a power table
+    // would fix it), but such inputs are clamped by the canvas API anyway.
+    int e = fexp + eexp;
+    double scale = 1.0, base = e < 0 ? 0.1 : 10.0;
+    for (int k = 0, n = e < 0 ? -e : e; k < n; k++) { scale *= base; }
+    *out = (float)((neg ? -mant : mant) * scale);
     return true;
 }
 
@@ -244,14 +271,11 @@ static bool replay_line(canvas *__single cv, char const *__counted_by(le) data,
         bool fill = data[cs] == 'f';
         if (!read_floats(data, le, &j, f, 2)) return false;
         while (j < le && is_ws(data[j])) { j++; }
-        size_t n = le - j;
-        if (n >= REPLAY_LINE_MAX) return false;
-        char txt[REPLAY_LINE_MAX];
-        for (size_t k = 0; k < n; k++) { txt[k] = data[j + k]; }
-        txt[n] = '\0';
-        char *__null_terminated t = __unsafe_forge_null_terminated(char *, txt);
-        if (fill) canvas_fill_text(cv, t, f[0], f[1]);
-        else      canvas_stroke_text(cv, t, f[0], f[1]);
+        // The text is the rest of the line: hand the slice straight to the
+        // length-counted text API -- no copy, no NUL, no forge.
+        int n = (int)(le - j);  // le - j <= line cap < INT_MAX
+        if (fill) canvas_fill_text_n(cv, data + j, n, f[0], f[1]);
+        else      canvas_stroke_text_n(cv, data + j, n, f[0], f[1]);
         return true;  // text consumed the rest of the line
     }
 

@@ -243,20 +243,22 @@ allocation limits) surfaces.
 - **Text-program parser** ([`cnvs_replay.c`](../src/cnvs_replay.c), behind the new
   public `canvas_replay_from`): a fresh untrusted-input surface (tokenizing,
   number parsing, line handling). Parsed by index over a `__counted_by(len)`
-  buffer with a line-length cap and strict rejection; the `__null_terminated`
-  conversions libc forces (`strtof`/`fill_text`) are confined to two sound forges.
-  Fuzzed by [`fuzz/fuzz_replay.c`](../fuzz/fuzz_replay.c) — 46k execs under ASan,
-  **clean** — plus a round-trip + malformed-rejection test
-  ([`tests/test_replay.c`](../tests/test_replay.c)). The `-fbounds-safety` ease/
-  friction is written up in [docs/bounds-safety.md](../docs/bounds-safety.md).
+  buffer with a line-length cap and strict rejection, and it reaches **zero forges
+  and zero `__null_terminated`** — numbers go through an in-place hand float parser
+  (no `strtof`) and the text tail is passed as a `__counted_by` slice to the
+  length-counted `canvas_*_text_n` (no copy/NUL/forge). Fuzzed by
+  [`fuzz/fuzz_replay.c`](../fuzz/fuzz_replay.c) under ASan+UBSan, **clean**, plus a
+  round-trip + malformed-rejection test ([`tests/test_replay.c`](../tests/test_replay.c)).
+  The `-fbounds-safety` ease/friction is written up in
+  [docs/bounds-safety.md](../docs/bounds-safety.md).
 
 - **Text-program recorder** ([`cnvs_record.c`](../src/cnvs_record.c), behind the
   new public `canvas_record_to`): the write-side inverse of the parser — each
   recordable public op appends its line as it runs. No new *untrusted-input*
   surface (it emits, it doesn't consume), and notably **zero forges**: emission is
   `__counted_by(n)` float runs plus `__null_terminated` names/text handed straight
-  to `fputs`/`fprintf`, the easy direction across the libc seam (the parser had to
-  forge its way the other way). The only subtlety is re-entrancy — compound ops
+  to `fputs`/`fprintf`, the easy direction across the libc seam (consuming hostile
+  text is the hard direction). The only subtlety is re-entrancy — compound ops
   (`arc`/`round_rect`/`arc_to`) record themselves and a reference-counted suspend
   swallows the public sub-calls they make, so the open/close and `enter`/`leave`
   stay balanced (verified leak-clean). Round-trip is pinned by

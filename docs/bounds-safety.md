@@ -432,12 +432,31 @@ the dangerous loop is the indexed buffer walk, and it's checked with no effort.
   more than one** (`p + n` is an error — check `*end` instead of `end == p + n`).
 
 None of these are hard once you know them, but they're invisible until the
-compiler stops you. The clean resolution is to **keep the bulk of the parser in
-the indexable world and confine the conversions to leaves**: here, exactly two —
-a copied numeric token handed to `strtof`, and the copied text tail handed to
-`fill_text` — each a *sound* `__unsafe_forge_null_terminated` over a fixed buffer
-we just NUL-terminated. The forge is C's `unsafe {}`: it's where I assert an
-invariant the type system can't see, and there are precisely two, both one-liners.
+compiler stops you. The first cut took the pragmatic route — keep the bulk of the
+parser indexable and **confine the seam crossings to two leaf forges** (a copied,
+NUL-terminated numeric token handed to `strtof`; a copied text tail handed to
+`fill_text`). That's the honest, idiomatic answer: a forge is C's `unsafe {}`, two
+one-liners asserting an invariant the type system can't see.
+
+But the seam is avoidable entirely, and removing both forges is instructive:
+- **Numbers:** drop `strtof` for a hand float parser that reads the token *in
+  place by index* (sign, digits, `.`fraction, `e`exponent). It never builds a
+  C string, so it never touches `__null_terminated`. It's also *stricter* than
+  `strtof` (rejects `1.5.2`, trailing junk, hex/`inf`/`nan`), which is the right
+  posture for untrusted input; the only cost is decimal rounding that can drift
+  from correctly-rounded at extreme exponents (irrelevant for clamped canvas
+  values).
+- **Text:** give the engine a length-counted `canvas_fill_text_n` /
+  `stroke_text_n` (`__counted_by(len)`), and the parser hands the tail straight
+  through as a slice — `data + j` carries its own remaining count — with no copy,
+  no NUL, no forge. The NUL-terminated `fill_text` stays as a convenience that
+  delegates via the *safe* `__null_terminated_to_indexable`.
+
+Reaching that length-counted API also forced the Core Text shim length-bounded
+(it had stopped at a NUL), which **hardened the one unchecked TU** as a
+side effect: it can no longer over-read a non-terminated buffer. So chasing zero
+forges in the *checked* parser paid off in the *unchecked* shim — a nice
+demonstration that the annotation pressure propagates somewhere useful.
 
 **One gotcha worth flagging:** a parameter used *only* inside a `__counted_by(n)`
 annotation reads as unused in the `unsafe` variant (where the macro expands to
@@ -447,8 +466,10 @@ the bound in a real check (`if (ts + tlen > le) return false;`), which also
 guards the unchecked `unsafe`/fuzz build where `__counted_by` is absent.
 
 Net: `-fbounds-safety` made the *parsing* (the actual attack surface) safe for
-free, and pushed the only real work to the libc string boundary — a small, named,
-auditable set of forges. Fuzzed at ~46k exec/run with nothing found.
+free. The libc string boundary is the only place it pushes back — and even that
+is optional: with a hand float parser and a length-counted text API, the parser
+reaches **literally zero forges and zero `__null_terminated`**, staying entirely
+in the indexable world. Fuzzed under ASan+UBSan with nothing found.
 
 ### The other direction: the *recorder* is strictly easier (zero forges)
 
