@@ -560,6 +560,62 @@ static void pattern(void) {
     save(c, "gallery/pattern.png");
 }
 
+// imageSmoothingEnabled: the same 16x16 pixel-art source upscaled 8.75x with
+// smoothing off (crisp nearest-neighbour blocks) and on (bilinear blend).
+static void smoothing(void) {
+    canvas *__single c = canvas_create(440, 210);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 210.0f);
+
+    static char const art[16][17] = {
+        "................", "...DDD....DDD...", "..DRRRD..DRRRD..",
+        ".DRRHRRDDRRRRRD.", ".DRHHRRRRRRRRRD.", ".DRHRRRRRRRRRRD.",
+        ".DRRRRRRRRRRRRD.", "..DRRRRRRRRRRD..", "...DRRRRRRRRD...",
+        "....DRRRRRRD....", ".....DRRRRD.....", "......DRRD......",
+        ".......DD.......", "................", "................",
+        "................",
+    };
+    uint8_t src[16 * 16 * 4];
+    for (int y = 0; y < 16; y++) {
+        for (int x = 0; x < 16; x++) {
+            int i = (y * 16 + x) * 4;
+            float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
+            switch (art[y][x]) {
+                case 'D': r = 0.60f; g = 0.08f; b = 0.16f; a = 1.0f; break;
+                case 'R': r = 0.92f; g = 0.22f; b = 0.30f; a = 1.0f; break;
+                case 'H': r = 0.99f; g = 0.66f; b = 0.69f; a = 1.0f; break;
+                default: break;  // '.' stays transparent
+            }
+            src[i]     = (uint8_t)(r * 255.0f + 0.5f);
+            src[i + 1] = (uint8_t)(g * 255.0f + 0.5f);
+            src[i + 2] = (uint8_t)(b * 255.0f + 0.5f);
+            src[i + 3] = (uint8_t)(a * 255.0f + 0.5f);
+        }
+    }
+
+    // Source at 4x (nearest) so the 16x16 grid is legible.
+    canvas_set_image_smoothing_enabled(c, false);
+    canvas_draw_image_scaled(c, src, 16, 16, 24.0f, 62.0f, 64.0f, 64.0f);
+    // Big nearest-neighbour upscale (blocky).
+    canvas_draw_image_scaled(c, src, 16, 16, 120.0f, 24.0f, 140.0f, 140.0f);
+    // Big bilinear upscale (smooth).
+    canvas_set_image_smoothing_enabled(c, true);
+    canvas_draw_image_scaled(c, src, 16, 16, 276.0f, 24.0f, 140.0f, 140.0f);
+
+    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "16x16 source", 56.0f, 186.0f);
+    canvas_fill_text(c, "nearest", 190.0f, 186.0f);
+    canvas_fill_text(c, "smooth (bilinear)", 346.0f, 186.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/smoothing.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -823,6 +879,7 @@ int main(void) {
     pattern();
     batching();
     drawimage();
+    smoothing();
     text();
     blend();
     return 0;

@@ -93,6 +93,11 @@ and scaled + rotated (AA quad edges from the coverage rasterizer):
 
 ![drawimage](gallery/drawimage.png)
 
+`imageSmoothingEnabled` — a 16×16 pixel-art source upscaled with smoothing off
+(crisp nearest-neighbour blocks) vs on (bilinear blend):
+
+![smoothing](gallery/smoothing.png)
+
 `getImageData` captures the leftmost motif; `putImageData` stamps the copies:
 
 ![imagedata](gallery/imagedata.png)
