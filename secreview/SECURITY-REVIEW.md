@@ -59,6 +59,9 @@ That is exactly why Finding 1 lands as "trap, not corruption" in release.
 controlled trap (DoS), but it is **undefined behavior** that is *fatal in the
 debug/sanitizer build* and makes the documented API contract unenforceable.
 **Confidence: verified, end-to-end PoC.**
+**Status: FIXED** — `canvas_create` clamps to `CANVAS_MAX_DIM`, and `rgba8_dims_ok()`
+validates caller dims in 64-bit at the three image entry points
+([`canvas.c`](../src/canvas.c)); regression test [`tests/test_dims.c`](../tests/test_dims.c).
 
 Multiple canvas entry points compute `width * height * 4` (and `width * height`)
 in `int` before any widening:
@@ -105,6 +108,9 @@ six sites above. One bound at creation closes the whole class.
 
 **Severity:** UB; same containment as Finding 1 (trap in release, UBSan-fatal in
 debug). **Confidence: medium, not PoC'd.**
+**Status: FIXED** — the doubling loop in [`cnvs_mem.c`](../src/cnvs_mem.c) now
+guards `n > INT_MAX / 2` and falls back to the exact `need` (callers null-check
+the realloc); regression test [`tests/test_mem.c`](../tests/test_mem.c).
 
 [`cnvs_mem.c:3-9`](../src/cnvs_mem.c): `int n = ...; while (n < need) n *= 2;` —
 if `need > 2^30`, `n *= 2` overflows `int` (signed → UB). Reachable by driving a
