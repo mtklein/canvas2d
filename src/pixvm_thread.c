@@ -37,7 +37,7 @@ static int dispatch(vmstate *st, int pc);
 
 static int op_splat(vmstate *st, int pc) {
     pixop op = st->prog[pc];
-    st->reg[op.dst] = op.imm;
+    st->reg[op.dst] = (_Float16)op.imm;
     [[clang::musttail]] return dispatch(st, pc + 1);
 }
 
@@ -50,10 +50,10 @@ static int op_load_src(vmstate *st, int pc) {
     } else {
         for (int lane = 0; lane < st->active; lane++) {
             int p = (st->x + lane) * 4;
-            st->reg[d][lane]     = (float)st->src[p]     / 255.0f;
-            st->reg[d + 1][lane] = (float)st->src[p + 1] / 255.0f;
-            st->reg[d + 2][lane] = (float)st->src[p + 2] / 255.0f;
-            st->reg[d + 3][lane] = (float)st->src[p + 3] / 255.0f;
+            st->reg[d][lane]     = pixio_from_u8(st->src[p]);
+            st->reg[d + 1][lane] = pixio_from_u8(st->src[p + 1]);
+            st->reg[d + 2][lane] = pixio_from_u8(st->src[p + 2]);
+            st->reg[d + 3][lane] = pixio_from_u8(st->src[p + 3]);
         }
     }
     [[clang::musttail]] return dispatch(st, pc + 1);
@@ -68,10 +68,10 @@ static int op_load_dst(vmstate *st, int pc) {
     } else {
         for (int lane = 0; lane < st->active; lane++) {
             int p = (st->x + lane) * 4;
-            st->reg[d][lane]     = (float)st->dst[p]     / 255.0f;
-            st->reg[d + 1][lane] = (float)st->dst[p + 1] / 255.0f;
-            st->reg[d + 2][lane] = (float)st->dst[p + 2] / 255.0f;
-            st->reg[d + 3][lane] = (float)st->dst[p + 3] / 255.0f;
+            st->reg[d][lane]     = pixio_from_u8(st->dst[p]);
+            st->reg[d + 1][lane] = pixio_from_u8(st->dst[p + 1]);
+            st->reg[d + 2][lane] = pixio_from_u8(st->dst[p + 2]);
+            st->reg[d + 3][lane] = pixio_from_u8(st->dst[p + 3]);
         }
     }
     [[clang::musttail]] return dispatch(st, pc + 1);
@@ -80,14 +80,14 @@ static int op_load_dst(vmstate *st, int pc) {
 static int op_load_cov(vmstate *st, int pc) {
     int d = st->prog[pc].dst;
     if (!st->cov) {
-        st->reg[d] = 1.0f;
+        st->reg[d] = (_Float16)1.0f;
     } else if (st->active == PIXVM_N) {
         u8x8 cv;
         memcpy(&cv, st->cov + (size_t)st->x, sizeof cv);
         st->reg[d] = pixio_unit(cv);
     } else {
         for (int lane = 0; lane < st->active; lane++) {
-            st->reg[d][lane] = (float)st->cov[st->x + lane] / 255.0f;
+            st->reg[d][lane] = pixio_from_u8(st->cov[st->x + lane]);
         }
     }
     [[clang::musttail]] return dispatch(st, pc + 1);
@@ -101,10 +101,10 @@ static int op_store(vmstate *st, int pc) {
     } else {
         for (int lane = 0; lane < st->active; lane++) {
             int p = (st->x + lane) * 4;
-            st->dst[p]     = pixio_to_u8(st->reg[d][lane]);
-            st->dst[p + 1] = pixio_to_u8(st->reg[d + 1][lane]);
-            st->dst[p + 2] = pixio_to_u8(st->reg[d + 2][lane]);
-            st->dst[p + 3] = pixio_to_u8(st->reg[d + 3][lane]);
+            st->dst[p]     = pixio_to_u8((float)st->reg[d][lane]);
+            st->dst[p + 1] = pixio_to_u8((float)st->reg[d + 1][lane]);
+            st->dst[p + 2] = pixio_to_u8((float)st->reg[d + 2][lane]);
+            st->dst[p + 3] = pixio_to_u8((float)st->reg[d + 3][lane]);
         }
     }
     [[clang::musttail]] return dispatch(st, pc + 1);

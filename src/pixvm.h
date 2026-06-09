@@ -5,9 +5,11 @@
 // ISA; pixvm_run_switch (one big switch) and pixvm_run_threaded (tail-call threaded)
 // are two backends, with an SkRasterPipeline-style register pipeline to follow.
 //
-// A run walks `n` pixels PIXVM_N at a time.  Channels are float in [0,1] held in a
-// register file of PIXVM_N-wide vectors; load/store ops convert to and from
-// tightly packed RGBA8.
+// A run walks `n` pixels PIXVM_N at a time.  Colour channels are _Float16 in [0,1]
+// (the project's colour type, and native 128-bit NEON at 8 wide), held in a
+// register file of PIXVM_N-wide vectors; load/store ops convert to and from tightly
+// packed RGBA8 with the u8 quantization done in float.  Any geometric coordinate
+// would stay float32 -- none arise in this colour/coverage ISA.
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -15,7 +17,7 @@
 #define PIXVM_N 8       // pixels per step (vector lanes)
 #define PIXVM_REGS 16   // vector registers in the file
 
-typedef float pixv __attribute__((ext_vector_type(PIXVM_N)));
+typedef _Float16 pixv __attribute__((ext_vector_type(PIXVM_N)));
 
 // LOAD_SRC/LOAD_DST/STORE treat `dst` as the base of a four-register r,g,b,a group;
 // the arithmetic ops read `a`/`b`/`c` and write `dst`; SPLAT writes `dst` from imm.

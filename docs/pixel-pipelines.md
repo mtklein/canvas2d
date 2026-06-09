@@ -14,7 +14,7 @@ where does `-fbounds-safety` help, and where does it fight back?
    in registers across the whole program. *(planned)*
 
 They share an ISA ([../src/pixvm.h](../src/pixvm.h)): a register file of
-`PIXVM_N`-wide `float` vectors, RGBA8 load/store ops, and `splat`/`mov`/`add`/`sub`/
+`PIXVM_N`-wide `_Float16` vectors, RGBA8 load/store ops, and `splat`/`mov`/`add`/`sub`/
 `mul`/`mad`. Designs 2 and 3 reuse the ISA and the test programs so the comparison
 is apples-to-apples — same work, different dispatch.
 
@@ -74,23 +74,26 @@ only if the program then indexes it). A small gotcha, but a real one: the "(ptr,
 count) parameter" pattern the project leans on has a nullable variant you have to
 reach for deliberately.
 
-### What it costs: ~8% at `-Os`
+### What it costs: ~1.4× at `-Os`, and fp16 raised it
 
 A source-over program over a 256×256 tile
-([../bench/bench_pixvm.c](../bench/bench_pixvm.c)), release (`-Os -fbounds-safety`)
-vs unsafe (`-Os`), same source, the `A`-vs-`A` hyperfine control at 1.00×:
+([../bench/bench_pixvm_switch.c](../bench/bench_pixvm_switch.c)), release vs unsafe
+(same `-Os` source), `A`-vs-`A` hyperfine control 1.00× — with `_Float16` channels,
+and the earlier `float` channels for contrast:
 
-| opt | bounds-safe | unsafe | cost of checks |
+| channels (`-Os`) | bounds-safe | unsafe | cost of checks |
 |---|---|---|---|
-| `-Os` | 63.8 ms | 58.7 ms | **1.08×** |
-| `-O2` | 66.5 ms | 54.6 ms | **1.22×** |
+| `_Float16` (now) | 59.7 ms | 42.7 ms | **1.40×** |
+| `float` (before) | 63.8 ms | 58.7 ms | 1.08× |
 
-That is the expected shape: a small overhead at `-Os` (the shipping config), growing
-to ~22% at `-O2` because the unsafe build optimizes the surrounding work better, so
-the checks are a larger slice of a smaller total. The kernel lands between the
-project's flatten (1.07×) and blit (2.55×) kernels — the once-per-eight-pixels
-`memcpy` bounds check and the register-index checks amortize against the vector
-arithmetic, nowhere near the per-byte blit worst case.
+The counter-intuitive part: moving to `_Float16` (native 128-bit NEON at 8 wide, half
+the register-file bytes) made the *unchecked* kernel ~25% faster but barely moved the
+bounds-safe build, so the cost of the checks *rose*, 1.08× → 1.40×. The index and
+pointer checks are integer work fp16 doesn't shrink, so once the colour data and
+arithmetic get cheaper they're a bigger slice of the total — the same mechanism by
+which `-O2` widens the gap. The kernel is still cheap in absolute terms (the
+once-per-eight-pixels `memcpy` bounds check plus register-index checks amortize
+against real work), nowhere near the per-byte blit's 2.55×.
 
 #### How we got here: a lane-store artifact, and why it mattered
 
@@ -119,9 +122,9 @@ memory and every op round-trips through it. Design C exists precisely to remove
 that — carrying r,g,b,a as function arguments so they stay in SIMD registers across
 the pipeline. Measuring A against C will show that cost directly.
 
-A's baseline for that comparison: **63.8 ms** for the 300-iteration source-over
-bench at `-Os` bounds-safe (~310 Mpix/s). B and C run the same program over the same
-tile, so the three numbers are directly comparable.
+A's baseline for that comparison: **59.7 ms** for the 300-iteration source-over
+bench at `-Os` bounds-safe (~330 Mpix/s, `_Float16` channels). B and C run the same
+program over the same tile, so the three numbers are directly comparable.
 
 ## Design B — tail-call threaded VM (implemented)
 
@@ -167,32 +170,34 @@ bytecode opcode out of range **traps** — opcode validation for free. The switc
 the opposite default: its `default: break` silently ignores an unknown opcode.
 `test_pixvm` asserts both (bad opcode: threaded traps, switch is a no-op).
 
-### The cost: bounds-safety taxes threading ~6× harder than the switch
+### The cost: bounds-safety still taxes threading more than the switch
 
-Same source-over program and tile as A, release vs unsafe, `A`-vs-`A` control 1.00×:
+Same source-over program and tile as A, release vs unsafe, `A`-vs-`A` control 1.00×,
+`_Float16` channels:
 
 | backend | bounds-safe `-Os` | unsafe `-Os` | cost of checks |
 |---|---|---|---|
-| A — switch | 62.4 ms | 57.3 ms | **1.09×** |
-| B — threaded | 93.6 ms | 60.5 ms | **1.55×** |
+| A — switch | 59.7 ms | 42.7 ms | **1.40×** |
+| B — threaded | 88.4 ms | 49.8 ms | **1.78×** |
 
-Unchecked, the two dispatch styles are within 6% (threading's indirect jumps vs the
-switch's jump table). But the checks add ~5 ms to A and **~33 ms** to B — and that
-gap is the finding. In A the whole program runs in one function: the optimizer hoists
-the register-file base, keeps `prog_len` in a register, and the `for (pc < prog_len)`
-loop *proves the program fetch in-bounds*, so that check is elided. In B each handler
-is a separate function reached by an indirect `musttail`; the optimizer can't see
-across it, so every handler reloads `st->prog`/`st->prog_len` from the (escaping)
-state struct and **re-checks the program fetch** — visible in the disassembly as a
-`cmp`/`b.hi`-to-trap at the top of every `op_*`. The bounds checks A amortizes once,
-B pays per opcode.
+Unchecked, the two dispatch styles are within ~17% (threading's indirect jumps vs the
+switch's jump table). But the bounds-safe penalty is wider for B: the checks and
+reloads cost A ~17 ms and B **~39 ms**, and that gap is the finding. In A the whole
+program runs in one function: the optimizer hoists the register-file base, keeps
+`prog_len` in a register, and the `for (pc < prog_len)` loop *proves the program
+fetch in-bounds*, so that check is elided. In B each handler is a separate function
+reached by an indirect `musttail`; the optimizer can't see across it, so every
+handler reloads `st->prog`/`st->prog_len` from the (escaping) state struct and
+**re-checks the program fetch** — visible in the disassembly as a `cmp`/`b.hi`-to-trap
+at the top of every `op_*`. The bounds checks A amortizes once, B pays per opcode.
 
-So under `-fbounds-safety` — the shipping config — the threaded VM is **1.5× slower
-than the switch** despite near-parity unchecked. The flag penalizes the design it
-can't see through. (Threaded dispatch may still win for a *larger* ISA, where the
-switch's jump table mispredicts more; this small kernel doesn't reach that regime.)
-The A and B numbers above are one hyperfine run; the ~1.5 ms spread from A's 63.8 ms
-baseline is run-to-run noise.
+So under `-fbounds-safety` — the shipping config — the threaded VM is **~1.5× slower
+than the switch** (88 vs 60 ms) despite near-parity unchecked. The flag penalizes the
+design it can't see through. (Threaded dispatch may still win for a *larger* ISA,
+where the switch's jump table mispredicts more; this small kernel doesn't reach that
+regime.) Moving to `_Float16` widened both costs versus the earlier `float` channels
+(A 1.09× → 1.40×, B 1.55× → 1.78×): halving the colour data sped the unchecked work
+but not the integer checks, so the checks loom larger.
 
 ## Design C — SkRasterPipeline-style register pipeline (planned)
 

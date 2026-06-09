@@ -22,7 +22,7 @@ void pixvm_run_switch(pixop const *__counted_by(prog_len) prog, int prog_len,
             int d = op.dst, a = op.a, b = op.b, c = op.c;
             switch ((int)op.kind) {
                 case PIXOP_SPLAT:
-                    reg[d] = op.imm;
+                    reg[d] = (_Float16)op.imm;
                     break;
                 case PIXOP_LOAD_SRC:
                     if (full) {
@@ -32,10 +32,10 @@ void pixvm_run_switch(pixop const *__counted_by(prog_len) prog, int prog_len,
                     } else {
                         for (int lane = 0; lane < active; lane++) {
                             int p = (x + lane) * 4;
-                            reg[d][lane]     = (float)src[p]     / 255.0f;
-                            reg[d + 1][lane] = (float)src[p + 1] / 255.0f;
-                            reg[d + 2][lane] = (float)src[p + 2] / 255.0f;
-                            reg[d + 3][lane] = (float)src[p + 3] / 255.0f;
+                            reg[d][lane]     = pixio_from_u8(src[p]);
+                            reg[d + 1][lane] = pixio_from_u8(src[p + 1]);
+                            reg[d + 2][lane] = pixio_from_u8(src[p + 2]);
+                            reg[d + 3][lane] = pixio_from_u8(src[p + 3]);
                         }
                     }
                     break;
@@ -47,23 +47,23 @@ void pixvm_run_switch(pixop const *__counted_by(prog_len) prog, int prog_len,
                     } else {
                         for (int lane = 0; lane < active; lane++) {
                             int p = (x + lane) * 4;
-                            reg[d][lane]     = (float)dst[p]     / 255.0f;
-                            reg[d + 1][lane] = (float)dst[p + 1] / 255.0f;
-                            reg[d + 2][lane] = (float)dst[p + 2] / 255.0f;
-                            reg[d + 3][lane] = (float)dst[p + 3] / 255.0f;
+                            reg[d][lane]     = pixio_from_u8(dst[p]);
+                            reg[d + 1][lane] = pixio_from_u8(dst[p + 1]);
+                            reg[d + 2][lane] = pixio_from_u8(dst[p + 2]);
+                            reg[d + 3][lane] = pixio_from_u8(dst[p + 3]);
                         }
                     }
                     break;
                 case PIXOP_LOAD_COV:
                     if (!cov) {
-                        reg[d] = 1.0f;
+                        reg[d] = (_Float16)1.0f;
                     } else if (full) {
                         u8x8 cv;
                         memcpy(&cv, cov + (size_t)x, sizeof cv);
                         reg[d] = pixio_unit(cv);
                     } else {
                         for (int lane = 0; lane < active; lane++) {
-                            reg[d][lane] = (float)cov[x + lane] / 255.0f;
+                            reg[d][lane] = pixio_from_u8(cov[x + lane]);
                         }
                     }
                     break;
@@ -74,10 +74,10 @@ void pixvm_run_switch(pixop const *__counted_by(prog_len) prog, int prog_len,
                     } else {
                         for (int lane = 0; lane < active; lane++) {
                             int p = (x + lane) * 4;
-                            dst[p]     = pixio_to_u8(reg[d][lane]);
-                            dst[p + 1] = pixio_to_u8(reg[d + 1][lane]);
-                            dst[p + 2] = pixio_to_u8(reg[d + 2][lane]);
-                            dst[p + 3] = pixio_to_u8(reg[d + 3][lane]);
+                            dst[p]     = pixio_to_u8((float)reg[d][lane]);
+                            dst[p + 1] = pixio_to_u8((float)reg[d + 1][lane]);
+                            dst[p + 2] = pixio_to_u8((float)reg[d + 2][lane]);
+                            dst[p + 3] = pixio_to_u8((float)reg[d + 3][lane]);
                         }
                     }
                     break;
