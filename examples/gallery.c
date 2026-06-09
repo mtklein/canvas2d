@@ -489,6 +489,77 @@ static void conic(void) {
     save(c, "gallery/conic.png");
 }
 
+// A 32x32 seamless tile: an indigo ground, a gold gem at the centre, and coral
+// quarter-dots in the corners that join into full dots across tile seams.
+static void make_tile(uint8_t *__counted_by(32 * 32 * 4) t) {
+    for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 32; x++) {
+            int i = (y * 32 + x) * 4;
+            float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
+            float r = 0.16f, g = 0.18f, b = 0.36f;  // indigo ground
+            float cdx = fx - 16.0f, cdy = fy - 16.0f;
+            if (cdx * cdx + cdy * cdy < 10.5f * 10.5f) {  // centre gem
+                r = 0.97f; g = 0.80f; b = 0.28f;
+            }
+            float gx = fx < 16.0f ? fx : fx - 32.0f;  // distance to nearest corner
+            float gy = fy < 16.0f ? fy : fy - 32.0f;
+            if (gx * gx + gy * gy < 7.0f * 7.0f) {  // corner dots (wrap into circles)
+                r = 0.95f; g = 0.42f; b = 0.42f;
+            }
+            t[i]     = (uint8_t)(r * 255.0f + 0.5f);
+            t[i + 1] = (uint8_t)(g * 255.0f + 0.5f);
+            t[i + 2] = (uint8_t)(b * 255.0f + 0.5f);
+            t[i + 3] = 255;
+        }
+    }
+}
+
+// createPattern: the same tile under each repeat mode (the un-tiled axes leave the
+// dark ground showing), then the pattern used as a fill paint for a headline.
+static void pattern(void) {
+    canvas *__single c = canvas_create(474, 212);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 474.0f, 212.0f);
+
+    uint8_t tile[32 * 32 * 4];
+    make_tile(tile);
+
+    canvas_pattern_repeat const modes[4] = { CANVAS_REPEAT, CANVAS_REPEAT_X,
+                                             CANVAS_REPEAT_Y, CANVAS_NO_REPEAT };
+    char const *const labels[4] = { "repeat", "repeat-x", "repeat-y",
+                                    "no-repeat" };
+    for (int i = 0; i < 4; i++) {
+        float ox = 18.0f + (float)i * 114.0f, oy = 22.0f;
+        // Anchor the tile grid to the panel corner via the CTM, then fill.
+        canvas_save(c);
+        canvas_translate(c, ox, oy);
+        canvas_set_fill_pattern(c, tile, 32, 32, modes[i]);
+        canvas_fill_rect(c, 0.0f, 0.0f, 96.0f, 96.0f);
+        canvas_restore(c);
+
+        canvas_set_stroke_rgba(c, 0.42f, 0.46f, 0.55f, 1.0f);
+        canvas_set_line_width(c, 1.5f);
+        canvas_stroke_rect(c, ox, oy, 96.0f, 96.0f);
+
+        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_font_size(c, 13.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_fill_text(c, labels[i], ox + 48.0f, 134.0f);
+    }
+
+    // The pattern is a fill paint like any other, so glyph coverage samples it too.
+    canvas_set_fill_pattern(c, tile, 32, 32, CANVAS_REPEAT);
+    canvas_set_font_size(c, 52.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "canvas2d", 237.0f, 196.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/pattern.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -749,6 +820,7 @@ int main(void) {
     clipping();
     gradients();
     conic();
+    pattern();
     batching();
     drawimage();
     text();

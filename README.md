@@ -77,6 +77,12 @@ two-tone conic medallion:
 
 ![conic](gallery/conic.png)
 
+`createPattern` — a seamless tile under each repeat mode (`repeat` / `repeat-x` /
+`repeat-y` / `no-repeat`; the un-tiled axes leave the ground showing), then the
+same pattern used as a fill paint for a headline (glyph coverage samples it too):
+
+![pattern](gallery/pattern.png)
+
 Batching — 320 translucent discs, each its own `fill()`, all submitted in a
 single compositor command buffer (the alpha overlap shows ordering is preserved):
 
