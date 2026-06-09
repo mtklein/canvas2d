@@ -133,6 +133,12 @@ composite+blend formula in a framebuffer-fetch shader):
 
 ![blend](gallery/blend.png)
 
+Hit testing — a grid of sample points stippled `isPointInPath` (a pentagram under
+even-odd, so the central pentagon reads as outside) and `isPointInStroke` (only
+points within a thick ring's stroke band hit):
+
+![hittest](gallery/hittest.png)
+
 ## Quick start
 
 ```sh

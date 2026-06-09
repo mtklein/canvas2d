@@ -860,6 +860,88 @@ static void textmaxwidth(void) {
     save(c, "gallery/textmaxwidth.png");
 }
 
+// Hit testing: stipple a grid of sample points over a shape.  Left, isPointInPath
+// on a pentagram under even-odd (the central pentagon reads as outside); right,
+// isPointInStroke on a thick ring (only points within the stroke band hit).  All
+// queries run first -- drawing the dots replaces the current path.
+static void hittest(void) {
+    canvas *__single c = canvas_create(480, 262);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 262.0f);
+
+    int const step = 10, nx = 20, ny = 20;
+    float const solid[1] = { 1.0f };
+
+    // ---- isPointInPath: pentagram, even-odd ----
+    star(c, 130.0f, 116.0f, 92.0f);
+    canvas_set_line_dash(c, solid, 0);
+    canvas_set_line_width(c, 1.3f);
+    canvas_set_stroke_rgba(c, 0.55f, 0.58f, 0.66f, 0.55f);
+    canvas_stroke(c);
+    bool inA[20 * 20];
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            float px = 34.0f + (float)(i * step), py = 22.0f + (float)(j * step);
+            inA[j * nx + i] = canvas_is_point_in_path(c, px, py, CANVAS_EVENODD);
+        }
+    }
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            float px = 34.0f + (float)(i * step), py = 22.0f + (float)(j * step);
+            bool in = inA[j * nx + i];
+            if (in) {
+                canvas_set_fill_rgba(c, 0.30f, 0.85f, 0.70f, 1.0f);
+            } else {
+                canvas_set_fill_rgba(c, 0.42f, 0.45f, 0.52f, 0.85f);
+            }
+            canvas_begin_path(c);
+            canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
+            canvas_fill(c);
+        }
+    }
+
+    // ---- isPointInStroke: a thick ring ----
+    canvas_begin_path(c);
+    canvas_arc(c, 350.0f, 116.0f, 66.0f, 0.0f, TAU, false);
+    canvas_set_line_dash(c, solid, 0);
+    canvas_set_line_width(c, 24.0f);
+    bool inB[20 * 20];
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            float px = 254.0f + (float)(i * step), py = 22.0f + (float)(j * step);
+            inB[j * nx + i] = canvas_is_point_in_stroke(c, px, py);
+        }
+    }
+    canvas_set_stroke_rgba(c, 0.62f, 0.52f, 0.40f, 0.22f);  // faint stroke band
+    canvas_stroke(c);
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            float px = 254.0f + (float)(i * step), py = 22.0f + (float)(j * step);
+            bool in = inB[j * nx + i];
+            if (in) {
+                canvas_set_fill_rgba(c, 0.97f, 0.62f, 0.25f, 1.0f);
+            } else {
+                canvas_set_fill_rgba(c, 0.42f, 0.45f, 0.52f, 0.85f);
+            }
+            canvas_begin_path(c);
+            canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
+            canvas_fill(c);
+        }
+    }
+
+    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "isPointInPath", 130.0f, 248.0f);
+    canvas_fill_text(c, "isPointInStroke", 350.0f, 248.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/hittest.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1128,6 +1210,7 @@ int main(void) {
     textgrid();
     textmetrics();
     textmaxwidth();
+    hittest();
     blend();
     return 0;
 }
