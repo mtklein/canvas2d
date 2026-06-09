@@ -41,7 +41,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   font-family selection (pinned to Libian TC), weight, style, or the CSS `font`
   shorthand; and none of `direction`, `letterSpacing`, `wordSpacing`,
   `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
-- **`fillText`/`strokeText`** take no `maxWidth` (no auto-condense).
 - **Text shaping** maps code point → glyph 1:1: no ligatures, contextual forms, or
   bidi, and only the BMP path is exercised (CJK works; emoji/astral untested).
 - **`fill`/`stroke`/`clip`** have no `Path2D` overload, and the fill rule is taken

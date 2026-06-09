@@ -252,6 +252,14 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
                       float x, float y);
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
                         float x, float y);
+// fillText/strokeText with a maxWidth: when the text's advance exceeds a finite,
+// positive `max_width`, it is condensed horizontally (scaled in x about the
+// alignment anchor) to fit.  A non-positive or non-finite `max_width` imposes no
+// limit, rendering exactly like canvas_fill_text/canvas_stroke_text.
+void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
+                          float x, float y, float max_width);
+void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
+                            float x, float y, float max_width);
 
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);

@@ -198,7 +198,7 @@ canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_p
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline
-canvas_measure_text / measure_text_full / fill_text / stroke_text  // Libian TC, UTF-8
+canvas_measure_text / measure_text_full / fill_text / fill_text_max / stroke_text / stroke_text_max  // Libian TC, UTF-8
 canvas_destroy(cv);
 ```
 

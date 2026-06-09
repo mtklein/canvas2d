@@ -1166,34 +1166,88 @@ void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline
     }
 }
 
-// Resolve the pen origin (alphabetic baseline, in user space) for fill_text /
-// stroke_text under the current textAlign and textBaseline.  textAlign shifts x
-// by a fraction of the advance width (only measured when not left/start);
-// textBaseline shifts y by an offset derived from the font's ascent/descent.
+// Fraction of the advance the textAlign anchor sits from the text's left edge:
+// left/start 0, center 0.5, right/end 1 (LTR, so start == left, end == right).
+static float text_align_frac(canvas_text_align a) {
+    switch (a) {
+        case CANVAS_ALIGN_START:
+        case CANVAS_ALIGN_LEFT:   return 0.0f;
+        case CANVAS_ALIGN_CENTER: return 0.5f;
+        case CANVAS_ALIGN_END:
+        case CANVAS_ALIGN_RIGHT:  return 1.0f;
+    }
+    return 0.0f;  // unreachable for a valid enum
+}
+
+// Offset added to the pen y to place the requested textBaseline at y, derived
+// from the font's ascent/descent (no BASE table: hanging ~ top, ideographic ~
+// bottom).
+static float text_baseline_offset(canvas *__single cv, cnvs_font *__single f) {
+    if (cv->cur.text_baseline == CANVAS_BASELINE_ALPHABETIC) {
+        return 0.0f;
+    }
+    float a = 0.0f, d = 0.0f;
+    cnvs_font_vmetrics(f, &a, &d);
+    switch (cv->cur.text_baseline) {
+        case CANVAS_BASELINE_ALPHABETIC:  return 0.0f;
+        case CANVAS_BASELINE_TOP:         return a;
+        case CANVAS_BASELINE_HANGING:     return a;
+        case CANVAS_BASELINE_MIDDLE:      return (a - d) * 0.5f;
+        case CANVAS_BASELINE_IDEOGRAPHIC: return -d;
+        case CANVAS_BASELINE_BOTTOM:      return -d;
+    }
+    return 0.0f;  // unreachable for a valid enum
+}
+
+// Pen origin (alphabetic baseline, user space) for the no-maxWidth path: shift x
+// by the alignment fraction of the advance (measured only when not left/start),
+// y by the baseline offset.
 static void text_origin(canvas *__single cv, cnvs_font *__single f,
                         char const *__null_terminated text,
                         float x, float y, float *__single ox, float *__single oy) {
-    *ox = x;
-    if (cv->cur.text_align != CANVAS_ALIGN_START &&
-        cv->cur.text_align != CANVAS_ALIGN_LEFT) {
-        float frac = cv->cur.text_align == CANVAS_ALIGN_CENTER ? 0.5f : 1.0f;
-        *ox = x - frac * cnvs_font_advance(f, text);
+    float frac = text_align_frac(cv->cur.text_align);
+    *ox = frac != 0.0f ? x - frac * cnvs_font_advance(f, text) : x;
+    *oy = y + text_baseline_offset(cv, f);
+}
+
+// Layout for the maxWidth path: when the advance exceeds a finite positive
+// max_width, condense by scaling x by max_width/advance about the alignment
+// anchor.  Writes the pen origin and returns the device-space layout matrix (the
+// CTM with the condense folded in).
+static cnvs_mat text_layout_max(canvas *__single cv, cnvs_font *__single f,
+                                char const *__null_terminated text,
+                                float x, float y, float max_width,
+                                float *__single ox, float *__single oy) {
+    float advance = cnvs_font_advance(f, text);
+    float sx = 1.0f;
+    if (isfinite(max_width) && max_width > 0.0f && advance > max_width) {
+        sx = max_width / advance;
     }
-    *oy = y;
-    if (cv->cur.text_baseline != CANVAS_BASELINE_ALPHABETIC) {
-        float a = 0.0f, d = 0.0f;
-        cnvs_font_vmetrics(f, &a, &d);
-        float dy = 0.0f;
-        switch (cv->cur.text_baseline) {
-            case CANVAS_BASELINE_ALPHABETIC:  break;  // handled by the guard
-            case CANVAS_BASELINE_TOP:         dy = a; break;
-            case CANVAS_BASELINE_HANGING:     dy = a; break;  // no BASE table: ~top
-            case CANVAS_BASELINE_MIDDLE:      dy = (a - d) * 0.5f; break;
-            case CANVAS_BASELINE_IDEOGRAPHIC: dy = -d; break;
-            case CANVAS_BASELINE_BOTTOM:      dy = -d; break;
-        }
-        *oy = y + dy;
-    }
+    *ox = x - text_align_frac(cv->cur.text_align) * advance * sx;
+    *oy = y + text_baseline_offset(cv, f);
+    // Scale x by sx about the anchor: X' = sx*X + ox*(1-sx), Y' = Y; then the CTM.
+    cnvs_mat cond = { .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
+                      .e = *ox * (1.0f - sx), .f = 0.0f };
+    return cnvs_mat_mul(cv->cur.ctm, cond);
+}
+
+// Lay out `text` from the pen origin through `to_device` and fill the glyph
+// outlines (nonzero winding: overlapping contours fill solid).
+static void fill_text_at(canvas *__single cv, cnvs_font *__single f,
+                         char const *__null_terminated text,
+                         float ox, float oy, cnvs_mat to_device) {
+    cnvs_path_reset(&cv->text_path);
+    cnvs_font_outline(f, text, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
+    fill_device_path(cv, &cv->text_path, CNVS_NONZERO, cv->cur.fill_is_gradient,
+                     &cv->cur.fill_grad, cv->cur.fill);
+}
+
+static void stroke_text_at(canvas *__single cv, cnvs_font *__single f,
+                           char const *__null_terminated text,
+                           float ox, float oy, cnvs_mat to_device) {
+    cnvs_path_reset(&cv->text_path);
+    cnvs_font_outline(f, text, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
+    stroke_device_path(cv, &cv->text_path);
 }
 
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
@@ -1233,11 +1287,18 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
     }
     float ox, oy;
     text_origin(cv, f, text, x, y, &ox, &oy);
-    cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, ox, oy, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
-    // Glyph outlines use nonzero winding (overlapping contours fill solid).
-    fill_device_path(cv, &cv->text_path, CNVS_NONZERO, cv->cur.fill_is_gradient,
-                     &cv->cur.fill_grad, cv->cur.fill);
+    fill_text_at(cv, f, text, ox, oy, cv->cur.ctm);
+}
+
+void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
+                          float x, float y, float max_width) {
+    cnvs_font *__single f = ensure_font(cv);
+    if (!f) {
+        return;
+    }
+    float ox, oy;
+    cnvs_mat td = text_layout_max(cv, f, text, x, y, max_width, &ox, &oy);
+    fill_text_at(cv, f, text, ox, oy, td);
 }
 
 void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
@@ -1248,9 +1309,18 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
     }
     float ox, oy;
     text_origin(cv, f, text, x, y, &ox, &oy);
-    cnvs_path_reset(&cv->text_path);
-    cnvs_font_outline(f, text, ox, oy, cv->cur.ctm, CANVAS_FLATTEN_TOL, &cv->text_path);
-    stroke_device_path(cv, &cv->text_path);
+    stroke_text_at(cv, f, text, ox, oy, cv->cur.ctm);
+}
+
+void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
+                            float x, float y, float max_width) {
+    cnvs_font *__single f = ensure_font(cv);
+    if (!f) {
+        return;
+    }
+    float ox, oy;
+    cnvs_mat td = text_layout_max(cv, f, text, x, y, max_width, &ox, &oy);
+    stroke_text_at(cv, f, text, ox, oy, td);
 }
 
 // Bilinear sample of an RGBA8 source at source-pixel (fx, fy), unpremultiplied,
