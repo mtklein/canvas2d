@@ -36,6 +36,29 @@ static void put_bytes(struct writer *w, uint8_t const *__counted_by(n) src, size
     w->at += n;
 }
 
+#if defined(__ARM_FEATURE_CRC32)
+#include <arm_acle.h>
+
+// PNG/zlib's CRC is CRC-32/ISO-HDLC -- exactly what ARMv8's crc32 instructions
+// compute, ~20x faster than the byte-at-a-time table.  Eight bytes at a time via
+// memcpy (unaligned load, still bounds-checked under -fbounds-safety -- the same
+// shape adler32 uses below), then a scalar tail.
+static uint32_t crc32_range(struct writer const *w, size_t start, size_t end) {
+    uint32_t c = 0xFFFFFFFFu;
+    size_t i = start;
+    for (; i + 8 <= end; i += 8) {
+        uint64_t v;
+        memcpy(&v, w->buf + i, sizeof v);
+        c = __crc32d(c, v);
+    }
+    for (; i < end; i++) {
+        c = __crc32b(c, w->buf[i]);
+    }
+    return c ^ 0xFFFFFFFFu;
+}
+
+#else  // portable byte-at-a-time fallback (non-ARMv8 targets)
+
 static uint32_t g_crc_table[256];
 static bool g_crc_ready = false;
 
@@ -61,6 +84,7 @@ static uint32_t crc32_range(struct writer const *w, size_t start, size_t end) {
     }
     return c ^ 0xFFFFFFFFu;
 }
+#endif
 
 typedef uint8_t u8x16 __attribute__((ext_vector_type(16)));
 typedef uint32_t u32x16 __attribute__((ext_vector_type(16)));
