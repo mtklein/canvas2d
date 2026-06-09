@@ -1663,22 +1663,14 @@ static void draw_color_glyph(canvas *__single cv, void *__single font,
     // Draw with the glyph origin placed so its ink box sits `margin` px inside the
     // buffer (cnvs_glyph_draw is bitmap space: y up from the bottom).
     cnvs_glyph_draw(font, glyph, (float)margin - x0, (float)margin - y0, buf, gw, gh);
-    // CGBitmapContext is premultiplied and bottom-up; canvas_draw_image_subrect
-    // wants straight-alpha, top-row-first.  Unpremultiply, then flip rows.
+    // CGBitmapContext gives premultiplied RGBA, top row first (the orientation
+    // canvas_draw_image_subrect wants); just unpremultiply to straight alpha.
     for (int i = 0; i < glen; i += 4) {
         int a = buf[i + 3];
         if (a > 0 && a < 255) {
             buf[i + 0] = (uint8_t)((buf[i + 0] * 255 + a / 2) / a);
             buf[i + 1] = (uint8_t)((buf[i + 1] * 255 + a / 2) / a);
             buf[i + 2] = (uint8_t)((buf[i + 2] * 255 + a / 2) / a);
-        }
-    }
-    int rowb = gw * 4;
-    for (int r = 0; r < gh / 2; r++) {
-        for (int k = 0; k < rowb; k++) {
-            uint8_t t = buf[r * rowb + k];
-            buf[r * rowb + k] = buf[(gh - 1 - r) * rowb + k];
-            buf[(gh - 1 - r) * rowb + k] = t;
         }
     }
     // The buffer maps to a user-space rect: its left edge is `margin` px left of
