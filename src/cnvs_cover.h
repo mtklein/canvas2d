@@ -31,6 +31,7 @@ void cnvs_cover_add_edge(cnvs_cover *c, int w, int h,
                          float x0, float y0, float x1, float y1);
 
 // Resolve the accumulation to per-pixel coverage (0..255) under `rule`, into
-// `out` (length w*h, row-major top-first).
-void cnvs_cover_resolve(cnvs_cover const *c, int w, int h, cnvs_fill_rule rule,
+// `out` (length w*h, row-major top-first).  Consumes the accumulator (it is
+// rewritten to the per-row prefix sums in place), so reset() before reusing `c`.
+void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
                         uint8_t *__counted_by(w * h) out);
