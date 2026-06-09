@@ -19,14 +19,6 @@ void cnvs_font_destroy(cnvs_font *__single f);
 // shim itself -- built without -fbounds-safety, it can no longer over-read past a
 // missing terminator even in that unchecked TU.  See docs/bounds-safety.md.
 
-// Append the outlines of `text` to `out` as device-space subpaths: place the
-// baseline origin at user-space (ox, oy), advance +x, flip Core Text's y-up glyph
-// space to canvas y-down, map user->device with `to_device`, and flatten curves
-// at `tol` device px.  Returns the advance width in user px.
-float cnvs_font_outline(cnvs_font *__single f, char const *__counted_by(len) text,
-                        int len, float ox, float oy, cnvs_mat to_device, float tol,
-                        cnvs_path *__single out);
-
 // Advance width of `text` in user px (Canvas measureText().width).
 float cnvs_font_advance(cnvs_font *__single f, char const *__counted_by(len) text,
                         int len);

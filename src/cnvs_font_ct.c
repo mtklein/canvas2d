@@ -46,45 +46,6 @@ void cnvs_font_destroy(cnvs_font *f) {
     free(f);
 }
 
-// CGPathApply callback context: where to append, and the glyph-space -> device
-// mapping (baseline origin already folded into `ox`/`oy`).
-struct walk {
-    cnvs_path *out;
-    cnvs_mat to_device;
-    float ox, oy;
-    float tol;
-};
-
-// Core Text glyph space is px-at-size, baseline-relative, y up.  Flip y, place at
-// the pen origin (user space), then map to device.
-static cnvs_vec2 gpt(struct walk const *w, CGPoint p) {
-    cnvs_vec2 u = { w->ox + (float)p.x, w->oy - (float)p.y };
-    return cnvs_mat_apply(w->to_device, u);
-}
-
-static void emit(void *info, CGPathElement const *e) {
-    struct walk *w = info;
-    switch (e->type) {
-        case kCGPathElementMoveToPoint:
-            cnvs_path_move_to(w->out, gpt(w, e->points[0]));
-            break;
-        case kCGPathElementAddLineToPoint:
-            cnvs_path_line_to(w->out, gpt(w, e->points[0]));
-            break;
-        case kCGPathElementAddQuadCurveToPoint:
-            cnvs_path_quad_to(w->out, gpt(w, e->points[0]),
-                              gpt(w, e->points[1]), w->tol);
-            break;
-        case kCGPathElementAddCurveToPoint:
-            cnvs_path_cubic_to(w->out, gpt(w, e->points[0]),
-                               gpt(w, e->points[1]), gpt(w, e->points[2]), w->tol);
-            break;
-        case kCGPathElementCloseSubpath:
-            cnvs_path_close(w->out);
-            break;
-    }
-}
-
 // Decode one UTF-8 sequence at *p (with `end` one past the last byte) and advance
 // *p past it.  Malformed or truncated bytes decode as U+FFFD; the scan is bounded
 // by `end`, so it never reads past the buffer even without a NUL terminator.
@@ -128,29 +89,6 @@ static CGGlyph glyph_for_cp(CTFontRef font, uint32_t cp) {
     CGGlyph g = 0;
     CTFontGetGlyphsForCharacters(font, &uc, &g, 1);
     return g;
-}
-
-float cnvs_font_outline(cnvs_font *f, char const *text, int len, float ox, float oy,
-                        cnvs_mat to_device, float tol, cnvs_path *out) {
-    float pen = 0.0f;
-    unsigned char const *s = (unsigned char const *)text;
-    unsigned char const *end = s + (len > 0 ? len : 0);
-    while (s < end) {
-        CGGlyph g = glyph_for_cp(f->font, utf8_next(&s, end));
-
-        CGPathRef path = CTFontCreatePathForGlyph(f->font, g, NULL);  // NULL for blanks
-        if (path) {
-            struct walk w = { .out = out, .to_device = to_device,
-                              .ox = ox + pen, .oy = oy, .tol = tol };
-            CGPathApply(path, &w, emit);
-            CGPathRelease(path);
-        }
-
-        CGSize adv = { 0.0, 0.0 };
-        CTFontGetAdvancesForGlyphs(f->font, kCTFontOrientationHorizontal, &g, &adv, 1);
-        pen += (float)adv.width;
-    }
-    return pen;
 }
 
 float cnvs_font_advance(cnvs_font *f, char const *text, int len) {
