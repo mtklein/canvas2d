@@ -82,6 +82,11 @@ for the OOB-write classes.
   `CGPathApply`→`emit` glyph-outline callback. ASan is the *only* net in that TU,
   so this is where fuzzing earns the most. Seeds in `fuzz/seeds_text/` cover ASCII,
   2/3/4-byte sequences, astral, and malformed/truncated bytes. (141k execs: clean.)
+- **`fuzz_png.c`** — the PNG encoder (`cnvs_png_write`) on fuzzed dimensions +
+  pixel content, encoding to `/dev/null`. Exercises the size arithmetic
+  (`rawlen`/`nseg`/`zlib_len`/`total`), the pre-sized write cursor, and the SIMD
+  `adler32`/CRC32 paths. With `-fbounds-safety` off here, ASan independently
+  witnesses the cursor never overruns. (83k execs: clean.)
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
 `-fsanitize-address-use-after-return=always`, matching the debug variant.
@@ -89,14 +94,14 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 ## Files
 
 - `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
-- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c` — the harnesses
+- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c` — the harnesses
   (`LLVMFuzzerTestOneInput` + a file-replay `main` behind `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
-- `build.sh` — builds all three libFuzzer targets + the `fuzz_api` seeds.
+- `build.sh` — builds all four libFuzzer targets + the `fuzz_api` seeds.
 
-Not yet done: a PNG-encoder harness; Role B (a strict on-disk format with a
-bounds-safe validating parser, a fuzz target in its own right); adding
-`fuzz_state`/`fuzz_text` to the committed-corpus replay gate (coordinate with
-`fuzzcorpus`, which currently replays `fuzz_api` only).
+Not yet done: Role B (a strict on-disk format with a bounds-safe validating
+parser, a fuzz target in its own right); adding `fuzz_state`/`fuzz_text`/`fuzz_png`
+to the committed-corpus replay gate (coordinate with `fuzzcorpus`, which currently
+replays `fuzz_api` only).

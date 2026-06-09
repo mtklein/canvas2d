@@ -228,7 +228,10 @@ allocation limits) surfaces.
   pre-sized `__counted_by(cap)` buffer, so *any* size-estimate error traps at the
   write instead of corrupting the heap; a too-large estimate fails the final
   `w.at == total` check. I looked specifically for an alloc-size vs.
-  write-extent divergence and found none. Solid.
+  write-extent divergence and found none. Solid — and now **fuzzed**:
+  [`fuzz/fuzz_png.c`](../fuzz/fuzz_png.c) drives `cnvs_png_write` on fuzzed
+  dimensions + pixels with `-fbounds-safety` off, so ASan alone must witness the
+  cursor stays in bounds — 83k execs, **clean**.
 - **Temporal safety of `save`/`restore` clip masks**
   ([`canvas.c:151-180`](../src/canvas.c)): `save` deep-copies the mask into the
   stack entry; `restore` frees `cur`'s then adopts the stack entry's. No alias,
