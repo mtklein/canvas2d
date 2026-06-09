@@ -457,8 +457,12 @@ def main():
     w("rule cov_run")  # run a test, writing its coverage profile to $out
     w("  command = LLVM_PROFILE_FILE=$out $bin")
     w("")
-    w("rule coverage")  # merge the profiles and print the report (always reruns)
+    # Merge the profiles, write the checked-in Markdown report (docs/coverage.md,
+    # browsable on GitHub), and print the human-readable table to the console.
+    w("rule coverage")
     w("  command = xcrun llvm-profdata merge -sparse $in -o $profdata && "
+      "xcrun llvm-cov export -summary-only $mainbin $objargs -instr-profile=$profdata src "
+      "| python3 tools/cov_report.py > $out && "
       "xcrun llvm-cov report $mainbin $objargs -instr-profile=$profdata src")
     w("  pool = console")
     w("")
@@ -484,10 +488,15 @@ def main():
         w(f"  bin = ./{exe}")
         cov_raws.append(raw)
         cov_exes.append(exe)
-    w(f"build coverage: coverage {' '.join(cov_raws)} | {' '.join(cov_exes)}")
+    # docs/coverage.md is the committed report (the rule's $out); regenerated from
+    # the test profiles, so `ninja coverage` refreshes it and a git diff shows any
+    # coverage change.  cov_report.py is an input so edits to it rebuild the report.
+    w(f"build docs/coverage.md: coverage {' '.join(cov_raws)} "
+      f"| {' '.join(cov_exes)} tools/cov_report.py")
     w("  profdata = build/cov/coverage.profdata")
     w(f"  mainbin = {cov_exes[0]}")
     w(f"  objargs = {' '.join('-object ' + e for e in cov_exes[1:])}")
+    w("build coverage: phony docs/coverage.md")
     w("")
 
     # `oom` (fault-injection gate): recompile the core with malloc/realloc/calloc

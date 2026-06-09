@@ -154,8 +154,11 @@ ninja test               # just the tests (subset of the default build)
 ninja images             # just (re)render the gallery PNGs (subset of default)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
-ninja coverage           # llvm-cov line/region/branch report over src/ (all tests)
+ninja coverage           # refresh docs/coverage.md (llvm-cov over src/, all tests)
 ```
+
+The coverage report is checked in at **[docs/coverage.md](docs/coverage.md)** so it
+browses on GitHub; `ninja coverage` regenerates it, so a `git diff` shows what moved.
 
 Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
 `#embed`, and a Metal device), and ninja. `ninja benchcmp` also needs
