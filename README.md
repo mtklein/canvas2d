@@ -59,6 +59,13 @@ round-capped line):
 
 ![strokerect](gallery/strokerect.png)
 
+`Path2D` — a reusable path object transformed at draw time: one petal stamped
+under twelve rotations into a flower (the same object, different CTMs), and
+`add_path` composing a ring with its hole for an even-odd fill with a stroked star
+in the hole:
+
+![path2d](gallery/path2d.png)
+
 Clipping — a circular window, the intersection of two discs, and a
 self-intersecting star, each masking the same flood of stripes (coverage mask):
 

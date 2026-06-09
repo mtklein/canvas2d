@@ -1002,6 +1002,92 @@ static void dirtyrect(void) {
     save(c, "gallery/dirtyrect.png");
 }
 
+// Path2D: a reusable path object, transformed at draw time.  Left, one petal path
+// stamped under twelve rotations into a flower (the same object, different CTMs).
+// Right, add_path composes a ring with its hole for an even-odd fill, and a star
+// Path2D is stroked in the hole.
+static void path2d_demo(void) {
+    canvas *__single c = canvas_create(500, 240);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 240.0f);
+
+    // One petal, built once around the origin, drawn under many transforms.
+    canvas_path2d *__single petal = canvas_path2d_create();
+    if (petal) {
+        canvas_path2d_move_to(petal, 0.0f, 0.0f);
+        canvas_path2d_bezier_curve_to(petal, 32.0f, -26.0f, 24.0f, -76.0f, 0.0f, -88.0f);
+        canvas_path2d_bezier_curve_to(petal, -24.0f, -76.0f, -32.0f, -26.0f, 0.0f, 0.0f);
+        canvas_path2d_close_path(petal);
+        int const n = 12;
+        for (int i = 0; i < n; i++) {
+            float t = (float)i / (float)n;
+            canvas_save(c);
+            canvas_translate(c, 135.0f, 116.0f);
+            canvas_rotate(c, t * TAU);
+            canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+                                 0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                                 0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 0.85f);
+            canvas_fill_path(c, petal, CANVAS_NONZERO);
+            canvas_set_stroke_rgba(c, 1.0f, 1.0f, 1.0f, 0.5f);
+            canvas_set_line_width(c, 1.2f);
+            canvas_stroke_path(c, petal);
+            canvas_restore(c);
+        }
+        canvas_path2d_destroy(petal);
+    }
+
+    // add_path: a ring and its hole composed into one path, filled even-odd.
+    canvas_path2d *__single ring = canvas_path2d_create();
+    canvas_path2d *__single hole = canvas_path2d_create();
+    if (ring && hole) {
+        canvas_path2d_arc(ring, 365.0f, 116.0f, 54.0f, 0.0f, TAU, false);
+        canvas_path2d_arc(hole, 365.0f, 116.0f, 32.0f, 0.0f, TAU, false);
+        canvas_path2d_add_path(ring, hole);
+        canvas_set_fill_radial_gradient(c, 348.0f, 98.0f, 6.0f, 365.0f, 116.0f, 58.0f);
+        canvas_add_fill_color_stop(c, 0.0f, 0.55f, 0.95f, 0.95f, 1.0f);
+        canvas_add_fill_color_stop(c, 1.0f, 0.20f, 0.35f, 0.85f, 1.0f);
+        canvas_fill_path(c, ring, CANVAS_EVENODD);
+    }
+    if (hole) {
+        canvas_path2d_destroy(hole);
+    }
+    if (ring) {
+        canvas_path2d_destroy(ring);
+    }
+
+    // A star Path2D, stroked in the hole.
+    canvas_path2d *__single starp = canvas_path2d_create();
+    if (starp) {
+        for (int i = 0; i < 5; i++) {
+            float a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
+            float px = 365.0f + 24.0f * cosf(a), py = 116.0f + 24.0f * sinf(a);
+            if (i == 0) {
+                canvas_path2d_move_to(starp, px, py);
+            } else {
+                canvas_path2d_line_to(starp, px, py);
+            }
+        }
+        canvas_path2d_close_path(starp);
+        canvas_set_stroke_rgba(c, 0.97f, 0.82f, 0.30f, 1.0f);
+        canvas_set_line_width(c, 2.5f);
+        canvas_set_line_join(c, CANVAS_JOIN_ROUND);
+        canvas_stroke_path(c, starp);
+        canvas_path2d_destroy(starp);
+    }
+
+    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "one Path2D, 12 transforms", 135.0f, 226.0f);
+    canvas_fill_text(c, "add_path · even-odd · stroke", 365.0f, 226.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/path2d.png");
+}
+
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
@@ -1260,6 +1346,7 @@ int main(void) {
     paths();
     roundrect();
     strokerect();
+    path2d_demo();
     clipping();
     gradients();
     conic();
