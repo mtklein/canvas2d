@@ -91,10 +91,20 @@ static _Float16 clamp16(float v) {
     return (_Float16)v;
 }
 
+typedef _Float16 premh4 __attribute__((ext_vector_type(4)));
+typedef float premf4 __attribute__((ext_vector_type(4)));
+
 cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
-    float a = (float)c.a;
-    return (cnvs_premul){ .r = clamp16((float)c.r * a), .g = clamp16((float)c.g * a),
-                          .b = clamp16((float)c.b * a), .a = clamp16(a) };
+    // {r*a, g*a, b*a, a}, clamped to [0,1] and narrowed -- the scalar clamp16 per
+    // channel, done as one 4-lane multiply + clamp + round-to-nearest narrow.  No
+    // add, so no FMA contraction: bit-identical to the scalar form.
+    premf4 p = __builtin_convertvector((premh4){ c.r, c.g, c.b, c.a }, premf4);
+    float a = p[3];
+    premf4 out = p * (premf4){ a, a, a, 1.0f };
+    out = __builtin_elementwise_min((premf4)1.0f,
+                                    __builtin_elementwise_max((premf4)0.0f, out));
+    premh4 h = __builtin_convertvector(out, premh4);
+    return (cnvs_premul){ .r = h[0], .g = h[1], .b = h[2], .a = h[3] };
 }
 
 cnvs_unpremul cnvs_unpremultiply(cnvs_premul c) {
