@@ -57,6 +57,21 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     return gr->stops[n - 1].color;  // unreachable: t < last offset handled above
 }
 
+void cnvs_gradient_build_ramp(cnvs_gradient const *gr,
+                              cnvs_unpremul *__counted_by(n) ramp, int n) {
+    if (n <= 0) {
+        return;
+    }
+    if (n == 1) {
+        ramp[0] = cnvs_gradient_color_at(gr, 0.0f);
+        return;
+    }
+    float inv = 1.0f / (float)(n - 1);
+    for (int i = 0; i < n; i++) {
+        ramp[i] = cnvs_gradient_color_at(gr, (float)i * inv);
+    }
+}
+
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t) {
     if (gr->kind == CNVS_GRAD_LINEAR) {
         float dx = gr->p1.x - gr->p0.x;

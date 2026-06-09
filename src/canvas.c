@@ -82,6 +82,7 @@ struct canvas {
     int cov_cap;
     cnvs_premul *__counted_by(tile_cap) tile;  // premultiplied tile for the current op's bbox
     int tile_cap;
+    cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];  // gradient colour ramp, rebuilt per gradient fill
 };
 
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
@@ -387,24 +388,36 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                        cnvs_gradient const *gr, cnvs_unpremul solid) {
     float ga = cv->cur.global_alpha;
+    // A gradient over a large enough area amortizes a precomputed colour ramp: the
+    // ramp costs CNVS_GRAD_RAMP_N stop evaluations to build, so below that many
+    // pixels the per-pixel stop scan (cnvs_gradient_color_at) is cheaper.
+    bool use_ramp = is_grad && (long)b.w * (long)b.h >= CNVS_GRAD_RAMP_N;
+    if (use_ramp) {
+        cnvs_gradient_build_ramp(gr, cv->ramp, CNVS_GRAD_RAMP_N);
+    }
     for (int py = 0; py < b.h; py++) {
         for (int px = 0; px < b.w; px++) {
             int i = py * b.w + px;
             float covf = (float)cv->cov[i] / 255.0f;
             cnvs_unpremul col;
-            float a;
             if (is_grad) {
-                col = cnvs_gradient_sample(
-                    gr, (cnvs_vec2){ .x = (float)b.x + (float)px + 0.5f,
-                                     .y = (float)b.y + (float)py + 0.5f }, ga);
-                a = (float)col.a;
+                cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
+                                .y = (float)b.y + (float)py + 0.5f };
+                float t;
+                if (cnvs_gradient_param(gr, p, &t)) {
+                    // t is already clamped to [0,1], so the index is in range.
+                    col = use_ramp
+                        ? cv->ramp[(int)(t * (float)(CNVS_GRAD_RAMP_N - 1) + 0.5f)]
+                        : cnvs_gradient_color_at(gr, t);
+                } else {
+                    col = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+                }
             } else {
                 col = solid;
-                a = (float)col.a * ga;
             }
             // Fold coverage and global alpha into the paint's alpha, then
             // premultiply -- the tile stores premultiplied pixels.
-            float alpha = a * covf;
+            float alpha = (float)col.a * ga * covf;
             cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
                 .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
         }

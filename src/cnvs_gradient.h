@@ -43,3 +43,15 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
 // Unpremultiplied colour to paint at a device-space point, with `alpha` (global
 // alpha) folded into the result's alpha.
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);
+
+// Number of entries in a precomputed colour ramp.  1024 keeps the max deviation
+// from the exact piecewise-linear ramp under ~0.4/255 (below the 8-bit step), so a
+// nearest-entry lookup is visually identical to evaluating cnvs_gradient_color_at
+// per pixel, but skips the per-pixel stop search.
+#define CNVS_GRAD_RAMP_N 1024
+
+// Fill `ramp` with `n` evenly spaced samples of the gradient's colour ramp:
+// ramp[i] == cnvs_gradient_color_at(gr, i / (n - 1)).  Built once per fill so the
+// per-pixel paint loop can index it instead of rescanning the stops.
+void cnvs_gradient_build_ramp(cnvs_gradient const *gr,
+                              cnvs_unpremul *__counted_by(n) ramp, int n);
