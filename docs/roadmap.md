@@ -52,7 +52,6 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color
   strings) plus linear/radial gradients — and the gradients are state setters, not
   reusable first-class objects.
-- **`putImageData`** has no dirty-rectangle overload (`dirtyX/Y/Width/Height`).
 - **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source),
   and always samples bilinearly.

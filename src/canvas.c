@@ -1201,31 +1201,34 @@ canvas_create_image_data(canvas *__single cv, int sw, int sh, int *__single len)
     return buf;
 }
 
-void canvas_put_image_data(canvas *__single cv,
-                           uint8_t const *__counted_by(len) data, int len,
-                           int w, int h, int dx, int dy) {
-    if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
-        return;
-    }
-    int cx0 = dx < 0 ? 0 : dx;
-    int cy0 = dy < 0 ? 0 : dy;
-    int cx1 = dx + w;
-    int cy1 = dy + h;
-    if (cx1 > cv->width) {
-        cx1 = cv->width;
-    }
-    if (cy1 > cv->height) {
-        cy1 = cv->height;
-    }
-    int rw = cx1 - cx0;
-    int rh = cy1 - cy0;
+// Copy the sub-rectangle [sx, sx+sw) x [sy, sy+sh) of the w-wide RGBA8 source onto
+// the canvas with the ImageData origin at (dx, dy): source pixel (col, row) lands
+// at (dx+col, dy+row).  Overwrites (no blending) and ignores the clip, clipped to
+// the canvas.  The caller guarantees the sub-rect lies within the source
+// ([0,w] x [0,h]) with sw, sh > 0, and len >= w*h*4.
+static void put_image_sub(canvas *__single cv,
+                          uint8_t const *__counted_by(len) data, int len,
+                          int w, int dx, int dy, int sx, int sy, int sw, int sh) {
+    (void)len;
+    // Destination rect in canvas space, clamped to the canvas.  64-bit so a wild
+    // (dx, dy) can't overflow the clamp arithmetic (the API boundary is untrusted).
+    int64_t xs = (int64_t)dx + sx, ys = (int64_t)dy + sy;
+    int64_t cx0 = xs < 0 ? 0 : xs, cy0 = ys < 0 ? 0 : ys;
+    int64_t cx1 = xs + sw, cy1 = ys + sh;
+    if (cx1 > cv->width)  { cx1 = cv->width; }
+    if (cy1 > cv->height) { cy1 = cv->height; }
+    int rw = cx1 > cx0 ? (int)(cx1 - cx0) : 0;
+    int rh = cy1 > cy0 ? (int)(cy1 - cy0) : 0;
     if (rw <= 0 || rh <= 0 || !ensure_tile(cv, rw * rh)) {
         return;
     }
-    // Build a premultiplied tile from the (canvas-clipped) unpremultiplied RGBA8 source.
+    // Source column/row of the first painted canvas pixel; col0+px stays in
+    // [sx, sx+sw) ⊆ [0,w) and row0+py in [sy, sy+sh) ⊆ [0,h), so si < w*h*4 <= len.
+    int col0 = (int)(cx0 - dx);
+    int row0 = (int)(cy0 - dy);
     for (int py = 0; py < rh; py++) {
         for (int px = 0; px < rw; px++) {
-            int si = (((cy0 - dy) + py) * w + ((cx0 - dx) + px)) * 4;
+            int si = ((row0 + py) * w + (col0 + px)) * 4;
             cv->tile[py * rw + px] = cnvs_premultiply(cnvs_unpremul_of(
                 (float)data[si] / 255.0f, (float)data[si + 1] / 255.0f,
                 (float)data[si + 2] / 255.0f, (float)data[si + 3] / 255.0f));
@@ -1234,6 +1237,40 @@ void canvas_put_image_data(canvas *__single cv,
     // putImageData overwrites and ignores the clip: composite COPY with the clip
     // open, then restore it.
     compositor_set_clip(cv->comp, NULL, 0);
-    compositor_blend(cv->comp, cx0, cy0, rw, rh, cv->tile, COMPOSITOR_COPY);
+    compositor_blend(cv->comp, (int)cx0, (int)cy0, rw, rh, cv->tile, COMPOSITOR_COPY);
     compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
+}
+
+void canvas_put_image_data(canvas *__single cv,
+                           uint8_t const *__counted_by(len) data, int len,
+                           int w, int h, int dx, int dy) {
+    if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
+        return;
+    }
+    put_image_sub(cv, data, len, w, dx, dy, 0, 0, w, h);
+}
+
+void canvas_put_image_data_dirty(canvas *__single cv,
+                                 uint8_t const *__counted_by(len) data, int len,
+                                 int w, int h, int dx, int dy,
+                                 int dirty_x, int dirty_y,
+                                 int dirty_w, int dirty_h) {
+    if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
+        return;
+    }
+    // Normalise the dirty rect (ImageData space) into a sub-rect of [0,w] x [0,h],
+    // per the spec: flip negative extents, then clamp to the source bounds.  All
+    // in 64-bit so extreme/negative dirty args can't overflow.
+    int64_t dxx = dirty_x, dyy = dirty_y, dww = dirty_w, dhh = dirty_h;
+    if (dww < 0) { dxx += dww; dww = -dww; }
+    if (dhh < 0) { dyy += dhh; dhh = -dhh; }
+    if (dxx < 0) { dww += dxx; dxx = 0; }
+    if (dyy < 0) { dhh += dyy; dyy = 0; }
+    if (dxx + dww > w) { dww = (int64_t)w - dxx; }
+    if (dyy + dhh > h) { dhh = (int64_t)h - dyy; }
+    if (dww <= 0 || dhh <= 0) {
+        return;  // empty (or fully-clipped) dirty rect: nothing to copy
+    }
+    put_image_sub(cv, data, len, w, dx, dy,
+                  (int)dxx, (int)dyy, (int)dww, (int)dhh);
 }

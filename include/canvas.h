@@ -191,6 +191,16 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
 void canvas_put_image_data(canvas *__single cv,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy);
+// putImageData with a dirty rectangle: only the source sub-rect
+// [dirtyX, dirtyX+dirtyWidth) x [dirtyY, dirtyY+dirtyHeight) (ImageData
+// coordinates) is written, still placed with the image origin at (dx, dy).  The
+// dirty rect is normalised like the spec -- negative extents flip, then it is
+// clamped to the source; an empty result is a no-op.
+void canvas_put_image_data_dirty(canvas *__single cv,
+                                 uint8_t const *__counted_by(len) data, int len,
+                                 int w, int h, int dx, int dy,
+                                 int dirty_x, int dirty_y,
+                                 int dirty_w, int dirty_h);
 
 // Read a text canvas-program from `path` and replay it onto cv via the calls
 // above.  One command per line (UTF-8): each command is exactly the canvas_*

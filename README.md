@@ -214,7 +214,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: per-corner elliptical radii) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
-| `getImageData` / `putImageData` (clipped 2D blits) | ◑ no dirty-rect / colorSpace |
+| `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData) | ◑ no colorSpace |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
