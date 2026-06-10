@@ -12,67 +12,77 @@ Last grounded: 2026-06-10, one `ninja profile-scene` pass (release gallery,
 in [decisions/opt-level.md](decisions/opt-level.md),
 [decisions/color-axis.md](decisions/color-axis.md),
 [decisions/gradient-eval.md](decisions/gradient-eval.md), and
-[sparse-coverage.md](sparse-coverage.md).
+[sparse-coverage.md](sparse-coverage.md). Re-grounded the same day after §3.1
+(planarize the shade stage) landed; the pre-landing table this document was
+written around is in git history.
 
 ## 1. Where the milliseconds go
 
 Top-of-stack self-time across the whole gallery (all 33 scenes, PNG encode
 excluded by the script's design — codec work happens only on the final rep,
 outside the sample window). The script prints the top 15 lines; everything below
-`sinf`'s 28 samples is ≤ ~1 % each. 2,766 samples visible:
+`blend8`'s 27 samples is ≤ ~1 % each. 2,304 samples visible:
 
 | function | samples | share | stage |
 |---|---|---|---|
-| `paint_tile` | 586 | 21.2 % | shade |
-| `cnvs_premultiply` | 543 | 19.6 % | shade (called per pixel from the paint loops) |
-| `draw_image_quad` | 392 | 14.2 % | shade (image sampling + per-pixel premultiply path) |
-| `cnvs_cover_add_edge` | 248 | 9.0 % | coverage accumulate (accum_row/deposit inlined) |
-| `compositor_blend` | 221 | 8.0 % | composite |
-| `canvas_clip` | 201 | 7.3 % | clip-mask intersect (full-canvas scalar loop) |
-| `cnvs_cover_resolve` | 196 | 7.1 % | coverage resolve |
-| `src_over8` | 77 | 2.8 % | composite |
-| `cnvs_px8_load_k` | 74 | 2.7 % | composite (tails) |
-| `cnvs_mip_halve` | 55 | 2.0 % | image (emoji mips) |
-| `cnvs_gradient_color_row` | 43 | 1.6 % | shade |
-| `cnvs_px8_store_k` | 38 | 1.4 % | composite (tails) |
-| `blur_box_h_f16` | 35 | 1.3 % | filters |
-| `cnvs_verts_tri` | 29 | 1.0 % | stroke geometry |
-| `sinf` | 28 | 1.0 % | stroke geometry (emit_disc) |
+| `draw_image_quad` | 577 | 25.0 % | shade (per-lane sampling taps; the fold around them is planar) |
+| `cnvs_cover_add_edge` | 297 | 12.9 % | coverage accumulate (accum_row/deposit inlined) |
+| `compositor_blend` | 276 | 12.0 % | composite |
+| `paint_tile` | 253 | 11.0 % | shade (planar fold, solid + gradient) |
+| `canvas_clip` | 245 | 10.6 % | clip-mask intersect (full-canvas scalar loop) |
+| `cnvs_cover_resolve` | 212 | 9.2 % | coverage resolve |
+| `src_over8` | 90 | 3.9 % | composite |
+| `cnvs_mip_halve` | 72 | 3.1 % | image (emoji mips) |
+| `???` (unsymbolized `-Os` outlined code) | 49 | 2.1 % | unattributed |
+| `cnvs_px8_store_k` | 49 | 2.1 % | planar tails (shade + composite) |
+| `paint_tile_pattern` | 48 | 2.1 % | shade |
+| `cnvs_gradient_color_row` | 47 | 2.0 % | shade |
+| `cnvs_verts_tri` | 33 | 1.4 % | stroke geometry |
+| `blur_box_h_f16` | 29 | 1.3 % | filters |
+| `blend8` | 27 | 1.2 % | composite |
 
 Bucketed by pipeline stage:
 
 | stage | share of visible compute |
 |---|---|
-| **shade** (coverage → premultiplied f16 tile: `paint_tile` + `cnvs_premultiply` + `draw_image_quad` + gradient row) | **56.5 %** |
-| **coverage** (accumulate + resolve) | 16.1 % |
-| **composite** (planar f16 blend incl. tails) | 14.8 % |
-| **clip** (mask build/intersect) | 7.3 % |
-| stroke geometry | 2.1 % |
-| image mips | 2.0 % |
+| **shade** (`draw_image_quad` + `paint_tile` + pattern + gradient row) | **40.1 %** |
+| **coverage** (accumulate + resolve) | 22.1 % |
+| **composite** (planar f16 blend) | 17.1 % |
+| **clip** (mask build/intersect) | 10.6 % |
+| image mips | 3.1 % |
+| planar tails (`store_k`, shade + composite) | 2.1 % |
+| unattributed outlined code | 2.1 % |
+| stroke geometry | 1.4 % |
 | filters/blur | 1.3 % |
 | **flattening** | absent from the top 15: **< 1 %** |
 
-**The slow pole, named with a number: the shade stage — the scalar per-pixel
-coverage→tile fold — at ~57 % of gallery compute self-time**, and within it the
-pair `paint_tile` + `cnvs_premultiply` at **41 %**. This is the stage the planar
-conversion *didn't* reach: the color-axis ruling deliberately left "paint_tile's
-scalar coverage/alpha fold" in scalar f32 because the pre-planar profile didn't
-implicate it. The compositor then got 3–4× faster (planar f16, −17/−25 % flagship)
-and the pie re-divided: what used to hide behind `compositor_blend`'s 34 % is now
-the biggest line item. Rasterization *proper* — accumulate + resolve — is 16 %.
+The shade stage is still the biggest bucket at 40 %, **but it is no longer
+scalar, and its composition flipped**. The old pole — `paint_tile` +
+`cnvs_premultiply` at 41 % — collapsed to `paint_tile`'s 11 %:
+`cnvs_premultiply` and `cnvs_mat_apply` left the leaderboard entirely (their
+bulk callers now run the planar fold; in absolute terms, with the flagship
+−29 %, paint_tile-shaped work is roughly 4× cheaper). **The new pole:
+`draw_image_quad`'s per-lane sampling interior at 25 %** — the data-dependent
+taps (four gathers per bilinear pixel, index clamp/wrap, and the in-sample lerp
+arithmetic, all still scalar per lane inside `sample_src`) — followed by
+coverage at 22 %, composite at 17 %, and `canvas_clip`'s scalar intersect at
+10.6 %. The pie is flatter than it has ever been: no single fix buys 20 %
+anymore.
 
 Caveats on these numbers, stated once:
 
 - `sample` gives proportions, not milliseconds. Absolute anchors come from
-  hyperfine: `bench_render` 18 ms, `bench_render_large` 179 ms (1024², 10 frames
-  ≈ 17.9 ms/frame), e2e `bench` 45 ms and codec-bound (README table). The
+  hyperfine: `bench_render` 12.5 ms, `bench_render_large` 107 ms (1024², 10
+  frames ≈ 10.7 ms/frame), e2e `bench` 45 ms and codec-bound (README table). The
   profile is the *gallery* mix; `bench_render_large`'s few-huge-fills shape
   weights the same stages differently (more composite, less per-op overhead).
 - Attribution is smeared by inlining at `-Os`: `accum_row`/`deposit` fold into
   `cnvs_cover_add_edge`, the prefix sum and fill-rule fold into
-  `cnvs_cover_resolve`. `cnvs_premultiply` is a real out-of-line call, so its
-  19.6 % splits across `paint_tile`, `draw_image_quad`, the pattern loop, and the
-  shadow tint — all per-pixel scalar callers.
+  `cnvs_cover_resolve`, and the planar shade helpers (`cover8`/`shade8`/
+  `cnvs_px8_premultiply`) fold into their callers — `paint_tile`'s 11 % is the
+  whole planar fold, not a remnant of the old scalar loop. The scalar
+  `cnvs_premultiply` still exists for true single-pixel callers (shadow/filter
+  tint setup) and is invisible here.
 - **A correction to tribal knowledge:** `src/` spawns **zero threads**. Nothing
   in the tree calls dispatch/pthreads — the blur included (it's plain
   single-threaded loops). The `__workq_kernreturn` pile that `sample` filters out
@@ -97,12 +107,17 @@ One pipeline, per op, over the op's device-space bounding box
    carry between blocks) turns area deltas into winding, folds by fill rule
    (nonzero = clamp |run|; evenodd = triangle wave), and quantizes once to a
    dense u8 coverage buffer.
-4. **Shade** (`paint_tile` / `paint_tile_pattern` / `draw_image_quad`): per pixel,
-   scalar — read u8 coverage, refold to f32, fold paint alpha × global alpha,
-   `cnvs_premultiply` (4-lane f16), store into the premultiplied RGBA16F tile.
-   Gradients get their parameters and colors solved 8-wide per row
-   ([gradient-eval.md](decisions/gradient-eval.md)) but the coverage fold around
-   them is still scalar.
+4. **Shade** (`paint_tile` / `paint_tile_pattern` / `draw_image_quad`): eight
+   pixels per step over channel planes (the §3.1 conversion). Coverage widens
+   to one f32 plane, the fold (paint alpha × global alpha × coverage) is f32
+   vector arithmetic with the scalar form's exact association, one narrowing
+   convert to f16, then the planar premultiply (`cnvs_px8_premultiply`) and an
+   st4 into the premultiplied RGBA16F tile. Gradients get their parameters and
+   colors solved 8-wide per row ([gradient-eval.md](decisions/gradient-eval.md))
+   and are picked back up as planes (ld4 over the row buffer). Pattern and
+   image sampling stay scalar per lane — the taps are data-dependent gathers —
+   inside the planar fold, with the device→source coordinate chain vectorized
+   (elementwise, bit-exact per lane).
 5. **Composite** ([compositor_cpu.c](../src/compositor_cpu.c) +
    [cnvs_planar.h](../src/cnvs_planar.h)): 8 pixels per step as four f16 channel
    planes, ld4/st4 at the seams, all 26 modes straight-line vector code, clip
@@ -163,10 +178,14 @@ the same way, then intersect into a full-canvas u8 mask with a scalar
   single-core bandwidth, so we are **compute-bound, not bandwidth-bound**
   (estimate, unmeasured; consistent with a scalar shade stage dominating the
   profile).
-- **The shade stage is scalar.** §1's 57 %. The planar vocabulary to fix it
-  already exists in [cnvs_planar.h](../src/cnvs_planar.h) —
-  `cnvs_h8_from_u8` (coverage plane), `cnvs_px8_premultiply`, `cnvs_px8_store` —
-  it just was never wired into `paint_tile`.
+- **The shade stage's remaining scalar interior is the sampling taps.** The
+  fold is planar everywhere (§3.1, landed); what stays per-lane is
+  `sample_src`/`pattern_sample`'s data-dependent addressing — four taps per
+  bilinear pixel at arbitrary source coords — *plus* the in-sample lerp
+  arithmetic and index clamp/wrap math that ride along scalar because they live
+  inside the per-lane sample functions. The taps themselves have no batch shape
+  (no NEON gather), but everything around them is elementwise f32 and could
+  vectorize bit-exactly; that's §1's 25 % line.
 - **One core.** Everything above is serial. The op stream is inherently ordered
   (each op read-modify-writes the shared target), but within an op every stage
   is row-independent, and across ops disjoint bboxes commute byte-exactly.
@@ -242,6 +261,31 @@ struct writes per 8 pixels. Checks get *cheaper*, the established pattern.
 `ninja images` byte-diff (target: zero bytes moved with the f32-fold arm); memo.
 Then `draw_image_quad` as a follow-up with `bench_render` + the emoji/drawimage
 scenes as the probe.
+
+**Landed (2026-06-10), the f32-fold arm.** Five commits: `paint_tile`
+(solid + gradient rows), `emit_shadow`'s tint loop, `paint_tile_pattern`,
+`draw_image_quad`, then the sampling loops' coordinate chain (`cnvs_mat_apply`
+had surfaced at 4.4 % as an out-of-line call per covered pixel — now eight
+lanes of elementwise vector math). **Zero gallery bytes moved at any commit**:
+the fold stayed f32 with the scalar association per lane, coverage widened
+exactly, one narrow to f16, and `cnvs_px8_premultiply` is lane-wise the scalar
+`cnvs_premultiply`. Measured (paired hyperfine, copies in /tmp, medians):
+`bench_render` 17.7 → 12.5 ms (**−29.4 %**), `bench_render_large` 175.7 →
+106.9 ms (**−39.2 %**) — beating the −15–25 % prediction — with e2e `bench`,
+`bench_fill`, `bench_gradient_fill`, `bench_blit`, and `bench_blur_h` all flat
+(`bench_fill` is coverage-bound stars, `bench_gradient_fill` is bound on the
+row solve/stop search, both as the pie predicted). The `-fbounds-safety` tax on
+`bench_render` fell from 3.0 ms to 1.9 ms checked-vs-unsafe (per-pixel checks
+became per-block seam checks), holding at ~1.18× relative. What stayed scalar,
+per site: the sampling taps in `draw_image_quad`/`paint_tile_pattern`
+(data-dependent gathers — see §1's new pole), the gradient OOM fallback
+(per-pixel solve, cold by construction), and the single-pixel
+`cnvs_premultiply` API for true single-pixel callers. Not taken: fusing the
+gradient row buffer away (the st4/ld4 round trip over `crow` is noise next to
+the stop search — fusion would buy a registers-only handoff at the cost of
+restructuring the gradient module's API; re-look only if `paint_tile`'s
+gradient share ever grows) and the resolve→shade f16-coverage fusion (step
+two above — still open, re-price against the new pie).
 
 ### 3.2 Sparse / RLE coverage and strip formats
 
@@ -464,44 +508,48 @@ from our benches:
 
 ## 4. Ranked next experiments
 
-1. **Planarize the shade stage** (§3.1: `paint_tile` solid+gradient, then
-   `draw_image_quad`'s fold; optionally fuse resolve's coverage emit).
-   *Why first:* it attacks the measured 41–57 % with the exact recipe that has
-   paid out twice (compositor −17/−25 %, filter matrix), using vocabulary that
-   already exists; no format change, no determinism exposure in the f32-fold
-   arm. *Expected:* order −15–25 % on the flagship renders if the stage gets the
-   compositor's kernel factor; even half that beats everything else on this
-   list per unit risk. *Kill:* < 3 % on `bench_render` (would mean small-op
-   overhead, not pixels, dominates the gallery — itself a finding that re-aims
-   this whole document at per-op fixed costs), or gallery bytes that can't be
-   held in the f32-fold arm.
-2. **Row-band threading within large ops** (§3.5a, behind an area threshold).
-   *Why second:* it's the only entry that buys a *multiple* rather than a
+(#1, planarize the shade stage, **landed 2026-06-10** — −29/−39 % flagship,
+zero bytes moved; outcome recorded in §3.1. The list below is the post-landing
+re-rank against §1's new, flatter pie.)
+
+1. **Row-band threading within large ops** (§3.5a, behind an area threshold).
+   *Why first now:* it's the only entry that buys a *multiple* rather than a
    percentage, the decomposition is bit-exact by construction (byte-diff must
-   come back zero — it's a correctness gate, not a re-baseline), and it's
-   independent of #1 (run it after, so Amdahl numbers reflect the new pie).
-   *Expected:* ~2.5–3.5× on `bench_render_large` at 4–8 workers on the ~88 %
-   parallel share; `bench_render` ~flat (threshold keeps small ops serial).
+   come back zero — it's a correctness gate, not a re-baseline), and the
+   Amdahl share got *better*: shade+coverage+composite+clip ≈ 90 % of the new
+   pie is band-parallel. *Expected:* ~2.5–3.5× on `bench_render_large` at 4–8
+   workers; `bench_render` ~flat (threshold keeps small ops serial).
    *Kill:* < 1.5× at 4 workers (fork/join overhead at our op sizes), or any
    nonzero byte-diff (decomposition bug — fix or abandon, never re-baseline
    around nondeterminism).
-3. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
-   no threads). *Why third:* it's the structured replacement for RLE (no per-run
-   chooser cliff), it's the load-balancing upgrade path for #2, and phase 1
-   prices the format without buying the complexity blind. *Expected:* on
-   `bench_render_large`'s near-full-canvas fills, most tiles classify solid —
-   shade/blend keep their cost but coverage (16 %) mostly vanishes and the
-   opaque-store fast path trims blend; call it 5–15 %, honestly uncertain. On
-   stars/concave, near-zero win — the kill case is overhead there. *Kill:*
-   < 5 % flagship after #1 has landed, or a measurable regression on
+2. **Vectorize the sampling interior of `draw_image_quad`** (the new 25 %
+   pole). The taps stay scalar — there is no NEON gather — but per block the
+   four tap colours can land in f32 planes and the bilinear weight/lerp
+   arithmetic (`tx`/`ty`, two lerps × four channels, the /255) plus the index
+   floor/clamp/wrap math are elementwise and can run 8-wide bit-exactly
+   (`__builtin_elementwise_floor` is IEEE floor = `floorf` per lane; the
+   `cnvs_f2i` saturation semantics must be reproduced exactly, watch NaN→0).
+   *Expected:* a real slice of 25 % on the gallery, more on emoji/drawimage
+   scenes — the probe. *Kill:* the gather/insert shuffling eats the arithmetic
+   win (the taps are ~16 byte-loads per pixel either way).
+3. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
+   still a half-day). 8-wide integer `old * pc / 255` with the planar seams,
+   bbox-limited. The /255 must stay exact (it's integer today; keep it
+   integer). No memo ceremony needed; the byte-gate is the whole gate.
+4. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
+   no threads). *Re-priced after #1 landed:* the solid-tile fast path now skips
+   much cheaper shade work, so the 5–15 % guess shrinks; coverage (22 %) is the
+   bigger target now. *Kill:* < 5 % flagship, or a measurable regression on
    concave/small-op content; if killed, keep only the binning design notes as
-   #2's load-balancer fallback.
+   #1's load-balancer fallback.
 
-Below the line, in order: `canvas_clip` vectorization (§3.6 — do it as a
-drive-by, it needs no memo-grade ceremony), the conflation oracle scenes
-(§3.7 — quality bound, not speed), AET/sparse-cell prototype (§3.3 — only if a
-text/stroke-dominated workload becomes a flagship), full RLE coverage (§3.2 —
-only re-price after #1 and #3 move the floor).
+Below the line, in order: the conflation oracle scenes (§3.7 — quality bound,
+not speed), resolve→shade f16-coverage fusion (§3.1's step two — deletes 2 B/px
+and the /255 refold, but the shade fold it feeds is no longer the pole),
+AET/sparse-cell prototype (§3.3 — only if a text/stroke-dominated workload
+becomes a flagship), full RLE coverage (§3.2 — re-price against the cheaper
+dense shade; a zero block now costs ~a dozen vector ops, so skipping buys
+mostly coverage/composite traffic, not shade compute).
 
 ## Open questions (wanted to claim, couldn't ground)
 
