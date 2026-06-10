@@ -580,10 +580,27 @@ static bool run_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int dcap
             if (len > dcap - out) {
                 return false;  // output overflow
             }
-            if (d >= len) {
-                // Disjoint source and destination: one checked memcpy moves
-                // the whole run -- one bounds check per match, not two per
-                // byte (the blit treatment).
+            if (d >= 8 && len + 7 <= dcap - out) {
+                // Inline 8-byte chunks (the memcpy idiom: fixed-size loads
+                // and stores the compiler keeps inline, one bounds check per
+                // 8 bytes, no libc call per match).  With the period >= 8,
+                // chunk k's source bytes sit at least 8 behind its
+                // destination, so they're written before any chunk reads
+                // them -- for disjoint and self-overlapping runs alike, and
+                // a chunk that reads this match's own earlier bytes reads
+                // correct run content by induction.  The last chunk may
+                // scribble up to 7 bytes past the run: inside dcap by the
+                // guard, positions strictly above the write cursor, each
+                // properly rewritten by whichever later symbol owns it (or
+                // dead beyond the final count).
+                for (int k = 0; k < len; k += 8) {
+                    uint64_t v;
+                    memcpy(&v, dst + (out - d + k), sizeof v);
+                    memcpy(dst + (out + k), &v, sizeof v);
+                }
+            } else if (d >= len) {
+                // Disjoint source and destination (with no room to overshoot
+                // above): one checked memcpy moves the whole run.
                 memcpy(dst + out, dst + (out - d), (size_t)len);
             } else {
                 // Overlapping copy (d < len) is the classic LZ77 RLE idiom:
