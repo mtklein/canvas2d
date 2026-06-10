@@ -436,10 +436,12 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | `bench_flatten` — cubic-Bézier flattening | 120 ms | 117 ms | **1.02×** |
 | `bench_stroke` — stroke expansion (joins/caps) | 50 ms | 49 ms | **1.03×** |
 | `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 32 ms | 30 ms | **1.07×** |
+| `bench` — end-to-end (renders + PNG-encodes each frame; rasterizer-bound again) | 44 ms | 41 ms | **1.08×** |
+| `bench_pngdec` — PNG decode of a committed gallery scene (strict inflate + un-Up) | 17 ms | 15 ms | **1.09×** |
 | `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.09×** |
 | `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 31 ms | **1.10×** |
-| `bench` — end-to-end (renders + PNG-encodes each frame, so deflate now dominates it) | 106 ms | 67 ms | **1.58×** |
-| `bench_png` — PNG encode (Up filter + LZ77 deflate + HW CRC32) | 140 ms | 65 ms | **2.1×** |
+| `bench_pngenc` — PNG encode of a gallery scene (Up filter + LZ77 deflate + HW CRC32) | 42 ms | 31 ms | **1.32×** |
+| `bench_png` — PNG encode, synthetic run-heavy 256×256 (long-match stress) | 13 ms | 9.4 ms | **1.43×** |
 
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
 overhead tracks how much it indexes vs how much it computes — **and the same
@@ -447,15 +449,23 @@ vectorization that speeds a tight loop up amortizes its checks away too.** The 2
 blit used to be the worst case at **2.5×** (four checked byte loads and stores per
 pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
 `memcpy` made it **13× faster and dropped the safety overhead to ~1.0×** — one span
-check per row instead of eight per pixel. PNG encode learned that lesson once
-(its CRC moved from a byte-at-a-time table to ARMv8's `crc32` instruction, ~7×
-faster at ~1.00×) and now demonstrates the converse: real compression made the
-encoder LZ77-bound, and the deflate matcher's hash-chain walk is scalar indexed
-byte work with nothing vectorizable to hide the checks behind, so `bench_png`
-sits at the bottom of the table at **~2.1×** — the honest price of an encode
-that is ~24× slower than the old stored-block escape hatch but writes files
-**11× smaller** (the whole gallery went from 14.1 MB to 1.27 MB). The matcher
-is the obvious next candidate for the blit treatment. The coverage fill got
+check per row instead of eight per pixel. The deflate codec is the recipe's
+latest and largest beneficiary: when real compression first landed, the
+matcher's byte-at-a-time match verify was scalar indexed work with nothing to
+hide the checks behind, and `bench_png` sat at the bottom of the table at
+**2.1×** (140 ms) — so the matcher got the blit treatment too. Match verify
+now compares 8 bytes per checked load (mismatch via XOR + count-trailing-zeros),
+the inflate side gained a 64-bit bit reader (one checked 8-byte refill instead
+of a checked load per byte), a 512-entry direct-decode table, and chunked
+back-reference copies, and two matcher-tuning passes (sparser chain insertion
+inside long matches, a 4-byte hash) made the encoder both faster *and* its
+output smaller. Sum: encode **10× faster** (140 → 13 ms synthetic, 2.2× on real
+scenes), decode **3.5× faster**, and the checked-build overhead fell from 2.1×
+to **1.32–1.43×** on encode and **1.09×** on decode — what remains is the
+hash-chain walk itself, pointer-chasing whose data-dependent loads dominate
+both builds. The price of compression is now ~2.3× the old stored-block escape
+hatch's encode time, for files **11× smaller** (the whole gallery: 14.1 MB →
+1.26 MB). The coverage fill got
 the same treatment twice — the resolve (prefix sum,
 fill-rule fold, 8-bit convert) runs 8-wide, and the accumulate telescopes each row
 span's interior columns into a contiguous constant-add, also 8-wide with one
