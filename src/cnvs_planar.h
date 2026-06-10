@@ -132,6 +132,32 @@ static inline void cnvs_px8_store_rgba8_k(uint8_t *__counted_by(4 * k) p, int k,
     }
 }
 
+// --- the unpremultiplied f16 seam (cnvs_unpremul, four contiguous _Float16) -
+
+// Eight unpremultiplied colours deinterleaved to planes.  Like the RGBA8
+// loaders above, the planes hold unpremultiplied values only on their way
+// into cnvs_px8_premultiply -- the shade stage's fold is the one consumer.
+static inline cnvs_px8 cnvs_px8_load_unpremul(cnvs_unpremul const *__counted_by(8) p) {
+    float16x8x4_t v = vld4q_f16((float16_t const *)p);
+    return (cnvs_px8){ (cnvs_h8)v.val[0], (cnvs_h8)v.val[1],
+                       (cnvs_h8)v.val[2], (cnvs_h8)v.val[3] };
+}
+
+static inline cnvs_px8 cnvs_px8_load_unpremul_k(cnvs_unpremul const *__counted_by(k) p,
+                                                int k) {
+    cnvs_px8 o = { .r = (cnvs_h8)(_Float16)0.0f, .g = (cnvs_h8)(_Float16)0.0f,
+                   .b = (cnvs_h8)(_Float16)0.0f, .a = (cnvs_h8)(_Float16)0.0f };
+    for (int i = 0; i < k && i < 8; i++) {
+        cnvs_h4 px;
+        memcpy(&px, &p[i], sizeof px);  // one bounds check, four channels
+        o.r[i] = px[0];
+        o.g[i] = px[1];
+        o.b[i] = px[2];
+        o.a[i] = px[3];
+    }
+    return o;
+}
+
 // --- the coverage seam (one contiguous byte per pixel; no deinterleave) -----
 
 static inline cnvs_h8 cnvs_h8_from_u8(uint8_t const *__counted_by(8) p) {

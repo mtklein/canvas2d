@@ -1066,46 +1066,107 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
     }
 }
 
+// --- the planar shade stage --------------------------------------------------
+//
+// The coverage -> premultiplied-tile fold, eight pixels per step over channel
+// planes (cnvs_planar.h).  The fold itself stays f32 -- visibly typed, exactly
+// the scalar form's arithmetic and association: alpha = (col.a * ga) *
+// (cov / 255.0f) per lane, one narrowing convert to _Float16, then the planar
+// premultiply -- so no gallery byte moves (docs/rasterization.md §3.1's
+// f32-fold arm).
+
+typedef float foldf8 __attribute__((ext_vector_type(8)));  // the f32 fold plane
+
+// Eight coverage bytes as an f32 plane in [0, 1]: exact widen (every u8 value
+// is exact in _Float16 and f32), then the scalar fold's true /255.0f divide,
+// lane for lane the same rounding.
+static foldf8 cover8(uint8_t const *__counted_by(8) cov) {
+    return __builtin_convertvector(cnvs_h8_from_u8(cov), foldf8) / 255.0f;
+}
+
+static foldf8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
+    return __builtin_convertvector(cnvs_h8_from_u8_k(cov, k), foldf8) / 255.0f;
+}
+
+// Narrow the folded f32 alpha plane once (the scalar (_Float16)alpha cast,
+// lane for lane) and premultiply the colour planes under it.
+static cnvs_px8 shade8(cnvs_h8 r, cnvs_h8 g, cnvs_h8 b, foldf8 alpha) {
+    return cnvs_px8_premultiply(
+        (cnvs_px8){ r, g, b, __builtin_convertvector(alpha, cnvs_h8) });
+}
+
 // Build an RGBA16F tile from the coverage in cv->cov and the given paint, then
 // composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage.
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                        cnvs_gradient const *gr, cnvs_unpremul solid) {
-    float ga = cv->cur.global_alpha;
-    // Evaluate the gradient a row at a time, both halves vectorized: solve the
-    // parameters (cnvs_gradient_param_row), then lerp the stop colours from
-    // them (cnvs_gradient_color_row) -- the exact piecewise-linear colour, no
-    // precomputed ramp (docs/decisions/gradient-eval.md).  Fall back to the
-    // scalar per-pixel pair only if the tiny row buffers can't be grown.
-    bool use_row = is_grad && ensure_grad_rows(cv, b.w);
-    for (int py = 0; py < b.h; py++) {
-        if (use_row) {
+    float const ga = cv->cur.global_alpha;
+    if (!is_grad) {
+        // Solid paint: the colour planes are splats and every alpha factor but
+        // coverage is one constant, so the loop is a coverage widen, two
+        // multiplies, and the premultiply -> st4.  Coverage and tile are both
+        // dense over the bbox, so one flat loop covers all rows.
+        foldf8 const base = (foldf8)((float)solid.a * ga);
+        cnvs_h8 const cr = (cnvs_h8)solid.r, cg = (cnvs_h8)solid.g,
+                 cb = (cnvs_h8)solid.b;
+        int const npix = b.w * b.h;
+        int i = 0;
+        for (; i + 8 <= npix; i += 8) {
+            cnvs_px8_store(cv->tile + i,
+                           shade8(cr, cg, cb, base * cover8(cv->cov + i)));
+        }
+        if (i < npix) {  // tail: k < 8 pixels through the same planar block
+            int const k = npix - i;
+            cnvs_px8_store_k(cv->tile + i, k,
+                             shade8(cr, cg, cb, base * cover8_k(cv->cov + i, k)));
+        }
+    } else if (ensure_grad_rows(cv, b.w)) {
+        // Evaluate the gradient a row at a time, all three stages vectorized:
+        // solve the parameters (cnvs_gradient_param_row), lerp the stop
+        // colours from them (cnvs_gradient_color_row) -- the exact
+        // piecewise-linear colour, no precomputed ramp
+        // (docs/decisions/gradient-eval.md) -- then pick the colours back up
+        // as planes (ld4 over the row buffer) for the fold.
+        for (int py = 0; py < b.h; py++) {
             cnvs_gradient_param_row(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
                                     cv->trow);
             cnvs_gradient_color_row(gr, cv->trow, b.w, cv->crow);
-        }
-        for (int px = 0; px < b.w; px++) {
-            int i = py * b.w + px;
-            float covf = (float)cv->cov[i] / 255.0f;
-            cnvs_unpremul col;
-            if (is_grad) {
-                if (use_row) {
-                    col = cv->crow[px];  // "outside" already transparent black
-                } else {
-                    float t;
-                    cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
-                                    .y = (float)b.y + (float)py + 0.5f };
-                    col = cnvs_gradient_param(gr, p, &t)
-                        ? cnvs_gradient_color_at(gr, t)
-                        : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
-                }
-            } else {
-                col = solid;
+            int const row = py * b.w;
+            int px = 0;
+            for (; px + 8 <= b.w; px += 8) {
+                cnvs_px8 const col = cnvs_px8_load_unpremul(cv->crow + px);
+                foldf8 const alpha = __builtin_convertvector(col.a, foldf8) *
+                                     ga * cover8(cv->cov + row + px);
+                cnvs_px8_store(cv->tile + row + px,
+                               shade8(col.r, col.g, col.b, alpha));
             }
-            // Fold coverage and global alpha into the paint's alpha, then
-            // premultiply -- the tile stores premultiplied pixels.
-            float alpha = (float)col.a * ga * covf;
-            cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
-                .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
+            if (px < b.w) {  // tail: k < 8 pixels through the same planar block
+                int const k = b.w - px;
+                cnvs_px8 const col = cnvs_px8_load_unpremul_k(cv->crow + px, k);
+                foldf8 const alpha = __builtin_convertvector(col.a, foldf8) *
+                                     ga * cover8_k(cv->cov + row + px, k);
+                cnvs_px8_store_k(cv->tile + row + px, k,
+                                 shade8(col.r, col.g, col.b, alpha));
+            }
+        }
+    } else {
+        // OOM fallback: the row buffers couldn't grow, so run the scalar
+        // per-pixel parameter solve + stop lerp.
+        for (int py = 0; py < b.h; py++) {
+            for (int px = 0; px < b.w; px++) {
+                int i = py * b.w + px;
+                float covf = (float)cv->cov[i] / 255.0f;
+                float t;
+                cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
+                                .y = (float)b.y + (float)py + 0.5f };
+                cnvs_unpremul col = cnvs_gradient_param(gr, p, &t)
+                                        ? cnvs_gradient_color_at(gr, t)
+                                        : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+                // Fold coverage and global alpha into the paint's alpha, then
+                // premultiply -- the tile stores premultiplied pixels.
+                float alpha = (float)col.a * ga * covf;
+                cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
+                    .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
+            }
         }
     }
     apply_filters(cv, b.w, b.h);
