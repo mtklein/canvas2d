@@ -226,7 +226,27 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
             int cand = chains[hash3(src[i], src[i + 1], src[i + 2])];
             for (int steps = 0; steps < zlib_chain_max && cand >= 0 && i - cand <= zlib_window;
                  steps++) {
-                int len = 0;  // byte-verify: the chain link is advisory
+                // Byte-verify the advisory chain link, 8 bytes per step via the
+                // memcpy idiom (the blit treatment): one bounds check per
+                // 8-byte block instead of two per byte.  Both loads stay in
+                // bounds while len + 8 <= limit, since cand < i and
+                // i + limit <= n.  The first mismatching byte falls out of the
+                // XOR's trailing zeros; the scalar loop then covers limit's
+                // last sub-block bytes (and terminates instantly on the block
+                // loop's mismatch byte).  Same len as the pure byte loop,
+                // always -- emitted bytes are unchanged.
+                int len = 0;
+                while (len + 8 <= limit) {
+                    uint64_t a, c;
+                    memcpy(&a, src + i + len, sizeof a);     // bounds-checked
+                    memcpy(&c, src + cand + len, sizeof c);  // 8-byte loads
+                    uint64_t const x = a ^ c;
+                    if (x != 0) {
+                        len += __builtin_ctzll(x) >> 3;
+                        break;
+                    }
+                    len += 8;
+                }
                 while (len < limit && src[cand + len] == src[i + len]) {
                     len += 1;
                 }
