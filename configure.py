@@ -323,6 +323,26 @@ def main():
       "leaks --atExit -- $bin.signed >$out.log 2>&1 && { touch $out ; rm -f $out.log $bin.signed ; } "
       "|| { cat $out.log >&2 ; rm -f $out.log $bin.signed ; exit 1 ; }")
     w("")
+    # `forgecheck` (in `all`): the mechanical no-escape-hatch gate.  -fbounds-safety's
+    # spatial guarantee only holds for code that stays in the checked domain; an
+    # `__unsafe_forge*` / `__unsafe_indexable` is the deliberate exit from it.  After
+    # the tag-pointer probe (the last legitimate forge user) was retired, the whole
+    # checked tree -- src/ include/ tests/ examples/, with NO exemptions (even the one
+    # boundary TU, cnvs_text_ct.c, is plain C with zero __unsafe spellings) -- contains
+    # no `__unsafe` token.  This greps for one and FAILS the build if it reappears, so a
+    # future edit can't silently reintroduce an escape hatch into checked code.  Empty
+    # grep -> touch the stamp; any hit (or a grep error, folded into the match text via
+    # 2>&1) prints the offending lines and exits nonzero.  Idempotent stamp, so it lives
+    # in `all` and runs on a bare `ninja`.  ($$ is a literal $ for ninja.)
+    w("rule forgecheck")
+    w("  command = hits=$$(grep -rn __unsafe src include tests examples 2>&1) ; "
+      'if [ -n "$$hits" ] ; then '
+      'echo "forgecheck: __unsafe_ escape hatch in checked code (gate src/ include/ '
+      'tests/ examples/ -- no exemptions):" >&2 ; '
+      'echo "$$hits" >&2 ; exit 1 ; '
+      "else touch $out ; fi")
+    w("  description = FORGECHECK src include tests examples")
+    w("")
 
     # Bench stems, e2e "bench" sorted last; variants that build benches.
     bench_stems = sorted((os.path.splitext(os.path.basename(b))[0] for b in benches),
@@ -530,6 +550,17 @@ def main():
     w("  bin = ./build/release/test_leak")
     w("build leakcheck: phony build/release/test_leak.leakok")
 
+    # forgecheck: grep the whole checked tree for `__unsafe`.  Every file under the
+    # four gated dirs is an implicit input so an *edit* reruns the gate; the regen edge
+    # (watching the src/tests/examples dir mtimes) re-emits this with any *new* file as
+    # an input, so an added file is grepped too.  The stamp lives under build/.
+    forgecheck_files = sorted(
+        rel(p) for d in ("src", "include", "tests", "examples")
+        for p in glob.glob(os.path.join(HERE, d, "**", "*"), recursive=True)
+        if os.path.isfile(p))
+    w(f"build build/forgecheck.stamp: forgecheck | {' '.join(forgecheck_files)}")
+    w("build forgecheck: phony build/forgecheck.stamp")
+
     # `coverage` (opt-in: `ninja coverage`): source-based coverage of the checked
     # C core.  Instrument core + tests with -fprofile-instr-generate
     # -fcoverage-mapping at -O0 (accurate region/line mapping), run every test
@@ -694,14 +725,14 @@ def main():
     # The default `all` builds every variant's executables -- tests, benches and
     # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
     # (`images`) so they track the renderer in lockstep, replays the fuzz corpus
-    # (`fuzzcorpus`), runs the security gates `analyze` (static UAF/double-free/leak)
-    # and `leakcheck` (the macOS `leaks` tool), and sweeps allocation failures
-    # (`oom`).  A bare `ninja` is meant to do everything, so all of these gate it;
-    # the gates are idempotent (stamps), so a clean tree is still "no work to do".
-    # Only the always-rerun measurement targets (benchcmp, profile, coverage) stay
-    # opt-in.
+    # (`fuzzcorpus`), runs the security gates `analyze` (static UAF/double-free/leak),
+    # `leakcheck` (the macOS `leaks` tool), and `forgecheck` (no `__unsafe_` escape
+    # hatch in checked code), and sweeps allocation failures (`oom`).  A bare `ninja`
+    # is meant to do everything, so all of these gate it; the gates are idempotent
+    # (stamps), so a clean tree is still "no work to do".  Only the always-rerun
+    # measurement targets (benchcmp, profile, coverage) stay opt-in.
     all_targets = ("release debug unsafe test images "
-                   "analyze leakcheck oom")
+                   "analyze leakcheck forgecheck oom")
     if fuzz_corpus:
         all_targets += " fuzzcorpus"
     w(f"build all: phony {all_targets}")
