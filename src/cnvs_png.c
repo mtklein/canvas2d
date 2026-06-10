@@ -1,5 +1,7 @@
 #include "cnvs_png.h"
 
+#include "cnvs_zlib.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,40 +88,6 @@ static uint32_t crc32_range(struct writer const *w, size_t start, size_t end) {
 }
 #endif
 
-typedef uint8_t u8x16 __attribute__((ext_vector_type(16)));
-typedef uint32_t u32x16 __attribute__((ext_vector_type(16)));
-
-static uint32_t adler32(uint8_t const *__counted_by(n) data, size_t n) {
-    // Position weights for a 16-byte block: in s1 + s2 = s1 + sum_i(s1 + sum_{j<=i} d[j]),
-    // byte j contributes (16 - j) to s2, so wts[j] = 16 - j.
-    u32x16 const wts = { 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
-    uint32_t s1 = 1, s2 = 0;
-    size_t i = 0;
-    while (i < n) {
-        // Defer the mod across up to NMAX bytes (zlib's bound: the uint32
-        // accumulators can't overflow within a chunk).
-        size_t chunk = n - i;
-        if (chunk > 5552) {
-            chunk = 5552;
-        }
-        size_t end = i + chunk;
-        for (; i + 16 <= end; i += 16) {
-            u8x16 v;
-            memcpy(&v, data + i, sizeof v);  // unaligned vector load, still bounds-checked
-            u32x16 w = __builtin_convertvector(v, u32x16);
-            s2 += 16u * s1 + __builtin_reduce_add(w * wts);  // uses s1 before the block
-            s1 += __builtin_reduce_add(w);
-        }
-        for (; i < end; i++) {  // tail of the chunk, scalar, mod deferred
-            s1 += data[i];
-            s2 += s1;
-        }
-        s1 %= 65521u;
-        s2 %= 65521u;
-    }
-    return (s2 << 16) | s1;
-}
-
 static void emit_zlib(struct writer *w,
                       uint8_t const *__counted_by(rawlen) raw, size_t rawlen) {
     put8(w, 0x78);  // CMF/FLG: 0x7801 selects deflate and is a multiple of 31
@@ -137,7 +105,7 @@ static void emit_zlib(struct writer *w,
         put_bytes(w, raw + off, seg);
         off += seg;
     }
-    put32be(w, adler32(raw, rawlen));  // big-endian, unlike deflate's LEN/NLEN
+    put32be(w, cnvs_zlib_adler32(raw, rawlen));  // big-endian, unlike deflate's LEN/NLEN
 }
 
 bool cnvs_png_write(char const *__null_terminated path,
