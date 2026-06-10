@@ -198,6 +198,15 @@ rasterizer:
 
 ![shaping](gallery/shaping.png)
 
+`filter`, the CSS colour functions — the same motif (a gradient tile under two
+translucent discs) through each of the eight functions, unfiltered at top-left.
+Each is a typed API call (`canvas_add_filter_*`, no string parsing) compiled at
+add time to a 3×3 matrix + alpha-scaled offset and applied per pixel to the op's
+premultiplied tile, in checked C, before the shadow is cast and the tile
+composites — the translucent discs are what make the premultiplied forms visible:
+
+![filters](gallery/filters.png)
+
 ## Quick start
 
 ```sh

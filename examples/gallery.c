@@ -1846,6 +1846,76 @@ static void shaping(void) {
     save(c, "gallery/shaping.png");
 }
 
+// The CSS filter colour functions: each cell paints the same motif -- a
+// diagonal-gradient rounded tile under two translucent discs -- through one
+// filter function (top-left unfiltered for reference).  Each function is a
+// precompiled matrix kernel over the op's premultiplied tile; the partial
+// alpha is what makes the premultiplied forms visible.
+static void filters(void) {
+    struct {
+        void (*add)(canvas *__single cv, float amount);
+        float amt;
+        char const *label;
+    } const cell[9] = {
+        { NULL,                         0.0f,        "none" },
+        { canvas_add_filter_brightness, 1.5f,        "brightness(1.5)" },
+        { canvas_add_filter_contrast,   2.0f,        "contrast(2)" },
+        { canvas_add_filter_grayscale,  1.0f,        "grayscale(1)" },
+        { canvas_add_filter_hue_rotate, TAU / 3.0f,  "hue-rotate(120deg)" },
+        { canvas_add_filter_invert,     1.0f,        "invert(1)" },
+        { canvas_add_filter_opacity,    0.35f,       "opacity(0.35)" },
+        { canvas_add_filter_saturate,   3.0f,        "saturate(3)" },
+        { canvas_add_filter_sepia,      1.0f,        "sepia(1)" },
+    };
+    float const M = 12.0f, cellW = 140.0f, cellH = 124.0f;
+    canvas *__single c = canvas_create(444, 396);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 396.0f);
+
+    for (int i = 0; i < 9; i++) {
+        int col = i % 3, row = i / 3;
+        float ox = M + (float)col * cellW, oy = M + (float)row * cellH;
+
+        // This cell's filter.
+        canvas_set_filter_none(c);
+        if (cell[i].add) {
+            cell[i].add(c, cell[i].amt);
+        }
+
+        // The motif, filtered: a gradient tile, then two translucent discs.
+        canvas_set_fill_linear_gradient(c, ox + 18.0f, oy + 12.0f,
+                                        ox + 122.0f, oy + 100.0f);
+        canvas_add_fill_color_stop(c, 0.0f, 0.98f, 0.55f, 0.15f, 1.0f);
+        canvas_add_fill_color_stop(c, 0.5f, 0.85f, 0.25f, 0.55f, 1.0f);
+        canvas_add_fill_color_stop(c, 1.0f, 0.20f, 0.55f, 0.95f, 1.0f);
+        canvas_begin_path(c);
+        canvas_round_rect(c, ox + 18.0f, oy + 12.0f, 104.0f, 88.0f, 12.0f);
+        canvas_fill(c);
+
+        canvas_set_fill_rgba(c, 0.15f, 0.90f, 0.45f, 0.55f);
+        canvas_begin_path(c);
+        canvas_arc(c, ox + 52.0f, oy + 44.0f, 24.0f, 0.0f, TAU, false);
+        canvas_fill(c);
+        canvas_set_fill_rgba(c, 0.95f, 0.20f, 0.20f, 0.55f);
+        canvas_begin_path(c);
+        canvas_arc(c, ox + 84.0f, oy + 64.0f, 24.0f, 0.0f, TAU, false);
+        canvas_fill(c);
+
+        // Label, with the filter cleared so every caption reads uniformly.
+        canvas_set_filter_none(c);
+        canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
+        canvas_set_font_size(c, 13.0f);
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        canvas_fill_text(c, cell[i].label, ox + cellW * 0.5f, oy + 116.0f);
+    }
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/filters.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -1877,6 +1947,7 @@ static void render_all(void) {
     shadows();
     emoji();
     shaping();
+    filters();
 }
 
 int main(void) {
