@@ -95,6 +95,21 @@ same code mallocs and counts. Everything downstream of that — including untrus
 So the unsafe surface for real text shaping is small and fixed (the CT calls plus the
 copy), and grows with feature richness far slower than the per-codepoint design would.
 
+## Concurrency at the boundary
+
+The shim holds no state of its own — no cached `CTFont`, no lazily built
+`CFString`, no file-scope mutable anything; every call creates, uses, and
+releases its CF objects locally, and anything that outlives a call (a retained
+run font, a `cnvs_shaped`) is owned by one canvas's cache. That matches Core
+Text's documented contract: individual functions are thread-safe and font
+objects (`CTFont`, `CTFontDescriptor`) may be used from multiple threads
+simultaneously, but *layout* objects (`CTLine`, `CTRun`, `CTTypesetter`) must
+stay within a single thread — which they do here, never escaping the call that
+made them. So distinct canvases shaping concurrently on distinct threads cross
+this boundary safely (gated by `tests/test_threads.c` under the `tsan`
+variant); sharing one canvas across threads is the caller's serialization
+problem, same as the rest of the API.
+
 ## Font fallback: opaque handles, output buffers, and the string-model bridge
 
 A mixed string shows fallback directly — `"A😀Z"` splits into three runs with fonts

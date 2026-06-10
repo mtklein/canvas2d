@@ -265,6 +265,7 @@ flags:
 | `release` | `-Os -fbounds-safety` | the shipping build; bounds checks still trap |
 | `debug` | `-O0 -g -fbounds-safety -fsanitize=address,integer,undefined -fno-sanitize-recover=all` | any sanitizer finding is fatal |
 | `unsafe` | `-Os` | identical to release minus `-fbounds-safety`; the benchmark baseline |
+| `tsan` | `-O1 -fbounds-safety -fsanitize=thread` | data races; builds the core + the thread harness only (TSan can't combine with the debug sanitizers) |
 
 The default build runs every test binary in both checked variants (`release` and
 `debug`); `ninja test` is the same set on its own. It also re-renders the gallery
@@ -273,6 +274,19 @@ the gallery binary, so a rendering change relinks it, re-renders them, and shows
 as a `git diff` in lockstep — review and commit the new PNGs alongside the code.
 Tests are silent on success, so a green `ninja` shows only its progress line; a
 failing test prints the offending `CHECK` to stderr.
+
+**Thread safety.** The library never creates a thread and never synchronizes —
+no locks, no atomics, no shared mutable state in `src/` (every `static` is a
+`const` table). What that buys callers: **distinct canvases are fully
+independent**, safe to use from distinct threads concurrently — N canvases over
+small tiles is the intended way to parallelize. A **single canvas is not
+internally synchronized**; using one canvas (or sharing a `canvas_path2d` you
+are still mutating) from two threads needs the caller's own serialization. This
+is a tested property, not an aspiration: `tests/test_threads.c` emulates the
+threaded user — pthread workers each rendering their own 256×256 tile canvas of
+a shared scene, stitched and byte-compared against the same tiling rendered
+serially — and a bare `ninja` runs it in the checked variants and again under
+the `tsan` variant's `-fsanitize=thread`.
 
 ## Architecture
 
@@ -582,7 +596,7 @@ What we deliberately **won't** do:
 configure.py             generates build.ninja (all variants + gates; self-regenerates)
 include/canvas.h         public API
 src/                     C core; the software compositor (compositor_cpu.c); Core Text shim
-tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep
+tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep, the threaded tile-stitch harness
 bench/                   isolated kernel benches + end-to-end (ninja benchcmp / profile / throughput)
 fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzzers)
 examples/gallery.c       renders the gallery PNGs (ninja images)

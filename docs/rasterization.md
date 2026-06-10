@@ -426,7 +426,9 @@ user — keeps the library honest about thread safety (no hidden global mutable
 state; distinct canvases must be fully independent), and a TSAN build variant
 (separate from ASan/ISan/UBSan — they don't combine) makes that mechanical
 rather than aspirational. Thread-safety-as-tested is a user-facing property we
-want regardless of whether src/ ever threads.
+want regardless of whether src/ ever threads. (Landed: `tests/test_threads.c`
+is that harness — parallel tile-stitch byte-equals serial — and the `tsan`
+variant runs it under `-fsanitize=thread`, both on every bare `ninja`.)
 
 And the third panel (Mike, same conversation): the essential spot may be better
 **dissolved by API design than served by internal threads**. The Canvas 2D spec
