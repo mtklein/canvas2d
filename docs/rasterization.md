@@ -586,15 +586,19 @@ The fused shape deletes the tile on the no-filter path outright.
 
 Two things the model surfaces that a refactor must not blur past:
 
-- **Coverage semantics fork.** Today coverage FOLDS into the premultiplied
-  source before blending; the model LERPS the blended result by coverage. They
-  agree exactly for source-over and diverge at AA edges for the other 25 modes
-  (`source-in` is the clean counterexample); the lerp is the spec's
-  mask-the-result semantics, the fold is the classic approximation. Adopting
-  the lerp is a correctness-flavored re-baseline of porterduff/blend edge
-  pixels — same genre as the gradient hard-stop fix — and wants its own ruling
-  plus a supersampled-oracle check (§3.7's conflation scenes share the
-  apparatus), not a silent ride-along.
+- **Coverage semantics, ruled (Mike, 2026-06-10):** "in principle it's done as
+  a lerp between the output of the blend function and the destination" —
+  folding coverage into source alpha "is correct math for several blend modes,
+  but not all of them." The criterion, from `co = Fa·s + Fb·d`: fold ≡ lerp
+  exactly when `Fa` is `sa`-free and `Fb` is affine in `sa` with `Fb(0)=1` —
+  the over-family (source-over, destination-over, destination-out,
+  source-atop, xor, lighter) qualifies; copy, the in/out family, and every
+  separable/non-separable blend do not. Implementation shape: the dedicated
+  source-over kernel keeps its fold (proven equal); the generic kernel lerps,
+  becoming spec-exact for the rest. The switch re-baselines porterduff/blend
+  AA-edge pixels — a correctness fix, same genre as the gradient hard-stop
+  fix — verified against a supersampled oracle (§3.7's conflation scenes
+  share the apparatus) and Mike's eyeballs.
 - **Materialization boundaries stay.** blur()/drop-shadow()/shadows need the
   op's spatial extent: the filter path keeps a tile; shadows are a second
   pipeline invocation (blurred cov_fn, tint shader_fn). The fused pipeline is
