@@ -1,7 +1,7 @@
 // cnvs_replay_text: a valid program replays and draws; malformed input is
 // rejected (returns false) without crashing.  Under the debug variant this runs
 // with ASan+UBSan and -fbounds-safety, so a parser memory bug on adversarial
-// input would trap here.  See secreview/SECURITY-REVIEW.md.
+// input would trap here.  See docs/decisions/security-review.md.
 
 #include "test_util.h"
 

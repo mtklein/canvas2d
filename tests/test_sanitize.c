@@ -3,7 +3,7 @@
 // casts (points_bbox, the coverage rasterizer, ellipse/stroke segment counts)
 // and the float->uint8 colour quantization were UB on NaN/Inf/out-of-range
 // values.  Under the debug variant's UBSan this test aborts if any regresses.
-// See secreview/SECURITY-REVIEW.md, Finding 4.
+// See docs/decisions/security-review.md, Finding 4.
 
 #include "test_util.h"
 

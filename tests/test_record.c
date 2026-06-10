@@ -5,7 +5,7 @@
 // recorder and the replay parser agree on every command's spelling and argument
 // order (a drift guard).  Built under -fbounds-safety like the rest of the suite;
 // the recorder is the write-side counterpart to cnvs_replay.c.  See
-// secreview/SECURITY-REVIEW.md.
+// docs/decisions/security-review.md.
 
 #include "test_util.h"
 

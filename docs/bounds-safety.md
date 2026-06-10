@@ -326,7 +326,7 @@ the spread shows:
 The project's pitch is "C can play with the big boys." After a security pass that
 fuzzed the public API and fixed six findings, here's the honest scorecard — where
 the `-fbounds-safety` + UBSan + ASan stack reaches Rust, and where it doesn't.
-Each row is a real bug we hit (see `secreview/SECURITY-REVIEW.md`).
+Each row is a real bug we hit (see [docs/decisions/security-review.md](decisions/security-review.md)).
 
 | Bug class | What we did in C | What Rust does | Verdict |
 |---|---|---|---|

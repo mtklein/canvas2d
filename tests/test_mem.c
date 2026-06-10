@@ -1,7 +1,7 @@
 // cnvs_grow_cap: capacity growth must never signed-overflow (the doubling loop
 // used to compute n *= 2 unguarded, which is UB once need > INT_MAX/2 -- under
 // the debug variant's UBSan this test aborts if that regresses).  It must always
-// return a capacity >= need.  See secreview/SECURITY-REVIEW.md, Finding 2.
+// return a capacity >= need.  See docs/decisions/security-review.md, Finding 2.
 
 #include "test_util.h"
 

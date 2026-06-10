@@ -526,9 +526,8 @@ bench/                   isolated kernel benches + end-to-end (ninja benchcmp / 
 fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzz)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs
-secreview/               point-in-time security review + proof-of-concept
 docs/bounds-safety.md    the write-up
-docs/decisions/          decision records (the retired Metal backend + its differential live here)
+docs/decisions/          decision records (retired Metal backend + differential, security review)
 docs/roadmap.md          Canvas 2D gap inventory (missing + partial + what's next)
 docs/coverage.md         checked-in coverage report (ninja coverage regenerates)
 docs/*.md                the probe field notes: pixel pipelines, stencil blur,

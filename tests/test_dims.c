@@ -3,7 +3,7 @@
 // overflow `int`.  Before the fix, `w * h * 4` overflowed signed int in these
 // guards, defeating them; under the debug variant's UBSan this whole test
 // aborts if any guard regresses (the overflow is fatal there).  See
-// secreview/SECURITY-REVIEW.md, Finding 1.
+// docs/decisions/security-review.md, Finding 1.
 
 #include "test_util.h"
 
