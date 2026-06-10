@@ -127,6 +127,7 @@ BOUNDARY_C = {"cnvs_text_ct.c"}
 # from-scratch no-zlib posture.
 EXTRA_LIBS = {
     "test_zlib_oracle.c": "-lz",
+    "fuzz_zlib_diff.c": "-lz",
 }
 
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
@@ -492,7 +493,7 @@ def main():
         w("")
         w("rule link_fuzz")
         w(f"  command = $fuzzcc {FUZZ_LINK_SAN} -isysroot $fuzzsdk $in "
-          f"{BASE_FRAMEWORKS} -o $out")
+          f"{BASE_FRAMEWORKS} $libs -o $out")
         w("")
         # seed_gen is a plain host tool (no sanitizers); it writes seeds into the
         # gitignored fuzz/seeds/, which it does not create -- so mkdir first.
@@ -520,6 +521,8 @@ def main():
             w(f"build {ho}: cc_fuzz fuzz/{h}.c")
             w("  fuzzdef = -DFUZZ_NO_MAIN")
             w(f"build build/fuzz/{h}: link_fuzz {core_args} {ho}")
+            if h + ".c" in EXTRA_LIBS:
+                w(f"  libs = {EXTRA_LIBS[h + '.c']}")
             fuzz_bins.append(f"build/fuzz/{h}")
         w("build build/fuzz/seed_gen: cc_seedgen fuzz/seed_gen.c")
         w("build build/fuzz/seeds.stamp: gen_seeds build/fuzz/seed_gen")

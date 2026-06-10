@@ -30,7 +30,7 @@ probes clip/clamp logic without OOMing on multi-GB allocations.
 ## Build
 
 ```sh
-ninja fuzzers   # -> build/fuzz/{fuzz_api,fuzz_state,fuzz_text,fuzz_png,fuzz_replay} + seeds in fuzz/seeds
+ninja fuzzers   # -> build/fuzz/fuzz_* (one per harness below) + seeds in fuzz/seeds
 ```
 
 The libFuzzer build folds into the main ninja graph (configure.py), so `ninja
@@ -98,6 +98,25 @@ for the OOB-write classes.
   byte-for-byte (round-trip oracle). Seeds in `fuzz/seeds_pngdec/` (a 1x1 and
   an 8x8 written by our own encoder):
   `./build/fuzz/fuzz_pngdec -max_len=4096 /tmp/pngdec_corpus fuzz/seeds_pngdec`.
+- **`fuzz_inflate.c`** — the strict zlib **inflate** (`src/cnvs_zlib.c`) on
+  adversarial bytes — the most CVE-scarred parser class in C: Huffman table
+  construction from untrusted code lengths, 16/17/18 repeat handling, window
+  back-references (overlapping copies included), stored-block length fields,
+  and the bit reader's end-of-input seam. On a successful decode the output
+  is deflated and inflated again and must round-trip byte-identically (the
+  through-success oracle). Seeds in `fuzz/seeds_zlib/`:
+  `./build/fuzz/fuzz_inflate -max_len=4096 /tmp/zlib_corpus fuzz/seeds_zlib`.
+- **`fuzz_zlib_diff.c`** — the **differential oracle** (hybrid H5 of
+  [codec-outsourcing](../docs/decisions/codec-outsourcing.md)): the same
+  adversarial bytes go to our inflate AND the system zlib's `uncompress2` at
+  the same output cap — this harness alone links `-lz` — and the verdicts
+  must agree: reject for reject, byte-identical output for accept. The one
+  allowed asymmetry is trailing garbage, where the reference stops at stream
+  end and ours strictly rejects (ours must then accept the consumed prefix
+  byte-identically; the delta is pinned in `tests/test_zlib_oracle.c`). Any
+  payload either side inflates is re-deflated by our encoder and must
+  re-inflate identically under both decoders. Shares `fuzz/seeds_zlib/`:
+  `./build/fuzz/fuzz_zlib_diff -max_len=4096 /tmp/zlib_diff_corpus fuzz/seeds_zlib`.
 - **`fuzz_replay.c`** — the text canvas-program parser ([cnvs_replay.c](../src/cnvs_replay.c))
   on adversarial raw bytes (need not be UTF-8 or NUL-terminated): tokenizing,
   number parsing, line handling, and the `__null_terminated` seam — a classic C
@@ -115,14 +134,18 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 
 - `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
 - `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c`, `fuzz_pngdec.c`,
-  `fuzz_replay.c` — the harnesses (`LLVMFuzzerTestOneInput` + a file-replay
-  `main` behind `#ifndef FUZZ_NO_MAIN`).
+  `fuzz_inflate.c`, `fuzz_zlib_diff.c`, `fuzz_replay.c` — the harnesses
+  (`LLVMFuzzerTestOneInput` + a file-replay `main` behind
+  `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`, including
   an inline font/glyph/shape block program.
 - `seeds_pngdec/` — committed PNG seeds for `fuzz_pngdec`, written by our own
   encoder.
+- `seeds_zlib/` — committed zlib streams for `fuzz_inflate` and
+  `fuzz_zlib_diff`: minimal/stored/dynamic shapes plus a trailing-garbage
+  stream that lands in the differential harness's one allowed asymmetry.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
 
 There's no build script here: `ninja fuzzers` builds every harness (Homebrew clang +
