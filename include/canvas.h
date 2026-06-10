@@ -477,7 +477,7 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
 //     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-//     shape <size_px> <utf16-len> <nruns> <byte-len> <text...>
+//     shape <size_px> <rtl 0|1> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
 // font declares a file-local font id: its name (rest of the line, spaces
 // allowed) and vertical metrics at size 1.0.  glyph carries one glyph's
@@ -491,7 +491,9 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // w*h*4) and base64-chunked, because the raw capture (160x160x4 bytes, ~137 KB
 // encoded) cannot fit one line and the compressed stream is a third to half
 // the bytes.  shape + its immediately-following run lines carry one
-// shaped line (the text is exactly byte-len raw bytes after one space).
+// shaped line (the text is exactly byte-len raw bytes after one space; the
+// rtl token is the paragraph direction the line was shaped under -- part of
+// the cache key, since the same bytes shape differently under ltr and rtl).
 // Replaying the blocks pre-populates the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,
 // emoji included, replays byte-identically on machines without the recording

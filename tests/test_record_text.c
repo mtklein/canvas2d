@@ -370,9 +370,17 @@ static void check_strict(void) {
         "font 1 1.05 0.33 STLibianTC-Regular\n"
         "glyph 1 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
         "glyph 1 3 0 0 0 0 0\n"
-        "shape 12 2 1 2 H \n"
+        "shape 12 0 2 1 2 H \n"
         "run 1 0 0 2 43 7.224 0 3 2.8 1\n"
         "fill_text 4 20 H \n"));
+
+    // An rtl-shaped block parses too, and its op draws under the direction the
+    // line was shaped at.
+    CHECK(REPLAY(cv,
+        "shape 12 1 1 1 1 W\n"
+        "run -1 1 0 1 7 5.5 0\n"
+        "set_direction rtl\n"
+        "fill_text 4 40 W\n"));
 
     // Malformed blocks are rejected.
     CHECK(!REPLAY(cv, "font 16 0.5 0.2 Over\n"));            // id out of range
@@ -386,21 +394,25 @@ static void check_strict(void) {
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 1e999 0 0 1 1 z\n"));    // inf upem
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 0 0 0 0 0 m 1 2\n"));    // blank w/ curves
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 -1 0 0 1 1 z\n"));       // negative upem
-    CHECK(!REPLAY(cv, "shape 12 1 1 3 A\n"));                // byte-len mismatch
-    CHECK(!REPLAY(cv, "shape 12 4 1 2 Hi\n"));               // utf16 len > bytes
-    CHECK(!REPLAY(cv, "shape 12 1 1 1 A\n"));                // truncated: no run line
-    CHECK(!REPLAY(cv, "shape 12 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
-    CHECK(!REPLAY(cv, "shape 12 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
+    CHECK(!REPLAY(cv, "shape 12 2 1 2 H \n"));                 // the pre-direction
+                                                               // header: "2" is no
+                                                               // direction bit
+    CHECK(!REPLAY(cv, "shape 12 x 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
+    CHECK(!REPLAY(cv, "shape 12 0 1 1 3 A\n"));                // byte-len mismatch
+    CHECK(!REPLAY(cv, "shape 12 0 4 1 2 Hi\n"));               // utf16 len > bytes
+    CHECK(!REPLAY(cv, "shape 12 0 1 1 1 A\n"));                // truncated: no run line
+    CHECK(!REPLAY(cv, "shape 12 0 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
+    CHECK(!REPLAY(cv, "shape 12 0 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
     CHECK(!REPLAY(cv, "run 0 0 0 0\n"));                     // run with no shape
     CHECK(!REPLAY(cv,
         "font 0 1 0.2 A\n"
-        "shape 12 1 1 1 A\n"
+        "shape 12 0 1 1 1 A\n"
         "run 0 0 0 1 10 5 1\n"));                            // cluster >= utf16 len
     CHECK(!REPLAY(cv,
-        "shape 12 1 1 1 A\n"
+        "shape 12 0 1 1 1 A\n"
         "run 3 0 0 1 10 5 0\n"));                            // undeclared run font
     CHECK(!REPLAY(cv,
-        "shape 12 1 1 1 A\n"
+        "shape 12 0 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
     // Bitmap blocks carry the capture DEFLATED under the base64, so the
@@ -495,7 +507,7 @@ static void check_strict(void) {
     CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\n"));                    // truncated: no bits line
     CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nfill_rect 0 0 4 4\n")); // non-bits inside
     CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\n# comment\nbits AAAAAA==\n"));  // ditto
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nshape 12 1 0 1 A\n"));  // shape inside
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nshape 12 0 1 0 1 A\n"));  // shape inside
     #undef BM_FONT
 
     // Not corrupted: the canvas still draws.
@@ -693,7 +705,7 @@ static void check_new_ops(void) {
     CHECK(REPLAY(cv,
         "font 0 1.05 0.33 Libian TC\n"
         "glyph 0 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
-        "shape 12 1 1 1 H\n"
+        "shape 12 0 1 1 1 H\n"
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
@@ -759,6 +771,80 @@ static void check_shadow_ops(void) {
     canvas_destroy(cv);
 }
 
+// Direction rides the shape block: the same bytes drawn under ltr and then rtl
+// are two distinct shaped lines (the bidi reordering differs), so the recording
+// carries TWO shape blocks -- distinguished by the direction bit -- and replay
+// rebuilds each under its own key.  Were direction missing from the key or the
+// block, the second draw would alias the first line and replay would draw both
+// rows in one order; the byte compare (plus the zero-miss assertion) proves the
+// aliasing cannot happen.
+static void check_direction_blocks(void) {
+    char const *__null_terminated path = "build/test_record_text_r.canvas";
+    char const *__null_terminated mixed = "\xD7\x90\xD7\x91 ab!";  // "אב ab!"
+
+    uint8_t recorded_px[NPX];
+    float w_ltr = 0.0f, w_rtl = 0.0f;
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_record_to(cv, path));
+        canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.9f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.4f, 1.0f);
+        canvas_set_font_size(cv, 20.0f);
+        canvas_fill_text(cv, mixed, 4.0f, 32.0f);
+        w_ltr = canvas_measure_text(cv, mixed);
+        canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+        canvas_fill_text(cv, mixed, 4.0f, 70.0f);   // same bytes, other paragraph
+        w_rtl = canvas_measure_text(cv, mixed);
+        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_destroy(cv);
+    }
+    CHECK(w_ltr > 0.0f && w_rtl > 0.0f);  // draw-measure agreement holds per
+                                          // direction (same key, same line)
+
+    // One shape block per direction, the bit telling them apart.
+    static char buf[1 << 19];
+    int n = slurp(path, buf, (int)sizeof buf);
+    CHECK(n > 0 && n < (int)sizeof buf);
+    if (n <= 0) {
+        return;
+    }
+    CHECK(count_lines(buf, n, "shape 20 0 ") == 1);
+    CHECK(count_lines(buf, n, "shape 20 1 ") == 1);
+    CHECK(count_lines(buf, n, "set_direction ") == 1);
+
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_replay_from(cv, path));
+        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        CHECK(c->shape_misses == 0);  // both lines came from their blocks
+        CHECK(c->glyph_misses == 0);
+        CHECK(c->shape_hits > 0);
+
+        uint8_t replayed_px[NPX];
+        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
+
+        // Measurement after replay reads the same per-direction lines.  (The
+        // replayed program left the canvas rtl; measure each side explicitly.)
+        canvas_set_font_size(cv, 20.0f);
+        canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
+        CHECK(feq_bits(canvas_measure_text(cv, mixed), w_ltr));
+        canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+        CHECK(feq_bits(canvas_measure_text(cv, mixed), w_rtl));
+        CHECK(c->shape_misses == 0);
+        canvas_destroy(cv);
+    }
+}
+
 int main(void) {
     check_round_trip();
     check_dedup();
@@ -766,6 +852,7 @@ int main(void) {
     check_strict();
     check_new_ops();
     check_shadow_ops();
+    check_direction_blocks();
     check_float_round_trip();
     return TEST_REPORT();
 }

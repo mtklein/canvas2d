@@ -191,13 +191,13 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c) {
 
 cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        char const *__counted_by(len) text, int len) {
+        bool rtl, char const *__counted_by(len) text, int len) {
     uint32_t size_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
     for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
         cnvs_shape_slot *slot = &c->shape[i];
-        if (slot->s && slot->size_bits == size_bits && slot->len == len &&
-            memcmp(slot->text, text, (size_t)len) == 0) {
+        if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
+            slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
             slot->stamp = ++c->tick;
             c->shape_hits++;
             return slot->s;
@@ -214,7 +214,7 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         return NULL;
     }
     memcpy(copy, text, (size_t)len);
-    cnvs_shaped *__single s = cnvs_shape(name, name_len, size_px, text, len);
+    cnvs_shaped *__single s = cnvs_shape(name, name_len, size_px, rtl, text, len);
     if (!s) {
         free(copy);
         return NULL;  // boundary failure: nothing to cache, nothing to draw
@@ -239,6 +239,7 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
     victim->text = copy;
     victim->len = len;
     victim->size_bits = size_bits;
+    victim->rtl = rtl;
     victim->stamp = ++c->tick;
     victim->s = s;
     victim->emitted = false;  // a fresh line (even in a reused slot) is not yet
@@ -687,7 +688,7 @@ cnvs_mip cnvs_glyph_mip(cnvs_glyph_slot *__single slot, float footprint) {
 }
 
 cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c,
-        float size_px, char const *__counted_by(len) text, int len) {
+        float size_px, bool rtl, char const *__counted_by(len) text, int len) {
     if (!c || len < 0) {
         return NULL;
     }
@@ -695,8 +696,8 @@ cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c
     memcpy(&size_bits, &size_px, sizeof size_bits);
     for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
         cnvs_shape_slot *slot = &c->shape[i];
-        if (slot->s && slot->size_bits == size_bits && slot->len == len &&
-            memcmp(slot->text, text, (size_t)len) == 0) {
+        if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
+            slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
             return slot;
         }
     }
@@ -704,7 +705,8 @@ cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c
 }
 
 void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
-        char const *__counted_by(len) text, int len, cnvs_shaped *__single s) {
+        bool rtl, char const *__counted_by(len) text, int len,
+        cnvs_shaped *__single s) {
     if (!c || !s || len < 0) {
         cnvs_shaped_free(s);
         return;
@@ -719,7 +721,8 @@ void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
     // Replace an existing entry for the key (a re-recorded shape block after
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.
-    cnvs_shape_slot *victim = cnvs_text_cache_shape_slot(c, size_px, text, len);
+    cnvs_shape_slot *victim = cnvs_text_cache_shape_slot(c, size_px, rtl, text,
+                                                         len);
     if (!victim) {
         victim = &c->shape[0];
         for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
@@ -741,6 +744,7 @@ void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
     victim->text = copy;
     victim->len = len;
     victim->size_bits = size_bits;
+    victim->rtl = rtl;
     victim->stamp = ++c->tick;
     victim->s = s;
     victim->emitted = false;

@@ -50,6 +50,10 @@ typedef struct {
 } cnvs_shaped;
 
 // Shape UTF-8 `text` with font `name` at `size_px`.  Runs come back in visual order.
+// `rtl` is the PARAGRAPH base direction (the canvas direction attribute): it sets
+// the bidi base level the runs are ordered against, so a mixed-direction string
+// reorders -- and its neutrals resolve -- differently under ltr and rtl.  Always
+// explicit, never first-strong: the spec resolves the attribute, not the text.
 // NULL on failure.  Implemented in the unsafe boundary TU.  Both strings cross the
 // boundary as counted (bytes, len) slices -- CFStringCreateWithBytes takes exactly
 // that -- so checked callers hand over the (ptr, len) pairs they already hold: no
@@ -57,7 +61,7 @@ typedef struct {
 // non-terminated buffer.  (The public canvas.h API keeps its __null_terminated
 // ergonomics; the strlen happens once at that entry point, in-rules.)
 cnvs_shaped *__single cnvs_shape(char const *__counted_by(name_len) name, int name_len,
-                                 float size_px,
+                                 float size_px, bool rtl,
                                  char const *__counted_by(text_len) text, int text_len);
 void cnvs_shaped_free(cnvs_shaped *__single s);
 
@@ -118,9 +122,12 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 // consulted BEFORE Core Text is called, populated live from what the boundary
 // hands back.  Two maps:
 //
-//   - shaped lines, keyed by (size_px bits, text bytes) -> the cnvs_shaped.
-//     The cache OWNS its entries (each run's retained CTFontRef stays alive
-//     with them); call sites borrow.  Fixed CNVS_SHAPE_CACHE_N slots, evicted
+//   - shaped lines, keyed by (size_px bits, paragraph direction, text bytes)
+//     -> the cnvs_shaped.  Direction is IN the key because the same bytes
+//     shape differently under ltr and rtl paragraphs (run order, neutral
+//     resolution); leaving it out would alias the two.  The cache OWNS its
+//     entries (each run's retained CTFontRef stays alive with them); call
+//     sites borrow.  Fixed CNVS_SHAPE_CACHE_N slots, evicted
 //     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
 //     repeated labels hot, and a 64-entry linear scan is cheaper than any
 //     structure clever enough to beat it.
@@ -165,6 +172,7 @@ typedef struct {
     char *__counted_by(len) text;  // owned key copy of the source bytes
     int len;
     uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
+    bool rtl;            // paragraph direction, the key's third part
     uint64_t stamp;      // last-use tick, the LRU ordering
     cnvs_shaped *__single s;  // owned; freed on eviction/clear
     bool emitted;  // already serialized into the active recording (cnvs_record.c)
@@ -232,17 +240,18 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c);  // free entries -> emp
                                                           // also the destructor (the
                                                           // struct owns no spine)
 
-// The shape lookup: the cached line for (size_px, text), shaping through the
-// boundary and caching on a miss.  The result is BORROWED -- the cache owns it;
-// it stays valid until the next lookup can evict it (call sites do one lookup
-// per op and never nest, so a borrow never crosses an insert).  NULL only when
-// the boundary itself fails or the key copy can't be allocated -- the same
-// degradation as the uncached path.  `name` joins the boundary call but NOT the
-// key: the project pins one family ("Libian TC"); a font-family feature must
-// add it to the key.  `c` must be non-NULL (ownership needs somewhere to live).
+// The shape lookup: the cached line for (size_px, rtl, text), shaping through
+// the boundary and caching on a miss.  The result is BORROWED -- the cache owns
+// it; it stays valid until the next lookup can evict it (call sites do one
+// lookup per op and never nest, so a borrow never crosses an insert).  NULL
+// only when the boundary itself fails or the key copy can't be allocated -- the
+// same degradation as the uncached path.  `name` joins the boundary call but
+// NOT the key: the project pins one family ("Libian TC"); a font-family feature
+// must add it to the key.  `c` must be non-NULL (ownership needs somewhere to
+// live).
 cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        char const *__counted_by(len) text, int len);
+        bool rtl, char const *__counted_by(len) text, int len);
 
 // Intern `font`'s name (one boundary name fetch per run, not per glyph) and
 // return its id for glyph keys; -1 when there is no cache, the intern table is
@@ -327,16 +336,17 @@ void cnvs_mip_halve(uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh
 // no capture.
 cnvs_mip cnvs_glyph_mip(cnvs_glyph_slot *__single slot, float footprint);
 
-// Insert a rebuilt shaped line for (size_px, text): the replay path.  Takes
-// ownership of `s` always (freeing it when it can't insert); copies the key
-// bytes; replaces an existing entry for the same key.
+// Insert a rebuilt shaped line for (size_px, rtl, text): the replay path.
+// Takes ownership of `s` always (freeing it when it can't insert); copies the
+// key bytes; replaces an existing entry for the same key.
 void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
-        char const *__counted_by(len) text, int len, cnvs_shaped *__single s);
+        bool rtl, char const *__counted_by(len) text, int len,
+        cnvs_shaped *__single s);
 
-// The recorder's view of a cached line: the slot holding (size_px, text), or
-// NULL when it isn't cached.  A peek -- no stats, no LRU bump, no shaping.
+// The recorder's view of a cached line: the slot holding (size_px, rtl, text),
+// or NULL when it isn't cached.  A peek -- no stats, no LRU bump, no shaping.
 cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c,
-        float size_px, char const *__counted_by(len) text, int len);
+        float size_px, bool rtl, char const *__counted_by(len) text, int len);
 
 // Clear every `emitted` mark (font names, glyphs, shaped lines): a new
 // recording starts with nothing serialized yet.

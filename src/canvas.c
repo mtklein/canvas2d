@@ -2087,18 +2087,22 @@ static float text_baseline_offset(canvas *__single cv) {
     return 0.0f;  // unreachable for a valid enum
 }
 
-// Shape `text` (UTF-8, `len` bytes) with the current font/size, through the
-// canvas's text cache: a repeated (size, text) pair -- a frame's static labels,
-// or measureText before fillText -- reuses the cached line instead of re-shaping
-// at the boundary.  NULL on failure.  The result is BORROWED from the cache (do
-// not free); it stays valid until the next shape lookup, and every caller is
-// done with it before making another.
+// Shape `text` (UTF-8, `len` bytes) with the current font/size under the
+// current paragraph direction, through the canvas's text cache: a repeated
+// (size, direction, text) triple -- a frame's static labels, or measureText
+// before fillText -- reuses the cached line instead of re-shaping at the
+// boundary.  Draw and measure both come through here, so a string measures the
+// way it draws under either direction.  NULL on failure.  The result is
+// BORROWED from the cache (do not free); it stays valid until the next shape
+// lookup, and every caller is done with it before making another.
 static cnvs_shaped const *__single shape_text(canvas *__single cv,
                                               char const *__counted_by(len) text,
                                               int len) {
     return cnvs_text_cache_shape(&cv->text_cache, k_font_family,
                                  (int)sizeof k_font_family - 1,
-                                 cv->cur.font_size, text, len);
+                                 cv->cur.font_size,
+                                 cv->cur.direction == CANVAS_DIRECTION_RTL,
+                                 text, len);
 }
 
 // Render one color (emoji) glyph from its canonical capture: pick the mip
@@ -2318,7 +2322,8 @@ static void record_text_blocks(canvas *__single cv,
     float a = 0.0f, d = 0.0f;
     (void)canvas_vmetrics(cv, &a, &d);  // intern the family + its vmetrics
     (void)shape_text(cv, text, len);    // ensure the line is cached
-    cnvs_rec_text_blocks(cv->rec, &cv->text_cache, cv->cur.font_size, text, len);
+    cnvs_rec_text_blocks(cv->rec, &cv->text_cache, cv->cur.font_size,
+                         cv->cur.direction == CANVAS_DIRECTION_RTL, text, len);
 }
 
 void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,

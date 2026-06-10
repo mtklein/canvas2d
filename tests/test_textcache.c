@@ -2,10 +2,10 @@
 // a per-canvas memo of Core Text boundary results, checked before the boundary
 // is called.  Pinned here: transparency (a warm cache renders byte-identical to
 // a cold one), the measure-then-draw hit pattern, key correctness (size bits +
-// text bytes), LRU eviction at the slot bound, the glyph-curve map's one fetch
-// per (font, glyph), font-name interning across fallback, and reset() clearing
-// back to cold.  Stats come via the internal cnvs_canvas_text_cache handle --
-// they are instrumentation, not public API.
+// paragraph direction + text bytes), LRU eviction at the slot bound, the
+// glyph-curve map's one fetch per (font, glyph), font-name interning across
+// fallback, and reset() clearing back to cold.  Stats come via the internal
+// cnvs_canvas_text_cache handle -- they are instrumentation, not public API.
 
 #include "canvas.h"
 #include "cnvs_text.h"
@@ -89,6 +89,18 @@ static void check_keys(void) {
     (void)canvas_measure_text(cv, "kerning");          // the original is still hot
     CHECK(c->shape_misses == 3 && c->shape_hits == 3);
 
+    // Same size, same bytes, other paragraph direction: a different key (the
+    // same text shapes differently under ltr and rtl, so aliasing the two
+    // would replay one as the other).  Both stay hot side by side.
+    canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+    (void)canvas_measure_text(cv, "kerning");
+    CHECK(c->shape_misses == 4 && c->shape_hits == 3);
+    (void)canvas_measure_text(cv, "kerning");          // the rtl line is hot...
+    CHECK(c->shape_misses == 4 && c->shape_hits == 4);
+    canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
+    (void)canvas_measure_text(cv, "kerning");          // ...and the ltr one kept
+    CHECK(c->shape_misses == 4 && c->shape_hits == 5);
+
     canvas_destroy(cv);
 }
 
@@ -121,7 +133,7 @@ static void check_eviction(void) {
         last[1] = (char)('a' + i / 26);
         last[2] = (char)('a' + i % 26);
         (void)cnvs_text_cache_shape(c, k_family, (int)sizeof k_family - 1,
-                                    16.0f, last, (int)sizeof last);
+                                    16.0f, false, last, (int)sizeof last);
     }
     CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 1);
 
@@ -131,7 +143,7 @@ static void check_eviction(void) {
     CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 2);
     CHECK(c->shape_hits == hits);
     (void)cnvs_text_cache_shape(c, k_family, (int)sizeof k_family - 1,
-                                16.0f, last, (int)sizeof last);
+                                16.0f, false, last, (int)sizeof last);
     CHECK(c->shape_hits == hits + 1);  // the newest entry survived
 
     canvas_set_fill_rgba(churn, 0.2f, 0.2f, 0.7f, 1.0f);

@@ -235,7 +235,7 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
     *x1 = (float)CGRectGetMaxX(r); *y1 = (float)CGRectGetMaxY(r);
 }
 
-cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px,
+cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px, bool rtl,
                         char const *text, int text_len) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     CFStringRef str = str_from_bytes(text, text_len);
@@ -243,11 +243,22 @@ cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px,
     if (cfname) {
         CFRelease(cfname);
     }
+    // The paragraph base writing direction: always explicit (never CT's
+    // first-strong "natural" default), because the canvas direction attribute
+    // -- not the text -- resolves the base level.  CTLine orders the runs and
+    // resolves neutrals against it.
+    int8_t const wd = rtl ? kCTWritingDirectionRightToLeft
+                          : kCTWritingDirectionLeftToRight;
+    CTParagraphStyleSetting const ps_set[1] = {
+        { kCTParagraphStyleSpecifierBaseWritingDirection, sizeof wd, &wd },
+    };
+    CTParagraphStyleRef ps = CTParagraphStyleCreate(ps_set, 1);
     cnvs_shaped *out = NULL;
-    if (font && str) {
-        CFStringRef keys[1] = { kCTFontAttributeName };
-        const void *vals[1] = { font };
-        CFDictionaryRef attrs = CFDictionaryCreate(NULL, (const void **)keys, vals, 1,
+    if (font && str && ps) {
+        CFStringRef keys[2] = { kCTFontAttributeName,
+                                kCTParagraphStyleAttributeName };
+        const void *vals[2] = { font, ps };
+        CFDictionaryRef attrs = CFDictionaryCreate(NULL, (const void **)keys, vals, 2,
             &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
         CFAttributedStringRef astr = CFAttributedStringCreate(NULL, str, attrs);
         CTLineRef line = CTLineCreateWithAttributedString(astr);
@@ -272,6 +283,9 @@ cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px,
         CFRelease(line);
         CFRelease(astr);
         CFRelease(attrs);
+    }
+    if (ps) {
+        CFRelease(ps);
     }
     if (font) {
         CFRelease(font);

@@ -218,10 +218,101 @@ static void check_record(void) {
     CHECK(memcmp(a, b, LEN) == 0);
 }
 
+// Ink extent of a render: the min/max x of any non-white pixel.  Returns the
+// ink pixel count (0 = blank).
+static long ink_x(uint8_t const *__counted_by(LEN) px, int *__single xmin,
+                  int *__single xmax) {
+    *xmin = W;
+    *xmax = -1;
+    long n = 0;
+    for (int y = 0; y < H; y++) {
+        for (int x = 0; x < W; x++) {
+            if (px[(y * W + x) * 4] < 250) {
+                n++;
+                if (x < *xmin) { *xmin = x; }
+                if (x > *xmax) { *xmax = x; }
+            }
+        }
+    }
+    return n;
+}
+
+// A string measures the way it draws, under rtl too: start-aligned RTL text
+// hangs its whole advance to the LEFT of the anchor, within the measured width
+// (plus a couple of px of ink overhang/antialiasing slop).
+static void check_draw_measure(void) {
+    char const *__null_terminated heb = "\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D";  // שלום
+    float const x = 120.0f;
+
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    canvas_set_font_size(cv, 24.0f);
+    canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+    float w = canvas_measure_text(cv, heb);
+    CHECK(w > 0.0f);
+
+    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_text_align(cv, CANVAS_ALIGN_START);
+    canvas_fill_text(cv, heb, x, 40.0f);
+
+    static uint8_t px[LEN];
+    canvas_read_rgba(cv, px, LEN);
+    int xmin = 0, xmax = 0;
+    CHECK(ink_x(px, &xmin, &xmax) > 0);
+    CHECK((float)xmax <= x + 2.0f);      // nothing right of the anchor
+    CHECK((float)xmin >= x - w - 2.0f);  // nothing left of anchor - advance
+
+    // maxWidth under rtl: condensing anchors at the same (right) edge, so the
+    // ink stays right-pinned and shrinks into half the measured width.
+    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_text_max(cv, heb, x, 40.0f, w * 0.5f);
+    canvas_read_rgba(cv, px, LEN);
+    CHECK(ink_x(px, &xmin, &xmax) > 0);
+    CHECK((float)xmax <= x + 2.0f);
+    CHECK((float)xmin >= x - w * 0.5f - 2.0f);
+
+    canvas_destroy(cv);
+}
+
+// Mixed-direction text really reorders: the same bytes, same anchor, same
+// alignment draw differently under ltr and rtl paragraphs (bidi run order and
+// neutral resolution change), while the advance -- and so measureText --
+// agrees to a hair.
+static void check_mixed_reorders(void) {
+    char const *__null_terminated mixed = "\xD7\x90\xD7\x91 ab!";  // "אב ab!"
+    static uint8_t a[LEN], b[LEN];
+    render(a, mixed, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_LEFT);
+    render(b, mixed, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_LEFT);
+    CHECK(memcmp(a, b, LEN) != 0);  // physical alignment, so only the
+                                    // reordering can differ -- and it does
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    canvas_set_font_size(cv, 24.0f);
+    float wl = canvas_measure_text(cv, mixed);
+    canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+    float wr = canvas_measure_text(cv, mixed);
+    CHECK(wl > 0.0f);
+    float d = wl - wr;  // same advances, summed in another order
+    CHECK(d < 0.01f && d > -0.01f);
+    canvas_destroy(cv);
+}
+
 int main(void) {
     check_resolution();
     check_state();
     check_replay();
     check_record();
+    check_draw_measure();
+    check_mixed_reorders();
     return TEST_REPORT();
 }

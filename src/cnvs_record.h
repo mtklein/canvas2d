@@ -119,12 +119,13 @@ void cnvs_rec_path_rule(cnvs_recorder *__single r,
 // the blocks and never crosses the text boundary, emoji included.
 // Deduplicated against what this recording already wrote via the cache slots'
 // `emitted` marks (canvas_record_to clears them), so a repeated string costs
-// one block set per recording.  `text`/`len`/`size_px` name the cached shaped
-// line (the live lookup has already run); when it isn't cached (shaping
-// failed) nothing is emitted and replay degrades to live shaping.
+// one block set per recording.  `text`/`len`/`size_px`/`rtl` name the cached
+// shaped line (the live lookup has already run; rtl is the paragraph direction
+// half of its key); when it isn't cached (shaping failed) nothing is emitted
+// and replay degrades to live shaping.
 void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c,
-                          float size_px, char const *__counted_by(len) text,
-                          int len);
+                          float size_px, bool rtl,
+                          char const *__counted_by(len) text, int len);
 
 // `name <ints...>` -- the int-typed op lines with no block reference (resize).
 void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name,

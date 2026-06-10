@@ -207,13 +207,13 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
 }
 
 void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c,
-                          float size_px, char const *__counted_by(len) text,
-                          int len) {
+                          float size_px, bool rtl,
+                          char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0 || !c) {
         return;
     }
-    cnvs_shape_slot *__single slot = cnvs_text_cache_shape_slot(c, size_px, text,
-                                                                len);
+    cnvs_shape_slot *__single slot = cnvs_text_cache_shape_slot(c, size_px, rtl,
+                                                                text, len);
     if (!slot || slot->emitted) {
         return;  // not cached (shaping failed: nothing to carry), or this
     }            // recording already wrote this line's blocks
@@ -328,10 +328,13 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
         }
     }
     // The shaped line itself: everything cnvs_shaped carries, so replay
-    // rebuilds it without shaping.  The text is length-prefixed raw bytes to
-    // end of line (it is the cache key, byte for byte).
-    fprintf(r->f, "shape %.9g %d %d %d ", (double)size_px, s->text_len, s->nruns,
-            len);
+    // rebuilds it without shaping.  The rtl token is the paragraph direction
+    // half of the cache key -- the same bytes shape differently under ltr and
+    // rtl, so replay must key its insert with it or the two would alias.  The
+    // text is length-prefixed raw bytes to end of line (the key, byte for
+    // byte).
+    fprintf(r->f, "shape %.9g %d %d %d %d ", (double)size_px, rtl ? 1 : 0,
+            s->text_len, s->nruns, len);
     if (len > 0) {
         fwrite(text, 1, (size_t)len, r->f);
     }
