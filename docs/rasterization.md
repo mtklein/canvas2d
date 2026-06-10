@@ -428,6 +428,23 @@ state; distinct canvases must be fully independent), and a TSAN build variant
 rather than aspirational. Thread-safety-as-tested is a user-facing property we
 want regardless of whether src/ ever threads.
 
+And the third panel (Mike, same conversation): the essential spot may be better
+**dissolved by API design than served by internal threads**. The Canvas 2D spec
+only half-reifies coverage — `Path2D` is the geometry half, `clip()` re-derives
+the mask per canvas — and stops well short of "one thread makes a mask, many
+draw through it." But this project already augments the spec where it has
+better ideas (the typed filter API, the counted `_n` text entries,
+record/replay, `canvas_load_png`), and Mike is explicitly happy to keep doing
+so. A first-class immutable mask object — rasterize a path's coverage once,
+then fill/stroke/image-draw *through* it from any canvas on any thread, the
+sharing safe precisely because the object is frozen after build — would export
+the library's coverage-reuse knowledge to the caller instead of hiding it
+behind a thread pool the library shouldn't own. It is also a thin reification
+of an existing internal stage (the dense u8 coverage buffer every op already
+produces), and it would serialize like the other block types (the bitmap-block
+machinery). If shared-coverage redundancy ever shows up hot, price THIS first;
+the executor is the fallback, not the plan.
+
 The constraint first: the byte-gate demands the same target bytes at any thread
 count. That rules out nothing important — it just dictates the decomposition.
 Pixel-partitioned schemes are bit-exact by construction (each cell's float-add
