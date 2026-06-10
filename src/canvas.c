@@ -2591,39 +2591,63 @@ static void draw_image_quad(canvas *__single cv,
     // its whole quad rather than its alpha shape.
     emit_shadow(cv, b);
 
-    cnvs_mat inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
-    float ga = cv->cur.global_alpha;
-    bool smooth = cv->cur.image_smoothing_enabled;
+    // Blocks of eight pixels, the paint_tile_pattern shape: the SAMPLING stays
+    // scalar per lane -- four data-dependent taps at arbitrary source coords --
+    // and the f32 fold + premultiply around it run as planes.  Zero-coverage
+    // lanes skip their sample and fold to the scalar early-out's transparent
+    // black.  The premultiplied-source arm (emoji capture) has no premultiply:
+    // every channel just scales by ga * coverage, the scalar arithmetic kept
+    // lane for lane.
+    cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
+    float const ga = cv->cur.global_alpha;
+    bool const smooth = cv->cur.image_smoothing_enabled;
     for (int py = 0; py < b.h; py++) {
-        for (int px = 0; px < b.w; px++) {
-            int i = py * b.w + px;
-            float covf = (float)cv->cov[i] / 255.0f;
-            if (covf <= 0.0f) {
-                cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = 0 };
-                continue;
+        float const devy = (float)b.y + (float)py + 0.5f;
+        for (int px = 0; px < b.w; px += 8) {
+            int const i = py * b.w + px;
+            int const k = b.w - px < 8 ? b.w - px : 8;
+            foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
+                   sa = (foldf8)0.0f;
+            for (int l = 0; l < k; l++) {
+                if (cv->cov[i + l] == 0) {  // the scalar covf <= 0.0f early-out
+                    continue;
+                }
+                // Device pixel centre -> user space -> dest-rect uv -> source.
+                cnvs_vec2 u = cnvs_mat_apply(
+                    inv, (cnvs_vec2){ .x = (float)b.x + (float)(px + l) + 0.5f,
+                                      .y = devy });
+                float fsx = sx + ((u.x - dx) / dw) * sww;
+                float fsy = sy + ((u.y - dy) / dh) * shh;
+                float s[4];
+                if (smooth) {
+                    sample_src(src, slen, sw, sh, fsx, fsy, s);
+                } else {
+                    sample_src_nearest(src, slen, sw, sh, fsx, fsy, s);
+                }
+                sr[l] = s[0];
+                sg[l] = s[1];
+                sb[l] = s[2];
+                sa[l] = s[3];
             }
-            // Device pixel centre -> user space -> dest-rect uv -> source coords.
-            cnvs_vec2 u = cnvs_mat_apply(
-                inv, (cnvs_vec2){ .x = (float)b.x + (float)px + 0.5f,
-                                  .y = (float)b.y + (float)py + 0.5f });
-            float fsx = sx + ((u.x - dx) / dw) * sww;
-            float fsy = sy + ((u.y - dy) / dh) * shh;
-            float s[4];
-            if (smooth) {
-                sample_src(src, slen, sw, sh, fsx, fsy, s);
-            } else {
-                sample_src_nearest(src, slen, sw, sh, fsx, fsy, s);
-            }
+            foldf8 const covf = k < 8 ? cover8_k(cv->cov + i, k)
+                                      : cover8(cv->cov + i);
+            cnvs_px8 out;
             if (premul_src) {
-                float m = ga * covf;
-                cv->tile[i] = (cnvs_premul){ .r = (_Float16)(s[0] * m),
-                                             .g = (_Float16)(s[1] * m),
-                                             .b = (_Float16)(s[2] * m),
-                                             .a = (_Float16)(s[3] * m) };
+                foldf8 const m = ga * covf;
+                out = (cnvs_px8){ __builtin_convertvector(sr * m, cnvs_h8),
+                                  __builtin_convertvector(sg * m, cnvs_h8),
+                                  __builtin_convertvector(sb * m, cnvs_h8),
+                                  __builtin_convertvector(sa * m, cnvs_h8) };
             } else {
-                float alpha = s[3] * ga * covf;
-                cv->tile[i] =
-                    cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
+                out = shade8(__builtin_convertvector(sr, cnvs_h8),
+                             __builtin_convertvector(sg, cnvs_h8),
+                             __builtin_convertvector(sb, cnvs_h8),
+                             sa * ga * covf);
+            }
+            if (k < 8) {
+                cnvs_px8_store_k(cv->tile + i, k, out);
+            } else {
+                cnvs_px8_store(cv->tile + i, out);
             }
         }
     }
