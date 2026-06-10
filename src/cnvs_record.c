@@ -105,6 +105,22 @@ void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name
     fputc('\n', r->f);
 }
 
+void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated name,
+                       float x, float y, float max_width,
+                       char const *__counted_by(len) text, int len) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    // x, y, max_width, then the text verbatim (the rest of the line, UTF-8):
+    // the parser reads three floats and takes the remainder as the string.
+    fprintf(r->f, " %.9g %.9g %.9g ", (double)x, (double)y, (double)max_width);
+    if (len > 0) {
+        fwrite(text, 1, (size_t)len, r->f);
+    }
+    fputc('\n', r->f);
+}
+
 // How many control points one canonical verb consumes, and its token spelling;
 // NULL for a byte that is not a verb.  The cached curve stream is boundary
 // data, so the emission walk stays as defensive as the drawing walk

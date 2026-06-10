@@ -790,6 +790,7 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     else if (tok_eq(data, le, cs, cl, "rect"))       { if (!read_floats(data, le, &j, f, 4)) return false; canvas_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "clear_rect")) { if (!read_floats(data, le, &j, f, 4)) return false; canvas_clear_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "fill_rect"))  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_fill_rect(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "stroke_rect")){ if (!read_floats(data, le, &j, f, 4)) return false; canvas_stroke_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_rgba(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_rgba")){ if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_rgba(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "quadratic_curve_to"))    { if (!read_floats(data, le, &j, f, 4)) return false; canvas_quadratic_curve_to(cv, f[0], f[1], f[2], f[3]); }
@@ -905,6 +906,14 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         int n = (int)(le - j);  // le - j <= line cap < INT_MAX
         if (fill) canvas_fill_text_n(cv, data + j, n, f[0], f[1]);
         else      canvas_stroke_text_n(cv, data + j, n, f[0], f[1]);
+        return true;  // text consumed the rest of the line
+    }
+    else if (tok_eq(data, le, cs, cl, "fill_text_max")) {
+        // Like fill_text, plus a max_width float between the pen and the text.
+        if (!read_floats(data, le, &j, f, 3)) return false;
+        while (j < le && is_ws(data[j])) { j++; }
+        int n = (int)(le - j);  // le - j <= line cap < INT_MAX
+        canvas_fill_text_max_n(cv, data + j, n, f[0], f[1], f[2]);
         return true;  // text consumed the rest of the line
     }
 

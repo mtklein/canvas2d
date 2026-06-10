@@ -39,6 +39,15 @@ void cnvs_rec_floats_bool(cnvs_recorder *__single r, char const *__null_terminat
 void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name,
                    float x, float y, char const *__counted_by(len) text, int len);
 
+// fill_text_max's op line: like cnvs_rec_text, but with the max_width float
+// between the (x, y) pen and the verbatim text tail (max_width <x> <y> <w>
+// <text...>).  The font/glyph/shape blocks are emitted ahead of it exactly as
+// for fill_text (the shaped line keys on size+text alone; max_width only
+// condenses the x axis at paint time, so it rides the op line, not the cache).
+void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated name,
+                       float x, float y, float max_width,
+                       char const *__counted_by(len) text, int len);
+
 // Serialize the derived text data a fill_text/stroke_text op is about to use --
 // interned fonts (with their size-1.0 vmetrics), canonical glyph curves + ink
 // bounds, color-glyph captures, and the shaped line -- as `font` / `glyph` /

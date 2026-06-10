@@ -616,11 +616,96 @@ static void check_float_round_trip(void) {
     canvas_destroy(cv);
 }
 
+// stroke_rect and fill_text_max -- the last two ops the gallery text scenes
+// need -- round-trip byte for byte: recording a scene that uses both and
+// replaying it onto a fresh canvas reproduces identical pixels, with no text
+// boundary call (the fill_text_max line carries the same font/glyph/shape
+// blocks fill_text would).  stroke_rect strokes its own rect through the CTM;
+// fill_text_max condenses the phrase about its left anchor to fit max_width.
+static void check_new_ops(void) {
+    char const *__null_terminated path = "build/test_record_text_n.canvas";
+
+    uint8_t recorded_px[NPX];
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_record_to(cv, path));
+        canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.12f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+
+        // stroke_rect with a thick join, and a rotated-CTM quad (corners go
+        // through the transform), and the degenerate hairline.
+        canvas_set_stroke_rgba(cv, 0.9f, 0.5f, 0.3f, 1.0f);
+        canvas_set_line_width(cv, 6.0f);
+        canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
+        canvas_stroke_rect(cv, 8.0f, 8.0f, 40.0f, 30.0f);
+        canvas_save(cv);
+        canvas_translate(cv, 90.0f, 30.0f);
+        canvas_rotate(cv, 0.3f);
+        canvas_stroke_rect(cv, -20.0f, -14.0f, 40.0f, 28.0f);
+        canvas_restore(cv);
+        canvas_set_line_cap(cv, CANVAS_CAP_ROUND);
+        canvas_stroke_rect(cv, 8.0f, 60.0f, 40.0f, 0.0f);  // degenerate hairline
+
+        // fill_text_max: an overflowing phrase condensed to a finite width, and
+        // an unconstrained one (max_width <= 0 imposes no limit).
+        canvas_set_fill_rgba(cv, 0.9f, 0.92f, 0.95f, 1.0f);
+        canvas_set_font_size(cv, 22.0f);
+        canvas_fill_text_max(cv, "Condense me to fit", 4.0f, 88.0f, 60.0f);
+        canvas_fill_text_max(cv, "free", 70.0f, 88.0f, -1.0f);
+        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_destroy(cv);  // flush + close
+    }
+
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_replay_from(cv, path));
+        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        CHECK(c->shape_misses == 0);  // fill_text_max replayed boundary-free
+        CHECK(c->glyph_misses == 0);
+        CHECK(c->shape_hits > 0);
+        CHECK(c->glyph_hits > 0);
+
+        uint8_t replayed_px[NPX];
+        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
+        canvas_destroy(cv);
+    }
+
+    // Strict parsing of the new op lines (the canvas still draws after each).
+    canvas *__single cv = canvas_create(32, 32);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    CHECK(REPLAY(cv, "stroke_rect 1 2 10 10\n"));      // well-formed
+    CHECK(!REPLAY(cv, "stroke_rect 1 2 10\n"));         // too few floats
+    CHECK(!REPLAY(cv, "stroke_rect 1 2 10 10 x\n"));    // trailing junk
+    CHECK(!REPLAY(cv, "stroke_rect 1 2 1.5.2 10\n"));   // malformed float token
+    // fill_text_max needs three floats before the text; the text is the tail.
+    CHECK(REPLAY(cv,
+        "font 0 1.05 0.33 Libian TC\n"
+        "glyph 0 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
+        "shape 12 1 1 1 H\n"
+        "run 0 0 0 1 43 7.224 0\n"
+        "fill_text_max 4 20 50 H\n"));
+    CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
+    canvas_destroy(cv);
+}
+
 int main(void) {
     check_round_trip();
     check_dedup();
     check_size();
     check_strict();
+    check_new_ops();
     check_float_round_trip();
     return TEST_REPORT();
 }

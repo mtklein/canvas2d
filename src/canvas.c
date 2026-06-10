@@ -1825,6 +1825,7 @@ bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
 }
 
 void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "stroke_rect", (float[]){ x, y, w, h }, 4); }
     if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h)) {
         return;  // Canvas spec: non-finite args paint nothing.
     }
@@ -2218,11 +2219,20 @@ void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
     canvas_fill_text_n(cv, t, len, x, y);
 }
 
+void canvas_fill_text_max_n(canvas *__single cv, char const *__counted_by(len) text,
+                            int len, float x, float y, float max_width) {
+    if (cv->rec) {
+        record_text_blocks(cv, text, len);
+        cnvs_rec_text_max(cv->rec, "fill_text_max", x, y, max_width, text, len);
+    }
+    do_text(cv, text, len, x, y, max_width, false);
+}
+
 void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
                           float x, float y, float max_width) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    do_text(cv, t, len, x, y, max_width, false);
+    canvas_fill_text_max_n(cv, t, len, x, y, max_width);
 }
 
 void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,

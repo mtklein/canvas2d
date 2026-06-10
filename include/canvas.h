@@ -393,6 +393,10 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
                           float x, float y, float max_width);
 void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
                             float x, float y, float max_width);
+// Length-counted fill variant of the maxWidth path (the slice form replay hands
+// its text tail to, and the NUL-terminated canvas_fill_text_max delegates to).
+void canvas_fill_text_max_n(canvas *__single cv, char const *__counted_by(len) text,
+                            int len, float x, float y, float max_width);
 
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);
@@ -507,11 +511,11 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 //
 // Only the ops the text format covers are recorded -- the same subset
 // replay_from understands.  arc/round_rect/arc_to are written as themselves;
-// calls outside the format (stroke_rect, round_rect_radii, conic gradients,
-// patterns, image smoothing, fill_text_max, draw_image, get/put_image_data,
-// Path2D fill/stroke/clip, the filter list (set_filter_none / add_filter_*),
-// reset, resize) are not recorded, so a session that uses them does not
-// round-trip through the text format.
+// calls outside the format (round_rect_radii, conic gradients, patterns, image
+// smoothing, draw_image, get/put_image_data, Path2D fill/stroke/clip, the
+// filter list (set_filter_none / add_filter_*), reset, resize) are not
+// recorded, so a session that uses them does not round-trip through the text
+// format.
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh
