@@ -1850,18 +1850,25 @@ static void shaping(void) {
 // diagonal-gradient rounded tile under two translucent discs -- through one
 // filter (top-left unfiltered for reference).  Each colour function is a
 // precompiled matrix kernel over the op's premultiplied tile; the partial
-// alpha is what makes the premultiplied forms visible.  The last row is
+// alpha is what makes the premultiplied forms visible.  The fourth row is
 // blur() -- three box passes over the same tile, the painted region grown by
 // the spread -- alone at two strengths, then chained after a colour function
 // (the list applies in call order, so saturate sees the already-soft pixels).
+// The last row is drop-shadow() -- the drawing composited over a blurred,
+// offset, tinted copy of its own alpha -- plain black, a translucent violet,
+// and chained after grayscale(1), the order making the gray drawing keep its
+// coloured shadow.
 static void filters(void) {
     struct {
         void (*add)(canvas *__single cv, float amount);
         float amt;
         void (*add2)(canvas *__single cv, float amount);  // chained second entry
         float amt2;
+        bool shadow;                  // append a drop-shadow() after add/add2
+        float sdx, sdy, sblur;        // its offset + blur
+        float sr, sg, sb, sa;         // its colour
         char const *label;
-    } const cell[12] = {
+    } const cell[15] = {
         { .label = "none" },
         { .add = canvas_add_filter_brightness, .amt = 1.5f,       .label = "brightness(1.5)" },
         { .add = canvas_add_filter_contrast,   .amt = 2.0f,       .label = "contrast(2)" },
@@ -1875,26 +1882,42 @@ static void filters(void) {
         { .add = canvas_add_filter_blur,       .amt = 3.0f,       .label = "blur(3)" },
         { .add = canvas_add_filter_blur,       .amt = 3.0f,
           .add2 = canvas_add_filter_saturate,  .amt2 = 3.0f,      .label = "blur(3) saturate(3)" },
+        { .shadow = true, .sdx = 3.0f, .sdy = 3.0f, .sblur = 2.0f,
+          .sr = 0.0f, .sg = 0.0f, .sb = 0.0f, .sa = 1.0f,
+          .label = "drop-shadow(3 3 2)" },
+        { .shadow = true, .sdx = 6.0f, .sdy = 6.0f, .sblur = 3.0f,
+          .sr = 0.55f, .sg = 0.25f, .sb = 0.95f, .sa = 0.6f,
+          .label = "drop-shadow(violet 60%)" },
+        { .add = canvas_add_filter_grayscale,  .amt = 1.0f,
+          .shadow = true, .sdx = 6.0f, .sdy = 6.0f, .sblur = 3.0f,
+          .sr = 0.55f, .sg = 0.25f, .sb = 0.95f, .sa = 0.85f,
+          .label = "grayscale(1) drop-shadow" },
     };
     float const M = 12.0f, cellW = 140.0f, cellH = 124.0f;
-    canvas *__single c = canvas_create(444, 520);
+    canvas *__single c = canvas_create(444, 644);
     if (!c) {
         return;
     }
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 520.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 644.0f);
 
-    for (int i = 0; i < 12; i++) {
+    for (int i = 0; i < 15; i++) {
         int col = i % 3, row = i / 3;
         float ox = M + (float)col * cellW, oy = M + (float)row * cellH;
 
-        // This cell's filter (one function, or a two-entry chain).
+        // This cell's filter (one function, a two-entry chain, or a chain
+        // ending in drop-shadow -- always in list order).
         canvas_set_filter_none(c);
         if (cell[i].add) {
             cell[i].add(c, cell[i].amt);
         }
         if (cell[i].add2) {
             cell[i].add2(c, cell[i].amt2);
+        }
+        if (cell[i].shadow) {
+            canvas_add_filter_drop_shadow(c, cell[i].sdx, cell[i].sdy,
+                                          cell[i].sblur, cell[i].sr, cell[i].sg,
+                                          cell[i].sb, cell[i].sa);
         }
 
         // The motif, filtered: a gradient tile, then two translucent discs.
