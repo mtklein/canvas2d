@@ -323,6 +323,8 @@ canvas_translate / scale / rotate / transform / set_transform / reset_transform 
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
 canvas_set_global_composite_operation                        // 26 GCO modes
 canvas_set_shadow_color_rgba / set_shadow_blur / set_shadow_offset_x / set_shadow_offset_y
+canvas_set_filter_none / add_filter_brightness / add_filter_contrast / add_filter_grayscale /
+    add_filter_hue_rotate / add_filter_invert / add_filter_opacity / add_filter_saturate / add_filter_sepia
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / set_fill_conic_gradient / add_fill_color_stop / set_fill_pattern
 canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / set_stroke_conic_gradient / add_stroke_color_stop / set_stroke_pattern
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
@@ -367,7 +369,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |
 | `Path2D` — build, `addPath`, fill/stroke/clip/isPointIn* overloads | ✅ no SVG path-data string |
 | Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}`, under fills/strokes/text/images | ✅ CPU box-blur (≈ Gaussian), coverage silhouette |
-| `filter` | ❌ see [roadmap](docs/roadmap.md) |
+| `filter` — the eight colour functions (brightness/contrast/grayscale/hue-rotate/invert/opacity/saturate/sepia), per painted op | ◑ typed API (no CSS strings); no `blur()`/`drop-shadow()` yet |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
@@ -458,10 +460,12 @@ say (and which vectorize well). The previous picks on those grounds —
 `globalCompositeOperation`, the software compositor, shadows — are done; what's
 next:
 
-- **`filter`** — the CSS filter functions. `blur()` and `drop-shadow()` reuse the
-  shadow pipeline's separable box blur ([blur.c](src/blur.c)); the colour functions
-  (`brightness`, `contrast`, `grayscale`, `hue-rotate`, …) are per-pixel kernels
-  over checked tiles.
+- **`filter`** — the colour functions (`brightness`, `contrast`, `grayscale`,
+  `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`) are done: per-pixel
+  matrix kernels over checked premultiplied tiles
+  ([cnvs_filter.c](src/cnvs_filter.c)). What remains is `blur()` and
+  `drop-shadow()`, which reuse the shadow pipeline's separable box blur
+  ([blur.c](src/blur.c)).
 
 What we deliberately **won't** do:
 

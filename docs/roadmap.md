@@ -33,7 +33,14 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
    shape — all in checked C, so the backends stay bit-identical. `filter` blur
-   (and the other CSS filter functions) reuse the same kernel and are next.
+   reuses the same kernel and is next.
+4. ~~**`filter`, the colour functions**~~ — **done** (`brightness`, `contrast`,
+   `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`), behind
+   a typed API (`canvas_add_filter_*` — no CSS string parsing). Each compiles
+   at add time to a 3x3 matrix + alpha-scaled offset in closed premultiplied
+   form ([cnvs_filter.c](../src/cnvs_filter.c)) and applies per pixel to the
+   op's premultiplied tile, before its shadow and composite. `blur()` and
+   `drop-shadow()` — which reuse [blur.c](../src/blur.c) — remain.
 
 Internals (not API features) considered and deferred: a sparse/RLE coverage format
 to skip the transparent ~40–60% of a fill's bbox — analysis and why dense+SIMD stays
@@ -75,11 +82,17 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   silhouette is the op's coverage (exact for opaque paint/images, an
   approximation for semi-transparent gradient/pattern alpha or a sprite's own
   alpha shape).
+- **`filter`** covers the eight colour functions (`brightness`, `contrast`,
+  `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`), applied
+  in list order to every painted op, behind a typed API (`canvas_add_filter_*`
+  — no CSS string parsing). `blur()` and `drop-shadow()` — which reuse the
+  shadow pipeline's separable box blur — remain.
 
 ## Missing entirely
 
-- **`filter`** — the CSS filter functions (`blur`, `drop-shadow`, `brightness`,
-  `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`).
+- Nothing at the moment: every remaining gap is a narrower-than-spec row above
+  or out of scope below. (`filter`'s `blur()`/`drop-shadow()` are the nearest
+  thing — tracked under partial now that the colour functions are in.)
 
 ## Out of scope for a headless renderer
 
