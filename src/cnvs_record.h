@@ -48,6 +48,48 @@ void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated 
                        float x, float y, float max_width,
                        char const *__counted_by(len) text, int len);
 
+// File-local numbered-object id spaces, shared with the replay parser: the
+// recorder never emits an id at or past the cap, and the parser rejects one.
+// A recording that uses more distinct images than this stops carrying the
+// extras (their op lines are skipped too, so the file stays well-formed) --
+// the recorder's usual best-effort posture.  The byte cap bounds one image
+// block's decoded allocation on replay; it is validated before either of the
+// block's buffers is allocated, and an incompressible image much past it
+// could not fit the 64 MiB file cap anyway.
+enum {
+    CNVS_REC_IMAGES_MAX = 256,
+    CNVS_REC_IMAGE_BYTES_MAX = 64 << 20,  // w*h*4 cap per image block
+};
+
+// Serialize one RGBA8 image (w*h*4 == len bytes, top row first) as an `image`
+// block -- deflated (cnvs_zlib) and base64-chunked into `bits` lines exactly
+// like an emoji capture -- returning its file-local id.  Deduplicated by
+// CONTENT within the recording (the recorder keeps its own copy of each
+// emitted image; the caller's buffer is borrowed and may be freed or mutated
+// between ops), so a pattern plus several draw_image of one buffer cost one
+// block.  Returns -1, emitting nothing, when the image cannot be carried:
+// dimensions outside the format's caps, the id space exhausted, or an
+// allocation failure -- the caller skips its op line too.
+int cnvs_rec_image(cnvs_recorder *__single r,
+                   uint8_t const *__counted_by(len) px, int len, int w, int h);
+
+// One op line referencing an image block: `name <image-id> <args...>`, the
+// args as floats (draw_image / draw_image_scaled / draw_image_subrect) or as
+// integers (put_image_data / put_image_data_dirty, whose placement and dirty
+// rect are int-typed in the API).
+void cnvs_rec_image_floats(cnvs_recorder *__single r,
+                           char const *__null_terminated name, int id,
+                           float const *__counted_by(n) v, int n);
+void cnvs_rec_image_ints(cnvs_recorder *__single r,
+                         char const *__null_terminated name, int id,
+                         int const *__counted_by(n) v, int n);
+
+// `set_fill_pattern <image-id> <repeat-name>` (and the stroke twin): the
+// pattern's pixels ride the image block; the repeat mode is written by name.
+void cnvs_rec_pattern(cnvs_recorder *__single r,
+                      char const *__null_terminated name, int id,
+                      canvas_pattern_repeat repeat);
+
 // Serialize the derived text data a fill_text/stroke_text op is about to use --
 // interned fonts (with their size-1.0 vmetrics), canonical glyph curves + ink
 // bounds, color-glyph captures, and the shaped line -- as `font` / `glyph` /

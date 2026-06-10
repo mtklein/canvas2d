@@ -9,9 +9,11 @@
 #include "cnvs_replay.h"
 
 #include "canvas.h"
+#include "cnvs_record.h"  // the shared image-id caps (CNVS_REC_IMAGES_MAX, ...)
 #include "cnvs_text.h"
 #include "cnvs_zlib.h"
 
+#include <limits.h>
 #include <math.h>
 #include <ptrcheck.h>
 #include <stdio.h>
@@ -180,6 +182,49 @@ static bool read_uint(char const *__counted_by(le) data, size_t le,
     return true;
 }
 
+// Next token parsed as a signed decimal integer with |value| <= cap (the
+// int-typed op arguments: put_image_data placement, dirty rects, resize).
+// An optional leading '-' (the recorder's %d never writes '+'), then digits.
+static bool read_int(char const *__counted_by(le) data, size_t le,
+                     size_t *__single jp, long cap, long *__single out) {
+    size_t ts, tlen;
+    if (!read_token(data, le, jp, &ts, &tlen) || tlen == 0) {
+        return false;
+    }
+    size_t k = 0;
+    bool neg = data[ts] == '-';
+    if (neg) {
+        k = 1;
+        if (tlen == 1) {
+            return false;  // a bare "-"
+        }
+    }
+    long v = 0;
+    for (; k < tlen; k++) {
+        char ch = data[ts + k];
+        if (ch < '0' || ch > '9') {
+            return false;
+        }
+        v = v * 10 + (ch - '0');
+        if (v > cap) {
+            return false;
+        }
+    }
+    *out = neg ? -v : v;
+    return true;
+}
+
+static bool read_ints(char const *__counted_by(le) data, size_t le,
+                      size_t *__single jp, long cap,
+                      long *__counted_by(n) v, int n) {
+    for (int i = 0; i < n; i++) {
+        if (!read_int(data, le, jp, cap, &v[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool read_floats(char const *__counted_by(le) data, size_t le,
                         size_t *__single jp, float *__counted_by(n) f, int n) {
     for (int i = 0; i < n; i++) {
@@ -229,6 +274,18 @@ static bool read_bool(char const *__counted_by(le) data, size_t le,
 // those entries drop and the affected text degrades exactly as a live cache
 // under pressure does.
 
+// One file-local numbered image (`image` block): a borrowed view of the
+// decoded RGBA8 the canvas has adopted (cnvs_canvas_own_image -- patterns
+// borrow their source, so the pixels must outlive replay).  px != NULL is the
+// "declared" flag: unlike font interning, an image block has no degraded
+// landing -- a rebuild failure stops replay -- so a declared id always holds
+// pixels.
+struct replay_image {
+    uint8_t *__counted_by(len) px;
+    int len;  // w*h*4
+    int w, h;
+};
+
 struct replay_blocks {
     int map[CNVS_FONT_INTERN_N];    // file font id -> interned cache id (-1 =
                                     // interning degraded; references still parse)
@@ -239,24 +296,29 @@ struct replay_blocks {
     float size_px;                  // the pending shape's cache key
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
     int text_len;
-    // The bitmap block under construction (owned until its last `bits` line
-    // inflates and hands the pixels to the cache).  bm accumulates the
-    // DEFLATED stream the `bits` lines carry (bm_zlen declared bytes); the
-    // decoded w*h*4 pixel buffer is allocated only once the stream has landed
-    // completely and must inflate to exactly bm_total bytes.  The stream is
-    // decoded and inflate-validated even when the block's font id maps to a
-    // degraded intern (bm_fid -1): the bits still parse and validate, they
-    // just have nowhere to land -- the glyph-block posture.
+    // The bitmap/image block under construction (owned until its last `bits`
+    // line inflates and hands the pixels on).  bm accumulates the DEFLATED
+    // stream the `bits` lines carry (bm_zlen declared bytes); the decoded
+    // w*h*4 pixel buffer is allocated only once the stream has landed
+    // completely and must inflate to exactly bm_total bytes.  bm_img >= 0
+    // means the pending block is an `image` (the pixels land in the image
+    // table under that id); -1 means a `bitmap` (emoji capture), landing in
+    // the text cache under bm_fid.  A capture's stream is decoded and
+    // inflate-validated even when its font id maps to a degraded intern
+    // (bm_fid -1): the bits still parse and validate, they just have nowhere
+    // to land -- the glyph-block posture.
     uint8_t *__counted_by(bm_len) bm;
     int bm_len;     // the buffer's byte size (bm_zlen when allocated)
     int bm_zlen;    // declared deflated byte count
     int bm_total;   // expected inflated bytes: w*h*4
     int bm_fill;    // deflated bytes decoded so far
     int bm_lines;   // `bits` lines still expected; > 0 = a block is pending
-    int bm_fid;     // interned cache id for the insert, or -1
+    int bm_fid;     // interned cache id for a capture's insert, or -1
+    int bm_img;     // image-table id for an `image` block's insert, or -1
     long bm_gid;
     int bm_w, bm_h;
     float bm_ink[4];  // capture-px ink box x0 y0 x1 y1
+    struct replay_image img[CNVS_REC_IMAGES_MAX];  // declared `image` blocks
 };
 
 // Free the cross-line state (the pending shape, if its run lines never
@@ -271,8 +333,8 @@ static void blocks_drop(struct replay_blocks *__single b) {
     b->text = NULL;
 }
 
-// Free the pending bitmap state (a block whose `bits` lines never finished,
-// or one whose inflated pixels were just handed to the cache).
+// Free the pending bitmap/image state (a block whose `bits` lines never
+// finished, or one whose inflated pixels were just handed on).
 static void bitmap_drop(struct replay_blocks *__single b) {
     free(b->bm);
     b->bm_len = 0;
@@ -282,6 +344,7 @@ static void bitmap_drop(struct replay_blocks *__single b) {
     b->bm_fill = 0;
     b->bm_lines = 0;
     b->bm_fid = -1;
+    b->bm_img = -1;
     b->bm_gid = 0;
     b->bm_w = 0;
     b->bm_h = 0;
@@ -483,6 +546,7 @@ static bool replay_bitmap(struct replay_blocks *__single b,
     b->bm_len = (int)zlen;
     b->bm_zlen = (int)zlen;
     b->bm_fid = b->map[id];  // -1 = interning degraded: validate, don't land
+    b->bm_img = -1;          // a capture, not an `image` block
     b->bm_total = (int)total;
     b->bm_fill = 0;
     b->bm_lines = (int)nlines;
@@ -492,6 +556,54 @@ static bool replay_bitmap(struct replay_blocks *__single b,
     for (int k = 0; k < 4; k++) {
         b->bm_ink[k] = ink[k];
     }
+    return true;
+}
+
+// image <id> <w> <h> <zlen> <nlines> -- begin one numbered RGBA8 image (a
+// drawImage / putImageData / pattern source): w x h straight-alpha pixels,
+// deflated to exactly <zlen> bytes arriving in exactly <nlines> `bits` lines,
+// the emoji-capture machinery reused wholesale.  Strict: an unused id (ids
+// declare once), dims >= 1 with w*h*4 <= CNVS_REC_IMAGE_BYTES_MAX (bounding
+// the decoded allocation before either buffer exists), zlen in
+// [1, cnvs_zlib_bound(w*h*4)] and nlines in [1, ceil(zlen / 3)].
+static bool replay_image(struct replay_blocks *__single b,
+                         char const *__counted_by(le) data, size_t le, size_t j) {
+    long id = 0, w = 0, h = 0, zlen = 0, nlines = 0;
+    if (!read_uint(data, le, &j, CNVS_REC_IMAGES_MAX - 1, &id) || b->img[id].px) {
+        return false;
+    }
+    long const dcap = CNVS_REC_IMAGE_BYTES_MAX / 4;  // a 1-px-tall image's max w
+    if (!read_uint(data, le, &j, dcap, &w) || w < 1 ||
+        !read_uint(data, le, &j, dcap, &h) || h < 1 ||
+        w * h * 4 > CNVS_REC_IMAGE_BYTES_MAX) {  // both <= 2^24: no overflow
+        return false;
+    }
+    long const total = w * h * 4;
+    if (!read_uint(data, le, &j, cnvs_zlib_bound((int)total), &zlen) ||
+        zlen < 1) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, (zlen + 2) / 3, &nlines) || nlines < 1) {
+        return false;
+    }
+    if (!at_eol(data, le, j)) {
+        return false;
+    }
+    uint8_t *zs = malloc((size_t)zlen);
+    if (!zs) {
+        return false;  // OOM while rebuilding: stop replay
+    }
+    b->bm = zs;
+    b->bm_len = (int)zlen;
+    b->bm_zlen = (int)zlen;
+    b->bm_fid = -1;
+    b->bm_img = (int)id;
+    b->bm_total = (int)total;
+    b->bm_fill = 0;
+    b->bm_lines = (int)nlines;
+    b->bm_gid = 0;
+    b->bm_w = (int)w;
+    b->bm_h = (int)h;
     return true;
 }
 
@@ -586,7 +698,19 @@ static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
             free(px);
             return false;  // malformed zlib, or a valid stream of the wrong size
         }
-        if (b->bm_fid >= 0) {
+        if (b->bm_img >= 0) {
+            // An `image` block: the canvas adopts the pixels (patterns borrow
+            // them beyond replay), and the table keeps a borrowed view for
+            // the ops that reference the id.
+            if (!cnvs_canvas_own_image(cv, px, b->bm_total)) {
+                free(px);
+                return false;  // OOM while rebuilding: stop replay
+            }
+            b->img[b->bm_img].px = px;
+            b->img[b->bm_img].len = b->bm_total;
+            b->img[b->bm_img].w = b->bm_w;
+            b->img[b->bm_img].h = b->bm_h;
+        } else if (b->bm_fid >= 0) {
             cnvs_text_cache_put_capture(cnvs_canvas_text_cache(cv), b->bm_fid,
                                         (uint16_t)b->bm_gid, px, b->bm_total,
                                         b->bm_w, b->bm_h, b->bm_ink[0],
@@ -731,6 +855,25 @@ static bool replay_run(canvas *__single cv, struct replay_blocks *__single b,
     }
     return true;
 }
+
+// Next token parsed as a declared image-block id: the table entry to draw or
+// tile from.  False for an out-of-range or never-declared id.
+static bool read_image_id(struct replay_blocks *__single b,
+                          char const *__counted_by(le) data, size_t le,
+                          size_t *__single jp, int *__single out) {
+    long id = 0;
+    if (!read_uint(data, le, jp, CNVS_REC_IMAGES_MAX - 1, &id) ||
+        !b->img[id].px) {
+        return false;
+    }
+    *out = (int)id;
+    return true;
+}
+
+// Repeat-mode names in canvas_pattern_repeat order (matches cnvs_record.c).
+static char const *const k_repeat[] = {
+    "repeat", "repeat-x", "repeat-y", "no-repeat",
+};
 
 // Composite-op names in enum order (canvas_composite_op).
 static char const *const k_composite[] = {
@@ -900,6 +1043,70 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     else if (tok_eq(data, le, cs, cl, "shape"))  { return replay_shape(cv, blk, data, le, j); }
     else if (tok_eq(data, le, cs, cl, "run"))    { return replay_run(cv, blk, data, le, j); }
 
+    // --- image blocks + the ops that reference them by id ---
+    else if (tok_eq(data, le, cs, cl, "image"))  { return replay_image(blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "draw_image")) {
+        int id;
+        if (!read_image_id(blk, data, le, &j, &id) ||
+            !read_floats(data, le, &j, f, 2)) return false;
+        canvas_draw_image(cv, blk->img[id].px, blk->img[id].w, blk->img[id].h,
+                          f[0], f[1]);
+    }
+    else if (tok_eq(data, le, cs, cl, "draw_image_scaled")) {
+        int id;
+        if (!read_image_id(blk, data, le, &j, &id) ||
+            !read_floats(data, le, &j, f, 4)) return false;
+        canvas_draw_image_scaled(cv, blk->img[id].px, blk->img[id].w,
+                                 blk->img[id].h, f[0], f[1], f[2], f[3]);
+    }
+    else if (tok_eq(data, le, cs, cl, "draw_image_subrect")) {
+        int id;
+        if (!read_image_id(blk, data, le, &j, &id) ||
+            !read_floats(data, le, &j, f, 8)) return false;
+        canvas_draw_image_subrect(cv, blk->img[id].px, blk->img[id].w,
+                                  blk->img[id].h, f[0], f[1], f[2], f[3],
+                                  f[4], f[5], f[6], f[7]);
+    }
+    else if (tok_eq(data, le, cs, cl, "put_image_data")) {
+        int id;
+        long v[2];
+        if (!read_image_id(blk, data, le, &j, &id) ||
+            !read_ints(data, le, &j, INT_MAX, v, 2)) return false;
+        canvas_put_image_data(cv, blk->img[id].px, blk->img[id].len,
+                              blk->img[id].w, blk->img[id].h,
+                              (int)v[0], (int)v[1]);
+    }
+    else if (tok_eq(data, le, cs, cl, "put_image_data_dirty")) {
+        int id;
+        long v[6];
+        if (!read_image_id(blk, data, le, &j, &id) ||
+            !read_ints(data, le, &j, INT_MAX, v, 6)) return false;
+        canvas_put_image_data_dirty(cv, blk->img[id].px, blk->img[id].len,
+                                    blk->img[id].w, blk->img[id].h,
+                                    (int)v[0], (int)v[1], (int)v[2], (int)v[3],
+                                    (int)v[4], (int)v[5]);
+    }
+    else if (tok_eq(data, le, cs, cl, "set_fill_pattern") ||
+             tok_eq(data, le, cs, cl, "set_stroke_pattern")) {
+        bool fill = data[cs + 4] == 'f';  // set_[f]ill vs set_[s]troke
+        int id;
+        size_t ts, tl;
+        if (!read_image_id(blk, data, le, &j, &id) ||
+            !read_token(data, le, &j, &ts, &tl)) return false;
+        int rep = -1;
+        for (int k = 0; k < (int)(sizeof k_repeat / sizeof k_repeat[0]); k++) {
+            if (tok_eq(data, le, ts, tl, k_repeat[k])) { rep = k; break; }
+        }
+        if (rep < 0) return false;
+        if (fill) {
+            canvas_set_fill_pattern(cv, blk->img[id].px, blk->img[id].w,
+                                    blk->img[id].h, (canvas_pattern_repeat)rep);
+        } else {
+            canvas_set_stroke_pattern(cv, blk->img[id].px, blk->img[id].w,
+                                      blk->img[id].h, (canvas_pattern_repeat)rep);
+        }
+    }
+
     // --- text tail (rest of line, UTF-8) ---
     else if (tok_eq(data, le, cs, cl, "fill_text") || tok_eq(data, le, cs, cl, "stroke_text")) {
         bool fill = data[cs] == 'f';
@@ -933,8 +1140,10 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
                                .text_len = 0, .text = NULL, .bm = NULL,
                                .bm_len = 0, .bm_zlen = 0, .bm_total = 0,
                                .bm_fill = 0,
-                               .bm_lines = 0, .bm_fid = -1, .bm_gid = 0,
-                               .bm_w = 0, .bm_h = 0, .bm_ink = { 0 } };
+                               .bm_lines = 0, .bm_fid = -1, .bm_img = -1,
+                               .bm_gid = 0,
+                               .bm_w = 0, .bm_h = 0, .bm_ink = { 0 },
+                               .img = { { .px = NULL, .len = 0, .w = 0, .h = 0 } } };
     for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {
         b.map[k] = -1;
         b.seen[k] = false;

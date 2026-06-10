@@ -476,6 +476,26 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // emoji included, replays byte-identically on machines without the recording
 // machine's fonts.
 //
+// Image-block lines carry the RGBA8 sources the image ops need, the capture
+// machinery reused wholesale:
+//     image <id> <w> <h> <zlen> <nlines>
+//     bits <base64...>                            (exactly nlines of these)
+// declares file-local numbered image <id> -- w x h straight-alpha RGBA8,
+// deflated and base64-chunked exactly like a capture, content-deduplicated by
+// the recorder so one buffer used many ways costs one block.  The ops
+// reference it by id (the source dims come from the block; put_image_data's
+// int-typed args are written as integers):
+//     draw_image <id> <dx> <dy>
+//     draw_image_scaled <id> <dx> <dy> <dw> <dh>
+//     draw_image_subrect <id> <sx> <sy> <sw> <sh> <dx> <dy> <dw> <dh>
+//     put_image_data <id> <dx> <dy>
+//     put_image_data_dirty <id> <dx> <dy> <dirty-x> <dirty-y> <dirty-w> <dirty-h>
+//     set_fill_pattern <id> <repeat|repeat-x|repeat-y|no-repeat>
+//     set_stroke_pattern <id> <repeat...>
+// A replayed image lives as long as the canvas (a pattern borrows its
+// source), and one program declares at most 256 images of at most 64 MiB
+// (w*h*4) each -- both validated before the block's buffers are allocated.
+//
 // Parsing is strict: an unknown command, a bad argument, an over-long line, or
 // a malformed block (an undeclared font id, a bad verb token, a cluster index
 // past the text length, a non-finite number where the recorder writes finite
@@ -484,9 +504,9 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // or inflates to anything but exactly w*h*4 bytes) stops replay and returns
 // false (commands before the faulty line have already been applied; the canvas
 // remains valid and drawable).  Numbers are
-// written with %.9g and reparse to the identical float32.  The query and image
-// ops (measure_text, read_rgba, write_png, get/put_image_data, draw_image) are
-// not part of the text format.
+// written with %.9g and reparse to the identical float32.  The pure queries
+// (measure_text, is_point_in_*, get_image_data, read_rgba, write_png) move no
+// pixels and are not part of the text format.
 bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path);
 
 // Begin recording subsequent drawing calls to `path` as a text canvas-program in
@@ -509,13 +529,18 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // machine without the recording machine's fonts, with no platform text call
 // at all, emoji included.
 //
+// Image ops round-trip the same way: draw_image (all three forms),
+// put_image_data (plain + dirty-rect), and set_fill_pattern/set_stroke_pattern
+// embed their RGBA8 source as an `image` block (deflated, deduplicated by
+// content within the file) and write one op line referencing it -- see
+// canvas_replay_from for the caps past which an image degrades un-recorded.
+//
 // Only the ops the text format covers are recorded -- the same subset
 // replay_from understands.  arc/round_rect/arc_to are written as themselves;
-// calls outside the format (round_rect_radii, conic gradients, patterns, image
-// smoothing, draw_image, get/put_image_data, Path2D fill/stroke/clip, the
-// filter list (set_filter_none / add_filter_*), reset, resize) are not
-// recorded, so a session that uses them does not round-trip through the text
-// format.
+// calls outside the format (round_rect_radii, conic gradients, image
+// smoothing, Path2D fill/stroke/clip, the filter list (set_filter_none /
+// add_filter_*), reset, resize) are not recorded, so a session that uses them
+// does not round-trip through the text format.
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh

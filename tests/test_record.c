@@ -93,6 +93,26 @@ static void draw_program(canvas *__single cv) {
     canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
     canvas_stroke_text(cv, "yo", 4.0f, 30.0f);
 
+    // Image ops: one 4x3 source through every form -- the three draw_image
+    // overloads, both putImageData forms, and both pattern paints.  The same
+    // buffer every time, so the file carries ONE content-deduped image block
+    // (the idempotence compare below pins the dedupe and the id assignment).
+    uint8_t img[4 * 3 * 4];
+    for (int i = 0; i < (int)sizeof img; i++) {
+        img[i] = (uint8_t)(i * 5);
+    }
+    canvas_draw_image(cv, img, 4, 3, 2.0f, 2.0f);
+    canvas_draw_image_scaled(cv, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
+    canvas_draw_image_subrect(cv, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
+                              18.0f, 2.0f, 6.0f, 6.0f);
+    canvas_put_image_data(cv, img, (int)sizeof img, 4, 3, 26, 2);
+    canvas_put_image_data_dirty(cv, img, (int)sizeof img, 4, 3, 32, 2,
+                                1, 1, 2, 2);
+    canvas_set_fill_pattern(cv, img, 4, 3, CANVAS_REPEAT);
+    canvas_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
+    canvas_set_stroke_pattern(cv, img, 4, 3, CANVAS_REPEAT_X);
+    canvas_stroke_rect(cv, 16.0f, 24.0f, 10.0f, 6.0f);
+
     // A clip last, so a non-empty path region is exercised by the clip command.
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)W, (float)H);

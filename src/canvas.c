@@ -12,6 +12,7 @@
 #include "cnvs_path.h"
 #include "cnvs_png.h"
 #include "cnvs_record.h"
+#include "cnvs_replay.h"
 #include "cnvs_stroke.h"
 #include "cnvs_text.h"
 
@@ -48,6 +49,17 @@ static float clamp01(float v) {
     }
     return v > 1.0f ? 1.0f : v;
 }
+
+// One RGBA8 buffer adopted from a replayed `image` block
+// (cnvs_canvas_own_image): a singly linked list the canvas frees only at
+// canvas_destroy.  Patterns borrow their source, so a replayed program's
+// images must outlive replay -- and survive reset(), which restores drawing
+// state but does not invalidate the program's blocks mid-replay.
+struct cnvs_owned_image {
+    struct cnvs_owned_image *__single next;
+    uint8_t *__counted_by(len) data;
+    int len;
+};
 
 // Which paint a fill/stroke uses.  SOLID reads the `fill`/`stroke` colour,
 // GRADIENT the `*_grad`, PATTERN the `*_pattern`.
@@ -134,6 +146,7 @@ struct canvas {
     float *__counted_by(trow_cap) trow;    // one row of gradient parameters (vectorized solve)
     int trow_cap;
     cnvs_recorder *__single rec;  // NULL unless canvas_record_to is active
+    struct cnvs_owned_image *__single owned_images;  // replayed `image` blocks
     // Shadow scratch: a single-channel mask blurred in place (src/dst ping-pong
     // for the separable box passes), sized to the shadow's device region.  Each
     // gets its own cap so the (pointer, count) pairs update independently under
@@ -243,6 +256,7 @@ canvas *__single canvas_create(int width, int height) {
     cv->font_built_size = 0.0f;
     cnvs_text_cache_init(&cv->text_cache);
     cv->rec = NULL;
+    cv->owned_images = NULL;
     return cv;
 }
 
@@ -271,7 +285,26 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->shadow_src);
     free(cv->shadow_dst);
     free(cv->blur_tmp);
+    for (struct cnvs_owned_image *__single n = cv->owned_images; n;) {
+        struct cnvs_owned_image *__single next = n->next;
+        free(n->data);
+        free(n);
+        n = next;
+    }
     free(cv);
+}
+
+bool cnvs_canvas_own_image(canvas *__single cv,
+                           uint8_t *__counted_by(len) px, int len) {
+    struct cnvs_owned_image *__single node = calloc(1, sizeof *node);
+    if (!node) {
+        return false;
+    }
+    node->data = px;
+    node->len = len;
+    node->next = cv->owned_images;
+    cv->owned_images = node;
+    return true;
 }
 
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path) {
@@ -549,6 +582,12 @@ void canvas_set_fill_pattern(canvas *__single cv,
     if (!rgba8_dims_ok(w, h)) {
         return;  // invalid dimensions: leave the fill paint unchanged
     }
+    if (cv->rec) {
+        // The pattern pixels ride a content-deduped image block; when the
+        // block can't be carried (caps/OOM) the op line is skipped with it.
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h);
+        if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_fill_pattern", id, repeat); }
+    }
     pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
     cv->cur.fill_kind = CNVS_PAINT_PATTERN;
 }
@@ -585,6 +624,10 @@ void canvas_set_stroke_pattern(canvas *__single cv,
                                int w, int h, canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
         return;
+    }
+    if (cv->rec) {
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h);
+        if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_stroke_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
     cv->cur.stroke_kind = CNVS_PAINT_PATTERN;
@@ -2404,6 +2447,17 @@ void canvas_draw_image_subrect(canvas *__single cv,
     if (!rgba8_dims_ok(sw, sh)) {
         return;
     }
+    if (cv->rec) {
+        // The source's dims ride the image block; the op line carries the two
+        // user-space rects.  Suspended when draw_image/draw_image_scaled is
+        // the op the caller actually issued (they record as themselves).
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh);
+        if (id >= 0) {
+            cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
+                                  (float[]){ sx, sy, sww, shh, dx, dy, dw, dh },
+                                  8);
+        }
+    }
     draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
                     dx, dy, dw, dh, false);
 }
@@ -2411,16 +2465,37 @@ void canvas_draw_image_subrect(canvas *__single cv,
 void canvas_draw_image(canvas *__single cv,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy) {
+    // Record `draw_image` as itself, then swallow the subrect form it
+    // delegates to.  rgba8_dims_ok gates the w*h*4 the block needs (the same
+    // predicate the delegate applies before painting).
+    if (cv->rec && rgba8_dims_ok(sw, sh)) {
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh);
+        if (id >= 0) {
+            cnvs_rec_image_floats(cv->rec, "draw_image", id,
+                                  (float[]){ dx, dy }, 2);
+        }
+    }
+    cnvs_rec_enter(cv->rec);
     canvas_draw_image_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
                               dx, dy, (float)sw, (float)sh);
+    cnvs_rec_leave(cv->rec);
 }
 
 void canvas_draw_image_scaled(canvas *__single cv,
                               uint8_t const *__counted_by(sw * sh * 4) src,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh) {
+    if (cv->rec && rgba8_dims_ok(sw, sh)) {
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh);
+        if (id >= 0) {
+            cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
+                                  (float[]){ dx, dy, dw, dh }, 4);
+        }
+    }
+    cnvs_rec_enter(cv->rec);
     canvas_draw_image_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
                               dx, dy, dw, dh);
+    cnvs_rec_leave(cv->rec);
 }
 
 // One pixel's four channels as a vector: a premultiplied cnvs_premul is four
@@ -2569,6 +2644,15 @@ void canvas_put_image_data(canvas *__single cv,
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
         return;
     }
+    if (cv->rec) {
+        // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
+        // placement rides the op line.
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h);
+        if (id >= 0) {
+            cnvs_rec_image_ints(cv->rec, "put_image_data", id,
+                                (int[]){ dx, dy }, 2);
+        }
+    }
     put_image_sub(cv, data, len, w, dx, dy, 0, 0, w, h);
 }
 
@@ -2579,6 +2663,16 @@ void canvas_put_image_data_dirty(canvas *__single cv,
                                  int dirty_w, int dirty_h) {
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
         return;
+    }
+    if (cv->rec) {
+        // The raw dirty args ride the op line; replay re-normalises them
+        // through this very function, so the recorded form stays the call.
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h);
+        if (id >= 0) {
+            cnvs_rec_image_ints(cv->rec, "put_image_data_dirty", id,
+                                (int[]){ dx, dy, dirty_x, dirty_y,
+                                         dirty_w, dirty_h }, 6);
+        }
     }
     // Normalise the dirty rect (ImageData space) into a sub-rect of [0,w] x [0,h],
     // per the spec: flip negative extents, then clamp to the source bounds.  All

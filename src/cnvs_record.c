@@ -9,12 +9,26 @@
 #include "cnvs_zlib.h"
 
 #include <ptrcheck.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+// One content-deduped `image` block already in this file: an owned copy of
+// the pixels for the content compare (the caller's buffer is borrowed and may
+// be freed or mutated between the ops that reference it).  The entry's index
+// is its file-local id.
+typedef struct {
+    uint8_t *__counted_by(len) px;
+    int len;
+    int w, h;
+} rec_image;
 
 struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
+    rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
+    int nimg;
 };
 
 cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path) {
@@ -37,6 +51,9 @@ void cnvs_recorder_close(cnvs_recorder *__single r) {
         return;
     }
     (void)fclose(r->f);
+    for (int i = 0; i < r->nimg; i++) {
+        free(r->img[i].px);
+    }
     free(r);
 }
 
@@ -316,6 +333,111 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
         fputc('\n', r->f);
     }
     slot->emitted = true;
+}
+
+int cnvs_rec_image(cnvs_recorder *__single r,
+                   uint8_t const *__counted_by(len) px, int len, int w, int h) {
+    if (!r || r->suspend != 0) {
+        return -1;
+    }
+    if (w < 1 || h < 1 || (int64_t)w * h * 4 != (int64_t)len ||
+        len > CNVS_REC_IMAGE_BYTES_MAX) {
+        return -1;  // outside the format's caps: the op degrades un-recorded
+    }
+    // Content dedupe: a repeated buffer (a pattern reused per repeat mode, an
+    // atlas drawn per subrect) references the block already in the file.
+    for (int i = 0; i < r->nimg; i++) {
+        if (r->img[i].w == w && r->img[i].h == h && r->img[i].len == len &&
+            memcmp(r->img[i].px, px, (size_t)len) == 0) {
+            return i;
+        }
+    }
+    if (r->nimg >= CNVS_REC_IMAGES_MAX) {
+        return -1;  // id space exhausted: skip the block (and its op)
+    }
+    int const n = len;  // a counted local cannot bind a parameter's count
+    uint8_t *__counted_by_or_null(n) copy = malloc((size_t)n);
+    if (!copy) {
+        return -1;  // OOM: nothing emitted, the file stays well-formed
+    }
+    memcpy(copy, px, (size_t)n);
+    // Deflate + base64-chunk exactly like an emoji capture (the same `bits`
+    // lines, the same line cap arithmetic); the header carries the deflated
+    // byte count and the decoded size stays w*h*4, derivable from the dims.
+    int const zcap = cnvs_zlib_bound(len);
+    uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
+    if (!z) {
+        free(copy);
+        return -1;
+    }
+    int const zn = cnvs_zlib_deflate(z, zcap, px, len);
+    if (zn < 0) {
+        free(z);
+        free(copy);
+        return -1;  // deflate's own scratch allocation failed
+    }
+    int const id = r->nimg;
+    int const nlines = (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
+    fprintf(r->f, "image %d %d %d %d %d\n", id, w, h, zn, nlines);
+    for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
+        int const rem = zn - off;
+        put_bits_line(r->f, z + off,
+                      rem < CNVS_REC_BITS_PER_LINE ? rem : CNVS_REC_BITS_PER_LINE);
+    }
+    free(z);
+    r->img[id].len = len;
+    r->img[id].px = copy;
+    r->img[id].w = w;
+    r->img[id].h = h;
+    r->nimg = id + 1;
+    return id;
+}
+
+void cnvs_rec_image_floats(cnvs_recorder *__single r,
+                           char const *__null_terminated name, int id,
+                           float const *__counted_by(n) v, int n) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    fprintf(r->f, " %d", id);
+    put_floats(r->f, v, n);
+    fputc('\n', r->f);
+}
+
+void cnvs_rec_image_ints(cnvs_recorder *__single r,
+                         char const *__null_terminated name, int id,
+                         int const *__counted_by(n) v, int n) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    fprintf(r->f, " %d", id);
+    for (int i = 0; i < n; i++) {
+        fprintf(r->f, " %d", v[i]);
+    }
+    fputc('\n', r->f);
+}
+
+// Repeat-mode names in canvas_pattern_repeat order (matches cnvs_replay.c).
+static char const *const k_repeat[] = {
+    "repeat", "repeat-x", "repeat-y", "no-repeat",
+};
+
+void cnvs_rec_pattern(cnvs_recorder *__single r,
+                      char const *__null_terminated name, int id,
+                      canvas_pattern_repeat repeat) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    unsigned i = (unsigned)repeat;
+    if (i >= sizeof k_repeat / sizeof k_repeat[0]) {
+        return;  // out of range; the setter stored it but no draw reads past
+    }            // the enum, and the parser accepts only the four names
+    fputs(name, r->f);
+    fprintf(r->f, " %d ", id);
+    fputs(k_repeat[i], r->f);
+    fputc('\n', r->f);
 }
 
 void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule) {

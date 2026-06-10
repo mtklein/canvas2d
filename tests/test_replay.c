@@ -59,6 +59,46 @@ int main(void) {
     CHECK(REPLAY(cv, "line_to 0 1e-99999999999\n"));      // saturates to 0, no overflow
     CHECK(REPLAY(cv, "set_global_alpha 1e2000000000\n")); // huge exp into a clamped setter
 
+    // Image blocks: a valid 1x1 block (a 12-byte zlib stream of the 4 RGBA
+    // bytes) feeds every op form that references it by id.
+    CHECK(REPLAY(cv,
+        "image 0 1 1 12 1\n"
+        "bits eJz7z8DwHwAE/wH/\n"
+        "draw_image 0 4 4\n"
+        "draw_image_scaled 0 8 4 6 6\n"
+        "draw_image_subrect 0 0 0 1 1 16 4 6 6\n"
+        "put_image_data 0 24 4\n"
+        "put_image_data_dirty 0 30 4 0 0 1 1\n"
+        "put_image_data 0 -1 -1\n"          // negative placement clips fine
+        "set_fill_pattern 0 repeat\n"
+        "fill_rect 4 12 8 8\n"
+        "set_stroke_pattern 0 no-repeat\n"));
+    // The 1x1 red source landed via put_image_data.
+    canvas_get_image_data(cv, 24, 4, 1, 1, px, 4);
+    CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255);
+
+    // Malformed image blocks and references are all rejected.
+    CHECK(!REPLAY(cv, "draw_image 7 0 0\n"));            // undeclared id
+    CHECK(!REPLAY(cv, "image 0 0 1 12 1\n"));            // zero dimension
+    CHECK(!REPLAY(cv, "image 0 1 1 0 1\n"));             // zero-length stream
+    CHECK(!REPLAY(cv, "image 0 1 1 12 999\n"));          // nlines > ceil(zlen/3)
+    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+                      "fill_rect 0 0 1 1\n"));           // bits must follow
+    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+                      "bits eJz7z8DwHwAE/wH/\n"
+                      "image 0 1 1 12 1\n"
+                      "bits eJz7z8DwHwAE/wH/\n"));       // id redeclared
+    CHECK(!REPLAY(cv, "image 0 1 1 4 1\n"
+                      "bits AAAAAA==\n"));               // no zlib stream at all
+    CHECK(!REPLAY(cv, "image 0 2 2 12 1\n"
+                      "bits eJz7z8DwHwAE/wH/\n"));       // inflates short of w*h*4
+    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+                      "bits eJz7z8DwHwAE/wH/\n"
+                      "put_image_data 0 1.5 0\n"));      // int arg takes no '.'
+    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+                      "bits eJz7z8DwHwAE/wH/\n"
+                      "set_fill_pattern 0 sideways\n")); // bad repeat mode
+
     // Empty / comment-only / whitespace programs are valid no-ops.
     CHECK(REPLAY(cv, ""));
     CHECK(REPLAY(cv, "# just a comment\n   \n\t\n"));
