@@ -85,7 +85,13 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
-- **Glyph outlines** are re-fetched from Core Text on every `fill_text` — no cache.
+- **Text caching** is live-only. Every canvas memoizes boundary results
+  ([text-boundary.md](text-boundary.md)): shaped lines by (size, text) and
+  canonical glyph curves by (font name, glyph id), checked before Core Text is
+  called — repeated strings shape once, repeated glyphs fetch once
+  (`test_textcache`). What's still missing is the *serialized* half of that
+  lookup: a self-contained canvas-program format carrying the derived glyph
+  data, so a recording replays without a text boundary at all.
 - **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
   coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
   [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in

@@ -261,3 +261,45 @@ data, checked before Core Text is ever called, and a self-contained serializatio
 glyph geometry into the canvas-program format. Both need the boundary's output to be
 *reusable* — keyed by font + glyph id, valid at any transform — which is exactly what
 device-space flattened points can never be.
+
+## The lookup in front: the boundary becomes a cache-miss path
+
+That lookup now exists ([../src/cnvs_text.h](../src/cnvs_text.h)'s `cnvs_text_cache`,
+one per canvas): a params → derived-data memo consulted **before** every Core Text
+call and populated live from what the boundary hands back. Two maps, mirroring the
+two things that cross:
+
+- **Shaped lines**, keyed by `(size_px bits, text bytes)`. `fillText`, `strokeText`,
+  and both measure paths used to shape and free a `cnvs_shaped` per call; they now
+  *borrow* the cached line (the cache owns it, retained `CTFontRef`s and all), so the
+  universal measure-then-draw pattern shapes once. 64 slots, LRU-evicted — a frame's
+  repeated labels stay hot, and a 64-entry scan is cheaper than anything clever.
+- **Glyph curves**, keyed by `(font name, glyph id)`. This is what the canonical
+  re-cut bought: the cached verbs/points are font-unit bytes, valid at every size,
+  pen, and transform, so one entry serves every draw — including the rare overflow
+  glyph, whose grow-and-refetch now happens once per glyph with its exact-size
+  buffers donated to the cache. The key is the *interned font name* (one
+  `cnvs_run_font_name` fetch per run), not the `CTFontRef` pointer: names are stable
+  across processes, which the serialized half of this lookup needs. Blanks cache
+  too — "no outline" is itself a boundary answer, so a space costs one fetch ever.
+
+The cache is **transparent**: a hit replays the boundary's exact bytes through the
+same checked transform/flatten a miss runs, so warm and cold renders are
+byte-identical (`test_textcache` pins this, and the gallery PNGs did not move), and
+any cache-side allocation failure degrades that lookup to a plain boundary call —
+never an op failure (the OOM sweep's text scene covers the cache's allocation
+sites). `reset()` clears it back to cold along with the rest of the canvas state.
+
+The bounds-safety story stays the good one: the memo is ordinary checked C —
+`__counted_by` key bytes and curve arrays, every probe and comparison in the sized
+model — and it *narrows* the runtime trust surface: a warm canvas re-trusts nothing,
+because the unsafe TU isn't called at all. On a text-heavy tight loop (2000×
+`fill_text` + `measure_text` of one string) the caches are worth 1.43× end to end;
+the whole-gallery number doesn't move because each scene renders once on a fresh
+canvas — cold caches, by construction.
+
+This is the **live half** of the params → derived-data lookup. The serialized half —
+the self-contained canvas-program format that carries shaped runs and canonical
+glyph curves so a recording replays with *no text boundary at all* — is what comes
+next, and it reads straight from these cache entries: stable name-keyed,
+size-independent bytes are already the wire format.
