@@ -79,9 +79,13 @@ static void scene_clip(canvas *__single cv) {
 // Text: glyph outlines from the Core Text shim, built into a path and filled --
 // the font cache + glyph-path allocation path, and the text lookup cache's own
 // allocation sites (the shape-key copy, the glyph table, the per-glyph curve
-// copies, the interned font name).  Each must degrade to a plain boundary call
-// (or a skipped op), never a crash: the repeat exercises the hit path -- and,
-// when an earlier insert was the failed allocation, the miss-then-insert retry.
+// copies, the interned font name, the emoji capture buffer and its mip
+// pyramid).  Each must degrade to a plain boundary call (or a skipped op),
+// never a crash: the repeat exercises the hit path -- and, when an earlier
+// insert was the failed allocation, the miss-then-insert retry.  A failed
+// capture allocation falls back to the per-draw boundary render (whose own
+// buffer may then fail too -> a blank glyph); a failed pyramid level samples
+// the coarsest level that did build, worst case the capture itself.
 static void scene_text(canvas *__single cv) {
     canvas_set_font_size(cv, 14.0f);
     canvas_set_fill_rgba(cv, 0.9f, 0.9f, 0.95f, 1.0f);
@@ -89,6 +93,8 @@ static void scene_text(canvas *__single cv) {
     canvas_fill_text(cv, "Ag", 2.0f, 20.0f);     // warm: shape + glyph hits
     (void)canvas_measure_text(cv, "Ag");         // measure-then-draw shares the line
     canvas_fill_text(cv, "g A", 2.0f, 30.0f);    // new key; shared glyphs, a blank
+    canvas_fill_text(cv, "\xF0\x9F\x99\x82", 2.0f, 30.0f);  // 🙂: capture + mips
+    canvas_fill_text(cv, "\xF0\x9F\x99\x82", 12.0f, 30.0f); // warm capture hit
 }
 
 // Image pattern fill (createPattern path): a small tile sampled under the CTM.

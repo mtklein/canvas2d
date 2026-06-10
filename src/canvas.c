@@ -156,6 +156,11 @@ static cnvs_vec2 xf(canvas *__single cv, float x, float y);
 static bool ensure_tile(canvas *__single cv, int npix);
 static int sigma_box_radius(float sigma);
 static int shadow_offset(float v);
+static void draw_image_quad(canvas *__single cv,
+                            uint8_t const *__counted_by(slen) src, int slen,
+                            int sw, int sh, float sx, float sy,
+                            float sww, float shh, float dx, float dy,
+                            float dw, float dh, bool premul_src);
 
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
 // be paired with a positive count under -fbounds-safety.  An empty pattern stays
@@ -1976,10 +1981,45 @@ static cnvs_shaped const *__single shape_text(canvas *__single cv,
                                  text, len);
 }
 
-// Render one color (emoji) glyph as a bitmap: ask the boundary for its ink box,
-// draw it into a checked RGBA8 buffer, unpremultiply, flip to top-row-first, then
-// composite it through the CTM with canvas_draw_image_subrect -- so the emoji takes
-// the transform, clip, global alpha, and shadow like any other image.
+// Render one color (emoji) glyph from its canonical capture: pick the mip
+// level whose resolution best matches the glyph quad's device footprint and
+// sample it through the same transform-aware bilinear path drawImage takes --
+// so the emoji takes the transform, clip, global alpha, and shadow like any
+// other image, and no boundary call (indeed, no CTFontRef at all) is needed
+// once the capture exists.  The capture covers the glyph-space rect
+// [ink_x0, ink_x0 + cap_w] x [ink_y0, ink_y0 + cap_h] in capture px (y up,
+// baseline-relative); scaling by size_px / CNVS_CAPTURE_EM and pinning to the
+// pen maps it to user space.
+static void draw_glyph_capture(canvas *__single cv, cnvs_glyph_slot *__single slot,
+                               float pen_x, float baseline_y, float size_px) {
+    float const k = size_px / (float)CNVS_CAPTURE_EM;
+    float const dw = (float)slot->cap_w * k;
+    float const dh = (float)slot->cap_h * k;
+    if (!(dw > 0.0f) || !(dh > 0.0f)) {
+        return;
+    }
+    float const dx = pen_x + slot->ink_x0 * k;
+    float const dy = baseline_y - (slot->ink_y0 + (float)slot->cap_h) * k;
+    // The mip rule: the quad's device footprint is its longer mapped edge, and
+    // the level sampled is the smallest one >= that footprint -- bilinear then
+    // never downscales by more than 2x within the level, which box-halved
+    // sources handle without visible aliasing or softness.
+    cnvs_mat const m = cv->cur.ctm;
+    float const ex = hypotf(m.a * dw, m.b * dw);
+    float const ey = hypotf(m.c * dh, m.d * dh);
+    cnvs_mip const lvl = cnvs_glyph_mip(slot, ex > ey ? ex : ey);
+    if (!lvl.px) {
+        return;
+    }
+    draw_image_quad(cv, lvl.px, lvl.len, lvl.w, lvl.h, 0.0f, 0.0f,
+                    (float)lvl.w, (float)lvl.h, dx, dy, dw, dh, true);
+}
+
+// The degraded path when the capture cache can't serve (full table, OOM) but
+// the run still has its boundary handle: ask the boundary for the ink box,
+// draw into a checked RGBA8 buffer at device size, unpremultiply, then
+// composite through the CTM with canvas_draw_image_subrect -- the per-draw
+// rasterization that used to be the only emoji path.
 static void draw_color_glyph(canvas *__single cv, void *__single font,
                              uint16_t glyph, float pen_x, float baseline_y) {
     float x0, y0, x1, y1;
@@ -2023,26 +2063,49 @@ static void draw_color_glyph(canvas *__single cv, void *__single font,
     free(buf);
 }
 
-// cnvs_shaped_outline's color-glyph callback: the canvas rides along as the untyped
-// context (checked C on both ends of the void* hop, so no forge), and each emoji
-// glyph composites immediately at its pen position -- interleaved with the outline
-// accumulation exactly as the old hand-rolled walk did.
-static void paint_color_glyph(void *__single ctx, void *__single font,
+// cnvs_shaped_outline's color-glyph callback context: the canvas plus the size
+// the line was shaped at (the capture px scale's numerator).
+struct color_glyph_ctx {
+    canvas *__single cv;
+    float size_px;
+};
+
+// cnvs_shaped_outline's color-glyph callback: the context rides along untyped
+// (checked C on both ends of the void* hop, so no forge), and each emoji glyph
+// composites immediately at its pen position -- interleaved with the outline
+// accumulation exactly as the old hand-rolled walk did.  The canonical capture
+// draws it (one boundary rasterization per glyph ever, and none at all when it
+// came from a replayed bitmap block); only when the cache can't serve does a
+// live font handle fall back to the per-draw boundary render, and a handle-less
+// run with no capture draws as a blank advance.
+static void paint_color_glyph(void *__single ctx, int fid, void *__single font,
                               uint16_t glyph, float pen_x, float baseline_y) {
-    canvas *__single cv = ctx;
-    draw_color_glyph(cv, font, glyph, pen_x, baseline_y);
+    struct color_glyph_ctx *__single cc = ctx;
+    cnvs_glyph_slot *__single slot =
+        cnvs_text_cache_color(&cc->cv->text_cache, fid, font, glyph);
+    if (slot) {
+        if (slot->cap_w > 0) {
+            draw_glyph_capture(cc->cv, slot, pen_x, baseline_y, cc->size_px);
+        }
+        return;  // a cached blank: known to have no ink, nothing to draw
+    }
+    if (font) {
+        draw_color_glyph(cc->cv, font, glyph, pen_x, baseline_y);
+    }
 }
 
 // Paint a shaped line from pen origin (ox, oy) through `to_device`: accumulate the
 // outline glyphs into one path (filled or stroked), and composite color-glyph runs
-// (emoji) as bitmaps.  Core Text font fallback already happened during shaping.
-// One run/pen walk serves outlines and emoji alike: cnvs_shaped_outline does the
-// layout and hands color glyphs back through the callback above.
+// (emoji) from their canonical captures.  Core Text font fallback already happened
+// during shaping.  One run/pen walk serves outlines and emoji alike:
+// cnvs_shaped_outline does the layout and hands color glyphs back through the
+// callback above.
 static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
                          float ox, float oy, cnvs_mat to_device, bool stroke) {
     cnvs_path_reset(&cv->text_path);
+    struct color_glyph_ctx cc = { .cv = cv, .size_px = s->size_px };
     cnvs_shaped_outline(&cv->text_cache, s, ox, oy, to_device, CANVAS_FLATTEN_TOL,
-                        &cv->text_path, paint_color_glyph, cv);
+                        &cv->text_path, paint_color_glyph, &cc);
     if (stroke) {
         stroke_device_path(cv, &cv->text_path);
     } else {
@@ -2237,12 +2300,21 @@ void canvas_set_image_smoothing_quality(canvas *__single cv,
     }
 }
 
-void canvas_draw_image_subrect(canvas *__single cv,
-                               uint8_t const *__counted_by(sw * sh * 4) src,
-                               int sw, int sh, float sx, float sy,
-                               float sww, float shh, float dx, float dy,
-                               float dw, float dh) {
-    if (!rgba8_dims_ok(sw, sh) || dw <= 0.0f || dh <= 0.0f) {
+// The shared back half of drawImage and the emoji-capture draw: map the
+// user-space dest rect through the CTM to a device quad, rasterize its
+// coverage, cast the shadow, then sample the source per device pixel through
+// the inverse transform.  `premul_src` says how to read the source bytes:
+// false = straight (unpremultiplied) alpha, the public drawImage contract;
+// true = premultiplied, the canonical emoji capture -- bilinear interpolation
+// of premultiplied bytes is fringe-free, and the sample just scales by
+// alpha * coverage on its way into the premultiplied tile.
+static void draw_image_quad(canvas *__single cv,
+                            uint8_t const *__counted_by(slen) src, int slen,
+                            int sw, int sh, float sx, float sy,
+                            float sww, float shh, float dx, float dy,
+                            float dw, float dh, bool premul_src) {
+    if (!rgba8_dims_ok(sw, sh) || slen < sw * sh * 4 ||
+        dw <= 0.0f || dh <= 0.0f) {
         return;
     }
     // The dest rect transforms to a (possibly rotated) device-space quad.
@@ -2284,16 +2356,37 @@ void canvas_draw_image_subrect(canvas *__single cv,
             float fsy = sy + ((u.y - dy) / dh) * shh;
             float s[4];
             if (smooth) {
-                sample_src(src, sw * sh * 4, sw, sh, fsx, fsy, s);
+                sample_src(src, slen, sw, sh, fsx, fsy, s);
             } else {
-                sample_src_nearest(src, sw * sh * 4, sw, sh, fsx, fsy, s);
+                sample_src_nearest(src, slen, sw, sh, fsx, fsy, s);
             }
-            float alpha = s[3] * ga * covf;
-            cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
+            if (premul_src) {
+                float m = ga * covf;
+                cv->tile[i] = (cnvs_premul){ .r = (_Float16)(s[0] * m),
+                                             .g = (_Float16)(s[1] * m),
+                                             .b = (_Float16)(s[2] * m),
+                                             .a = (_Float16)(s[3] * m) };
+            } else {
+                float alpha = s[3] * ga * covf;
+                cv->tile[i] =
+                    cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
+            }
         }
     }
     apply_filters(cv, b.w, b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
+}
+
+void canvas_draw_image_subrect(canvas *__single cv,
+                               uint8_t const *__counted_by(sw * sh * 4) src,
+                               int sw, int sh, float sx, float sy,
+                               float sww, float shh, float dx, float dy,
+                               float dw, float dh) {
+    if (!rgba8_dims_ok(sw, sh)) {
+        return;
+    }
+    draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
+                    dx, dy, dw, dh, false);
 }
 
 void canvas_draw_image(canvas *__single cv,

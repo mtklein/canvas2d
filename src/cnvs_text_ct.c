@@ -179,6 +179,20 @@ void cnvs_glyph_draw(void *font, uint16_t glyph, float x, float y,
     CGColorSpaceRelease(cs);
 }
 
+void *cnvs_font_resized(void *font, float size_px) {
+    if (!font || size_px <= 0.0f) {
+        return NULL;
+    }
+    return (void *)CTFontCreateCopyWithAttributes((CTFontRef)font,
+                                                  (CGFloat)size_px, NULL, NULL);
+}
+
+void cnvs_font_release(void *font) {
+    if (font) {
+        CFRelease(font);
+    }
+}
+
 void cnvs_run_vmetrics(void const *font, float *asc1, float *desc1) {
     *asc1 = 0.0f;
     *desc1 = 0.0f;

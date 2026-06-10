@@ -175,6 +175,11 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c) {
         if (c->glyph[i].used) {
             free(c->glyph[i].verb);
             free(c->glyph[i].pt);
+            free(c->glyph[i].capture);
+            for (int m = 0; m < c->glyph[i].nmips; m++) {
+                free(c->glyph[i].mip[m].px);
+            }
+            free(c->glyph[i].mip);
         }
     }
     free(c->glyph);
@@ -476,6 +481,211 @@ void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
     c->glyph_count += 1;
 }
 
+// ---------------------------------------------------------------------------
+// Color (emoji) glyph captures + the derived mip pyramid.  The capture is the
+// canonical form -- one premultiplied RGBA8 render per (font name, glyph id)
+// at CNVS_CAPTURE_EM px to the em, fetched through the boundary once ever and
+// sampled from then on.  The pyramid is checked-C derived data: repeated 2x2
+// box halving of the capture, rebuilt on demand, never serialized.
+
+cnvs_glyph_slot *__single cnvs_text_cache_color(cnvs_text_cache *__single c,
+        int fid, void *__single font, uint16_t glyph) {
+    if (!c || fid < 0) {
+        return NULL;
+    }
+    uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
+    cnvs_glyph_slot *slot = glyph_probe(c, key);
+    if (slot && slot->used) {
+        c->glyph_hits++;
+        return slot;
+    }
+    if (!font) {
+        return NULL;  // nothing to rasterize with (a replay-built run whose
+    }                 // bitmap block was missing): degrade, don't poison
+    c->glyph_misses++;
+    if (c->glyph_cap == 0) {  // first miss: build the table (a failure here
+        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
+        if (t) {              // just retries on the next miss)
+            c->glyph = t;
+            c->glyph_cap = CNVS_GLYPH_TABLE_N;
+            slot = glyph_probe(c, key);
+        }
+    }
+    if (!slot || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
+        return NULL;  // nowhere to remember the capture: per-draw boundary path
+    }
+    // The one boundary crossing per color glyph: a sized handle at the capture
+    // em, its ink box (already in capture px), and one draw with the ink box's
+    // bottom-left pinned to the buffer's bottom-left corner -- the same
+    // placement the old per-draw path used, minus its margin (the strike box
+    // CT reports already pads the ink, and the sampler clamps to edge).
+    void *__single big = cnvs_font_resized(font, (float)CNVS_CAPTURE_EM);
+    if (!big) {
+        return NULL;
+    }
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+    cnvs_glyph_bounds(big, glyph, &x0, &y0, &x1, &y1);
+    if (x1 <= x0 || y1 <= y0) {  // blank color glyph: remembered as no-capture,
+        cnvs_font_release(big);  // so it costs one boundary query ever
+        slot->key = key;
+        slot->used = true;
+        slot->emitted = false;
+        c->glyph_count += 1;
+        return slot;
+    }
+    int const w = CNVS_CAPTURE_EM, h = CNVS_CAPTURE_EM;
+    int const len = w * h * 4;
+    uint8_t *px = calloc((size_t)len, 1);  // transparent ground
+    if (!px) {
+        cnvs_font_release(big);
+        return NULL;  // OOM: the caller takes the per-draw boundary path
+    }
+    cnvs_glyph_draw(big, glyph, -x0, -y0, px, w, h);
+    cnvs_font_release(big);
+    slot->capture = px;
+    slot->cap_len = len;
+    slot->cap_w = w;
+    slot->cap_h = h;
+    slot->ink_x0 = x0;
+    slot->ink_y0 = y0;
+    slot->ink_x1 = x1;
+    slot->ink_y1 = y1;
+    slot->key = key;
+    slot->used = true;
+    slot->emitted = false;
+    c->glyph_count += 1;
+    return slot;
+}
+
+void cnvs_text_cache_put_capture(cnvs_text_cache *__single c, int fid,
+        uint16_t glyph, uint8_t *__counted_by(len) px, int len, int w, int h,
+        float ink_x0, float ink_y0, float ink_x1, float ink_y1) {
+    if (!c || fid < 0 || !px || w <= 0 || h <= 0 || len != w * h * 4) {
+        free(px);
+        return;
+    }
+    if (c->glyph_cap == 0) {  // first insert: build the table, like a live miss
+        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
+        if (t) {
+            c->glyph = t;
+            c->glyph_cap = CNVS_GLYPH_TABLE_N;
+        }
+    }
+    uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
+    cnvs_glyph_slot *slot = glyph_probe(c, key);
+    if (!slot || slot->used || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
+        free(px);  // an existing entry wins (replay onto a warm canvas), and
+        return;    // a full table is the usual best-effort degradation
+    }
+    slot->capture = px;
+    slot->cap_len = len;
+    slot->cap_w = w;
+    slot->cap_h = h;
+    slot->ink_x0 = ink_x0;
+    slot->ink_y0 = ink_y0;
+    slot->ink_x1 = ink_x1;
+    slot->ink_y1 = ink_y1;
+    slot->key = key;
+    slot->used = true;
+    slot->emitted = false;
+    c->glyph_count += 1;
+}
+
+void cnvs_mip_halve(uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh,
+                    uint8_t *__counted_by(dw * dh * 4) dst, int dw, int dh) {
+    if (sw <= 0 || sh <= 0 || dw != (sw + 1) / 2 || dh != (sh + 1) / 2) {
+        return;  // not a halving step: leave dst alone (defensive contract)
+    }
+    for (int y = 0; y < dh; y++) {
+        int const y0 = 2 * y;
+        int const y1 = y0 + 1 < sh ? y0 + 1 : y0;  // odd sh: replicate the edge
+        for (int x = 0; x < dw; x++) {
+            int const x0 = 2 * x;
+            int const x1 = x0 + 1 < sw ? x0 + 1 : x0;
+            for (int k = 0; k < 4; k++) {
+                int const s = src[(y0 * sw + x0) * 4 + k]
+                            + src[(y0 * sw + x1) * 4 + k]
+                            + src[(y1 * sw + x0) * 4 + k]
+                            + src[(y1 * sw + x1) * 4 + k];
+                // One rounding shared by all four channels, so sum(r) <= sum(a)
+                // implies the halved r <= the halved a: premul survives exactly.
+                dst[(y * dw + x) * 4 + k] = (uint8_t)((s + 2) >> 2);
+            }
+        }
+    }
+}
+
+// Build the whole pyramid under `slot`'s capture: ceil-halve until 1x1.  Best
+// effort -- a failed allocation keeps the prefix built so far, and selection
+// then degrades to the coarsest available level (worst case the capture).
+static void build_mips(cnvs_glyph_slot *__single slot) {
+    if (slot->nmips > 0 || slot->cap_w <= 0) {
+        return;  // built (even partially), or nothing to derive from
+    }
+    int n = 0;
+    for (int w = slot->cap_w, h = slot->cap_h; w > 1 || h > 1;) {
+        w = (w + 1) / 2;
+        h = (h + 1) / 2;
+        n++;
+    }
+    if (n == 0) {
+        return;  // a 1x1 capture is its own pyramid
+    }
+    cnvs_mip *m = calloc((size_t)n, sizeof *m);
+    if (!m) {
+        return;
+    }
+    uint8_t *prev = slot->capture;
+    int pw = slot->cap_w, ph = slot->cap_h;
+    int built = 0;
+    for (int i = 0; i < n; i++) {
+        int const lw = (pw + 1) / 2, lh = (ph + 1) / 2;
+        int const llen = lw * lh * 4;
+        uint8_t *px = malloc((size_t)llen);
+        if (!px) {
+            break;  // keep the prefix
+        }
+        cnvs_mip_halve(prev, pw, ph, px, lw, lh);
+        m[i].px = px;
+        m[i].len = llen;
+        m[i].w = lw;
+        m[i].h = lh;
+        prev = px;
+        pw = lw;
+        ph = lh;
+        built++;
+    }
+    if (built == 0) {
+        free(m);
+        return;
+    }
+    slot->mip = m;
+    slot->nmips = built;
+}
+
+cnvs_mip cnvs_glyph_mip(cnvs_glyph_slot *__single slot, float footprint) {
+    cnvs_mip pick = { .px = NULL, .len = 0, .w = 0, .h = 0 };
+    if (!slot || slot->cap_w <= 0) {
+        return pick;
+    }
+    build_mips(slot);
+    float const f = footprint > 1.0f ? footprint : 1.0f;  // <=0/NaN: smallest
+    // The capture is level 0 (always available); each mip is half the one
+    // before.  Walk down while the next level still covers the footprint in
+    // both dimensions, so the level sampled is the smallest one >= footprint.
+    pick.px = slot->capture;
+    pick.len = slot->cap_len;
+    pick.w = slot->cap_w;
+    pick.h = slot->cap_h;
+    for (int i = 0; i < slot->nmips; i++) {
+        if ((float)slot->mip[i].w < f || (float)slot->mip[i].h < f) {
+            break;
+        }
+        pick = slot->mip[i];
+    }
+    return pick;
+}
+
 cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c,
         float size_px, char const *__counted_by(len) text, int len) {
     if (!c || len < 0) {
@@ -625,15 +835,15 @@ float cnvs_shaped_outline(cnvs_text_cache *__single cache,
     float pen = ox;
     for (int r = 0; r < s->nruns; r++) {
         cnvs_glyph_run run = s->run[r];  // visual-order glyphs, so advancing the pen
-        // The glyph key: a replay-built run carries its interned id; a live run
-        // resolves through one name fetch per run, not per glyph.
-        int fid = run.is_color ? -1
-                : run.name_id >= 0 ? run.name_id
+        // The glyph key (color runs included -- captures key by name too): a
+        // replay-built run carries its interned id; a live run resolves through
+        // one name fetch per run, not per glyph.
+        int fid = run.name_id >= 0 ? run.name_id
                                    : cnvs_text_cache_font(cache, run.font);
         for (int i = 0; i < run.count; i++) {  // left-to-right places RTL runs too
             if (run.is_color) {
                 if (color) {  // no outline to trace: hand it over to be drawn
-                    color(ctx, run.font, run.glyph[i], pen, oy);
+                    color(ctx, fid, run.font, run.glyph[i], pen, oy);
                 }
             } else {
                 glyph_outline_cached(cache, fid, run.font, run.glyph[i],
@@ -646,13 +856,14 @@ float cnvs_shaped_outline(cnvs_text_cache *__single cache,
 }
 
 // Full TextMetrics for a shaped line (the header has the contract).  The ink
-// walk reads each glyph's font-unit box from the cache entry the outline walk
-// shares -- populated through the boundary on a miss -- and scales it to
+// walk reads each glyph's canonical box from the cache entry the draw walks
+// share -- populated through the boundary on a miss -- and scales it to
 // size_px in the same float math live and replayed canvases both run, so a
-// recorded program measures bit-identically after replay.  Color (emoji) runs
-// can't cache (their glyphs have no canonical curves): they measure through a
-// live cnvs_glyph_bounds when the run still has its font handle, and add no
-// ink otherwise.
+// recorded program measures bit-identically after replay.  Outline glyphs
+// scale their font-unit box by size_px/upem; color (emoji) glyphs scale their
+// capture-px box by size_px/CNVS_CAPTURE_EM.  When the cache can't serve, a
+// run that still has its font handle measures through a live
+// cnvs_glyph_bounds, and a handle-less run's glyph adds no ink.
 void cnvs_shaped_metrics(cnvs_text_cache *__single cache,
                          cnvs_shaped const *__single s, float size_px,
                          float ascent_px, float descent_px,
@@ -679,17 +890,22 @@ void cnvs_shaped_metrics(cnvs_text_cache *__single cache,
     float minx = 0.0f, maxx = 0.0f, miny = 0.0f, maxy = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
         cnvs_glyph_run run = s->run[r];
-        int fid = run.is_color ? -1
-                : run.name_id >= 0 ? run.name_id
+        int fid = run.name_id >= 0 ? run.name_id
                                    : cnvs_text_cache_font(cache, run.font);
         for (int i = 0; i < run.count; i++) {
             float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
-            cnvs_glyph_slot *slot = run.is_color ? NULL
+            cnvs_glyph_slot *slot = run.is_color
+                ? cnvs_text_cache_color(cache, fid, run.font, run.glyph[i])
                 : cnvs_text_cache_glyph(cache, fid, run.font, run.glyph[i],
                                         size_px);
             if (slot) {
-                if (slot->upem > 0.0f) {
-                    float k = size_px / slot->upem;
+                float k = 0.0f;  // a blank glyph's box stays all-zero
+                if (run.is_color && slot->cap_w > 0) {
+                    k = size_px / (float)CNVS_CAPTURE_EM;
+                } else if (!run.is_color && slot->upem > 0.0f) {
+                    k = size_px / slot->upem;
+                }
+                if (k > 0.0f) {
                     x0 = slot->ink_x0 * k;
                     y0 = slot->ink_y0 * k;
                     x1 = slot->ink_x1 * k;
