@@ -269,10 +269,13 @@ one per canvas): a params → derived-data memo consulted **before** every Core 
 call and populated live from what the boundary hands back. Two maps, mirroring the
 two things that cross:
 
-- **Shaped lines**, keyed by `(size_px bits, text bytes)`. `fillText`, `strokeText`,
-  and both measure paths used to shape and free a `cnvs_shaped` per call; they now
-  *borrow* the cached line (the cache owns it, retained `CTFontRef`s and all), so the
-  universal measure-then-draw pattern shapes once. 64 slots, LRU-evicted — a frame's
+- **Shaped lines**, keyed by `(size_px bits, paragraph direction, text bytes)`.
+  `fillText`, `strokeText`, and both measure paths used to shape and free a
+  `cnvs_shaped` per call; they now *borrow* the cached line (the cache owns it,
+  retained `CTFontRef`s and all), so the universal measure-then-draw pattern shapes
+  once. The direction bit is in the key because the same bytes shape differently
+  under ltr and rtl paragraph bases (run order, neutral resolution) — the canvas
+  `direction` attribute supplies it. 64 slots, LRU-evicted — a frame's
   repeated labels stay hot, and a 64-entry scan is cheaper than anything clever.
 - **Glyph curves**, keyed by `(font name, glyph id)`. This is what the canonical
   re-cut bought: the cached verbs/points are font-unit bytes, valid at every size,
@@ -323,12 +326,15 @@ cache entries the op is about to use:
   `measureText` replays deterministically too, with no format revision needed when
   CI wants metrics scenes. A blank glyph is `units-per-em` 0 with no curves
   ("known to have no outline" serializes like it caches).
-- **`shape <size_px> <utf16-len> <nruns> <byte-len> <text…>`** followed by `nruns`
-  **`run <font-id|-1> <rtl> <color> <nglyphs> (gid adv cluster)*`** lines —
+- **`shape <size_px> <rtl> <utf16-len> <nruns> <byte-len> <text…>`** followed by
+  `nruns` **`run <font-id|-1> <rtl> <color> <nglyphs> (gid adv cluster)*`** lines —
   everything `cnvs_shaped` carries, keyed exactly as the live cache keys it
-  (`size_px` bits + raw text bytes, length-prefixed to end of line). The
-  line-based format already cannot represent text containing newlines, so one
-  line per shape block is faithful.
+  (`size_px` bits + paragraph direction + raw text bytes, length-prefixed to end
+  of line). The shape-level `rtl` is the paragraph base direction the line was
+  shaped under: it must ride the block because it is half the cache key — the
+  same bytes shape differently under ltr and rtl, and replay keying its insert
+  without it would alias the two. The line-based format already cannot represent
+  text containing newlines, so one line per shape block is faithful.
 
 Blocks are deduplicated within the file by per-slot `emitted` marks (a new
 recording clears them), so a frame's repeated label costs one block set and then
@@ -465,9 +471,9 @@ there — which is why the byte-for-byte gate (`gate.yml`) only covers the ten
 text-free scenes. The fontless proof had to come from inside the suite, which
 the runner runs via bare `ninja`.
 
-It now does. Every gallery scene — all 32, the seven text scenes (`text`,
-`textgrid`, `textmetrics`, `textmaxwidth`, `emoji`, `emojiscale`, `shaping`)
-among them — records a self-contained `gallery/<scene>.canvas` program
+It now does. Every gallery scene — all 33, the eight text scenes (`text`,
+`textgrid`, `textmetrics`, `textmaxwidth`, `emoji`, `emojiscale`, `shaping`,
+`rtl`) among them — records a self-contained `gallery/<scene>.canvas` program
 alongside its committed PNG
 ([../examples/gallery.c](../examples/gallery.c)'s `record_scene`), and
 [../tests/test_replay_gallery.c](../tests/test_replay_gallery.c) replays each
@@ -487,11 +493,11 @@ one onto a fresh canvas and proves **both directions**:
   pixels, so the two checks reinforce each other). Stripping a program of its
   blocks and leaving only the op lines trips this with `shape_miss`/`glyph_miss`
   in the dozens; emptying a program diverges on the byte compare. A scene with
-  no text passes the assertion trivially, so the seven text scenes additionally
+  no text passes the assertion trivially, so the eight text scenes additionally
   assert the cache saw real traffic (`shape_hits`/`glyph_hits` > 0) — the
   zero-miss claim can't go vacuous where it matters.
 
-Closing the format for the seven text scenes took two ops the recorder didn't
+Closing the format for the (then) seven text scenes took two ops the recorder didn't
 yet cover — `textmetrics`'s `stroke_rect` and `textmaxwidth`'s `fill_text_max`
 (the latter a slice-only variant, `canvas_fill_text_max_n`, so the parser stays
 in the counted world; `max_width` rides the op line, since the shaped line keys
@@ -508,7 +514,7 @@ by content within a file), Path2D draws ride numbered `path` blocks (one verb
 line per builder command, serialized at first draw — the canvas-free builders
 have nothing to hook until then), and the scalar stragglers — conic gradients,
 `round_rect_radii`, image smoothing, the filter list, `reset`/`resize` —
-record as plain op lines. So the determinism gate covers all 32 gallery
+record as plain op lines. So the determinism gate covers all 33 gallery
 scenes, not just the text ones, byte-for-byte.
 
 That is the arc's end state: glyph outlines and emoji captures cross the Core

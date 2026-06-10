@@ -75,19 +75,22 @@ Internals (not API features) considered and deferred:
 
 ## Partial — implemented but narrower than spec
 
-- **Text styling** covers `set_font_size`, `textAlign`, and `textBaseline`. No
-  font-family selection (pinned to Libian TC), weight, style, or the CSS `font`
-  shorthand; and none of `direction`, `letterSpacing`, `wordSpacing`,
-  `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
+- **Text styling** covers `set_font_size`, `textAlign` (start/end resolving
+  against direction), `textBaseline`, and `direction` (ltr/rtl, the bidi
+  paragraph base -- it reorders mixed-direction text, resolves neutrals, and
+  rides the shape-block cache key through record/replay). No font-family
+  selection (pinned to Libian TC), weight, style, or the CSS `font` shorthand;
+  and none of `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`,
+  `fontVariantCaps`, `textRendering`.
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
   `maxWidth` all go through Core Text shaping (`cnvs_shape`) with font fallback — so
   code points Libian TC lacks now both draw and measure (color emoji from one
   canonical 160px RGBA8 capture per glyph, mip-sampled at draw; other fallback
-  runs as outlines), and a string measures the way it draws. What the shaper
-  produces but the renderer doesn't yet exploit is *complex layout*: ligatures,
-  contextual forms, and bidi reordering are carried in the runs (and exercised by
-  `test_shape`) but not yet surfaced as a layout the public text API lays out —
-  that's the remaining text-shaping work.
+  runs as outlines), and a string measures the way it draws. The shaper's
+  complex layout is surfaced too: ligatures, contextual forms (Arabic joining),
+  and bidi reordering all draw through the public API, with the `direction`
+  attribute setting the paragraph base the runs are ordered against (the
+  gallery's `rtl` scene; `test_rtl`, `test_shape`).
 - **PNG I/O**: `canvas_write_png` writes real compression (Up-filtered rows +
   the in-house `cnvs_zlib` deflate — Up-only because it vectorizes as whole-row
   ops with no left-neighbor recurrence, and the adaptive five-filter chooser
@@ -126,7 +129,7 @@ Internals (not API features) considered and deferred:
   ride `path` blocks, and the scalar ops — conic gradients, `roundRect` radii,
   smoothing, the filter list, reset/resize — are plain op lines; pure queries
   move no pixels and stay out), and the cross-machine claim is *gated* over the
-  whole gallery: all 32 scenes commit a self-contained `.canvas` program next
+  whole gallery: all 33 scenes commit a self-contained `.canvas` program next
   to their PNG, and `test_replay_gallery` replays each one and proves it
   reproduces the committed PNG byte-for-byte with zero shape/glyph boundary
   misses — so on the fontless CI runner (no Libian TC; it's download-on-demand,
