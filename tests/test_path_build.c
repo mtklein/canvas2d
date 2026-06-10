@@ -12,6 +12,8 @@
 
 #include "cnvs_path.h"
 
+#include <math.h>
+
 static cnvs_vec2 v(float x, float y) {
     return (cnvs_vec2){ .x = x, .y = y };
 }
@@ -68,6 +70,25 @@ int main(void) {
     n0 = p.pt_len;
     CHECK(cnvs_path_quad_to(&p, v(0.0f, 40.0f), v(40.0f, 0.0f), 0.0f));
     CHECK(p.pt_len - n0 >= 50);
+
+    // Flattening, NON-FINITE: an inf/NaN control point makes every flatness
+    // comparison false, so the test is written !(error > tol) and the curve
+    // counts as flat -- ONE segment, not 2^depth-cap.  Regression for a
+    // fuzz_replay OOM: `fill_text 1e9999 0 <text>` put an inf pen under every
+    // glyph point, and each poisoned curve emitted 65K-262K points -- a long
+    // line of text multiplied that into a multi-GB path.
+    float const inf = HUGE_VALF;
+    cnvs_path_reset(&p);
+    cnvs_path_move_to(&p, v(inf, 0.0f));
+    n0 = p.pt_len;
+    CHECK(cnvs_path_quad_to(&p, v(inf, 40.0f), v(inf, 0.0f), 0.0f));
+    CHECK(p.pt_len - n0 == 1);
+    cnvs_path_reset(&p);
+    cnvs_path_move_to(&p, v(0.0f, 0.0f));
+    n0 = p.pt_len;
+    CHECK(cnvs_path_cubic_to(&p, v(0.0f, inf), v(NAN, 40.0f), v(40.0f, 0.0f),
+                             0.0f));
+    CHECK(p.pt_len - n0 == 1);
 
     // rect builds one closed 4-point subpath.
     cnvs_path_reset(&p);

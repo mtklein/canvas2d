@@ -136,9 +136,18 @@ static float chord_len2(cnvs_vec2 a, cnvs_vec2 b) {
     return dx * dx + dy * dy;
 }
 
+// The flatness tests are written !(error > tolerance) rather than
+// (error <= tolerance) so that NON-FINITE geometry counts as flat: with an
+// inf/NaN control point every comparison is false, and the (a <= b) form
+// would subdivide all the way to the depth cap -- 2^16 (2^18 for cubics)
+// emitted points PER CURVE, which a text line full of curves multiplies into
+// a multi-GB path (fuzz_replay found exactly that: an OOM via
+// `fill_text 1e9999 0 <text>`, whose inf pen poisons every device-space
+// point).  Identical behavior for finite inputs; degenerate curves emit one
+// segment, like any flat curve.
 static bool quad_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                      float tol2, int depth) {
-    if (depth >= 16 || cross_chord2(p0, p2, p1) <= tol2 * chord_len2(p0, p2)) {
+    if (depth >= 16 || !(cross_chord2(p0, p2, p1) > tol2 * chord_len2(p0, p2))) {
         return cnvs_path_line_to(p, p2);
     }
     cnvs_vec2 p01 = mid(p0, p1);
@@ -158,8 +167,8 @@ bool cnvs_path_quad_to(cnvs_path *p, cnvs_vec2 ctrl, cnvs_vec2 end, float tol) {
 static bool cubic_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                       cnvs_vec2 p3, float tol2, int depth) {
     float d = cross_chord2(p0, p3, p1) + cross_chord2(p0, p3, p2);
-    if (depth >= 18 || d <= tol2 * chord_len2(p0, p3)) {
-        return cnvs_path_line_to(p, p3);
+    if (depth >= 18 || !(d > tol2 * chord_len2(p0, p3))) {  // !(>): NaN is
+        return cnvs_path_line_to(p, p3);                    // flat (see quad_rec)
     }
     cnvs_vec2 p01 = mid(p0, p1);
     cnvs_vec2 p12 = mid(p1, p2);

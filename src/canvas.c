@@ -2120,6 +2120,9 @@ static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
 // glyphs, so emoji and fallback runs are measured the same way they are drawn.
 static void do_text(canvas *__single cv, char const *__counted_by(len) text, int len,
                     float x, float y, float max_width, bool stroke) {
+    if (!isfinite(x) || !isfinite(y)) {
+        return;  // spec: fillText/strokeText with non-finite coordinates draw
+    }            // nothing (and an inf pen would poison every glyph point)
     cnvs_shaped const *__single s = shape_text(cv, text, len);
     if (!s) {
         return;

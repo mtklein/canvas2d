@@ -2,6 +2,7 @@
 #include "test_pixels.h"
 #include "test_util.h"
 
+#include <math.h>
 #include <stdlib.h>
 
 // Count pixels darker than `thr` on the red channel (ink over a white ground).
@@ -53,6 +54,17 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     long ink = ink_count(px, len, n, 128);
     CHECK(ink > 200);
+
+    // Non-finite coordinates draw nothing (the spec's "infinite or NaN ->
+    // return").  Regression for a fuzz_replay OOM finding: an inf pen used to
+    // poison every glyph point and blow the curve flattener up to its
+    // 2^depth-cap segments per curve.
+    float const inf = HUGE_VALF;
+    canvas_fill_text(cv, "Hello", inf, 55.0f);
+    canvas_fill_text(cv, "Hello", 10.0f, -inf);
+    canvas_stroke_text(cv, "Hello", NAN, 55.0f);
+    canvas_read_rgba(cv, px, len);
+    CHECK(ink_count(px, len, n, 128) == ink);  // exactly the ink already there
 
     // UTF-8: a Chinese string (3-byte code points) maps to glyphs, measures wider
     // than empty, and renders ink -- Libian TC carries both scripts.
