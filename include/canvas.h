@@ -393,10 +393,13 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
                           float x, float y, float max_width);
 void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
                             float x, float y, float max_width);
-// Length-counted fill variant of the maxWidth path (the slice form replay hands
-// its text tail to, and the NUL-terminated canvas_fill_text_max delegates to).
+// Length-counted variants of the maxWidth path (the slice forms replay hands
+// its text tail to, and the NUL-terminated conveniences delegate to).
 void canvas_fill_text_max_n(canvas *__single cv, char const *__counted_by(len) text,
                             int len, float x, float y, float max_width);
+void canvas_stroke_text_max_n(canvas *__single cv,
+                              char const *__counted_by(len) text,
+                              int len, float x, float y, float max_width);
 
 // Tightly packed RGBA8, top row first; len must be width*height*4.
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);
@@ -444,11 +447,16 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 //     set_global_composite_operation multiply
 //     fill_text 12 30 Hello
 // Enums (set_global_composite_operation / set_line_join / set_line_cap /
-// set_fill_rule / set_text_align / set_text_baseline) are written by name; the
-// bool arg of arc/ellipse is 0/1 or false/true; set_line_dash takes a variable
-// number of lengths; fill_text and stroke_text take the rest of the line as
-// their text.  Blank lines and lines whose first non-space character is `#`
-// are ignored.
+// set_fill_rule / set_text_align / set_text_baseline /
+// set_image_smoothing_quality / the pattern repeat modes) are written by
+// name; bool args (arc/ellipse winding, set_image_smoothing_enabled) are 0/1
+// or false/true; set_line_dash takes a variable number of lengths; the text
+// ops take the rest of the line as their text.  The int-typed ops
+// (put_image_data placement and dirty rects, resize) write integers.  reset
+// records as itself -- it restarts the file's font-id space along with the
+// text cache it clears -- and resize (which records only when it succeeds)
+// implies the same.  Blank lines and lines whose first non-space character
+// is `#` are ignored.
 //
 // Text-block lines make a recorded program self-contained (no fonts needed to
 // replay): the recorder writes, ahead of each text op that first needs them,
@@ -558,12 +566,14 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // nothing either).  See canvas_replay_from for the caps past which an image
 // or path degrades un-recorded.
 //
-// Only the ops the text format covers are recorded -- the same subset
-// replay_from understands.  arc/round_rect/arc_to are written as themselves;
-// calls outside the format (round_rect_radii, conic gradients, image
-// smoothing, the filter list (set_filter_none / add_filter_*), reset, resize)
-// are not recorded, so a session that uses them does not round-trip through
-// the text format.
+// EVERY pixel-affecting public op records -- the same set replay_from
+// understands; there is no excluded op.  The compound path helpers
+// (arc/round_rect/round_rect_radii/arc_to) are written as themselves, not
+// their expansion; a setter that ignores its call per spec (a non-finite
+// shadow offset or filter amount, an invalid resize) records nothing for it;
+// and the pure queries (measure_text, is_point_in_*, get_image_data,
+// read_rgba, write_png, get_transform, get_line_dash) move no pixels and are
+// not part of the format.
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh

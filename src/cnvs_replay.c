@@ -33,6 +33,9 @@
                                         // declare (a sanity cap: the storage
                                         // grows per arriving line, so memory
                                         // tracks the file's actual size)
+#define REPLAY_RESIZE_DIM_MAX 16384     // resize dims (mirrors canvas.c's
+                                        // CANVAS_MAX_DIM: the recorder only
+                                        // writes a resize that succeeded)
 #define REPLAY_BITMAP_DIM_MAX 512    // capture dims cap: bounds a bitmap
                                      // block's decoded allocation at 1 MiB
                                      // (the recorder writes CNVS_CAPTURE_EM =
@@ -1043,6 +1046,36 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     else if (tok_eq(data, le, cs, cl, "fill"))       { canvas_fill(cv); }
     else if (tok_eq(data, le, cs, cl, "stroke"))     { canvas_stroke(cv); }
     else if (tok_eq(data, le, cs, cl, "clip"))       { canvas_clip(cv); }
+    else if (tok_eq(data, le, cs, cl, "set_filter_none")) { canvas_set_filter_none(cv); }
+    else if (tok_eq(data, le, cs, cl, "reset")) {
+        // reset clears the text cache, and with it every interned font id:
+        // the file's font-id space restarts too (the recorder re-interns from
+        // 0 after its own reset), so forget the declarations.  The numbered
+        // images and paths are file-scoped, not canvas drawing state, and
+        // keep their ids.
+        canvas_reset(cv);
+        for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {
+            blk->map[k] = -1;
+            blk->seen[k] = false;
+        }
+    }
+
+    // --- resize (records only when it succeeded, so dims always validate;
+    //     it resets, restarting the font-id space like `reset`) ---
+    else if (tok_eq(data, le, cs, cl, "resize")) {
+        long w = 0, h = 0;
+        if (!read_uint(data, le, &j, REPLAY_RESIZE_DIM_MAX, &w) || w < 1 ||
+            !read_uint(data, le, &j, REPLAY_RESIZE_DIM_MAX, &h) || h < 1) {
+            return false;
+        }
+        if (!canvas_resize(cv, (int)w, (int)h)) {
+            return false;  // dims pre-validated: only allocation can fail
+        }
+        for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {
+            blk->map[k] = -1;
+            blk->seen[k] = false;
+        }
+    }
 
     // --- 1 float ---
     else if (tok_eq(data, le, cs, cl, "rotate"))           { if (!read_floats(data, le, &j, f, 1)) return false; canvas_rotate(cv, f[0]); }
@@ -1054,9 +1087,21 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     else if (tok_eq(data, le, cs, cl, "set_shadow_blur"))      { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_blur(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_shadow_offset_x"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_x(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_shadow_offset_y"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_y(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_blur"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_blur(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_brightness")) { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_brightness(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_contrast"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_contrast(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_grayscale"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_grayscale(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_hue_rotate")) { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_hue_rotate(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_invert"))     { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_invert(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_opacity"))    { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_opacity(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_saturate"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_saturate(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "add_filter_sepia"))      { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_sepia(cv, f[0]); }
 
     // --- 2 float ---
     else if (tok_eq(data, le, cs, cl, "translate")) { if (!read_floats(data, le, &j, f, 2)) return false; canvas_translate(cv, f[0], f[1]); }
+    // --- 3 float ---
+    else if (tok_eq(data, le, cs, cl, "set_fill_conic_gradient"))   { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_fill_conic_gradient(cv, f[0], f[1], f[2]); }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_conic_gradient")) { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_stroke_conic_gradient(cv, f[0], f[1], f[2]); }
     else if (tok_eq(data, le, cs, cl, "scale"))     { if (!read_floats(data, le, &j, f, 2)) return false; canvas_scale(cv, f[0], f[1]); }
     else if (tok_eq(data, le, cs, cl, "move_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_move_to(cv, f[0], f[1]); }
     else if (tok_eq(data, le, cs, cl, "line_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_line_to(cv, f[0], f[1]); }
@@ -1086,6 +1131,20 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     else if (tok_eq(data, le, cs, cl, "set_fill_radial_gradient"))   { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_fill_radial_gradient(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_radial_gradient")) { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_stroke_radial_gradient(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
 
+    // --- 7 float ---
+    else if (tok_eq(data, le, cs, cl, "add_filter_drop_shadow")) {
+        if (!read_floats(data, le, &j, f, 7)) return false;
+        canvas_add_filter_drop_shadow(cv, f[0], f[1], f[2], f[3], f[4], f[5], f[6]);
+    }
+
+    // --- 12 float ---
+    else if (tok_eq(data, le, cs, cl, "round_rect_radii")) {
+        float rr[12];
+        if (!read_floats(data, le, &j, rr, 12)) return false;
+        canvas_round_rect_radii(cv, rr[0], rr[1], rr[2], rr[3], rr[4], rr[5],
+                                rr[6], rr[7], rr[8], rr[9], rr[10], rr[11]);
+    }
+
     // --- float run + trailing bool ---
     else if (tok_eq(data, le, cs, cl, "arc")) {
         if (!read_floats(data, le, &j, f, 5) || !read_bool(data, le, &j, &b)) return false;
@@ -1094,6 +1153,10 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     else if (tok_eq(data, le, cs, cl, "ellipse")) {
         if (!read_floats(data, le, &j, f, 7) || !read_bool(data, le, &j, &b)) return false;
         canvas_ellipse(cv, f[0], f[1], f[2], f[3], f[4], f[5], f[6], b);
+    }
+    else if (tok_eq(data, le, cs, cl, "set_image_smoothing_enabled")) {
+        if (!read_bool(data, le, &j, &b)) return false;
+        canvas_set_image_smoothing_enabled(cv, b);
     }
 
     // --- enums by name ---
@@ -1139,6 +1202,14 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         else if (tok_eq(data, le, ts, tl, "middle"))      canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
         else if (tok_eq(data, le, ts, tl, "ideographic")) canvas_set_text_baseline(cv, CANVAS_BASELINE_IDEOGRAPHIC);
         else if (tok_eq(data, le, ts, tl, "bottom"))      canvas_set_text_baseline(cv, CANVAS_BASELINE_BOTTOM);
+        else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "low"))         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_LOW);
+        else if (tok_eq(data, le, ts, tl, "medium")) canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
+        else if (tok_eq(data, le, ts, tl, "high"))   canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
         else return false;
     }
     else if (tok_eq(data, le, cs, cl, "set_global_composite_operation")) {
@@ -1271,12 +1342,15 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         else      canvas_stroke_text_n(cv, data + j, n, f[0], f[1]);
         return true;  // text consumed the rest of the line
     }
-    else if (tok_eq(data, le, cs, cl, "fill_text_max")) {
+    else if (tok_eq(data, le, cs, cl, "fill_text_max") ||
+             tok_eq(data, le, cs, cl, "stroke_text_max")) {
         // Like fill_text, plus a max_width float between the pen and the text.
+        bool fill = data[cs] == 'f';
         if (!read_floats(data, le, &j, f, 3)) return false;
         while (j < le && is_ws(data[j])) { j++; }
         int n = (int)(le - j);  // le - j <= line cap < INT_MAX
-        canvas_fill_text_max_n(cv, data + j, n, f[0], f[1], f[2]);
+        if (fill) canvas_fill_text_max_n(cv, data + j, n, f[0], f[1], f[2]);
+        else      canvas_stroke_text_max_n(cv, data + j, n, f[0], f[1], f[2]);
         return true;  // text consumed the rest of the line
     }
 

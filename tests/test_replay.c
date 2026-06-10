@@ -77,6 +77,58 @@ int main(void) {
     canvas_get_image_data(cv, 24, 4, 1, 1, px, 4);
     CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255);
 
+    // The scalar ops: conic gradients, per-corner radii, smoothing, the
+    // filter list, reset, resize (back and forth, ending at 64x48), and the
+    // maxWidth text pair.
+    CHECK(REPLAY(cv,
+        "set_fill_conic_gradient 0.5 32 24\n"
+        "add_fill_color_stop 0 1 0 0 1\n"
+        "add_fill_color_stop 1 0 0 1 1\n"
+        "set_stroke_conic_gradient 0 32 24\n"
+        "add_stroke_color_stop 0 1 1 0 1\n"
+        "begin_path\n"
+        "round_rect_radii 4 4 40 24 2 3 4 2 0 0 5 5\n"
+        "fill\n"
+        "set_image_smoothing_enabled 0\n"
+        "set_image_smoothing_quality high\n"
+        "set_image_smoothing_enabled true\n"
+        "set_filter_none\n"
+        "add_filter_brightness 1.25\n"
+        "add_filter_contrast 1.5\n"
+        "add_filter_grayscale 0.5\n"
+        "add_filter_hue_rotate 0.5\n"
+        "add_filter_invert 0.25\n"
+        "add_filter_opacity 0.75\n"
+        "add_filter_saturate 2\n"
+        "add_filter_sepia 0.5\n"
+        "add_filter_blur 1.5\n"
+        "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5\n"
+        "fill_rect 8 8 16 16\n"
+        "set_filter_none\n"
+        "fill_text_max 2 40 30 squeeze me\n"
+        "stroke_text_max 2 44 30 squeeze me\n"
+        "resize 32 24\n"
+        "fill_rect 0 0 32 24\n"
+        "reset\n"
+        "resize 64 48\n"));
+
+    // Bad scalar-op arguments are rejected.
+    CHECK(!REPLAY(cv, "resize 0 24\n"));                 // zero dimension
+    CHECK(!REPLAY(cv, "resize 99999 24\n"));             // past the dim cap
+    CHECK(!REPLAY(cv, "resize 32\n"));                   // too few args
+    CHECK(!REPLAY(cv, "add_filter_drop_shadow 1 2 3\n"));// too few args
+    CHECK(!REPLAY(cv, "set_image_smoothing_quality wiggle\n"));
+    CHECK(!REPLAY(cv, "round_rect_radii 1 2 3 4 5\n"));  // too few radii
+    CHECK(!REPLAY(cv, "reset 1\n"));                     // trailing junk
+
+    // reset restarts the file-local font-id space along with the text cache
+    // it clears: a re-declared id is legal only after one.
+    CHECK(REPLAY(cv, "font 0 1.0625 0.25 NoSuchFamily\n"
+                     "reset\n"
+                     "font 0 1.0625 0.25 NoSuchFamily\n"));
+    CHECK(!REPLAY(cv, "font 0 1.0625 0.25 NoSuchFamily\n"
+                      "font 0 1.0625 0.25 NoSuchFamily\n"));
+
     // Path blocks: every command verb, then the three ops that reference the
     // path by id (an empty path is legal and paints nothing).
     CHECK(REPLAY(cv,

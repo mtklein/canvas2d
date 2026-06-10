@@ -126,8 +126,14 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
                           float size_px, char const *__counted_by(len) text,
                           int len);
 
+// `name <ints...>` -- the int-typed op lines with no block reference (resize).
+void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name,
+                   int const *__counted_by(n) v, int n);
+
 // Enum-valued setters, written by name (the spellings the parser accepts).
 void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule);
+void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
+                                canvas_image_smoothing_quality quality);
 void cnvs_rec_line_join(cnvs_recorder *__single r, canvas_line_join join);
 void cnvs_rec_line_cap(cnvs_recorder *__single r, canvas_line_cap cap);
 void cnvs_rec_composite(cnvs_recorder *__single r, canvas_composite_op op);

@@ -387,6 +387,10 @@ void canvas_restore(canvas *__single cv) {
 }
 
 void canvas_reset(canvas *__single cv) {
+    // Recording continues across a reset: the cleared text cache means the
+    // file's font-id space restarts with it (later text re-interns from 0 and
+    // re-emits its blocks), which replay mirrors when it executes this line.
+    if (cv->rec) { cnvs_rec_op(cv->rec, "reset"); }
     // Empty the saved-state stack (each entry may own clip-mask and filter-list
     // copies); keep the backing allocation for reuse.
     for (int i = 0; i < cv->stack_len; i++) {
@@ -435,9 +439,15 @@ bool canvas_resize(canvas *__single cv, int width, int height) {
     cv->comp = nc;
     cv->width = width;
     cv->height = height;
+    // Record `resize` only once it has succeeded (a failed resize changes
+    // nothing), then swallow the reset it expands to -- the file keeps the op
+    // the caller issued, and replay's resize implies the same reset.
+    if (cv->rec) { cnvs_rec_ints(cv->rec, "resize", (int[]){ width, height }, 2); }
+    cnvs_rec_enter(cv->rec);
     // reset() drops the (now wrong-sized) clip masks and saved stack, restores the
     // default state, and clears the fresh bitmap to transparent black.
     canvas_reset(cv);
+    cnvs_rec_leave(cv->rec);
     return true;
 }
 
@@ -566,6 +576,7 @@ void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
 
 void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
                                     float x, float y) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_conic_gradient", (float[]){ start_angle, x, y }, 3); }
     grad_set_conic(cv, &cv->cur.fill_grad, start_angle, x, y);
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
@@ -609,6 +620,7 @@ void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
 
 void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
                                       float x, float y) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_conic_gradient", (float[]){ start_angle, x, y }, 3); }
     grad_set_conic(cv, &cv->cur.stroke_grad, start_angle, x, y);
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
@@ -658,27 +670,30 @@ void canvas_set_shadow_color_rgba(canvas *__single cv,
 }
 
 void canvas_set_shadow_blur(canvas *__single cv, float blur) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_blur", (float[]){ blur }, 1); }
     if (isfinite(blur) && blur >= 0.0f) {  // spec: ignore negative / non-finite
+        // The hook sits inside the guard: an ignored call records nothing
+        // (and %.9g of a non-finite would not reparse anyway).
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_blur", (float[]){ blur }, 1); }
         cv->cur.shadow_blur = blur;
     }
 }
 
 void canvas_set_shadow_offset_x(canvas *__single cv, float offset) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_x", (float[]){ offset }, 1); }
     if (isfinite(offset)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_x", (float[]){ offset }, 1); }
         cv->cur.shadow_offset_x = offset;
     }
 }
 
 void canvas_set_shadow_offset_y(canvas *__single cv, float offset) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_y", (float[]){ offset }, 1); }
     if (isfinite(offset)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_y", (float[]){ offset }, 1); }
         cv->cur.shadow_offset_y = offset;
     }
 }
 
 void canvas_set_filter_none(canvas *__single cv) {
+    if (cv->rec) { cnvs_rec_op(cv->rec, "set_filter_none"); }
     free(cv->cur.filters);
     cv->cur.filter_count = 0;
     cv->cur.filters = NULL;
@@ -711,20 +726,26 @@ void canvas_add_filter_blur(canvas *__single cv, float px) {
     }
     // filter blur(px) IS the Gaussian's stdDev (where shadowBlur is twice it);
     // px == 0 maps to radius 0 -- an identity blur, so nothing is appended.
+    // The recorder hooks sit inside each add_filter_*'s accept guard: an
+    // ignored call records nothing, and the raw amount rides the line (replay
+    // re-clamps and re-compiles it through this same code).
     int r = sigma_box_radius(px);
     if (r > 0) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_blur", (float[]){ px }, 1); }
         filter_append(cv, cnvs_filter_blur(r));
     }
 }
 
 void canvas_add_filter_brightness(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_brightness", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_brightness(clamp_lo(amount)));
     }
 }
 
 void canvas_add_filter_contrast(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_contrast", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_contrast(clamp_lo(amount)));
     }
 }
@@ -738,6 +759,14 @@ void canvas_add_filter_drop_shadow(canvas *__single cv, float dx, float dy,
     if (!(clamp01(a) > 0.0f)) {
         return;  // a fully transparent shadow composites as nothing
     }
+    if (cv->rec) {
+        // dx/dy/blur are guarded finite and ride raw; the colour rides
+        // clamped (identity for in-range values, and a NaN channel would
+        // otherwise print as unreparseable "nan").
+        cnvs_rec_floats(cv->rec, "add_filter_drop_shadow",
+                        (float[]){ dx, dy, blur, clamp01(r), clamp01(g),
+                                   clamp01(b), clamp01(a) }, 7);
+    }
     // The offsets round to whole device pixels (shadow_offset, as for
     // shadowOffset{X,Y}); blur IS the Gaussian's stdDev, like blur() -- but
     // unlike blur(), radius 0 is a real entry (a sharp shadow, not identity).
@@ -749,36 +778,42 @@ void canvas_add_filter_drop_shadow(canvas *__single cv, float dx, float dy,
 
 void canvas_add_filter_grayscale(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_grayscale", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_grayscale(clamp01(amount)));
     }
 }
 
 void canvas_add_filter_hue_rotate(canvas *__single cv, float radians) {
     if (isfinite(radians)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_hue_rotate", (float[]){ radians }, 1); }
         filter_append(cv, cnvs_filter_hue_rotate(radians));
     }
 }
 
 void canvas_add_filter_invert(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_invert", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_invert(clamp01(amount)));
     }
 }
 
 void canvas_add_filter_opacity(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_opacity", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_opacity(clamp01(amount)));
     }
 }
 
 void canvas_add_filter_saturate(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_saturate", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_saturate(clamp_lo(amount)));
     }
 }
 
 void canvas_add_filter_sepia(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_sepia", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_sepia(clamp01(amount)));
     }
 }
@@ -1471,10 +1506,10 @@ static float radii_fit(float f, float len, float sum) {
     return f;
 }
 
-void canvas_round_rect_radii(canvas *__single cv, float x, float y,
-                             float w, float h,
-                             float tl_x, float tl_y, float tr_x, float tr_y,
-                             float br_x, float br_y, float bl_x, float bl_y) {
+static void round_rect_radii_impl(canvas *__single cv, float x, float y,
+                                  float w, float h,
+                                  float tl_x, float tl_y, float tr_x, float tr_y,
+                                  float br_x, float br_y, float bl_x, float bl_y) {
     if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h)) {
         return;  // Canvas spec: non-finite geometry paints nothing.
     }
@@ -1509,6 +1544,24 @@ void canvas_round_rect_radii(canvas *__single cv, float x, float y,
     canvas_ellipse(cv, x + r[6], y + h - r[7], r[6], r[7], 0.0f, q, pi, false);
     canvas_ellipse(cv, x + r[0], y + r[1], r[0], r[1], 0.0f, pi, pi + q, false);
     canvas_close_path(cv);
+}
+
+void canvas_round_rect_radii(canvas *__single cv, float x, float y,
+                             float w, float h,
+                             float tl_x, float tl_y, float tr_x, float tr_y,
+                             float br_x, float br_y, float bl_x, float bl_y) {
+    // Record as itself, then swallow the move_to/ellipse/close_path the impl
+    // expands to (the impl's early return keeps this wrapper single-exit, the
+    // arc_to pattern).
+    if (cv->rec) {
+        cnvs_rec_floats(cv->rec, "round_rect_radii",
+                        (float[]){ x, y, w, h, tl_x, tl_y, tr_x, tr_y,
+                                   br_x, br_y, bl_x, bl_y }, 12);
+        cnvs_rec_enter(cv->rec);
+    }
+    round_rect_radii_impl(cv, x, y, w, h, tl_x, tl_y, tr_x, tr_y,
+                          br_x, br_y, bl_x, bl_y);
+    cnvs_rec_leave(cv->rec);
 }
 
 static void arc_to_impl(canvas *__single cv, float x1, float y1, float x2, float y2,
@@ -2299,11 +2352,21 @@ void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
     canvas_stroke_text_n(cv, t, len, x, y);
 }
 
+void canvas_stroke_text_max_n(canvas *__single cv,
+                              char const *__counted_by(len) text,
+                              int len, float x, float y, float max_width) {
+    if (cv->rec) {
+        record_text_blocks(cv, text, len);
+        cnvs_rec_text_max(cv->rec, "stroke_text_max", x, y, max_width, text, len);
+    }
+    do_text(cv, text, len, x, y, max_width, true);
+}
+
 void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
                             float x, float y, float max_width) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    do_text(cv, t, len, x, y, max_width, true);
+    canvas_stroke_text_max_n(cv, t, len, x, y, max_width);
 }
 
 // Bilinear sample of an RGBA8 source at source-pixel (fx, fy), unpremultiplied,
@@ -2349,6 +2412,7 @@ static void sample_src_nearest(uint8_t const *__counted_by(slen) src, int slen,
 }
 
 void canvas_set_image_smoothing_enabled(canvas *__single cv, bool enabled) {
+    if (cv->rec) { cnvs_rec_floats_bool(cv->rec, "set_image_smoothing_enabled", NULL, 0, enabled); }
     cv->cur.image_smoothing_enabled = enabled;
 }
 
@@ -2358,6 +2422,7 @@ void canvas_set_image_smoothing_quality(canvas *__single cv,
         case CANVAS_SMOOTHING_LOW:
         case CANVAS_SMOOTHING_MEDIUM:
         case CANVAS_SMOOTHING_HIGH:
+            if (cv->rec) { cnvs_rec_smoothing_quality(cv->rec, quality); }
             cv->cur.image_smoothing_quality = quality;
             break;
     }

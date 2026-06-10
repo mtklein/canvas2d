@@ -558,12 +558,40 @@ void cnvs_rec_path_rule(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
+void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name,
+                   int const *__counted_by(n) v, int n) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    for (int i = 0; i < n; i++) {
+        fprintf(r->f, " %d", v[i]);
+    }
+    fputc('\n', r->f);
+}
+
 void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule) {
     if (!r || r->suspend != 0) {
         return;
     }
     fputs("set_fill_rule ", r->f);
     fputs(rule == CANVAS_EVENODD ? "evenodd" : "nonzero", r->f);
+    fputc('\n', r->f);
+}
+
+void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
+                                canvas_image_smoothing_quality quality) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    char const *__null_terminated name = "low";
+    switch (quality) {
+        case CANVAS_SMOOTHING_LOW:    name = "low";    break;
+        case CANVAS_SMOOTHING_MEDIUM: name = "medium"; break;
+        case CANVAS_SMOOTHING_HIGH:   name = "high";   break;
+    }
+    fputs("set_image_smoothing_quality ", r->f);
+    fputs(name, r->f);
     fputc('\n', r->f);
 }
 

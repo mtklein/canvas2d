@@ -27,6 +27,14 @@
 static void draw_program(canvas *__single cv) {
     canvas_save(cv);
 
+    // reset + resize first: both record as themselves (resize swallows the
+    // reset it expands to), both clear the bitmap, and the rest of the
+    // program then proves drawing state and pixels rebuild identically after
+    // them.  Same dimensions, so the pixel-identity buffers stay W x H.
+    canvas_fill_rect(cv, 0.0f, 0.0f, 8.0f, 8.0f);  // something for reset to wipe
+    canvas_reset(cv);
+    canvas_resize(cv, W, H);
+
     // An opaque source-over fill up front, so the bitmap is non-trivial before
     // any later clip or blend mode narrows things.
     canvas_set_fill_rgba(cv, 0.5f, 0.25f, 0.75f, 1.0f);
@@ -53,6 +61,9 @@ static void draw_program(canvas *__single cv) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_fill_radial_gradient(cv, 8.0f, 8.0f, 0.0f, 8.0f, 8.0f, 16.0f);
     canvas_add_fill_color_stop(cv, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_conic_gradient(cv, 0.5f, 16.0f, 12.0f);
+    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.5f, 1.0f, 1.0f);
 
     // Stroke paints (solid, then both gradient forms) + line styles.
     canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
@@ -60,6 +71,8 @@ static void draw_program(canvas *__single cv) {
     canvas_add_stroke_color_stop(cv, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_set_stroke_radial_gradient(cv, 4.0f, 4.0f, 1.0f, 4.0f, 4.0f, 8.0f);
     canvas_add_stroke_color_stop(cv, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f);
+    canvas_set_stroke_conic_gradient(cv, 0.25f, 16.0f, 12.0f);
+    canvas_add_stroke_color_stop(cv, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f);
     canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
     canvas_set_line_cap(cv, CANVAS_CAP_SQUARE);
@@ -79,9 +92,28 @@ static void draw_program(canvas *__single cv) {
     canvas_ellipse(cv, 16.0f, 12.0f, 8.0f, 4.0f, 0.25f, 0.0f, 3.0f, true);
     canvas_arc_to(cv, 2.0f, 2.0f, 8.0f, 2.0f, 3.0f);
     canvas_round_rect(cv, 1.0f, 1.0f, 10.0f, 10.0f, 2.0f);
+    canvas_round_rect_radii(cv, 34.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
+                            4.0f, 2.0f, 0.0f, 0.0f, 5.0f, 5.0f);
     canvas_close_path(cv);
     canvas_fill(cv);
     canvas_stroke(cv);
+
+    // The filter list: every function once (the chain applies to the fill),
+    // then cleared.
+    canvas_set_filter_none(cv);
+    canvas_add_filter_brightness(cv, 1.25f);
+    canvas_add_filter_contrast(cv, 1.5f);
+    canvas_add_filter_grayscale(cv, 0.5f);
+    canvas_add_filter_hue_rotate(cv, 0.5f);
+    canvas_add_filter_invert(cv, 0.25f);
+    canvas_add_filter_opacity(cv, 0.75f);
+    canvas_add_filter_saturate(cv, 2.0f);
+    canvas_add_filter_sepia(cv, 0.5f);
+    canvas_add_filter_blur(cv, 1.5f);
+    canvas_add_filter_drop_shadow(cv, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
+    canvas_set_fill_rgba(cv, 0.9f, 0.6f, 0.2f, 0.8f);
+    canvas_fill_rect(cv, 36.0f, 14.0f, 8.0f, 8.0f);
+    canvas_set_filter_none(cv);
 
     // Text (Latin + CJK, no leading whitespace / newline so it round-trips).
     // The text ops also emit their font/glyph/shape blocks (see canvas.h), so
@@ -92,6 +124,8 @@ static void draw_program(canvas *__single cv) {
     canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
     canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
     canvas_stroke_text(cv, "yo", 4.0f, 30.0f);
+    canvas_fill_text_max(cv, "squeeze", 24.0f, 20.0f, 12.0f);
+    canvas_stroke_text_max(cv, "squeeze", 24.0f, 30.0f, 12.0f);
 
     // Image ops: one 4x3 source through every form -- the three draw_image
     // overloads, both putImageData forms, and both pattern paints.  The same
@@ -101,7 +135,10 @@ static void draw_program(canvas *__single cv) {
     for (int i = 0; i < (int)sizeof img; i++) {
         img[i] = (uint8_t)(i * 5);
     }
+    canvas_set_image_smoothing_enabled(cv, false);
+    canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
     canvas_draw_image(cv, img, 4, 3, 2.0f, 2.0f);
+    canvas_set_image_smoothing_enabled(cv, true);
     canvas_draw_image_scaled(cv, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
     canvas_draw_image_subrect(cv, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
                               18.0f, 2.0f, 6.0f, 6.0f);
