@@ -88,3 +88,28 @@ The type touches **23 files, ~129 references** — but the u8 edges insulate alm
 - **colorSpace / HDR / `float16` ImageData lands on the roadmap**: f16 hardens from "recommended" to "mandated by the edge," and this memo's hedged spec claim should be re-verified first.
 - **The backenddiff gate moves off tolerance-0**: the RTZ hack becomes deletable independent of everything else, removing half the constructible f16 artifact for free.
 - **8-wide f16 arithmetic actually lands in the production compositor** (pixvm design C grafted onto `compositor_blend`): f16 would finally earn the compute role the README already credits it with, and the "lingua franca" line would become true instead of needing rewording.
+
+---
+
+## Addendum (2026-06-10): the compute half of this memo is superseded
+
+That last trigger fired.  [color-axis.md](color-axis.md) measured the three-way fork
+this memo left open (§6.4(a)'s "run the f32-tile production benchmark") and Mike
+ratified its arm (c): **`_Float16` is now the compute type as well as the storage
+type.**  The blend kernel (all 26 modes), the filter colour matrix, the gradient stop
+lerp, premultiply/unpremultiply, and the readback quantize all do their arithmetic in
+f16, 8 lanes per 128-bit NEON vector — measured 13–15 % faster than the f32-compute
+pipeline on the flagship renders.  Two of this memo's framings age accordingly:
+
+- Premise correction 1's "f32 is the compute language … f16 never computes" was true
+  when written and is now false by design; the "lingua franca" line it corrected is
+  simply true today.  The storage argument (§1's round-trip table) is untouched and
+  remains the load-bearing rationale — and it survived compute narrowing exhaustively
+  (all 65,280 pairs still round-trip under f16 arithmetic, now pinned in `test_image`).
+- §1's trail-pathology table gains the f16-compute column in color-axis.md §5: RNE
+  f16 *compute* lands at or above the f16-storage fixed point at every tested α, so
+  the conceded artifact did not deepen.  The RTZ rows are historical — the RTZ hack
+  died with the Metal backend.
+
+The one place f32 arithmetic deliberately survives in the colour pipeline is the box
+blur's running-sum accumulator (`blur.h` has the measured drift numbers).

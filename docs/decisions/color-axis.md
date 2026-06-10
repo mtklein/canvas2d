@@ -296,3 +296,39 @@ degrade gracefully.
   accuracy on the non-linear modes (divides and square roots in 11 bits) in a way the
   porterduff/blend scenes can see, the "two-language kernel" residue becomes permanent and
   (c)'s simplicity argument weakens — the §1 attribution caps the residual upside at ~9 %.
+
+## Ruling (2026-06-10)
+
+**Mike ratified arm (c)** — "the coolest, the fastest, the most interesting; portability
+doesn't matter right now."  Landed as the *full* conversion, not just this memo's
+prototype scope:
+
+- **Converted to `_Float16` arithmetic:** the SRC_OVER kernel (8-wide, two pixels per
+  step), the generic kernel — all 26 composite/blend modes, Porter-Duff and separable
+  vectorized over the four channels, the HSL/divide/sqrt modes scalar f16 — the filter
+  colour-matrix loop (8-wide, two pixels per step), the gradient stop lerp (the
+  parameter solve stays f32: it is geometry, not colour), `cnvs_premultiply`,
+  `cnvs_unpremultiply`, and `read_unpremul`.  Clip attenuation went f16 per §7's
+  execution note, deliberately reversing the float32-attenuation choice the Metal era
+  kept (noted in the kernel).
+- **Left f32, measured:** the blur passes' running-sum accumulation.  Re-rounding the
+  accumulator to f16 at every add/subtract drifts up to ~0.9/255 per pass over a 512 px
+  row (f32: 0.06/255), compounding over the three h+v passes — it cannot hold
+  test_filter's 2/255 brute-force reference, and no profile puts these passes on a hot
+  path that would pay for it (the rationale lives in `blur.h`).  Also left f32:
+  paint_tile's scalar coverage/alpha fold and the drop-shadow tint/under-composite
+  loops — per-pixel scalar paths off the §1 attribution.
+- **§5's gates are now committed tests:** `test_image` runs the exhaustive 65,280-pair
+  premultiply round-trip end to end (still 0 mismatches under f16 compute), and
+  `test_compositor` sweeps source-over against a correctly rounded double reference
+  (3.4M triples, max delta 1/255).  `build_ramp`'s 1-ULP identity fragility (§5's
+  finding) is fixed by construction — a true divide per entry — so
+  `test_gradient_solve` keeps its tolerance-0 check.
+- **The §6 wager paid more than priced.**  Full-conversion measurement (paired
+  hyperfine on copied-aside binaries, medians): `bench_render` 26.3 → 22.4 ms
+  (**−14.9 %**), `bench_render_large` 275.0 → 238.8 ms (**−13.2 %**), e2e `bench`
+  −2.2 %, all four controls within noise (0.99–1.00).  The §1 conservatism was real:
+  converting the generic modes roughly doubled the prototype's −8 %.
+- **Re-baseline as priced:** all 32 PNGs plus `imagedata.canvas`/`subrect.canvas`,
+  max channel delta 1/255 in every scene, committed in lockstep with the kernels that
+  moved them; `test_replay_gallery` stayed byte-green throughout.

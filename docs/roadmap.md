@@ -59,14 +59,19 @@ Internals (not API features) considered and deferred:
 
 - A sparse/RLE coverage format to skip the transparent ~40–60% of a fill's bbox —
   analysis and why dense+SIMD stays the default in [sparse-coverage.md](sparse-coverage.md).
-- The internal colour type. A devil's-advocate pass kept `_Float16` storage with
-  f32 compute but corrected its rationale (it round-trips the spec's 8-bit edges
+- The internal colour type — **settled**. A devil's-advocate pass kept `_Float16`
+  storage and corrected its rationale (it round-trips the spec's 8-bit edges
   exactly where u8 corrupts ~half of them) — see
-  [decisions/float16-color-type.md](decisions/float16-color-type.md). One arm is
-  still open and unmeasured: a three-way bench of f32-everywhere vs the status quo
-  vs **pervasive 8-wide `_Float16` compute** in the blend kernel. Now that the
-  Metal backend is gone there is no shader left to bit-match, so the experiment is
-  clean to run; results will land as a decision record.
+  [decisions/float16-color-type.md](decisions/float16-color-type.md). The arm it
+  left open was then measured three ways (f32-everywhere vs f16-storage/f32-compute
+  vs pervasive 8-wide `_Float16` compute) and ruled in
+  [decisions/color-axis.md](decisions/color-axis.md): **pervasive f16 compute
+  landed** — the blend kernel (all 26 modes), the filter colour matrix, the
+  gradient stop lerp, premultiply, and readback all run f16 arithmetic 8 lanes
+  wide, 13–15% faster on the flagship renders, with the 8-bit round-trip still
+  exhaustively exact and blends within 1/255 of a double reference (both now
+  pinned as tests). The lone f32 holdout is the blur's running-sum accumulator,
+  kept on measured accuracy grounds (`blur.h`).
 
 ## Partial — implemented but narrower than spec
 
