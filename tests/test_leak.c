@@ -13,6 +13,7 @@
 #include "test_util.h"
 
 #include "canvas.h"
+#include "cnvs_replay.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -86,6 +87,52 @@ int main(void) {
         canvas_fill_text(cv, "\xF0\x9F\x99\x82", 20.0f, 40.0f);
 
         canvas_destroy(cv);
+    }
+
+    // Record/replay ownership: the recorder's content-dedupe copies (one per
+    // distinct image and path block) free when the recording closes; a
+    // replayed program's image blocks are ADOPTED by the canvas (patterns
+    // borrow them past replay) and free at destroy; the parser's rebuilt
+    // Path2D objects free when replay returns -- including via the
+    // truncated-block drop paths, which a failing replay exercises.
+    for (int i = 0; i < 4; i++) {
+        char const *__null_terminated path = "build/test_leak.canvas";
+        canvas *__single cv = canvas_create(48, 48);
+        CHECK(cv != NULL);
+        if (!cv) {
+            continue;
+        }
+        CHECK(canvas_record_to(cv, path));
+        uint8_t src[8 * 8 * 4];
+        for (int k = 0; k < (int)sizeof src; k++) {
+            src[k] = (uint8_t)(k * 3);
+        }
+        canvas_draw_image(cv, src, 8, 8, 2.0f, 2.0f);
+        canvas_set_fill_pattern(cv, src, 8, 8, CANVAS_REPEAT);
+        canvas_fill_rect(cv, 0.0f, 0.0f, 24.0f, 24.0f);
+        canvas_path2d *__single p2 = canvas_path2d_create();
+        if (p2) {
+            canvas_path2d_rect(p2, 4.0f, 4.0f, 20.0f, 20.0f);
+            canvas_fill_path(cv, p2, CANVAS_NONZERO);
+            canvas_stroke_path(cv, p2);  // dedupe hit: no second copy
+            canvas_path2d_destroy(p2);
+        }
+        canvas_fill_text(cv, "Ag", 4.0f, 40.0f);
+        canvas_destroy(cv);  // closes the recording, freeing its copies
+
+        canvas *__single rv = canvas_create(48, 48);
+        CHECK(rv != NULL);
+        if (!rv) {
+            continue;
+        }
+        CHECK(canvas_replay_from(rv, path));
+        // Truncated blocks: the pending path and pending image state must
+        // free on the failure path too.
+        static char const trunc_path[] = "path 0 2\nm 1 2\n";
+        CHECK(!cnvs_replay_text(rv, trunc_path, sizeof trunc_path - 1));
+        static char const trunc_image[] = "image 0 1 1 12 1\n";
+        CHECK(!cnvs_replay_text(rv, trunc_image, sizeof trunc_image - 1));
+        canvas_destroy(rv);  // frees the adopted image blocks
     }
     return TEST_REPORT();
 }
