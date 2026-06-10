@@ -203,6 +203,31 @@ annotations live in its header where callers see them. The general lesson: a
 wrapper that must reproduce libc's exact corner-case behaviour belongs on the
 unchecked side of the boundary, with its contract expressed in the header.
 
+**A `__counted_by` struct member can't grow its count in place.** Building the
+emoji mip pyramid level by level, the natural shape is "append a level, bump
+`nmips`" — but a pointer loaded from a counted member carries its *current*
+count as its bounds, so incrementally raising the count under a live pointer
+trips the dependency rules. The idiom (the same one every cache insert here
+uses) is **build in a local, install atomically**: assemble the full level
+array in a plain local — which carries complete bounds from `calloc`'s
+`alloc_size` — then assign pointer and count together, adjacently. Two lines
+once you know it, but it dictates program shape. Worth weighing against the
+rest of that code's experience: the pyramid math itself — clamped
+data-dependent neighbour indexing, four reads and a write per pixel against
+`w*h*4` bounds, slab-slicing a counted member into chunk-sized
+`__counted_by(n)` arguments — compiled and ran clean on the first complete
+build, sanitizers and all. For byte-level image code that is not the usual
+experience, and the bounds discipline forcing every size relationship to be
+stated up front deserves part of the credit.
+
+**Nested out-pointers (`T **`) carry no bounds.** There is no way to annotate
+"pointer to a counted pointer," so a helper that wants to return both a buffer
+and its count through out-params can't stay checked end to end. The fixes that
+keep everything checked: return a small struct (a counted pointer and its
+count travel together by value — works fine as a borrow-view), or restructure
+so the callee fills caller-owned storage (the boundary's grow-and-refetch
+pattern). Hit while factoring the glyph-curve fetch; the struct return won.
+
 ## Antialiasing: the strongest demonstration
 
 Antialiasing is where the project makes its most pointed `-fbounds-safety`
