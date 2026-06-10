@@ -60,34 +60,32 @@ cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {
                             .b = (_Float16)b, .a = (_Float16)a };
 }
 
-// Clamp to [0,1], narrow to _Float16.
-static _Float16 clamp16(float v) {
-    if (v < 0.0f) { v = 0.0f; }
-    if (v > 1.0f) { v = 1.0f; }
-    return (_Float16)v;
-}
-
 typedef _Float16 premh4 __attribute__((ext_vector_type(4)));
-typedef float premf4 __attribute__((ext_vector_type(4)));
 
 cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
-    // {r*a, g*a, b*a, a}, clamped to [0,1] and narrowed -- the scalar clamp16 per
-    // channel, done as one 4-lane multiply + clamp + round-to-nearest narrow.  No
-    // add, so no FMA contraction: bit-identical to the scalar form.
-    premf4 p = __builtin_convertvector((premh4){ c.r, c.g, c.b, c.a }, premf4);
-    float a = p[3];
-    premf4 out = p * (premf4){ a, a, a, 1.0f };
-    out = __builtin_elementwise_min((premf4)1.0f,
-                                    __builtin_elementwise_max((premf4)0.0f, out));
-    premh4 h = __builtin_convertvector(out, premh4);
-    return (cnvs_premul){ .r = h[0], .g = h[1], .b = h[2], .a = h[3] };
+    // {r*a, g*a, b*a, a}, clamped to [0,1] -- the multiply and clamp run in
+    // _Float16 directly (no widen to f32, no narrowing convert on the way
+    // out), one 4-lane vector op each.  Every 8-bit edge value still
+    // round-trips exactly under f16 arithmetic (test_image's exhaustive
+    // sweep; docs/decisions/color-axis.md experiment 1).
+    premh4 p = { c.r, c.g, c.b, c.a };
+    _Float16 a = p[3];
+    premh4 out = p * (premh4){ a, a, a, (_Float16)1.0f };
+    out = __builtin_elementwise_min((premh4)(_Float16)1.0f,
+                                    __builtin_elementwise_max((premh4)(_Float16)0.0f, out));
+    return (cnvs_premul){ .r = out[0], .g = out[1], .b = out[2], .a = out[3] };
 }
 
 cnvs_unpremul cnvs_unpremultiply(cnvs_premul c) {
-    float a = (float)c.a;
-    if (a <= 0.0f) {
+    // The inverse divide, also in _Float16: r/a, g/a, b/a (lane 3 divides to
+    // a/a and is overwritten with a), clamped to [0,1].
+    _Float16 a = c.a;
+    if (a <= (_Float16)0.0f) {  // fully transparent un-premultiplies to all zero
         return (cnvs_unpremul){ .r = 0, .g = 0, .b = 0, .a = 0 };
     }
-    return (cnvs_unpremul){ .r = clamp16((float)c.r / a), .g = clamp16((float)c.g / a),
-                            .b = clamp16((float)c.b / a), .a = clamp16(a) };
+    premh4 u = (premh4){ c.r, c.g, c.b, c.a } / a;
+    u[3] = a;
+    u = __builtin_elementwise_min((premh4)(_Float16)1.0f,
+                                  __builtin_elementwise_max((premh4)(_Float16)0.0f, u));
+    return (cnvs_unpremul){ .r = u[0], .g = u[1], .b = u[2], .a = u[3] };
 }

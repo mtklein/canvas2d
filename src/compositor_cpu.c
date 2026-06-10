@@ -63,6 +63,10 @@ static float blend_term(compositor_blend_mode mode,
 // One premultiplied pixel as a vector: cnvs_premul is four contiguous _Float16.
 typedef _Float16 blendh4 __attribute__((ext_vector_type(4)));
 typedef float blendf4 __attribute__((ext_vector_type(4)));
+// Two premultiplied pixels as one 8-lane _Float16 vector -- a full 128-bit
+// NEON register of native fp16 arithmetic, the colour pipeline's wide unit
+// (docs/decisions/color-axis.md).
+typedef _Float16 blendh8 __attribute__((ext_vector_type(8)));
 
 typedef struct {
     float r, g, b;
@@ -257,30 +261,52 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
     }
     if (mode == COMPOSITOR_SRC_OVER) {
         // The overwhelmingly common mode (every ordinary fill).  Its math --
-        // co = s + (1-sa)*d, ao = sa + (1-sa)*da -- folds identically over all four
-        // channels (lane 3 yields ao), so blend a whole pixel as one 4-lane vector.
-        // Clip attenuation stays in float32; the result is clamped to [0,aoc] and
-        // stored to half (round to nearest-even).
+        // co = s + (1-sa)*d, ao = sa + (1-sa)*da -- folds identically over all
+        // four channels (lanes 3 and 7 yield ao), so blend two whole pixels as
+        // one 8-lane _Float16 vector: load f16, blend f16, clamp f16, store
+        // f16, no widen/narrow converts anywhere (docs/decisions/color-axis.md).
+        // Clip attenuation is f16 too -- this deliberately reverses the
+        // float32-attenuation choice the Metal-parity era kept (there is no
+        // shader left to bit-match, and full coverage still attenuates by
+        // exactly 1.0: 255 * RN16(1/255) rounds back to 1).  An odd-width
+        // tail does one pixel at 4 lanes.
+        _Float16 const k255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
-            for (int col = 0; col < w; col++) {
+            int col = 0;
+            for (; col + 2 <= w; col += 2) {
                 int di = (y + row) * c->width + (x + col);
-                blendh4 sh;
-                memcpy(&sh, &tile[row * w + col], sizeof sh);
-                blendf4 s = __builtin_convertvector(sh, blendf4);
-                if (c->clip) {  // attenuate premultiplied source by clip coverage, in float
-                    float k = (float)c->clip[di] / 255.0f;
-                    s = s * k;
+                blendh8 s, d;
+                memcpy(&s, &tile[row * w + col], sizeof s);  // one check, two pixels
+                memcpy(&d, &c->target[di], sizeof d);
+                if (c->clip) {  // attenuate premultiplied source by clip coverage
+                    _Float16 k0 = (_Float16)c->clip[di] * k255;
+                    _Float16 k1 = (_Float16)c->clip[di + 1] * k255;
+                    s = s * (blendh8){ k0, k0, k0, k0, k1, k1, k1, k1 };
                 }
-                blendh4 dh;
-                memcpy(&dh, &c->target[di], sizeof dh);
-                blendf4 d = __builtin_convertvector(dh, blendf4);
-                float fb = 1.0f - s[3];                // 1 - sa
-                blendf4 co = s + fb * d;               // lane 3 = ao
-                float aoc = co[3] < 1.0f ? co[3] : 1.0f;
-                co = __builtin_elementwise_max((blendf4)0.0f,
-                                               __builtin_elementwise_min((blendf4)aoc, co));
-                blendh4 out = __builtin_convertvector(co, blendh4);
-                memcpy(&c->target[di], &out, sizeof out);
+                blendh8 fb = (blendh8)(_Float16)1.0f -
+                             __builtin_shufflevector(s, s, 3, 3, 3, 3, 7, 7, 7, 7);
+                blendh8 co = s + fb * d;               // lanes 3,7 = ao
+                blendh8 aoc = __builtin_elementwise_min(
+                    __builtin_shufflevector(co, co, 3, 3, 3, 3, 7, 7, 7, 7),
+                    (blendh8)(_Float16)1.0f);
+                co = __builtin_elementwise_max((blendh8)(_Float16)0.0f,
+                                               __builtin_elementwise_min(aoc, co));
+                memcpy(&c->target[di], &co, sizeof co);
+            }
+            for (; col < w; col++) {  // odd-width tail: one pixel, 4 lanes
+                int di = (y + row) * c->width + (x + col);
+                blendh4 s, d;
+                memcpy(&s, &tile[row * w + col], sizeof s);
+                memcpy(&d, &c->target[di], sizeof d);
+                if (c->clip) {
+                    s = s * ((_Float16)c->clip[di] * k255);
+                }
+                _Float16 fb = (_Float16)1.0f - s[3];
+                blendh4 co = s + fb * d;
+                _Float16 aoc = co[3] < (_Float16)1.0f ? co[3] : (_Float16)1.0f;
+                co = __builtin_elementwise_max((blendh4)(_Float16)0.0f,
+                                               __builtin_elementwise_min((blendh4)aoc, co));
+                memcpy(&c->target[di], &co, sizeof co);
             }
         }
         return;

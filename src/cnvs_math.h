@@ -14,11 +14,14 @@ typedef struct {
 // Colour channels are _Float16 -- the narrowest storage type for which the
 // spec's 8-bit edges round-trip exactly: every (u8 colour, u8 alpha) pair
 // survives premultiply -> f16 store -> unpremultiply -> 8-bit quantize
-// unchanged (all 65,280, even under the Metal-matched truncating store; a u8
-// premultiplied store corrupts half of them), at half float32's footprint.
-// It also matches Metal's half / RGBA16Float, but that is a convenience, not
-// the argument -- see docs/decisions/float16-color-type.md.  Compute happens
-// in f32; f16 is how the tile, target, and gradient ramp are STORED.
+// unchanged (all 65,280; a u8 premultiplied store corrupts half of them), at
+// half float32's footprint -- see docs/decisions/float16-color-type.md.
+// Since docs/decisions/color-axis.md's ruling, _Float16 is the COMPUTE type
+// too: the blend, filter, gradient-lerp, premultiply, and readback kernels do
+// their arithmetic in f16 (8 lanes per 128-bit NEON vector, native on Apple
+// Silicon), with no widen/narrow converts at the load/store boundaries.  The
+// round-trip above survives f16 arithmetic exhaustively (test_image), and
+// blends stay within 1/255 of a double reference (test_compositor).
 //
 // Two types so premultiplied and unpremultiplied colour can't be mixed up:
 // cnvs_unpremul is what the Canvas API speaks (r,g,b independent of a); cnvs_premul
