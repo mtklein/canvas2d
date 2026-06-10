@@ -556,6 +556,53 @@ from our benches:
   multi-× wins over single-threaded AGG/Cairo-class renderers. Its banding is
   §3.5(a) with the JIT we don't need at our pipeline count.
 
+### 3.8 The unified draw pipeline (erasing the canvas/compositor line)
+
+Mike's model of a draw (2026-06-10), now that both sides of the old
+canvas/compositor split are CPU:
+
+```
+float x,y inputs
+half  cov = cov_fn(x,y,cov_ctx)
+if (cov == 0) return
+half4 src = shader_fn(x,y,shader_ctx)
+half4 dst = load_dst(ptr, fmt)
+half4 blend = blend_fn(src,dst)
+if (cov < 1) blend = lerp(dst, blend, cov)
+store_dst(ptr, fmt, blend)
+```
+
+Mapped onto today's pipeline: `cov_fn` is the resolved coverage plane (it stays
+materialized in every variant — analytic coverage is born from scanline
+accumulation, not point evaluation); `shader_fn` is `paint_tile`'s planar fold;
+`load/blend/store_dst` is the compositor; and the seam between them is a full
+premultiplied f16 **tile**, written by shade and re-read by composite — a
+~16 B/px round trip that exists only because these were once different
+machines. The experiment: evolve the structure literally to the model, racing
+both shapes Mike named — (a) staged planar row buffers between stages, vs (b) a
+fused per-block register pipeline (`cnvs_px8` is an HVA, so stage functions
+compose through q0–q3 without fusing the *code*) — and let paired benches pick.
+The fused shape deletes the tile on the no-filter path outright.
+
+Two things the model surfaces that a refactor must not blur past:
+
+- **Coverage semantics fork.** Today coverage FOLDS into the premultiplied
+  source before blending; the model LERPS the blended result by coverage. They
+  agree exactly for source-over and diverge at AA edges for the other 25 modes
+  (`source-in` is the clean counterexample); the lerp is the spec's
+  mask-the-result semantics, the fold is the classic approximation. Adopting
+  the lerp is a correctness-flavored re-baseline of porterduff/blend edge
+  pixels — same genre as the gradient hard-stop fix — and wants its own ruling
+  plus a supersampled-oracle check (§3.7's conflation scenes share the
+  apparatus), not a silent ride-along.
+- **Materialization boundaries stay.** blur()/drop-shadow()/shadows need the
+  op's spatial extent: the filter path keeps a tile; shadows are a second
+  pipeline invocation (blurred cov_fn, tint shader_fn). The fused pipeline is
+  the fast path for the empty-filter-list case, i.e. nearly always.
+- The model's two `if`s become block predicates 8 lanes at a time; the
+  cov==0 early-out is §3.4's empty-classification arriving through the front
+  door.
+
 ## 4. Ranked next experiments
 
 (#1, planarize the shade stage, **landed 2026-06-10** — −29/−39 % flagship,
@@ -569,7 +616,16 @@ parallelism a caller already has via N canvases over cached tiles; §3.5 carries
 the ruling and the essentiality bar a future threading proposal must clear. The
 how-to-thread analysis stays parked there.)
 
-1. **Vectorize the sampling interior of `draw_image_quad`** (the new 25 %
+1. **The unified draw pipeline** (§3.8, Mike's model — race staged-buffers vs
+   fused registers). *Why first:* it's the structural move everything else
+   lands inside — deleting the ~16 B/px tile round trip on the no-filter path
+   attacks bandwidth the sample profile can't even see, and the coverage
+   semantics ruling it forces (fold vs lerp) should happen before more code
+   accretes on the fold. The sampling and clip work below survive it (they
+   live inside shader_fn / upstream of it). *Kill:* the fused shape loses to
+   the staged shape AND the staged shape loses to status quo (then the tile
+   was free and the model is documentation, not code).
+2. **Vectorize the sampling interior of `draw_image_quad`** (the 25 %
    pole). The taps stay scalar — there is no NEON gather — but per block the
    four tap colours can land in f32 planes and the bilinear weight/lerp
    arithmetic (`tx`/`ty`, two lerps × four channels, the /255) plus the index
@@ -579,11 +635,11 @@ how-to-thread analysis stays parked there.)
    *Expected:* a real slice of 25 % on the gallery, more on emoji/drawimage
    scenes — the probe. *Kill:* the gather/insert shuffling eats the arithmetic
    win (the taps are ~16 byte-loads per pixel either way).
-2. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
+3. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
    still a half-day). 8-wide integer `old * pc / 255` with the planar seams,
    bbox-limited. The /255 must stay exact (it's integer today; keep it
    integer). No memo ceremony needed; the byte-gate is the whole gate.
-3. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
+4. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
    no threads). *Re-priced after #1 landed:* the solid-tile fast path now skips
    much cheaper shade work, so the 5–15 % guess shrinks; coverage (22 %) is the
    bigger target now. *Kill:* < 5 % flagship, or a measurable regression on
