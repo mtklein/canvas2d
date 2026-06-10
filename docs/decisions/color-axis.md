@@ -332,3 +332,65 @@ prototype scope:
 - **Re-baseline as priced:** all 32 PNGs plus `imagedata.canvas`/`subrect.canvas`,
   max channel delta 1/255 in every scene, committed in lockstep with the kernels that
   moved them; `test_replay_gallery` stayed byte-green throughout.
+
+## Layout addendum (2026-06-10): the f16 kernels went planar
+
+The ruling's kernels were AoS -- pixels interleaved in the vector, alpha splatted
+across channel lanes by shuffles, and the HSL quartet + soft-light still scalar f16
+because per-pixel branches don't vectorize across interleaved lanes.  The layout
+refactor (task #21) re-shaped every bulk f16 kernel to **planar (SoA)**: eight
+pixels per step as four 8-lane channel planes, deinterleaved at the buffer seams by
+explicit `vld4q_f16`/`vst4q_f16` (and `vld4_u8`/`vst4_u8` at the RGBA8 seams) --
+there is no portable spelling for those, and the f16 ruling already spent
+portability.  The shared vocabulary lives in `src/cnvs_planar.h`; stages pass
+whole blocks as a four-vector HVA, in registers (q0-q3), so the pipeline stays
+factored as small functions with vector ABIs rather than fused monoliths.
+
+**Converted:** the SRC_OVER kernel, the generic 26-mode kernel (per-pixel branches
+became bitwise lane selects; HSL/dodge/burn/soft-light are now straight-line vector
+code with one fsqrt.8h), the filter colour-matrix (its four splat shuffles per step
+deleted outright -- a coefficient is a scalar broadcast against a plane), readback
+un-premultiply, and putImageData premultiply.  **Left AoS:** the gradient stop lerp
+(one colour behind a data-dependent stop search; no natural 8-batch exists) and the
+blur passes (f32 running-sum accumulators per this ruling -- planar restructuring
+must not re-round an accumulator; never on a hot path).
+
+**Pixels did not move.**  Same arithmetic per lane, different layout: every commit
+held all 33 gallery PNGs byte-identical, and a differential sweep of the planar
+26-mode kernel against the scalar form (78M random + edge-value pixels, subnormals
+and branch thresholds included) found zero bit mismatches.  Two idioms made that
+exact: selects are bitwise (an arithmetic `b + (a-b)*m` select poisons on a guarded
+divide's inf/NaN), and min/max stay spelled as compare+select, not fminnm/fmaxnm,
+which disagree on signed zeros.
+
+**Measured** (paired hyperfine, both binaries in one invocation, copied to /tmp,
+quiet machine, medians ± σ; sentinel re-run drifted +1.9%, ~1.3σ):
+
+| bench | AoS (ruling) | planar | planar/AoS |
+|---|---|---|---|
+| `bench_render` | 21.4 ± 0.3 ms | **17.6 ± 0.2 ms** | **0.825** |
+| `bench_render_large` | 237.6 ± 0.7 ms | **178.8 ± 0.8 ms** | **0.752** |
+| `bench` (e2e) | 44.6 ± 0.3 ms | 44.6 ± 0.4 ms | 1.001 |
+| `bench_fill` | 28.9 ± 0.3 ms | 28.4 ± 0.2 ms | 0.983 |
+| `bench_gradient_fill` | 12.0 ± 0.2 ms | 12.1 ± 0.2 ms | 1.003 |
+| `bench_blit` (control) | 8.3 ± 0.2 ms | 8.3 ± 0.2 ms | 0.998 |
+| `bench_blur_h` (control) | 32.6 ± 0.4 ms | 32.7 ± 0.2 ms | 1.002 |
+| `bench_blur_v` (control) | 14.0 ± 0.1 ms | 14.1 ± 0.1 ms | 1.004 |
+
+−17.5% / −24.8% on the flagship renders, controls flat.  The mechanism: 8 px/step
+instead of 2 (or 1, for the generic modes), zero shuffles (the AoS kernels' tbl.16b
+splats vanish from the disassembly), and the formerly scalar generic/HSL modes --
+`bench_render_large`'s scenes lean on MULTIPLY/SCREEN/LIGHTEN composites, which is
+why it gains most.  No kernel regressed, so rule "AoS only with receipts" has no
+exceptions to record.
+
+**The arm_neon.h × -fbounds-safety seam, documented:** the intrinsics' pointer
+parameters are unannotated, and a checked TU may pass them a checked pointer (the
+bounds are simply dropped at the call).  The working pattern: wrap each ld4/st4 in
+a `static inline` helper taking `__counted_by(8)` (or `(32)` for RGBA8), so the
+implicit conversion at every call site IS the bounds check -- one branchy check
+per 8-pixel block, the same shape and cost as the AoS kernels' checked-memcpy
+idiom, verified in the disassembly (cmp/cmp/cmp + `ld4.8h` straight off the user
+pointer; no copy through a local, no `__unsafe_*` anywhere).  The st4 intrinsics
+are function-like macros, so a braced compound literal must be bound to a named
+local first.

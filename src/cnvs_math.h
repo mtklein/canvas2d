@@ -20,8 +20,12 @@ typedef struct {
 // too: the blend, filter, gradient-lerp, premultiply, and readback kernels do
 // their arithmetic in f16 (8 lanes per 128-bit NEON vector, native on Apple
 // Silicon), with no widen/narrow converts at the load/store boundaries.  The
-// round-trip above survives f16 arithmetic exhaustively (test_image), and
-// blends stay within 1/255 of a double reference (test_compositor).
+// bulk kernels are PLANAR over that type -- eight pixels as four channel-plane
+// vectors, deinterleaved at the buffer seams (cnvs_planar.h; the layout
+// addendum in the same memo) -- while this header's per-pixel converters stay
+// one pixel's four lanes.  The round-trip above survives f16 arithmetic
+// exhaustively (test_image), and blends stay within 1/255 of a double
+// reference (test_compositor).
 //
 // Two types so premultiplied and unpremultiplied colour can't be mixed up:
 // cnvs_unpremul is what the Canvas API speaks (r,g,b independent of a); cnvs_premul

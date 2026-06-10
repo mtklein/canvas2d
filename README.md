@@ -319,14 +319,18 @@ bake into finished `_Float16` RGBA16F tiles (the narrowest storage type that
 round-trips the spec's 8-bit edges exactly — every colour×alpha pair survives the
 premultiplied store unchanged — at half f32's footprint; see
 [docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md)), and a
-file-local per-pixel `blend()` kernel composites them in ~300 lines of checked C over
+file-local planar blend kernel composites them in ~350 lines of checked C over
 `__counted_by` tiles, with no frameworks. `_Float16` is the pipeline's *compute*
-type, not just its storage: the blend, filter, gradient-lerp, premultiply, and
-readback kernels do their arithmetic in f16 — 8 lanes per 128-bit NEON vector,
-native on Apple Silicon, no widen/narrow converts — which measured 13–15% faster
-than the f32-compute pipeline on the flagship renders while keeping every 8-bit
-round-trip exact and every blend within 1/255 of a double reference (the ruling and
-its measurements: [docs/decisions/color-axis.md](docs/decisions/color-axis.md)). (A Metal GPU backend implemented the same
+type, not just its storage, and **planar (SoA) is its compute layout**: the blend,
+filter, premultiply, and readback kernels work eight pixels at a time as four
+8-lane channel *planes* — a full 128-bit NEON register of native fp16 per channel,
+deinterleaved at the buffer seams by explicit ld4/st4
+([src/cnvs_planar.h](src/cnvs_planar.h)), no widen/narrow converts, no alpha-splat
+shuffles — which measured 13–15% faster than the f32-compute pipeline on the
+flagship renders while still AoS, and a further 17–25% on top when the kernels
+went planar, while keeping every 8-bit round-trip exact and every blend within
+1/255 of a double reference (the ruling, its measurements, and the planar-layout
+addendum: [docs/decisions/color-axis.md](docs/decisions/color-axis.md)). (A Metal GPU backend implemented the same
 `compositor.h` ABI and was held bit-for-bit identical to this one by a tolerance-0
 differential; it was removed once the measurements showed the CPU path winning the
 flagship workload — see
