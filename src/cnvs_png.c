@@ -73,28 +73,25 @@ static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
 
 #else  // portable byte-at-a-time fallback (non-ARMv8 targets)
 
-static uint32_t g_crc_table[256];
-static bool g_crc_ready = false;
-
-static void crc_init(void) {
-    for (uint32_t n = 0; n < 256; n++) {
-        uint32_t c = n;
+// The table lives on the stack, rebuilt per call (2048 cheap iterations --
+// noise next to checksumming any PNG chunk).  It used to be a lazily
+// initialized file-scope static, the lone piece of shared mutable state in
+// src/: two unsynchronized threads racing the ready flag is exactly the
+// hidden-global class the thread-safety posture (distinct canvases are fully
+// independent; src/ holds no shared mutable state) forbids.
+static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
+    uint32_t table[256];
+    for (uint32_t v = 0; v < 256; v++) {
+        uint32_t c = v;
         for (int k = 0; k < 8; k++) {
             c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
         }
-        g_crc_table[n] = c;
-    }
-    g_crc_ready = true;
-}
-
-static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
-    if (!g_crc_ready) {
-        crc_init();
+        table[v] = c;
     }
     uint32_t c = 0xFFFFFFFFu;
     for (size_t i = 0; i < n; i++) {
         uint32_t idx = (c ^ p[i]) & 0xFFu;
-        c = g_crc_table[idx] ^ (c >> 8);
+        c = table[idx] ^ (c >> 8);
     }
     return c ^ 0xFFFFFFFFu;
 }
