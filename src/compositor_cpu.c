@@ -23,6 +23,17 @@
 // numerical correctness.  It also couples this output to the GPU's store
 // behaviour: a device that rounds-to-nearest would diverge (the differential
 // would catch it).  See diff/ and docs.
+//
+// Three more GPU behaviours are matched on purpose (docs/backend-differential.md
+// has the measurements): the clip-attenuated source stays in float32 -- the
+// shaders hand their blend math the unrounded tile*clip product; source-over's
+// fixed-function blend and the blend-mode epilogue use the GPU's fused
+// multiply-add shapes, written out explicitly below; and everything else matches
+// because this kernel mirrors shaders/compositor.metal expression for expression,
+// so two LLVM compilers contract the same trees the same way.  Out of reach:
+// Metal's divide and sqrt are not correctly rounded, so the modes that divide
+// (dodge/burn/soft-light, HSL) can land one half-ULP off the GPU under a
+// fractional clip (~1e-4 of pixels, below the 8-bit gate's threshold).
 static _Float16 to_half_rtz(float v) {  // v >= 0 here, so toward-zero == floor
     _Float16 n = (_Float16)v;
     if ((float)n > v) {  // nearest-even overshot -- step one ULP back toward zero
@@ -78,6 +89,12 @@ static float blend_term(compositor_blend_mode mode,
         }
     }
 }
+
+// One premultiplied pixel as a vector: cnvs_premul is four contiguous _Float16.
+typedef _Float16 blendh4 __attribute__((ext_vector_type(4)));
+typedef float blendf4 __attribute__((ext_vector_type(4)));
+typedef int blendi4 __attribute__((ext_vector_type(4)));
+typedef uint16_t blendu16x4 __attribute__((ext_vector_type(4)));
 
 typedef struct {
     float r, g, b;
@@ -138,9 +155,13 @@ static rgb blend_nonsep(compositor_blend_mode mode, rgb cb, rgb cs) {
     }
 }
 
-static cnvs_premul blend(cnvs_premul src, cnvs_premul dst, compositor_blend_mode mode) {
-    float sa = (float)src.a, da = (float)dst.a;
-    float sr = (float)src.r, sg = (float)src.g, sb = (float)src.b;
+// `src` is the premultiplied source pixel, already clip-attenuated, still in
+// float: the GPU's tile_composite_fs hands its math the unrounded f32 tile*clip
+// product, so rounding it to half on the way in would diverge (see
+// compositor_blend's clip attenuation).
+static cnvs_premul blend(blendf4 src, cnvs_premul dst, compositor_blend_mode mode) {
+    float sa = src[3], da = (float)dst.a;
+    float sr = src[0], sg = src[1], sb = src[2];
     float dr = (float)dst.r, dg = (float)dst.g, db = (float)dst.b;
     float cor, cog, cob, ao;
 
@@ -182,10 +203,14 @@ static cnvs_premul blend(cnvs_premul src, cnvs_premul dst, compositor_blend_mode
             tg = blend_term(mode, sg, dg, sa, da);
             tb = blend_term(mode, sb, db, sa, da);
         }
-        cor = sr * (1.0f - da) + dr * (1.0f - sa) + tr;
-        cog = sg * (1.0f - da) + dg * (1.0f - sa) + tg;
-        cob = sb * (1.0f - da) + db * (1.0f - sa) + tb;
-        ao  = sa + da * (1.0f - sa);
+        // Fused exactly as the GPU compiles co = s*(1-da) + d*(1-sa) + T and
+        // ao = sa + da*(1-sa): a right-nested FMA chain.  (The Porter-Duff path
+        // above is *not* fused on the GPU -- plain rounded multiply-then-add
+        // matches it.  Both shapes pinned by the raw-half sweep.)
+        cor = fmaf(sr, 1.0f - da, fmaf(dr, 1.0f - sa, tr));
+        cog = fmaf(sg, 1.0f - da, fmaf(dg, 1.0f - sa, tg));
+        cob = fmaf(sb, 1.0f - da, fmaf(db, 1.0f - sa, tb));
+        ao  = fmaf(da, 1.0f - sa, sa);
     }
 
     float aoc = fminf(ao, 1.0f);  // additive 'lighter' can exceed 1
@@ -258,12 +283,6 @@ void compositor_set_clip(compositor *__single c,
     memcpy(c->clip, mask, (size_t)n);
 }
 
-// One premultiplied pixel as a vector: cnvs_premul is four contiguous _Float16.
-typedef _Float16 blendh4 __attribute__((ext_vector_type(4)));
-typedef float blendf4 __attribute__((ext_vector_type(4)));
-typedef int blendi4 __attribute__((ext_vector_type(4)));
-typedef uint16_t blendu16x4 __attribute__((ext_vector_type(4)));
-
 // Vector form of to_half_rtz (each lane v >= 0): round to nearest, then step the
 // lanes that overshot one ULP back toward zero, so it bit-matches the scalar
 // to_half_rtz the rest of the compositor uses (and thus Metal's RTZ store).
@@ -292,11 +311,13 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         // The overwhelmingly common mode (every ordinary fill).  Its math --
         // co = s + (1-sa)*d, ao = sa + (1-sa)*da -- folds identically over all four
         // channels (lane 3 yields ao), so blend a whole pixel as one 4-lane vector.
-        // Bit-identical to blend()'s source-over: the clip-attenuation round, the
-        // clamp to [0,aoc], and the round-toward-zero half store are all reproduced.
-        // contract(off): blend() compiles co = 1*s + fb*d as a rounded multiply then
-        // add; without this the vector form fuses to one FMA and drifts a half-ULP,
-        // which the exact (tolerance-0) backend differential would catch.
+        // The float clip attenuation, the clamp to [0,aoc], and the round-toward-zero
+        // half store all mirror the GPU.  co uses an explicit FMA because the
+        // fixed-function blender fuses (1-sa)*d + s: with a fractional clip the
+        // attenuated source carries a full f32 mantissa, the products round, and a
+        // separate multiply-then-add lands a half-ULP off the GPU (caught by the
+        // raw-half compositor sweep; with the clip open every product is exact and
+        // fusing changes nothing).  contract(off) keeps s*k a lone rounded multiply.
         #pragma clang fp contract(off)
         for (int row = 0; row < h; row++) {
             for (int col = 0; col < w; col++) {
@@ -305,15 +326,18 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                 memcpy(&sh, &tile[row * w + col], sizeof sh);
                 blendf4 s = __builtin_convertvector(sh, blendf4);
                 if (c->clip) {  // attenuate premultiplied source by clip coverage
+                    // In float, never rounded to half: tile_blend_fs hands the
+                    // blender the unrounded f32 tile*clip product.  (A half
+                    // round-trip here diverged on opaque overdraw under partial
+                    // coverage -- the clipstripes diff scene.)
                     float k = (float)c->clip[di] / 255.0f;
-                    s = __builtin_convertvector(
-                        __builtin_convertvector(s * k, blendh4), blendf4);  // round-to-nearest, as scalar
+                    s = s * k;
                 }
                 blendh4 dh;
                 memcpy(&dh, &c->target[di], sizeof dh);
                 blendf4 d = __builtin_convertvector(dh, blendf4);
                 float fb = 1.0f - s[3];                // 1 - sa
-                blendf4 co = s + fb * d;                // lane 3 = ao
+                blendf4 co = __builtin_elementwise_fma((blendf4)fb, d, s);  // lane 3 = ao
                 float aoc = co[3] < 1.0f ? co[3] : 1.0f;
                 co = __builtin_elementwise_max((blendf4)0.0f,
                                                __builtin_elementwise_min((blendf4)aoc, co));
@@ -326,13 +350,12 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
     for (int row = 0; row < h; row++) {
         for (int col = 0; col < w; col++) {
             int di = (y + row) * c->width + (x + col);
-            cnvs_premul s = tile[row * w + col];
-            if (c->clip) {  // attenuate premultiplied source by clip coverage
+            blendh4 sh;
+            memcpy(&sh, &tile[row * w + col], sizeof sh);
+            blendf4 s = __builtin_convertvector(sh, blendf4);
+            if (c->clip) {  // attenuate premultiplied source by clip coverage, in float
                 float k = (float)c->clip[di] / 255.0f;
-                s.r = (_Float16)((float)s.r * k);
-                s.g = (_Float16)((float)s.g * k);
-                s.b = (_Float16)((float)s.b * k);
-                s.a = (_Float16)((float)s.a * k);
+                s = s * k;
             }
             c->target[di] = blend(s, c->target[di], mode);
         }

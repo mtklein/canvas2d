@@ -316,9 +316,12 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   the [software compositor](src/compositor_cpu.c) implements `compositor.h`
   identically in ~350 lines of checked C (its file-local per-pixel `blend()` kernel
   is the same premultiplied math the Metal shader runs), selected instead of Metal
-  at build time. The two agree **bit-for-bit**
-  — the software blend rounds its half stores toward zero to match Metal's
-  RGBA16Float store, and the `backenddiff` gate holds the match at tolerance 0
+  at build time. The two agree **bit-for-bit on every gated rendering** — the
+  software blend reproduces Metal's rounding (truncating half stores, the
+  blender's fused multiply-adds, clip attenuation kept in float), and the
+  `backenddiff` gate holds the match at tolerance 0; beneath the gate's 8-bit
+  readback the one residue is the GPU's not-correctly-rounded divider, a last
+  half-ULP in the seven divide-using blend modes under fractional clip
   (see [docs/backend-differential.md](docs/backend-differential.md)) — and the
   `-cpu` build links no GPU frameworks at all.
 - The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with font
