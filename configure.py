@@ -3,9 +3,9 @@
 
 Build variants (one source tree):
 
-  release  -Os -fbounds-safety              (shipping build)
+  release  -Os -g -fbounds-safety           (shipping build)
   debug    -O0 -g -fbounds-safety -fsanitize=address,integer,undefined
-  unsafe   -Os                              (release minus -fbounds-safety)
+  unsafe   -Os -g                           (release minus -fbounds-safety)
 
 `release` vs `unsafe` isolates the cost of -fbounds-safety: same sources and
 optimisation, only the flag differs. `ninja benchcmp` runs hyperfine over the two.
@@ -168,10 +168,14 @@ FUZZ_CFLAGS = ("-std=c23 -g -O1 -fno-omit-frame-pointer -Ifuzz/shim -Ifuzz "
 FUZZ_CORE_EXCLUDE = set()
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?).
+# release/unsafe carry -g so Instruments shows source beside the assembly when
+# profiling them (the linked binaries keep a debug map into build/*/obj/*.o,
+# where the DWARF lives).  Debug info changes no codegen -- the gallery
+# byte-diff would catch it if it did.
 VARIANTS = {
-    "release": ("-Os", True,  True,  True),
+    "release": ("-Os -g", True,  True,  True),
     "debug":   (_DEBUG, True, True,  False),
-    "unsafe":  ("-Os", False, False, True),
+    "unsafe":  ("-Os -g", False, False, True),
 }
 
 
