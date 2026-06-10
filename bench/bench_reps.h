@@ -22,10 +22,10 @@ static inline double bench_now_s(void) {
 
 // Print a size-normalised throughput when BENCH_THROUGHPUT is set: Mpx/s and ns/px
 // over `work_px` total pixels processed in `seconds`.  Off by default, so `benchcmp`
-// / `rendercmp` output is unchanged; `ninja throughput` sets it (with a high
-// BENCH_REPS so the cold first rep is amortised away).  The metric is comparable
-// across canvas sizes and backends -- unlike a raw wall-clock that scales with the
-// scene -- so it's the apples-to-apples "how many pixels per second" number.
+// output is unchanged; `ninja throughput` sets it (with a high BENCH_REPS so the cold
+// first rep is amortised away).  The metric is comparable across canvas sizes --
+// unlike a raw wall-clock that scales with the scene -- so it's the apples-to-apples
+// "how many pixels per second" number.
 static inline void bench_report_throughput(double seconds, double work_px) {
     if (getenv("BENCH_THROUGHPUT") && seconds > 0.0 && work_px > 0.0) {
         fprintf(stderr, "throughput: %.1f Mpx/s (%.3f ns/px) over %.0f px in %.1f ms\n",

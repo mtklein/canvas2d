@@ -9,16 +9,15 @@
 # brief to sample, so GALLERY_REPS loops it (writing PNGs only on the final rep, which
 # the sample window never reaches, so disk I/O stays out of the profile).
 #
-# Uses the release-cpu gallery: `sample` sees only CPU program counters, and the cpu
-# backend keeps the whole pipeline on the CPU (the Metal backend would just show
-# CPU<->GPU sync stalls -- see `ninja gputime` for the GPU side).
+# Uses the release gallery: `sample` sees only CPU program counters, and the whole
+# pipeline (including the software compositor) runs on the CPU.
 #
-# Usage: bench/profile_scene.sh [gallery-binary]   (default build/release-cpu/gallery)
+# Usage: bench/profile_scene.sh [gallery-binary]   (default build/release/gallery)
 #   GALLERY_REPS  repeat count        (default 200)
 #   PROFILE_SECS  sampling window s   (default 4)
 set -eu
 
-BIN="${1:-build/release-cpu/gallery}"
+BIN="${1:-build/release/gallery}"
 REPS="${GALLERY_REPS:-200}"
 SECS="${PROFILE_SECS:-4}"
 

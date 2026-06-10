@@ -1,12 +1,8 @@
 # The full gate: a bare `ninja` builds every variant and runs the whole suite --
-# tests in four checked variants against both compositor backends, the gallery
-# re-render, static analysis, leakcheck, backenddiff (bit-for-bit, tolerance 0),
-# the OOM fault-injection sweep, and the fuzz corpus replay.  No brew installs
-# needed: ninja is preinstalled on macos-26 and the corpus gate uses Apple clang.
-#
-# metal-probe.yml settled the one empirically unverified assumption (run
-# 27244925568): the runner's "Apple Paravirtual device" passes backenddiff
-# bit-for-bit at tolerance 0, so the full gate runs on every push and PR.
+# tests in the two checked variants, the gallery re-render, static analysis,
+# leakcheck, the OOM fault-injection sweep, and the fuzz corpus replay.  No brew
+# installs needed: ninja is preinstalled on macos-26 and the corpus gate uses Apple
+# clang.
 #
 # DEVELOPER_DIR pins Xcode 26.5 = Apple clang 21 (clang-2100.1.1.101), matching
 # the toolchain the committed gallery PNGs were rendered with -- the trailing

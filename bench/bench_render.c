@@ -2,9 +2,7 @@
 // API -- solid + gradient fills, strokes, a clip, blend-mode composites, and a
 // readback -- so it exercises the whole shipping pipeline (rasterize -> paint_tile
 // -> compositor blend -> premultiply/unpremultiply conversions) the way actual
-// rendering does, not isolated kernels.  Built on BOTH compositor backends; compare
-// the two with `ninja rendercmp`, or profile a backend with `sample`.
-#include "bench_gpu.h"
+// rendering does, not isolated kernels.  Profile it with `sample`.
 #include "bench_reps.h"
 
 #include "canvas.h"
@@ -115,9 +113,8 @@ int main(void) {
 
     // Output pixels produced: one finished DIM*DIM canvas per frame.  (Overdraw --
     // the scene's fills cover only parts of the canvas -- isn't counted; this is
-    // finished-frame throughput, comparable across canvas sizes and backends.)
+    // finished-frame throughput, comparable across canvas sizes.)
     bench_report_throughput(secs, (double)DIM * (double)DIM * (double)FRAMES * (double)reps);
-    bench_report_gpu_timing(cv);  // Metal GPU profile when CANVAS_GPU_TIMING is set
     free(px);
     canvas_destroy(cv);
     fprintf(stderr, "sink=%.0f\n", sink);

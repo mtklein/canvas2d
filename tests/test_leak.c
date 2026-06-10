@@ -6,7 +6,7 @@
 // Dual use:
 //   - a normal test (run in every variant) -- under the debug variant's ASan it
 //     checks use-after-free / use-after-scope / use-after-return on these paths;
-//   - the target of `ninja leakcheck`, which runs the release-cpu build under the
+//   - the target of `ninja leakcheck`, which runs the release build under the
 //     macOS `leaks` tool (LeakSanitizer is broken on Apple-Silicon macOS, so
 //     `leaks` is how we detect leaks here).
 

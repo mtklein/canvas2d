@@ -2457,10 +2457,6 @@ void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int l
     read_unpremul(cv, out, len);
 }
 
-void canvas_gpu_timing(canvas *__single cv, double *__single total_ns, long *__single dispatches) {
-    compositor_gpu_timing(cv->comp, total_ns, dispatches);
-}
-
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     int const len = cv->width * cv->height * 4;
     uint8_t *__counted_by_or_null(len) out = malloc((size_t)len);

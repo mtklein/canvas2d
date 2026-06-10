@@ -412,14 +412,6 @@ uint8_t *__counted_by_or_null(*len)
 canvas_load_png(char const *__null_terminated path,
                 int *__single w, int *__single h, int *__single len);
 
-// Coarse GPU profiling forwarded from the compositor backend: total GPU execution
-// time since canvas_create (nanoseconds) and the number of GPU dispatches that
-// contributed (ns/dispatch = total_ns/dispatches).  The CPU backend reports 0/0;
-// the Metal backend reports 0/0 unless CANVAS_GPU_TIMING was set in the environment
-// at canvas_create time.  Either output pointer may be NULL.  Call after a readback
-// (or canvas_destroy's drain) so all in-flight GPU work has been accounted for.
-void canvas_gpu_timing(canvas *__single cv, double *__single total_ns, long *__single dispatches);
-
 // Pixel I/O for a w*h sub-image (tightly packed RGBA8, len must be w*h*4).
 // get: pixels outside the canvas read back transparent black.
 // put: overwrites (no blending), clipped to the canvas.

@@ -1,11 +1,8 @@
 // Real-pipeline benchmark, large-fill variant: a big canvas with a few
 // nearly-full-canvas fills per frame -- the opposite shape from bench_render's
 // dozen tiny fills.  Here pixels-per-draw is enormous and draw count is tiny, so
-// the GPU's parallelism is amortized over millions of pixels per op: this is where
-// the Metal compositor is expected to cross over ahead of the in-process software
-// one (which pays a per-pixel blend).  Built on BOTH backends; `ninja rendercmp`
-// runs it alongside the small bench.  BENCH_READBACK=end reads once at the end.
-#include "bench_gpu.h"
+// the per-pixel software blend dominates rather than per-draw overhead.
+// BENCH_READBACK=end reads once at the end.
 #include "bench_reps.h"
 
 #include "canvas.h"
@@ -89,9 +86,8 @@ int main(void) {
     double secs = bench_now_s() - t0;
 
     // Output pixels produced: one finished DIM*DIM canvas per frame (finished-frame
-    // throughput, comparable across canvas sizes and backends).
+    // throughput, comparable across canvas sizes).
     bench_report_throughput(secs, (double)DIM * (double)DIM * (double)FRAMES * (double)reps);
-    bench_report_gpu_timing(cv);  // Metal GPU profile when CANVAS_GPU_TIMING is set
     free(px);
     canvas_destroy(cv);
     fprintf(stderr, "sink=%.0f\n", sink);

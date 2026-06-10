@@ -1,8 +1,7 @@
 #pragma once
 
-// Rendering backend boundary.  The canvas produces finished premultiplied tiles;
-// the compositor only composites them.  The Metal and CPU backends implement this
-// same ABI; nothing here is GPU-specific.
+// Compositor boundary.  The canvas produces finished premultiplied tiles; the
+// compositor only composites them (compositor_cpu.c implements this ABI).
 //
 // Tiles and the target are premultiplied RGBA16F (cnvs_premul), row-major, top row
 // first; read() returns the premultiplied target verbatim.  putImageData is blend
@@ -17,9 +16,8 @@
 typedef struct compositor compositor;
 
 // globalCompositeOperation.  These values are shared with canvas_composite_op
-// (canvas.h) and the integer cases in shaders/compositor.metal -- keep all three in
-// sync.  0..10 Porter-Duff operators, 11..21 separable blend modes, 22..25
-// non-separable.
+// (canvas.h) -- keep the two in sync.  0..10 Porter-Duff operators, 11..21
+// separable blend modes, 22..25 non-separable.
 typedef enum {
     COMPOSITOR_SRC_OVER = 0,
     COMPOSITOR_SRC_IN,
@@ -69,13 +67,3 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
 // Read the premultiplied target back, row-major top-first; len must be
 // width*height (pixels).  Conversion to unpremultiplied RGBA8 is the caller's job.
 void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out, int len);
-
-// Coarse GPU profiling: the total GPU execution time accumulated across every
-// command buffer committed since creation (nanoseconds), and the number of those
-// command buffers (dispatches).  ns/dispatch = total_ns/dispatches.  The CPU
-// backend does no GPU work and reports 0/0.  The Metal backend collects this only
-// when the CANVAS_GPU_TIMING environment variable is set at compositor_create time
-// -- otherwise it skips the per-command-buffer instrumentation and also reports
-// 0/0.  Either output pointer may be NULL.
-void compositor_gpu_timing(compositor *__single c,
-                           double *__single total_ns, long *__single dispatches);
