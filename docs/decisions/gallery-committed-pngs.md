@@ -1,18 +1,16 @@
-Confirmed: PNGs are stored whole (zero deltas), on-disk ≈ raw (deflate barely helps already-deflated PNGs). So history cost is genuinely additive — each distinct revision is stored whole forever. That's the load-bearing fact for the repo-weight argument. I have everything I need.
-
-Key measured facts:
-- Current committed set: 32 PNGs, 1.6 MB raw working tree / 1.12 MB on-disk in pack
-- History: 256 distinct PNG blobs, **7.65 MB on-disk** = ~26% of the 29 MB `.git`
-- PNGs stored **whole, zero deltas** — history is purely additive
-- 57 gallery-touching commits of 299 total (~19%); ~137 KB on-disk avg per gallery commit
-- Gate byte-checks only **10 of 32** scenes (text-free); 22 text-bearing scenes re-render every `ninja` but are not gated
-- `text.png` alone has 21 revisions, `gradients.png` 16
-
-Here is the memo.
-
----
-
 # Memo: Should the gallery PNGs stay committed in-tree as re-rendered build outputs?
+
+> **Ruling (Mike, 2026-06-10):** keep all 32 committed — including the 22 text
+> scenes the memo flags as repo-weight waste. We are following the text-
+> determinism arc (task #5 / [text-boundary.md](../text-boundary.md)), whose
+> slice D records the gallery's text programs and replays them byte-identically
+> on CI — that brings the text scenes *into* the byte-identity gate rather than
+> dropping them from the tree, so their weight earns all three jobs (review,
+> gate, determinism anchor) like the other 10. The memo's A5 split is therefore
+> declined. The one accepted engineering fix is §4.4 — replace the gallery
+> output **glob** with a **static list** so the build's description no longer
+> depends on its own outputs existing (the `generator = 1` clean-patch becomes
+> defense-in-depth).
 
 **Scope read:** `README.md` (the Gallery section's 32 embeds + Quick start's "review and commit the new PNGs alongside the code" lockstep framing), `.github/workflows/gate.yml` (the byte-identity step over 10 text-free scenes), `configure.py` (the `run_gallery` rule + the `images` edge, lines 179–215, 289–404), the `generator = 1` commit `ebc6f5d` ("ninja -t clean no longer deletes the committed gallery PNGs"), `docs/text-boundary.md` (the determinism arc: recorded programs replay byte-identically, committed PNGs as the cross-machine anchor), and the sibling decision records `codec-outsourcing.md`, `metal-backend.md`, `security-review.md` for genre and voice.
 
