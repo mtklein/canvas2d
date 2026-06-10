@@ -1,0 +1,11 @@
+image 0 1 1 12 1
+bits eJz7z8DwHwAE/wH/
+draw_image 0 4 4
+draw_image_scaled 0 8 4 6 6
+draw_image_subrect 0 0 0 1 1 16 4 6 6
+put_image_data 0 24 4
+put_image_data_dirty 0 30 4 0 0 1 1
+set_fill_pattern 0 repeat
+fill_rect 4 12 8 8
+set_stroke_pattern 0 no-repeat
+stroke_rect 16 12 8 8

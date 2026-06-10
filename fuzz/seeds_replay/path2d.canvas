@@ -1,0 +1,15 @@
+path 0 10
+m 4 4
+l 30 4
+q 34 12 30 20
+c 26 24 12 24 8 20
+t 4 20 4 12 4
+z
+a 17 12 5 0 3 1
+e 17 12 9 4 0.25 0 3 0
+r 6 6 6 6
+rr 22 6 8 8 2
+fill_path 0 evenodd
+stroke_path 0
+clip_path 0 nonzero
+fill_rect 0 0 40 30

@@ -1,0 +1,25 @@
+set_fill_conic_gradient 0.5 20 15
+add_fill_color_stop 0 1 0 0 1
+add_fill_color_stop 1 0 0 1 1
+begin_path
+round_rect_radii 2 2 36 26 2 3 4 2 0 0 5 5
+fill
+set_stroke_conic_gradient 0 20 15
+add_stroke_color_stop 0.5 1 1 0 1
+set_image_smoothing_enabled 0
+set_image_smoothing_quality high
+set_filter_none
+add_filter_brightness 1.25
+add_filter_contrast 1.5
+add_filter_grayscale 0.5
+add_filter_hue_rotate 0.5
+add_filter_invert 0.25
+add_filter_opacity 0.75
+add_filter_saturate 2
+add_filter_sepia 0.5
+add_filter_blur 1.5
+add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5
+fill_rect 8 8 16 16
+set_filter_none
+resize 32 24
+reset
