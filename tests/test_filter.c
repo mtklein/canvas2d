@@ -1,8 +1,10 @@
 // The CSS filter functions: hand-computed expectations for each colour kernel
 // (premultiplied forms, Filter Effects matrices), list order, state plumbing
 // (save/restore/reset/set_filter_none), spec clamping, that the list reaches
-// every painted op (fills, images, text) but not put_image_data -- and blur(),
-// held to a brute-force three-pass box reference over a float RGBA tile.
+// every painted op (fills, images, text) but not put_image_data -- blur(),
+// held to a brute-force three-pass box reference over a float RGBA tile --
+// and drop-shadow(), held to the same reference machinery composed with the
+// offset-tint-undercomposite by hand.
 
 #include "canvas.h"
 #include "test_pixels.h"
@@ -342,6 +344,303 @@ static void blur_clipped(void) {
     free(px);
 }
 
+// --- drop-shadow() -------------------------------------------------------------
+
+// The premultiplied drop-shadow reference over a float RGBA tile: the shadow
+// is the tile's alpha read at -(dx, dy) (out-of-tile reads 0), scaled by the
+// premultiplied tint, blurred three-pass; the result is the original tile
+// composited source-over ON TOP of that shadow.  sh and tmp are scratch.
+static void ref_drop_shadow(float *__counted_by(w * h * 4) px,
+                            float *__counted_by(w * h * 4) sh,
+                            float *__counted_by(w * h * 4) tmp,
+                            int w, int h, int dx, int dy, int r,
+                            float cr, float cg, float cb, float ca) {
+    float const tint[4] = { cr * ca, cg * ca, cb * ca, ca };
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            int sx = x - dx, sy = y - dy;
+            float a = sx >= 0 && sx < w && sy >= 0 && sy < h
+                          ? px[(sy * w + sx) * 4 + 3]
+                          : 0.0f;
+            for (int c = 0; c < 4; c++) {
+                sh[(y * w + x) * 4 + c] = tint[c] * a;
+            }
+        }
+    }
+    if (r > 0) {
+        ref_blur3(sh, tmp, w, h, r);
+    }
+    for (int i = 0; i < w * h * 4; i += 4) {
+        float k = 1.0f - px[i + 3];
+        for (int c = 0; c < 4; c++) {
+            px[i + c] += sh[i + c] * k;
+        }
+    }
+}
+
+// Hand-computed sharp case: an opaque blue square through
+// drop-shadow(4, 4, 0, red): exactly red where only the shadow lands, the
+// drawing's own pixels untouched where it covers, exact 0 outside both.
+static void drop_shadow_hard_offset(void) {
+    enum { N = 32 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        canvas_add_filter_drop_shadow(cv, 4.0f, 4.0f, 0.0f,
+                                      1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow [12,20)
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 18, 18), 255, 0, 0, 255, 0));  // shadow only
+        CHECK(px_near(pixel_at(px, len, N, 19, 13), 255, 0, 0, 255, 0));
+        CHECK(px_near(pixel_at(px, len, N, 10, 10), 0, 0, 255, 255, 0));  // drawing only
+        CHECK(px_near(pixel_at(px, len, N, 14, 14), 0, 0, 255, 255, 0));  // overlap: opaque on top
+        CHECK(px_near(pixel_at(px, len, N, 5, 5), 0, 0, 0, 0, 0));        // outside both
+        CHECK(px_near(pixel_at(px, len, N, 20, 20), 0, 0, 0, 0, 0));      // past the shadow
+        CHECK(px_near(pixel_at(px, len, N, 18, 10), 0, 0, 0, 0, 0));      // offset is 2D
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
+// A translucent fill through drop-shadow(5, 3, 2, translucent tint) must match
+// the brute-force reference: blur skirt softness (the blur() machinery), the
+// tint scaling both shadow rgb and alpha, the shadow alpha proportional to the
+// source's, and the under-composite -- all in one premultiplied oracle.
+static void drop_shadow_matches_reference(void) {
+    enum { N = 48 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    int const nf = N * N * 4;
+    float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
+    float *__counted_by(nf) sh = calloc((size_t)nf, sizeof(float));
+    float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && ref != NULL && sh != NULL && tmp != NULL && cv != NULL);
+    if (px && ref && sh && tmp && cv) {
+        canvas_add_filter_drop_shadow(cv, 5.0f, 3.0f, 2.0f,
+                                      0.1f, 0.3f, 0.9f, 0.8f);
+        canvas_set_fill_rgba(cv, 0.2f, 0.4f, 0.8f, 0.6f);
+        canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);
+        canvas_read_rgba(cv, px, len);
+        for (int y = 16; y < 32; y++) {
+            for (int x = 16; x < 32; x++) {
+                int i = (y * N + x) * 4;
+                ref[i + 0] = 0.2f * 0.6f;
+                ref[i + 1] = 0.4f * 0.6f;
+                ref[i + 2] = 0.8f * 0.6f;
+                ref[i + 3] = 0.6f;
+            }
+        }
+        ref_drop_shadow(ref, sh, tmp, N, N, 5, 3, 2, 0.1f, 0.3f, 0.9f, 0.8f);
+        check_vs_ref(px, len, ref, N, N, 2);
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+    free(ref);
+    free(sh);
+    free(tmp);
+}
+
+// A translucent shadow colour scales both the shadow's rgb (premultiplied) and
+// its alpha: an opaque source through drop-shadow(8, 0, 0, magenta at 0.5)
+// reads back magenta at alpha 128 where only the shadow lands.
+static void drop_shadow_tint_translucent(void) {
+    enum { N = 32 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        canvas_add_filter_drop_shadow(cv, 8.0f, 0.0f, 0.0f,
+                                      1.0f, 0.0f, 1.0f, 0.5f);
+        canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // shadow x in [16,24)
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 20, 12), 255, 0, 255, 128, 1));
+        CHECK(px_near(pixel_at(px, len, N, 12, 12), 0, 255, 0, 255, 0));
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
+// The shadow's alpha is proportional to the source's (premul consistency): a
+// half-alpha source casts a half-alpha shadow, and where the translucent
+// drawing overlaps its own shadow the under-composite shows through it.
+static void drop_shadow_translucent_source(void) {
+    enum { N = 32 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        canvas_add_filter_drop_shadow(cv, 6.0f, 0.0f, 0.0f,
+                                      0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 0.5f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow [14,22)
+        canvas_read_rgba(cv, px, len);
+        // Shadow only: black at the source's alpha.
+        CHECK(px_near(pixel_at(px, len, N, 18, 12), 0, 0, 0, 128, 1));
+        // Drawing only: the translucent blue itself.
+        CHECK(px_near(pixel_at(px, len, N, 10, 12), 0, 0, 255, 128, 1));
+        // Overlap: T over S = a 0.5 + 0.5*0.5 = 0.75; premul b stays 0.5, so
+        // unpremultiplied blue is 0.5/0.75 = 2/3.
+        CHECK(px_near(pixel_at(px, len, N, 15, 12), 0, 0, 170, 191, 2));
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
+// List order is observable around a drop-shadow: grayscale(1) AFTER the
+// drop-shadow recolours the green shadow gray, while grayscale(1) BEFORE it
+// grays the drawing but leaves the shadow's own green tint alone.
+static void drop_shadow_order_visible(void) {
+    enum { N = 32 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        // drop-shadow then grayscale: the pure-green shadow lands on its
+        // 0.7152 luminance (182), and the red drawing on 54 gray.
+        canvas_add_filter_drop_shadow(cv, 6.0f, 6.0f, 0.0f,
+                                      0.0f, 1.0f, 0.0f, 1.0f);
+        canvas_add_filter_grayscale(cv, 1.0f);
+        canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow [14,22)
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 18, 18), 182, 182, 182, 255, 2));
+        CHECK(px_near(pixel_at(px, len, N, 10, 10), 54, 54, 54, 255, 2));
+
+        // grayscale then drop-shadow: the drawing is gray, but the shadow --
+        // cast from the recoloured drawing's alpha, tinted afterwards -- stays
+        // pure green.
+        canvas_reset(cv);
+        canvas_add_filter_grayscale(cv, 1.0f);
+        canvas_add_filter_drop_shadow(cv, 6.0f, 6.0f, 0.0f,
+                                      0.0f, 1.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 18, 18), 0, 255, 0, 255, 0));
+        CHECK(px_near(pixel_at(px, len, N, 10, 10), 54, 54, 54, 255, 2));
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
+// The tile margin accommodates the shadow: offset + blur push it well past the
+// shape's unblurred bbox, where it must still be visible -- and beyond the
+// offset plus the three passes' spread it is exactly 0.
+static void drop_shadow_margin(void) {
+    enum { N = 48 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        // Square [8,16); shadow square [14,22), blurred skirt reaching [8,28).
+        canvas_add_filter_drop_shadow(cv, 6.0f, 6.0f, 2.0f,
+                                      0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
+        canvas_read_rgba(cv, px, len);
+        // Well outside the unblurred bbox (x >= 16), still solidly shadowed --
+        // a too-small tile would have clipped this to 0.
+        CHECK(pixel_at(px, len, N, 18, 18).a > 200);
+        CHECK(pixel_at(px, len, N, 24, 18).a > 20);  // 2px into the skirt
+        // Beyond offset + 3*r the shadow is exactly 0.
+        CHECK(px_near(pixel_at(px, len, N, 28, 18), 0, 0, 0, 0, 0));
+        CHECK(px_near(pixel_at(px, len, N, 18, 28), 0, 0, 0, 0, 0));
+        CHECK(px_near(pixel_at(px, len, N, 40, 40), 0, 0, 0, 0, 0));
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
+// The canvas shadowColor machinery and a filter drop-shadow are independent:
+// with both active the op paints its drawing, its filter shadow (inside the
+// tile), and its canvas shadow (cast from the op's coverage) without
+// corrupting one another -- sane compositing, no trap.  The drawing pixel is
+// held exactly; the two shadow regions just have to be present.
+static void drop_shadow_with_canvas_shadow(void) {
+    enum { N = 48 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        canvas_set_shadow_color_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_shadow_offset_x(cv, 14.0f);  // canvas shadow: x in [30,38)
+        canvas_add_filter_drop_shadow(cv, -8.0f, 0.0f, 1.0f,
+                                      0.0f, 0.0f, 1.0f, 1.0f);  // filter: x in [8,16)
+        canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 16.0f, 16.0f, 8.0f, 8.0f);
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 20, 20), 0, 255, 0, 255, 0));  // drawing
+        struct px4 fs = pixel_at(px, len, N, 12, 20);  // filter shadow: blue
+        CHECK(fs.a > 100 && fs.b > 100 && fs.g < 50);
+        struct px4 cs = pixel_at(px, len, N, 33, 20);  // canvas shadow: red
+        CHECK(cs.a > 200 && cs.r > 200 && cs.g < 50);
+        CHECK(px_near(pixel_at(px, len, N, 44, 44), 0, 0, 0, 0, 0));
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
+// Non-finite dx/dy/blur and negative blur ignore the call, and a fully
+// transparent shadow colour appends nothing: the fill stays crisp with no
+// shadow anywhere.  Out-of-range colour channels clamp like set_fill_rgba.
+static void drop_shadow_clamps(void) {
+    enum { N = 32 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    canvas *__single cv = canvas_create(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        canvas_add_filter_drop_shadow(cv, NAN, 4.0f, 0.0f, 1, 0, 0, 1);
+        canvas_add_filter_drop_shadow(cv, 4.0f, INFINITY, 0.0f, 1, 0, 0, 1);
+        canvas_add_filter_drop_shadow(cv, 4.0f, 4.0f, -1.0f, 1, 0, 0, 1);
+        canvas_add_filter_drop_shadow(cv, 4.0f, 4.0f, NAN, 1, 0, 0, 1);
+        canvas_add_filter_drop_shadow(cv, 4.0f, 4.0f, 0.0f, 1, 0, 0, 0.0f);
+        canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 12, 12), 0, 255, 0, 255, 0));
+        CHECK(px_near(pixel_at(px, len, N, 18, 18), 0, 0, 0, 0, 0));  // no shadow
+        CHECK(px_near(pixel_at(px, len, N, 7, 12), 0, 0, 0, 0, 0));   // crisp edge
+
+        // Colour channels clamp to [0,1]: (2, -1, 0.5, 5) tints as (1, 0, 0.5, 1).
+        canvas_reset(cv);
+        canvas_add_filter_drop_shadow(cv, 8.0f, 0.0f, 0.0f,
+                                      2.0f, -1.0f, 0.5f, 5.0f);
+        canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 20, 12), 255, 0, 128, 255, 1));
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(px);
+}
+
 // Reset bitmap + state is the caller's job (the filter list is part of state);
 // this fills the whole canvas with (r,g,b,a) through whatever filters are set
 // and reads back the centre pixel, unpremultiplied RGBA8.
@@ -603,5 +902,18 @@ int main(void) {
     blur_order_visible();
     blur_translucent_consistent();
     blur_clipped();
+
+    // drop-shadow(): the hand-computed sharp case, the kernel vs its
+    // brute-force reference, tint and source-alpha proportionality, list-order
+    // visibility, the tile margin, coexistence with the canvas shadow, and the
+    // ignored/clamped parameters.
+    drop_shadow_hard_offset();
+    drop_shadow_matches_reference();
+    drop_shadow_tint_translucent();
+    drop_shadow_translucent_source();
+    drop_shadow_order_visible();
+    drop_shadow_margin();
+    drop_shadow_with_canvas_shadow();
+    drop_shadow_clamps();
     return TEST_REPORT();
 }

@@ -119,6 +119,22 @@ cnvs_filter cnvs_filter_blur(int radius) {
     return f;
 }
 
+// drop-shadow() carries its offset, blur radius, and colour; identity matrix
+// for the same inert-if-mishandled property as blur().
+cnvs_filter cnvs_filter_drop_shadow(int dx, int dy, int radius,
+                                    float r, float g, float b, float a) {
+    cnvs_filter f = scale_offset(1.0f, 0.0f);
+    f.blur = radius;
+    f.shadow = true;
+    f.dx = dx;
+    f.dy = dy;
+    f.color[0] = r;
+    f.color[1] = g;
+    f.color[2] = b;
+    f.color[3] = a;
+    return f;
+}
+
 // One pixel's four channels as a vector: a cnvs_premul is four contiguous
 // _Float16, so it loads straight into an h4 (the read_unpremul idiom).
 typedef _Float16 h4 __attribute__((ext_vector_type(4)));

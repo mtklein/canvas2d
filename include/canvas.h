@@ -126,10 +126,27 @@ void canvas_set_shadow_offset_y(canvas *__single cv, float offset);
 // extends past the shape's own bounds.  px is in device pixels; the transform
 // does not apply (per spec, filter lengths ignore the CTM).  A negative or
 // non-finite px is ignored, and px == 0 (an identity blur) appends nothing.
+//
+// drop_shadow(dx, dy, blur, colour): composites a blurred, offset,
+// colour-tinted copy of the drawing's alpha silhouette UNDER the drawing --
+// the entry's output is shadow-plus-drawing as one image, which any later
+// entries in the list then filter (so a colour function after a drop_shadow
+// recolours the shadow too).  blur is a Gaussian stdDev like blur(); dx/dy
+// are device pixels, rounded to whole pixels like shadowOffset{X,Y} (the spec
+// offsets in user space; this deviation matches our shadow machinery, whose
+// offsets the CTM never touches).  The painted region grows by the shadow's
+// offset and blur spread.  Colour channels clamp to [0,1] as for
+// set_fill_rgba; a non-finite dx/dy/blur or a negative blur is ignored (the
+// call appends nothing), and so is a fully transparent colour (its shadow
+// would composite as nothing).  Independent of the shadow_color state, which
+// still casts the op's own shadow from its coverage silhouette.
 void canvas_set_filter_none(canvas *__single cv);
 void canvas_add_filter_blur(canvas *__single cv, float px);
 void canvas_add_filter_brightness(canvas *__single cv, float amount);
 void canvas_add_filter_contrast(canvas *__single cv, float amount);
+void canvas_add_filter_drop_shadow(canvas *__single cv, float dx, float dy,
+                                   float blur, float r, float g, float b,
+                                   float a);
 void canvas_add_filter_grayscale(canvas *__single cv, float amount);
 void canvas_add_filter_hue_rotate(canvas *__single cv, float radians);
 void canvas_add_filter_invert(canvas *__single cv, float amount);

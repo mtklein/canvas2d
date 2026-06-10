@@ -143,6 +143,8 @@ struct canvas {
     // ping-pong over the op's tile (h pass tile -> scratch, v pass scratch ->
     // tile), sized like the tile.  A peer of the shadow masks above, but
     // RGBA16F -- blur() filters the painted pixels, not a coverage silhouette.
+    // drop-shadow() grows it to two tiles: the shadow builds in the first half
+    // and ping-pongs against the second, leaving the op's own tile untouched.
     cnvs_premul *__counted_by(blur_tmp_cap) blur_tmp;
     int blur_tmp_cap;
 };
@@ -150,6 +152,7 @@ struct canvas {
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
 static bool ensure_tile(canvas *__single cv, int npix);
 static int sigma_box_radius(float sigma);
+static int shadow_offset(float v);
 
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
 // be paired with a positive count under -fbounds-safety.  An empty pattern stays
@@ -659,6 +662,24 @@ void canvas_add_filter_contrast(canvas *__single cv, float amount) {
     }
 }
 
+void canvas_add_filter_drop_shadow(canvas *__single cv, float dx, float dy,
+                                   float blur, float r, float g, float b,
+                                   float a) {
+    if (!isfinite(dx) || !isfinite(dy) || !isfinite(blur) || blur < 0.0f) {
+        return;  // spec: ignore an unparseable (or negative-blur) drop-shadow
+    }
+    if (!(clamp01(a) > 0.0f)) {
+        return;  // a fully transparent shadow composites as nothing
+    }
+    // The offsets round to whole device pixels (shadow_offset, as for
+    // shadowOffset{X,Y}); blur IS the Gaussian's stdDev, like blur() -- but
+    // unlike blur(), radius 0 is a real entry (a sharp shadow, not identity).
+    filter_append(cv, cnvs_filter_drop_shadow(
+                          shadow_offset(dx), shadow_offset(dy),
+                          sigma_box_radius(blur), clamp01(r), clamp01(g),
+                          clamp01(b), clamp01(a)));
+}
+
 void canvas_add_filter_grayscale(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         filter_append(cv, cnvs_filter_grayscale(clamp01(amount)));
@@ -782,15 +803,25 @@ static bool ensure_blur_tmp(canvas *__single cv, int npix) {
 
 // Total spread of the state's filter chain, in device pixels: each blur()
 // entry's three box passes reach 3*r beyond the shape (emit_shadow's margin
-// reasoning), and successive blurs each add their own spread.  Every paint
-// site widens its bbox by this *before* rasterizing coverage, so the soft
-// edge has tile to land on; colour entries are 1:1 per pixel and add nothing.
-// Capped at a canvas dimension's worth -- a wider spread can't paint anything
-// the clamp to the canvas wouldn't cut anyway.
+// reasoning), a drop-shadow() entry additionally pushes its blurred shadow
+// |dx|,|dy| further, and successive entries each add their own spread.  Every
+// paint site widens its bbox by this *before* rasterizing coverage, so the
+// soft edge has tile to land on; colour entries are 1:1 per pixel and add
+// nothing.  points_bbox takes one margin for all four sides, so a
+// drop-shadow's offset contributes max(|dx|, |dy|) symmetrically rather than
+// per side -- at most a somewhat larger tile, never a clipped shadow.  Capped
+// at a canvas dimension's worth -- a wider spread can't paint anything the
+// clamp to the canvas wouldn't cut anyway.
 static int filter_margin(canvas const *__single cv) {
     int m = 0;
     for (int i = 0; i < cv->cur.filter_count; i++) {
-        m += 3 * cv->cur.filters[i].blur;
+        cnvs_filter const f = cv->cur.filters[i];
+        m += 3 * f.blur;
+        if (f.shadow) {
+            int ax = f.dx < 0 ? -f.dx : f.dx;
+            int ay = f.dy < 0 ? -f.dy : f.dy;
+            m += ax > ay ? ax : ay;
+        }
         if (m > CANVAS_MAX_DIM) {
             return CANVAS_MAX_DIM;
         }
@@ -798,34 +829,96 @@ static int filter_margin(canvas const *__single cv) {
     return m;
 }
 
+// One drop-shadow() entry over the w*h tile in cv->tile: composite the tile
+// source-over ON TOP of a blurred, offset, tinted copy of its own alpha
+// silhouette -- the Filter Effects drop-shadow, whose output (shadow under
+// drawing, one image) flows on to any later entries in the list.  The shadow
+// builds in the blur scratch, grown to two tiles so the box passes can
+// ping-pong between its halves while the op's own pixels stay untouched for
+// the final under-composite.  The spec blurs the alpha and tints after; blur
+// is linear, so tinting first lands the same pixels, and the premultiplied
+// shadow pixel is just the premultiplied tint scaled by the source alpha.
+// The offset is folded into the build (read the alpha at (x-dx, y-dy),
+// out-of-tile reads transparent) -- the paint site already widened the bbox
+// by filter_margin, so the shifted, blurred shadow has tile to land on.  If
+// the scratch can't grow the entry is skipped (the op paints shadowless),
+// like the other best-effort OOM paths.
+static void apply_drop_shadow(canvas *__single cv, cnvs_filter f, int w, int h) {
+    int const npix = w * h;
+    if (!ensure_blur_tmp(cv, 2 * npix)) {
+        return;
+    }
+    cnvs_premul const tint = cnvs_premultiply(
+        cnvs_unpremul_of(f.color[0], f.color[1], f.color[2], f.color[3]));
+    for (int y = 0; y < h; y++) {
+        int sy = y - f.dy;
+        for (int x = 0; x < w; x++) {
+            int sx = x - f.dx;
+            float a = sx >= 0 && sx < w && sy >= 0 && sy < h
+                          ? (float)cv->tile[sy * w + sx].a
+                          : 0.0f;
+            cv->blur_tmp[y * w + x] = (cnvs_premul){
+                .r = (_Float16)((float)tint.r * a),
+                .g = (_Float16)((float)tint.g * a),
+                .b = (_Float16)((float)tint.b * a),
+                .a = (_Float16)((float)tint.a * a),
+            };
+        }
+    }
+    if (f.blur > 0) {  // three box passes ~ a Gaussian, between the two halves
+        for (int pass = 0; pass < 3; pass++) {
+            blur_box_h_f16(cv->blur_tmp + npix, cv->blur_tmp, w, h, f.blur);
+            blur_box_v_f16(cv->blur_tmp, cv->blur_tmp + npix, w, h, f.blur);
+        }
+    }
+    for (int i = 0; i < npix; i++) {  // premultiplied source-over: tile OVER shadow
+        cnvs_premul t = cv->tile[i], s = cv->blur_tmp[i];
+        float k = 1.0f - (float)t.a;
+        cv->tile[i] = (cnvs_premul){
+            .r = (_Float16)((float)t.r + (float)s.r * k),
+            .g = (_Float16)((float)t.g + (float)s.g * k),
+            .b = (_Float16)((float)t.b + (float)s.b * k),
+            .a = (_Float16)((float)t.a + (float)s.a * k),
+        };
+    }
+}
+
 // Run the state's filter list (if any) over the freshly painted w*h tile in
 // place, just before it composites.  Colour entries are 1:1 per pixel (maximal
 // runs of them go through cnvs_filter_apply together); a blur() entry runs the
-// separable box passes over the whole tile, whose bbox the paint site already
-// widened by filter_margin.  If the blur scratch can't be grown the blur entry
-// is skipped -- the op paints unblurred, inset in its widened (transparent)
-// tile, like the other best-effort OOM paths.  Spec order is filter-then-
-// shadow; our shadow is already cast from the op's coverage silhouette, not
-// its pixels (emit_shadow), so neither the colour functions nor blur() reach
-// it -- the shadow keeps the shape's sharp silhouette, the same approximation
-// it makes for semi-transparent paint.
+// separable box passes over the whole tile, and a drop-shadow() entry runs
+// apply_drop_shadow -- both over the bbox the paint site already widened by
+// filter_margin.  Because the list applies per entry, in order, a drop-shadow
+// after a colour function shadows the recoloured drawing, and a colour
+// function after a drop-shadow recolours the shadow too.  If the blur scratch
+// can't be grown the spatial entry is skipped -- the op paints unblurred (or
+// shadowless), inset in its widened (transparent) tile, like the other
+// best-effort OOM paths.  Spec order is filter-then-shadow; our shadowColor
+// shadow is already cast from the op's coverage silhouette, not its pixels
+// (emit_shadow), so no filter entry reaches it -- the canvas shadow keeps the
+// shape's sharp silhouette, the same approximation it makes for
+// semi-transparent paint, while a drop-shadow() lives inside the tile.
 static void apply_filters(canvas *__single cv, int w, int h) {
     int const count = cv->cur.filter_count;
     int const npix = w * h;
     int i = 0;
     while (i < count) {
-        int r = cv->cur.filters[i].blur;
-        if (r > 0) {
+        cnvs_filter const f = cv->cur.filters[i];
+        if (f.shadow) {
+            apply_drop_shadow(cv, f, w, h);
+            i += 1;
+        } else if (f.blur > 0) {
             if (ensure_blur_tmp(cv, npix)) {
                 for (int pass = 0; pass < 3; pass++) {
-                    blur_box_h_f16(cv->blur_tmp, cv->tile, w, h, r);
-                    blur_box_v_f16(cv->tile, cv->blur_tmp, w, h, r);
+                    blur_box_h_f16(cv->blur_tmp, cv->tile, w, h, f.blur);
+                    blur_box_v_f16(cv->tile, cv->blur_tmp, w, h, f.blur);
                 }
             }
             i += 1;
         } else {
             int j = i + 1;
-            while (j < count && cv->cur.filters[j].blur == 0) {
+            while (j < count && cv->cur.filters[j].blur == 0 &&
+                   !cv->cur.filters[j].shadow) {
                 j += 1;
             }
             cnvs_filter_apply(cv->cur.filters + i, j - i, cv->tile, npix);

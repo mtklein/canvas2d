@@ -19,17 +19,22 @@
 #include <ptrcheck.h>
 
 // One compiled filter function (see above).  m is row-major: row i of rgb' is
-// m[3i]*r + m[3i+1]*g + m[3i+2]*b + off[i]*a.  blur() does not fit the matrix
-// form -- it is a spatial kernel, not a per-pixel one -- so an entry carries a
-// kind tag: blur > 0 marks a blur() entry of that box radius, which the canvas
-// pipeline runs as separable box passes over the whole tile (cnvs_filter_apply
-// handles only colour entries; a blur entry's matrix is identity so a
-// mishandled one degrades to a no-op rather than blacking the tile out).
+// m[3i]*r + m[3i+1]*g + m[3i+2]*b + off[i]*a.  blur() and drop-shadow() do not
+// fit the matrix form -- they are spatial kernels, not per-pixel ones -- so an
+// entry carries kind tags: blur > 0 alone marks a blur() entry of that box
+// radius, which the canvas pipeline runs as separable box passes over the
+// whole tile, and shadow marks a drop-shadow() entry (blur is then its blur
+// radius, possibly 0, with dx/dy/color below).  cnvs_filter_apply handles only
+// colour entries; both spatial kinds keep an identity matrix so a mishandled
+// one degrades to a no-op rather than blacking the tile out.
 typedef struct {
-    float m[9];    // 3x3 rgb matrix
-    float off[3];  // offset column, scaled by the pixel's (incoming) alpha
-    float ka;      // alpha scale: 1 for everything but opacity()
-    int blur;      // 0 = colour entry; > 0 = blur() with this box radius
+    float m[9];      // 3x3 rgb matrix
+    float off[3];    // offset column, scaled by the pixel's (incoming) alpha
+    float ka;        // alpha scale: 1 for everything but opacity()
+    int blur;        // box radius of blur() / drop-shadow(); 0 = no blurring
+    bool shadow;     // marks a drop-shadow() entry: dx/dy/color apply
+    int dx, dy;      // drop-shadow offset, whole device pixels
+    float color[4];  // drop-shadow colour, unpremultiplied RGBA in [0,1]
 } cnvs_filter;
 
 // Compile one filter function.  Amounts arrive already validated and clamped by
@@ -49,6 +54,13 @@ cnvs_filter cnvs_filter_sepia(float amount);
 // stdDev to a radius and skips zero-radius blurs).  Its matrix part is the
 // identity -- see the struct comment.
 cnvs_filter cnvs_filter_blur(int radius);
+
+// A drop-shadow() entry: shadow offset (dx, dy) in whole device pixels, blur
+// box radius `radius` (>= 0 -- a sharp shadow is valid, unlike blur()), and
+// the shadow colour, unpremultiplied and already clamped to [0,1] by the
+// canvas API.  Matrix part identity, like blur().
+cnvs_filter cnvs_filter_drop_shadow(int dx, int dy, int radius,
+                                    float r, float g, float b, float a);
 
 // Apply `count` *colour* filter functions, in list order, to the n
 // premultiplied pixels in place (the caller splits the list around blur()
