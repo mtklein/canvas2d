@@ -130,6 +130,12 @@ EXTRA_LIBS = {
     "fuzz_zlib_diff.c": "-lz",
 }
 
+# Tests that read gallery/ files from disk.  Their run edges take the
+# run_gallery outputs as order-only deps so they never race the re-render
+# rewriting those same files mid-read (see the test-loop comment below).
+# A new test that opens gallery/ paths belongs in this set.
+GALLERY_READERS = {"test_replay_gallery", "test_pngload"}
+
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
 # (stack use-after-scope and use-after-return) -- the class -fbounds-safety
 # doesn't address.  detect_leaks is deliberately NOT enabled: LeakSanitizer is
@@ -417,19 +423,20 @@ def main():
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
                 if os.path.basename(t) in EXTRA_LIBS:
                     w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
-                # test_replay_gallery reads gallery/<scene>.{png,canvas} from
-                # disk, and a bare ninja re-renders those same files
-                # (run_gallery) in the same invocation -- without an ordering
-                # edge the two race, and on a machine whose fonts differ from
-                # the committed baseline a mixed read fails (CI hit exactly
-                # this: emojiscale's fresh .canvas against a stale .png,
-                # DIVERGED).  Order-only (||): the test must run after the
-                # re-render, but re-rendered pixels don't dirty the test.
-                # In-suite the test therefore proves record->replay lockstep
-                # on *this* machine's render; gate.yml's restore step is what
-                # proves the *committed* bytes replay on a fontless runner.
+                # Tests that read gallery/ files from disk race the
+                # run_gallery edge that rewrites those same files in the same
+                # ninja invocation unless ordered after it.  CI hit exactly
+                # this: test_replay_gallery read emojiscale's fresh .canvas
+                # against a stale .png mid-re-render, DIVERGED.  test_pngload
+                # (decodes every committed PNG) is the same class with a
+                # narrower window (a mid-write truncated PNG).  Order-only
+                # (||): the test must run after the re-render, but re-rendered
+                # pixels don't dirty the test.  In-suite these tests therefore
+                # check *this* machine's render; gate.yml's restore step is
+                # what proves the *committed* bytes replay on a fontless
+                # runner.
                 gallery_dep = ""
-                if stem == "test_replay_gallery":
+                if stem in GALLERY_READERS:
                     gallery_dep = " || " + " ".join(gallery_pngs + gallery_canvases)
                 w(f"build {stamp}: run {exe}{gallery_dep}")
                 w(f"  bin = {exe}")
@@ -710,7 +717,7 @@ def main():
             w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
         # Same run_gallery ordering as the variant test loop above.
         gallery_dep = ""
-        if stem == "test_replay_gallery":
+        if stem in GALLERY_READERS:
             gallery_dep = " || " + " ".join(gallery_pngs + gallery_canvases)
         w(f"build {raw}: cov_run {exe}{gallery_dep}")
         w(f"  bin = ./{exe}")
