@@ -98,13 +98,23 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
                        int *__single nverbs, int *__single npts,
                        float *__single units_per_em);
 
+// Callback for the color (emoji) glyphs cnvs_shaped_outline meets: they have no
+// outline and must be drawn, not traced (see cnvs_glyph_draw), so the walk hands
+// them to the caller at their pen position in user space.  `ctx` is the caller's
+// own pointer passed back verbatim -- checked C on both sides, so the void* hop
+// needs no forge.  NULL skips color glyphs (they still contribute their advance).
+typedef void (*cnvs_color_glyph_fn)(void *__single ctx, void *__single font,
+                                    uint16_t glyph, float pen_x, float baseline_y);
+
 // Outline a shaped line at pen origin (ox,oy) in user space into `out` (device space,
 // mapped by to_device, curves flattened at `tol` px).  Layout -- the pen advance --
 // runs checked in the core; each glyph's canonical curves are fetched from the
 // boundary and transformed + flattened here too.  Returns the advance width.  Color
-// glyphs (emoji) have no outline path and contribute only their advance.
+// (emoji) runs have no outline path: their glyphs go to `color` (or are skipped when
+// it is NULL), and contribute only their advance to the layout.
 float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
-                          cnvs_mat to_device, float tol, cnvs_path *__single out);
+                          cnvs_mat to_device, float tol, cnvs_path *__single out,
+                          cnvs_color_glyph_fn color, void *__single ctx);
 
 // Outline one glyph at pen origin (ox,oy) in user space into `out` (device space,
 // mapped by to_device, curves flattened at `tol` px).  Checked core: fetches the

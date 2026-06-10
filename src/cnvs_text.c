@@ -181,16 +181,24 @@ void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
 }
 
 float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
-                          cnvs_mat to_device, float tol, cnvs_path *__single out) {
+                          cnvs_mat to_device, float tol, cnvs_path *__single out,
+                          cnvs_color_glyph_fn color, void *__single ctx) {
     if (!s) {
         return 0.0f;
     }
     float pen = ox;
     for (int r = 0; r < s->nruns; r++) {
         cnvs_glyph_run run = s->run[r];  // visual-order glyphs, so advancing the pen
+        bool is_color = cnvs_run_is_color(run.font);
         for (int i = 0; i < run.count; i++) {  // left-to-right places RTL runs too
-            cnvs_glyph_outline(run.font, run.glyph[i], s->size_px, pen, oy,
-                               to_device, tol, out);
+            if (is_color) {
+                if (color) {  // no outline to trace: hand it over to be drawn
+                    color(ctx, run.font, run.glyph[i], pen, oy);
+                }
+            } else {
+                cnvs_glyph_outline(run.font, run.glyph[i], s->size_px, pen, oy,
+                                   to_device, tol, out);
+            }
             pen += run.xadv[i];
         }
     }

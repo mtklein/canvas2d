@@ -1967,26 +1967,26 @@ static void draw_color_glyph(canvas *__single cv, void *__single font,
     free(buf);
 }
 
+// cnvs_shaped_outline's color-glyph callback: the canvas rides along as the untyped
+// context (checked C on both ends of the void* hop, so no forge), and each emoji
+// glyph composites immediately at its pen position -- interleaved with the outline
+// accumulation exactly as the old hand-rolled walk did.
+static void paint_color_glyph(void *__single ctx, void *__single font,
+                              uint16_t glyph, float pen_x, float baseline_y) {
+    canvas *__single cv = ctx;
+    draw_color_glyph(cv, font, glyph, pen_x, baseline_y);
+}
+
 // Paint a shaped line from pen origin (ox, oy) through `to_device`: accumulate the
 // outline glyphs into one path (filled or stroked), and composite color-glyph runs
 // (emoji) as bitmaps.  Core Text font fallback already happened during shaping.
+// One run/pen walk serves outlines and emoji alike: cnvs_shaped_outline does the
+// layout and hands color glyphs back through the callback above.
 static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
                          float ox, float oy, cnvs_mat to_device, bool stroke) {
     cnvs_path_reset(&cv->text_path);
-    float pen = ox;
-    for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
-        bool color = cnvs_run_is_color(run.font);
-        for (int i = 0; i < run.count; i++) {
-            if (color) {
-                draw_color_glyph(cv, run.font, run.glyph[i], pen, oy);
-            } else {
-                cnvs_glyph_outline(run.font, run.glyph[i], s->size_px, pen, oy,
-                                   to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
-            }
-            pen += run.xadv[i];
-        }
-    }
+    cnvs_shaped_outline(s, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path,
+                        paint_color_glyph, cv);
     if (stroke) {
         stroke_device_path(cv, &cv->text_path);
     } else {
