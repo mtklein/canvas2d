@@ -465,9 +465,10 @@ there — which is why the byte-for-byte gate (`gate.yml`) only covers the ten
 text-free scenes. The fontless proof had to come from inside the suite, which
 the runner runs via bare `ninja`.
 
-It now does. The seven text gallery scenes (`text`, `textgrid`, `textmetrics`,
-`textmaxwidth`, `emoji`, `emojiscale`, `shaping`) each record a self-contained
-`gallery/<scene>.canvas` program alongside their committed PNG
+It now does. Every gallery scene — all 32, the seven text scenes (`text`,
+`textgrid`, `textmetrics`, `textmaxwidth`, `emoji`, `emojiscale`, `shaping`)
+among them — records a self-contained `gallery/<scene>.canvas` program
+alongside its committed PNG
 ([../examples/gallery.c](../examples/gallery.c)'s `record_scene`), and
 [../tests/test_replay_gallery.c](../tests/test_replay_gallery.c) replays each
 one onto a fresh canvas and proves **both directions**:
@@ -485,21 +486,35 @@ one onto a fresh canvas and proves **both directions**:
   coincidentally match (and on the fontless runner the fallback would also move
   pixels, so the two checks reinforce each other). Stripping a program of its
   blocks and leaving only the op lines trips this with `shape_miss`/`glyph_miss`
-  in the dozens; emptying a program diverges on the byte compare.
+  in the dozens; emptying a program diverges on the byte compare. A scene with
+  no text passes the assertion trivially, so the seven text scenes additionally
+  assert the cache saw real traffic (`shape_hits`/`glyph_hits` > 0) — the
+  zero-miss claim can't go vacuous where it matters.
 
-Closing the format for the seven scenes took two ops the recorder didn't yet
-cover — `textmetrics`'s `stroke_rect` and `textmaxwidth`'s `fill_text_max` (the
-latter a slice-only variant, `canvas_fill_text_max_n`, so the parser stays in
-the counted world; `max_width` rides the op line, since the shaped line keys on
-size+text alone) — plus the four shadow setters the `emoji` scene's drop shadow
-needs, all serialized as plain floats and parsed strictly. With them, all seven
-replay byte-identically with zero boundary calls — emoji captures included,
-under the gallery's transforms, shadows, and global alpha.
+Closing the format for the seven text scenes took two ops the recorder didn't
+yet cover — `textmetrics`'s `stroke_rect` and `textmaxwidth`'s `fill_text_max`
+(the latter a slice-only variant, `canvas_fill_text_max_n`, so the parser stays
+in the counted world; `max_width` rides the op line, since the shaped line keys
+on size+text alone) — plus the four shadow setters the `emoji` scene's drop
+shadow needs, all serialized as plain floats and parsed strictly. With them,
+all seven replayed byte-identically with zero boundary calls — emoji captures
+included, under the gallery's transforms, shadows, and global alpha.
+
+The format has since closed over the **whole pixel-affecting API** (canvas.h's
+`canvas_record_to` doc is the authoritative statement): drawImage /
+putImageData / pattern sources ride numbered `image` blocks through the very
+machinery the emoji captures built (deflate + base64 `bits` lines, deduplicated
+by content within a file), Path2D draws ride numbered `path` blocks (one verb
+line per builder command, serialized at first draw — the canvas-free builders
+have nothing to hook until then), and the scalar stragglers — conic gradients,
+`round_rect_radii`, image smoothing, the filter list, `reset`/`resize` —
+record as plain op lines. So the determinism gate covers all 32 gallery
+scenes, not just the text ones, byte-for-byte.
 
 That is the arc's end state: glyph outlines and emoji captures cross the Core
 Text boundary as canonical, keyed, size-independent bytes; a cache serves every
-warm draw without re-crossing; the program format embeds those bytes so a
-recorded program is self-contained; and a recorded text program reproduces its
-committed render **byte-for-byte on a machine that has none of the fonts** —
-gated, in lockstep with the renderer, by a test that runs everywhere `ninja`
-does.
+warm draw without re-crossing; the program format embeds those bytes — and
+every image, path, and op a scene uses — so a recorded program is
+self-contained; and every recorded gallery scene reproduces its committed
+render **byte-for-byte on a machine that has none of the fonts** — gated, in
+lockstep with the renderer, by a test that runs everywhere `ninja` does.
