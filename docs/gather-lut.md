@@ -7,7 +7,7 @@ data-dependent index the way it bounds a loop counter. NEON has no hardware
 scatter/gather (unlike AVX2's `vgather`), so the vector path uses `tbl` — a
 register-resident byte-table lookup.
 
-[../src/lut.c](../src/lut.c) applies a 256-entry 8-bit LUT two ways:
+`lut.c` (since retired — see the epilogue) applied a 256-entry 8-bit LUT two ways:
 
 - `lut_apply_mem`: scalar, `px[i] = lut[px[i]]`.
 - `lut_apply_neon`: `vqtbl4q_u8`. The 256-entry table is loaded once into four
@@ -70,3 +70,15 @@ Two things worth noting:
   (`argument of '__counted_by' attribute cannot refer to declaration of a different
   lifetime`) — `test_lut` allocates scratch with `int const len = n;` first. The
   reflex `T *__counted_by(n) p = malloc(...)` with a parameter `n` does not compile.
+
+## Epilogue: the probe is retired
+
+The LUT module (`lut.c`/`lut.h`, the scalar `lut_apply_mem` and the `vqtbl4q_u8`
+`lut_apply_neon`, their test and two benches) was a self-contained probe, never wired
+into the renderer. Its two findings are banked: a `uint8_t` index into a 256-entry
+table still keeps a per-element check the pass won't fold (the range-folding probe
+builds on this), and the `vtbl` register-table gather sheds the per-lane check
+entirely — the same put-the-indexed-data-in-registers move that runs through the live
+kernels and the [pixel-pipelines](pixel-pipelines.md) study. The question answered, the
+code has been retired from the tree; the finding stands without it, and git history
+holds the modules.

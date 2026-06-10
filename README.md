@@ -18,8 +18,8 @@ The point of the project is twofold:
 
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
-For a focused four-design study of where `-fbounds-safety` interferes with
-performance (a vectorized pixel-processing VM, three ways), see
+For a focused study of where `-fbounds-safety` interferes with performance — a
+vectorized pixel-processing VM built three ways, since retired — see
 **[docs/pixel-pipelines.md](docs/pixel-pipelines.md)**; for the same lens on stencil
 memory-access patterns (a separable blur, x vs y, and prefetch), see
 **[docs/stencil-blur.md](docs/stencil-blur.md)**.

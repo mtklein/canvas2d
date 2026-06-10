@@ -2,9 +2,9 @@
 
 A bounds check can be elided when the compiler can prove the index is in range. The
 [gather/LUT probe](gather-lut.md) found one case it *won't* prove — a `uint8_t` index
-into a 256-entry table keeps a check that can never fail. This probe maps the boundary
-properly, using a circular buffer ([../src/ring.c](../src/ring.c)) where the index is
-computed, not a raw loop counter.
+into a 256-entry table keeps a check that can never fail. This probe mapped the boundary
+properly, using a circular buffer (`ring.c`, since retired — see the epilogue) where the
+index is computed, not a raw loop counter.
 
 ## Only the canonical loop-induction bound is folded
 
@@ -146,3 +146,14 @@ Bottom line: `-fbounds-safety` is friendly to *explicit* vectorization (the
 whole-vector load is one cheap, amortizable check) and hostile to the *auto*vectorizer
 (the per-element check is a barrier it won't cross). Reach for vectors and pick your
 check granularity; don't expect `-O2` to rescue a checked scalar loop — it can't.
+
+## Epilogue: the probe is retired
+
+The circular buffer this study measured (`ring.c`/`ring.h`, the `ring_sum_masked` /
+`ring_sum_runs` / `ring_sum_simd` variants, their test and three benches) was a
+self-contained probe, never wired into the renderer. The boundary it mapped is
+charted and the cost model it built — *elided? × hidden by a stall? × blocks
+vectorization?* — is daily practice: keep the hot index in the canonical `i < count`
+form or move the data into registers, and vectorize explicitly to choose your check
+granularity. With the question answered, the code has been retired from the tree; the
+finding stands without it, and git history holds the modules.

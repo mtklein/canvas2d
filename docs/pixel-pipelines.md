@@ -13,7 +13,7 @@ where does `-fbounds-safety` help, and where does it fight back?
    as explicit vector arguments and tail-call the next stage, so the channels stay
    in registers across the whole program. *(implemented)*
 
-They share an ISA ([../src/pixvm.h](../src/pixvm.h)): a register file of
+They share an ISA (`pixvm.h`): a register file of
 `PIXVM_N`-wide `_Float16` vectors, RGBA8 load/store ops, and `splat`/`mov`/`add`/`sub`/
 `mul`/`mad`. Designs 2 and 3 reuse the ISA and the test programs so the comparison
 is apples-to-apples — same work, different dispatch. All three are written entirely
@@ -21,12 +21,12 @@ within `-fbounds-safety` — no unsafe pointers, no forges anywhere in the core.
 
 ## Design A — one big switch (implemented)
 
-[../src/pixvm_switch.c](../src/pixvm_switch.c) is `pixvm_run_switch`: an outer loop
+`pixvm_switch.c` was `pixvm_run_switch`: an outer loop
 over `PIXVM_N`-pixel chunks, an inner loop over the program, a switch on the opcode.
 Load/store ops deinterleave RGBA8 to/from four channel vectors with shuffles (a
 `memcpy` vector load plus `__builtin_shufflevector`), with a scalar fallback for the
 final short chunk; arithmetic ops are whole-vector.
-[../tests/test_pixvm.c](../tests/test_pixvm.c) checks a copy round-trip, a
+`test_pixvm.c` checked a copy round-trip, a
 premultiplied source-over program, and the trap below.
 
 ### What's frictionless
@@ -78,7 +78,7 @@ reach for deliberately.
 ### What it costs: ~1.4× at `-Os`, and fp16 raised it
 
 A source-over program over a 256×256 tile
-([../bench/bench_pixvm_switch.c](../bench/bench_pixvm_switch.c)), release vs unsafe
+(`bench_pixvm_switch.c`), release vs unsafe
 (same `-Os` source), `A`-vs-`A` hyperfine control 1.00× — with `_Float16` channels,
 and the earlier `float` channels for contrast:
 
@@ -129,7 +129,7 @@ program over the same tile, so the three numbers are directly comparable.
 
 ## Design B — tail-call threaded VM (implemented)
 
-[../src/pixvm_thread.c](../src/pixvm_thread.c) is `pixvm_run_threaded`: same ISA and
+`pixvm_thread.c` was `pixvm_run_threaded`: same ISA and
 semantics as A, but no switch and no loop. Each opcode is a handler that does its
 work and `[[clang::musttail]]`-jumps to the next handler through a function-pointer
 table; the chain of tail jumps *is* the interpreter. This is the design
@@ -202,7 +202,7 @@ but not the integer checks, so the checks loom larger.
 
 ## Design C — SkRasterPipeline-style register pipeline (implemented)
 
-[../src/pixvm_pipe.c](../src/pixvm_pipe.c) is `pixvm_run_pipe`: stages with a fixed
+`pixvm_pipe.c` was `pixvm_run_pipe`: stages with a fixed
 signature carry the live channels as arguments — `r,g,b,a` (working colour) and
 `dr,dg,db,da` (backdrop), all `_Float16x8` — plus the pixel position; each does its
 work and `[[clang::musttail]]`-jumps to the next. The channels ride in NEON
@@ -270,3 +270,13 @@ the C++ idiom uses is a transcription habit, not a requirement; the checked inde
 walk and the typed-union ctx are right there and just as fast. (One caveat: the
 checked index walk is free at five coarse stages; a pipeline of *many* stages would
 start paying B's per-stage tax — but pixel pipelines are short.)
+
+## Epilogue: the probe is retired
+
+The three VMs (`pixvm_switch.c`, `pixvm_thread.c`, `pixvm_pipe.c`, the shared
+`pixvm.h`/`pixvm_pixio.h` ISA, their test and three benches) existed only to ask
+this question; they were never wired into the renderer. The question is answered and
+stable, so the code has been retired from the tree — the lesson is banked here and in
+the bench-table history, and the register-residency move it isolated is daily
+practice across the live kernels (the coverage resolve, the gradient solve, the blur).
+The finding stands without the code; git history holds the modules.

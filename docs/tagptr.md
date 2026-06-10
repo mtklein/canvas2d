@@ -4,9 +4,9 @@ Stuffing a few bits of metadata into a pointer's spare bits is a classic reflex 
 low (alignment) bits, or, on arm64, the top byte the MMU ignores (Top-Byte-Ignore).
 The question for `-fbounds-safety` is whether the bound survives the bit-twiddling,
 and how it compares to capability hardware like CHERI that treats a poked pointer as
-invalid. [../src/tagptr.h](../src/tagptr.h) is a small demonstrator (a 2-bit low tag
-and an 8-bit TBI tag on a pointer-to-object); [../tests/test_tagptr.c](../tests/test_tagptr.c)
-exercises both.
+invalid. `tagptr.h` (since retired — see the epilogue) was a small demonstrator (a
+2-bit low tag and an 8-bit TBI tag on a pointer-to-object); `test_tagptr.c` exercised
+both.
 
 This isn't a performance axis — bit-stealing is about saving a word, and the cost it
 incurs under the flag isn't cycles, it's *checking*. So there's no benchmark here,
@@ -78,3 +78,13 @@ wins (channels, `vtbl` tables) needed a forge; they stayed fully checked. If you
 to play strictly by the rules, the separate-tag-field spelling is free of all of
 this and costs one word. Bit-stealing is where "by the rules" and "the fast/compact
 reflex" finally diverge.
+
+## Epilogue: the probe is retired
+
+The demonstrator (`tagptr.h` and `test_tagptr.c`) was a self-contained probe, never
+wired into the renderer — and the *only* legitimate `__unsafe_forge` user in the
+checked tree. With its question answered (bit-stealing forces a forge, and the TBI
+variant breaks ASan), the code has been retired from the tree. Its departure leaves
+the checked sources forge-free, which a default-build gate now enforces: a bare
+`ninja` greps `src include tests examples` and fails if any `__unsafe_` escape hatch
+reappears. The finding stands without the code; git history holds the module.
