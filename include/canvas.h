@@ -398,6 +398,20 @@ void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated t
 void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len);
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path);
 
+// Load a PNG that canvas_write_png wrote.  Returns a freshly malloc'd RGBA8
+// buffer (tightly packed, top row first -- the layout read_rgba and
+// put_image_data use; free it with free()), storing the dimensions in *w/*h
+// and the byte length (w*h*4) in *len -- the same ownership convention as
+// create_image_data.  The decoder is strict and scoped to our own encoder's
+// output: 8-bit RGBA, non-interlaced, None/Up row filters only, every chunk
+// CRC verified, dimensions capped at 16384 so no malformed header can demand
+// an outsized allocation.  Other PNG flavours (palette, gray, 16-bit,
+// interlaced, Sub/Avg/Paeth-filtered) and any corruption -- bad magic or CRC,
+// truncation, trailing bytes -- fail cleanly: NULL, with *w/*h/*len zeroed.
+uint8_t *__counted_by_or_null(*len)
+canvas_load_png(char const *__null_terminated path,
+                int *__single w, int *__single h, int *__single len);
+
 // Coarse GPU profiling forwarded from the compositor backend: total GPU execution
 // time since canvas_create (nanoseconds) and the number of GPU dispatches that
 // contributed (ns/dispatch = total_ns/dispatches).  The CPU backend reports 0/0;

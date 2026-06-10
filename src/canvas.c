@@ -2468,6 +2468,12 @@ bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     return ok;
 }
 
+uint8_t *__counted_by_or_null(*len)
+canvas_load_png(char const *__null_terminated path,
+                int *__single w, int *__single h, int *__single len) {
+    return cnvs_png_read(path, w, h, len);
+}
+
 void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
                            uint8_t *__counted_by(len) out, int len) {
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
