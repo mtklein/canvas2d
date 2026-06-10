@@ -1846,43 +1846,55 @@ static void shaping(void) {
     save(c, "gallery/shaping.png");
 }
 
-// The CSS filter colour functions: each cell paints the same motif -- a
+// The CSS filter functions: each cell paints the same motif -- a
 // diagonal-gradient rounded tile under two translucent discs -- through one
-// filter function (top-left unfiltered for reference).  Each function is a
+// filter (top-left unfiltered for reference).  Each colour function is a
 // precompiled matrix kernel over the op's premultiplied tile; the partial
-// alpha is what makes the premultiplied forms visible.
+// alpha is what makes the premultiplied forms visible.  The last row is
+// blur() -- three box passes over the same tile, the painted region grown by
+// the spread -- alone at two strengths, then chained after a colour function
+// (the list applies in call order, so saturate sees the already-soft pixels).
 static void filters(void) {
     struct {
         void (*add)(canvas *__single cv, float amount);
         float amt;
+        void (*add2)(canvas *__single cv, float amount);  // chained second entry
+        float amt2;
         char const *label;
-    } const cell[9] = {
-        { NULL,                         0.0f,        "none" },
-        { canvas_add_filter_brightness, 1.5f,        "brightness(1.5)" },
-        { canvas_add_filter_contrast,   2.0f,        "contrast(2)" },
-        { canvas_add_filter_grayscale,  1.0f,        "grayscale(1)" },
-        { canvas_add_filter_hue_rotate, TAU / 3.0f,  "hue-rotate(120deg)" },
-        { canvas_add_filter_invert,     1.0f,        "invert(1)" },
-        { canvas_add_filter_opacity,    0.35f,       "opacity(0.35)" },
-        { canvas_add_filter_saturate,   3.0f,        "saturate(3)" },
-        { canvas_add_filter_sepia,      1.0f,        "sepia(1)" },
+    } const cell[12] = {
+        { .label = "none" },
+        { .add = canvas_add_filter_brightness, .amt = 1.5f,       .label = "brightness(1.5)" },
+        { .add = canvas_add_filter_contrast,   .amt = 2.0f,       .label = "contrast(2)" },
+        { .add = canvas_add_filter_grayscale,  .amt = 1.0f,       .label = "grayscale(1)" },
+        { .add = canvas_add_filter_hue_rotate, .amt = TAU / 3.0f, .label = "hue-rotate(120deg)" },
+        { .add = canvas_add_filter_invert,     .amt = 1.0f,       .label = "invert(1)" },
+        { .add = canvas_add_filter_opacity,    .amt = 0.35f,      .label = "opacity(0.35)" },
+        { .add = canvas_add_filter_saturate,   .amt = 3.0f,       .label = "saturate(3)" },
+        { .add = canvas_add_filter_sepia,      .amt = 1.0f,       .label = "sepia(1)" },
+        { .add = canvas_add_filter_blur,       .amt = 1.5f,       .label = "blur(1.5)" },
+        { .add = canvas_add_filter_blur,       .amt = 3.0f,       .label = "blur(3)" },
+        { .add = canvas_add_filter_blur,       .amt = 3.0f,
+          .add2 = canvas_add_filter_saturate,  .amt2 = 3.0f,      .label = "blur(3) saturate(3)" },
     };
     float const M = 12.0f, cellW = 140.0f, cellH = 124.0f;
-    canvas *__single c = canvas_create(444, 396);
+    canvas *__single c = canvas_create(444, 520);
     if (!c) {
         return;
     }
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 396.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 520.0f);
 
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 12; i++) {
         int col = i % 3, row = i / 3;
         float ox = M + (float)col * cellW, oy = M + (float)row * cellH;
 
-        // This cell's filter.
+        // This cell's filter (one function, or a two-entry chain).
         canvas_set_filter_none(c);
         if (cell[i].add) {
             cell[i].add(c, cell[i].amt);
+        }
+        if (cell[i].add2) {
+            cell[i].add2(c, cell[i].amt2);
         }
 
         // The motif, filtered: a gradient tile, then two translucent discs.
