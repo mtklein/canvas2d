@@ -119,6 +119,16 @@ BACKEND_SRCS = {os.path.basename(COMPOSITOR_SRC)}
 # because they bind un-annotated system headers, behind a bounds-safe ABI.
 BOUNDARY_C = {"cnvs_text_ct.c"}
 
+# Test-only system libraries, by source basename.  The differential oracle (H5
+# in docs/decisions/codec-outsourcing.md) links the SYSTEM zlib so reference
+# deflate/inflate cross-check ours.  Scoped to exactly these binaries' link
+# edges (the $libs ninja variable, empty everywhere else): no release/debug/
+# unsafe library object links -lz, so the canvas library itself keeps its
+# from-scratch no-zlib posture.
+EXTRA_LIBS = {
+    "test_zlib_oracle.c": "-lz",
+}
+
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
 # (stack use-after-scope and use-after-return) -- the class -fbounds-safety
 # doesn't address.  detect_leaks is deliberately NOT enabled: LeakSanitizer is
@@ -275,8 +285,9 @@ def main():
         w("  depfile = $out.d")
         w("  deps = gcc")
         w("")
+        # $libs is per-edge (EXTRA_LIBS) and empty for every binary not named there.
         w(f"rule link_{variant}")
-        w(f"  command = clang {opt} $in {BASE_FRAMEWORKS} -o $out")
+        w(f"  command = clang {opt} $in {BASE_FRAMEWORKS} $libs -o $out")
         w("")
 
     w("rule run")
@@ -387,6 +398,8 @@ def main():
                 stamp = exe + ".runok"
                 w(f"build {o}: cc_{variant} {t}")
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
+                if os.path.basename(t) in EXTRA_LIBS:
+                    w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
                 w(f"build {stamp}: run {exe}")
                 w(f"  bin = {exe}")
                 produced.append(exe)
@@ -609,7 +622,7 @@ def main():
     w("  deps = gcc")
     w("")
     w("rule link_cov")
-    w(f"  command = clang {COV} $in {BASE_FRAMEWORKS} -o $out")
+    w(f"  command = clang {COV} $in {BASE_FRAMEWORKS} $libs -o $out")
     w("")
     w("rule cov_run")  # run a test, writing its coverage profile to $out
     w("  command = LLVM_PROFILE_FILE=$out $bin")
@@ -656,6 +669,8 @@ def main():
         raw = os.path.join("build", "cov", "raw", stem + ".profraw")
         w(f"build {o}: cc_cov {t}")
         w(f"build {exe}: link_cov {o} {' '.join(cov_lib)}")
+        if os.path.basename(t) in EXTRA_LIBS:
+            w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
         w(f"build {raw}: cov_run {exe}")
         w(f"  bin = ./{exe}")
         cov_raws.append(raw)
