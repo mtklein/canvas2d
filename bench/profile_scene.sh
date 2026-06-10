@@ -38,9 +38,11 @@ pid=$!
 sample "$pid" "$SECS" -mayDie -file "$tmp/gallery.txt" >/dev/null 2>&1 || true
 kill "$pid" 2>/dev/null || true   # stop the (still-looping) gallery once sampled
 wait "$pid" 2>/dev/null || true
-# `sample` profiles every thread, so the blur's parked GCD worker pool shows up as a
-# big __workq_kernreturn pile -- idle waiting, not compute.  Drop those and the loader
-# / kernel-trap frames so the leaderboard is actual self-time in our code.
+# `sample` profiles every thread, and the system frameworks we link (Core Text /
+# Core Graphics) park a libdispatch worker pool whether or not anyone dispatches
+# work -- canvas2d itself is entirely single-threaded -- so an idle
+# __workq_kernreturn pile shows up that is waiting, not compute.  Drop it and the
+# loader / kernel-trap frames so the leaderboard is actual self-time in our code.
 printf '\n===== gallery (all scenes) :: compute self-time (samples) =====\n'
 awk '/Sort by top of stack/{p=1;next} p&&/^$/{exit} p' "$tmp/gallery.txt" \
   | grep -vE 'libsystem_kernel|libsystem_pthread|libdispatch|_dyld_start|dyld`|mach_msg|__workq_kernreturn|madvise|libsystem_platform' \
