@@ -37,20 +37,18 @@ jobs:
           gallery/gradients.png gallery/imagedata.png gallery/joins.png
           gallery/paths.png gallery/roundrect.png gallery/shapes.png
           gallery/winding.png
-      - name: Committed text programs must replay byte-identical, fontless
-        # The "second half" of the determinism gate: locally, a gallery run
-        # records each text scene to gallery/<scene>.canvas and re-renders its
-        # PNG, and test_replay_gallery proves the program replays back to those
-        # exact bytes.  CI re-proves only the replay half against the COMMITTED
-        # bytes.  test_replay_gallery did already run inside `ninja` above, but
-        # by then run_gallery may have re-rendered gallery/ with this runner's
-        # fallback fonts (the test's run edge doesn't order against it), making
-        # that pass mere self-consistency.  So: restore the committed gallery
-        # bytes and replay again.  Programs recorded on a machine WITH Libian TC
-        # and Apple Color Emoji must reproduce the committed PNGs byte-for-byte
-        # on this runner, which has neither -- the embedded font/glyph/bitmap/
-        # shape blocks are the only way.  Runs after the text-free diff above,
-        # which must see the runner's re-render, not the restored bytes.
+      - name: Committed gallery programs must replay byte-identical, fontless
+        # The "second half" of the determinism gate.  Inside `ninja` above,
+        # test_replay_gallery runs AFTER run_gallery (an order-only edge in
+        # configure.py), so that pass proves record->replay lockstep against
+        # THIS runner's own re-render -- its fallback fonts, not the committed
+        # bytes.  This step re-proves the half that needs a second machine:
+        # restore the committed gallery bytes and replay again.  Programs
+        # recorded on a machine WITH Libian TC must reproduce the committed
+        # PNGs byte-for-byte on this runner, which lacks it -- the embedded
+        # font/glyph/bitmap/shape blocks are the only way.  Runs after the
+        # text-free diff above, which must see the runner's re-render, not
+        # the restored bytes.
         run: |
           git restore gallery/
           ./build/release/test_replay_gallery

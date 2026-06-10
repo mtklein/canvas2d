@@ -417,7 +417,21 @@ def main():
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
                 if os.path.basename(t) in EXTRA_LIBS:
                     w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
-                w(f"build {stamp}: run {exe}")
+                # test_replay_gallery reads gallery/<scene>.{png,canvas} from
+                # disk, and a bare ninja re-renders those same files
+                # (run_gallery) in the same invocation -- without an ordering
+                # edge the two race, and on a machine whose fonts differ from
+                # the committed baseline a mixed read fails (CI hit exactly
+                # this: emojiscale's fresh .canvas against a stale .png,
+                # DIVERGED).  Order-only (||): the test must run after the
+                # re-render, but re-rendered pixels don't dirty the test.
+                # In-suite the test therefore proves record->replay lockstep
+                # on *this* machine's render; gate.yml's restore step is what
+                # proves the *committed* bytes replay on a fontless runner.
+                gallery_dep = ""
+                if stem == "test_replay_gallery":
+                    gallery_dep = " || " + " ".join(gallery_pngs + gallery_canvases)
+                w(f"build {stamp}: run {exe}{gallery_dep}")
                 w(f"  bin = {exe}")
                 produced.append(exe)
                 test_stamps.append(stamp)
@@ -694,7 +708,11 @@ def main():
         w(f"build {exe}: link_cov {o} {' '.join(cov_lib)}")
         if os.path.basename(t) in EXTRA_LIBS:
             w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
-        w(f"build {raw}: cov_run {exe}")
+        # Same run_gallery ordering as the variant test loop above.
+        gallery_dep = ""
+        if stem == "test_replay_gallery":
+            gallery_dep = " || " + " ".join(gallery_pngs + gallery_canvases)
+        w(f"build {raw}: cov_run {exe}{gallery_dep}")
         w(f"  bin = ./{exe}")
         cov_raws.append(raw)
         cov_exes.append(exe)
