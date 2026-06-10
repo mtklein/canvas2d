@@ -18,7 +18,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: clang --version && ninja --version
       - run: python3 configure.py
       - run: ninja
