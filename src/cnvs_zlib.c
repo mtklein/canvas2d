@@ -79,6 +79,15 @@ enum {
     // curve is flat for this encoder's consumers (PNG rows), and the bound
     // makes the matcher's worst case linear in the input, never quadratic.
     zlib_chain_max = 32,
+    // Matches longer than this insert only every zlib_insert_stride-th covered
+    // position into the chains (zlib's max_insert_length idea).  Long matches
+    // are dominated by runs, whose interior positions all hash alike, so dense
+    // insertion there is almost pure overhead: across the 32-scene gallery
+    // corpus this trade costs +0.28% deflated bytes for a 1.9x faster encode
+    // on run-heavy content (sweep: skip-all was 2.2x but +2.7% bytes; denser
+    // strides pay more time for <= 0.02% of the bytes back).
+    zlib_max_insert    = 32,
+    zlib_insert_stride = 8,
 };
 
 // Output bit stream, LSB-first within each byte (RFC 1951 3.1.1).  Writes are
@@ -266,8 +275,16 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
         }
         if (best_len >= zlib_min_match) {
             put_match(&w, best_len, best_dist);
-            for (int end = i + best_len; i < end; i++) {
-                insert(chains, src, n, i);
+            int const end = i + best_len;
+            if (best_len <= zlib_max_insert) {
+                for (; i < end; i++) {
+                    insert(chains, src, n, i);
+                }
+            } else {
+                for (int pos = i; pos < end; pos += zlib_insert_stride) {
+                    insert(chains, src, n, pos);
+                }
+                i = end;
             }
         } else {
             put_litlen(&w, src[i]);
