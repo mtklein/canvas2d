@@ -3,6 +3,7 @@
 #include "compositor.h"
 #include "blur.h"
 #include "cnvs_cover.h"
+#include "cnvs_filter.h"
 #include "cnvs_geom.h"
 #include "cnvs_gradient.h"
 #include "cnvs_image.h"
@@ -94,6 +95,12 @@ struct canvas_state {
     cnvs_unpremul shadow_color;  // shadow off when its alpha is 0
     float shadow_blur;           // device px (a Gaussian radius; CTM does not apply)
     float shadow_offset_x, shadow_offset_y;  // device px (CTM does not apply)
+    // CSS filter list (canvas_add_filter_*): compiled colour-filter functions,
+    // applied in call order to every painted op's tile before it composites.
+    // A dynamic per-state array like the clip mask below: held by value, so
+    // save() deep-copies it and restore()/reset() free it; NULL/0 = no filter.
+    cnvs_filter *__counted_by(filter_count) filters;
+    int filter_count;
     // Clip coverage, one byte per canvas pixel (NULL = open).  Held by value in
     // the state, so save() snapshots it and restore() brings it back; clip()
     // intersects the current path's coverage into it.
@@ -183,8 +190,10 @@ static void state_defaults(struct canvas_state *s) {
     s->shadow_blur = 0.0f;
     s->shadow_offset_x = 0.0f;
     s->shadow_offset_y = 0.0f;
-    // Drop the clip: zero the count before NULLing the pointer so the
-    // __counted_by(clip_len) invariant never sees NULL with a positive count.
+    // Drop the filter list and the clip: zero each count before NULLing its
+    // pointer so a __counted_by invariant never sees NULL with a positive count.
+    s->filter_count = 0;
+    s->filters = NULL;
     s->clip_len = 0;
     s->clip_mask = NULL;
 }
@@ -225,9 +234,11 @@ void canvas_destroy(canvas *__single cv) {
     cnvs_recorder_close(cv->rec);  // flush and close any active recording
     compositor_destroy(cv->comp);
     for (int i = 0; i < cv->stack_len; i++) {
+        free(cv->stack[i].filters);
         free(cv->stack[i].clip_mask);
     }
     free(cv->stack);
+    free(cv->cur.filters);
     free(cv->cur.clip_mask);
     cnvs_font_destroy(cv->font);
     cnvs_path_free(&cv->path);
@@ -288,6 +299,21 @@ void canvas_save(canvas *__single cv) {
             cv->stack[cv->stack_len].clip_len = 0;
         }
     }
+    // Likewise the filter list, so add_filter/set_filter_none can mutate cur's
+    // independently.  On allocation failure the saved entry keeps no filters
+    // (best-effort, matching the clip's degraded copy above).
+    if (cv->cur.filters) {
+        int n = cv->cur.filter_count;
+        cnvs_filter *copy = malloc((size_t)n * sizeof *copy);
+        if (copy) {
+            memcpy(copy, cv->cur.filters, (size_t)n * sizeof *copy);
+            cv->stack[cv->stack_len].filters = copy;
+            cv->stack[cv->stack_len].filter_count = n;
+        } else {
+            cv->stack[cv->stack_len].filters = NULL;
+            cv->stack[cv->stack_len].filter_count = 0;
+        }
+    }
     cv->stack_len += 1;
 }
 
@@ -295,20 +321,24 @@ void canvas_restore(canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "restore"); }
     if (cv->stack_len > 0) {
         cv->stack_len -= 1;
+        free(cv->cur.filters);
         free(cv->cur.clip_mask);
-        cv->cur = cv->stack[cv->stack_len];  // adopts the saved clip mask
+        cv->cur = cv->stack[cv->stack_len];  // adopts the saved clip mask + filters
         compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
     }
 }
 
 void canvas_reset(canvas *__single cv) {
-    // Empty the saved-state stack (each entry may own a clip-mask copy); keep the
-    // backing allocation for reuse.
+    // Empty the saved-state stack (each entry may own clip-mask and filter-list
+    // copies); keep the backing allocation for reuse.
     for (int i = 0; i < cv->stack_len; i++) {
+        free(cv->stack[i].filters);
         free(cv->stack[i].clip_mask);
     }
     cv->stack_len = 0;
-    // Drop the current clip mask and restore every state field to its default.
+    // Drop the current filter list and clip mask, and restore every state field
+    // to its default.
+    free(cv->cur.filters);
     free(cv->cur.clip_mask);
     state_defaults(&cv->cur);
     // Discard the current path.
@@ -570,6 +600,81 @@ void canvas_set_shadow_offset_y(canvas *__single cv, float offset) {
     }
 }
 
+void canvas_set_filter_none(canvas *__single cv) {
+    free(cv->cur.filters);
+    cv->cur.filter_count = 0;
+    cv->cur.filters = NULL;
+}
+
+// Append one compiled function to the state's filter list.  The list grows by
+// exactly one (filter lists stay a few entries long); on allocation failure the
+// call is dropped, leaving the list as it was (best-effort, like the path
+// builders).  Non-finite amounts never reach here -- each canvas_add_filter_*
+// ignores those calls outright, per spec.
+static void filter_append(canvas *__single cv, cnvs_filter f) {
+    int n = cv->cur.filter_count;
+    cnvs_filter *nf = realloc(cv->cur.filters, ((size_t)n + 1) * sizeof *nf);
+    if (!nf) {
+        return;
+    }
+    nf[n] = f;
+    cv->cur.filters = nf;
+    cv->cur.filter_count = n + 1;
+}
+
+// The unbounded-above amounts (brightness/contrast/saturate) clamp only below.
+static float clamp_lo(float v) {
+    return v < 0.0f ? 0.0f : v;
+}
+
+void canvas_add_filter_brightness(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_brightness(clamp_lo(amount)));
+    }
+}
+
+void canvas_add_filter_contrast(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_contrast(clamp_lo(amount)));
+    }
+}
+
+void canvas_add_filter_grayscale(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_grayscale(clamp01(amount)));
+    }
+}
+
+void canvas_add_filter_hue_rotate(canvas *__single cv, float radians) {
+    if (isfinite(radians)) {
+        filter_append(cv, cnvs_filter_hue_rotate(radians));
+    }
+}
+
+void canvas_add_filter_invert(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_invert(clamp01(amount)));
+    }
+}
+
+void canvas_add_filter_opacity(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_opacity(clamp01(amount)));
+    }
+}
+
+void canvas_add_filter_saturate(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_saturate(clamp_lo(amount)));
+    }
+}
+
+void canvas_add_filter_sepia(canvas *__single cv, float amount) {
+    if (isfinite(amount)) {
+        filter_append(cv, cnvs_filter_sepia(clamp01(amount)));
+    }
+}
+
 static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
     return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
 }
@@ -636,6 +741,18 @@ static bool ensure_trow(canvas *__single cv, int w) {
         cv->trow_cap = w;
     }
     return true;
+}
+
+// Run the state's filter list (if any) over the freshly painted npix-pixel tile
+// in place, just before it composites.  Colour filters are 1:1 per pixel, so
+// the op's bbox never changes.  Spec order is filter-then-shadow; our shadow is
+// already cast from the op's coverage silhouette, not its pixels (emit_shadow),
+// so it is unaffected by the colour filters -- the same approximation it makes
+// for semi-transparent paint.
+static void apply_filters(canvas *__single cv, int npix) {
+    if (cv->cur.filter_count > 0) {
+        cnvs_filter_apply(cv->cur.filters, cv->cur.filter_count, cv->tile, npix);
+    }
 }
 
 // Add a path edge to the coverage rasterizer, translated into the tile's frame.
@@ -712,6 +829,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                 .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
         }
     }
+    apply_filters(cv, b.w * b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
@@ -786,6 +904,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
             cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
         }
     }
+    apply_filters(cv, b.w * b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
@@ -1918,6 +2037,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
             cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
         }
     }
+    apply_filters(cv, b.w * b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 

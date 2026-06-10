@@ -120,6 +120,19 @@ static void scene_savestack(canvas *__single cv) {
     }
 }
 
+// CSS filter list: the per-state dynamic array (append, save's deep copy,
+// restore/set_filter_none's frees) plus the per-tile apply.
+static void scene_filter(canvas *__single cv) {
+    canvas_add_filter_grayscale(cv, 1.0f);
+    canvas_add_filter_brightness(cv, 1.2f);
+    canvas_save(cv);
+    canvas_add_filter_invert(cv, 0.5f);
+    canvas_set_fill_rgba(cv, 0.9f, 0.4f, 0.2f, 0.8f);
+    canvas_fill_rect(cv, 4.0f, 4.0f, 24.0f, 24.0f);
+    canvas_restore(cv);
+    canvas_set_filter_none(cv);
+}
+
 // isPointInPath flattens the current path to test containment.
 static void scene_pointinpath(canvas *__single cv) {
     canvas_begin_path(cv);
@@ -173,6 +186,7 @@ int main(void) {
     sweep(scene_text);
     sweep(scene_pattern);
     sweep(scene_dash);
+    sweep(scene_filter);
     sweep(scene_savestack);
     sweep(scene_pointinpath);
     sweep(scene_png);

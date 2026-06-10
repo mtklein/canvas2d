@@ -105,6 +105,29 @@ void canvas_set_shadow_blur(canvas *__single cv, float blur);
 void canvas_set_shadow_offset_x(canvas *__single cv, float offset);
 void canvas_set_shadow_offset_y(canvas *__single cv, float offset);
 
+// filter: the CSS colour filter functions, as a typed API (no CSS string
+// parsing).  Each canvas_add_filter_* appends one function to the context's
+// filter list; the list applies in call order to every painted op (fills,
+// strokes, text, images -- not clear_rect or put_image_data), filtering the
+// drawing before its shadow is cast.  The list is part of the drawing state:
+// save/restore brackets it, and reset/resize clear it.  set_filter_none (the
+// default) clears the list.
+//
+// Amounts clamp like the spec: below 0 clamps to 0; grayscale/invert/opacity/
+// sepia also cap at 1, while brightness/contrast/saturate are unbounded above.
+// brightness/contrast/saturate/opacity at 1 are identity, grayscale/invert/
+// sepia at 0, hue_rotate at 0 radians.  A non-finite amount is ignored (the
+// call is a no-op), as the spec ignores unparseable filter values.
+void canvas_set_filter_none(canvas *__single cv);
+void canvas_add_filter_brightness(canvas *__single cv, float amount);
+void canvas_add_filter_contrast(canvas *__single cv, float amount);
+void canvas_add_filter_grayscale(canvas *__single cv, float amount);
+void canvas_add_filter_hue_rotate(canvas *__single cv, float radians);
+void canvas_add_filter_invert(canvas *__single cv, float amount);
+void canvas_add_filter_opacity(canvas *__single cv, float amount);
+void canvas_add_filter_saturate(canvas *__single cv, float amount);
+void canvas_add_filter_sepia(canvas *__single cv, float amount);
+
 // Set the fill paint to a gradient and clear its stops; fill() uses it until the
 // next canvas_set_fill_rgba.  Coordinates are user space (the transform is baked in
 // now).  Add stops with canvas_add_fill_color_stop; offsets clamp to [0,1].
@@ -408,8 +431,9 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // replay_from understands.  arc/round_rect/arc_to are written as themselves;
 // calls outside the format (stroke_rect, round_rect_radii, conic gradients,
 // patterns, image smoothing, text align/baseline, fill_text_max, draw_image,
-// get/put_image_data, Path2D fill/stroke/clip, reset, resize) are not recorded,
-// so a session that uses them does not round-trip through the text format.
+// get/put_image_data, Path2D fill/stroke/clip, the filter list
+// (set_filter_none / add_filter_*), reset, resize) are not recorded, so a
+// session that uses them does not round-trip through the text format.
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh
