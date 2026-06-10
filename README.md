@@ -89,8 +89,8 @@ self-intersecting star, each masking the same flood of stripes (coverage mask):
 
 Gradients — a diagonal linear fill (outlined with a cyan→yellow gradient
 *stroke*), an off-centre radial "sphere", and a multi-stop rainbow ramp
-(sampled per pixel on the CPU from a precomputed 1024-entry ramp, within 1/255 of
-the exact piecewise-linear colour):
+(every pixel's colour evaluated exactly on the CPU — an 8-wide stop search +
+lerp, no ramp table, within 0.16/255 of the exact piecewise-linear colour):
 
 ![gradients](gallery/gradients.png)
 
@@ -284,7 +284,7 @@ failing test prints the offending `CHECK` to stderr.
       │  ├── cnvs_math     2x3 affine transforms
       │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
       │  ├── cnvs_cover     analytic (signed-area) coverage → per-pixel alpha
-      │  ├── cnvs_gradient linear/radial/conic ramp, evaluated per pixel into a tile
+      │  ├── cnvs_gradient linear/radial/conic gradients, evaluated per pixel into a tile
       │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
       │  ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
@@ -395,7 +395,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
 | `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData) | ◑ no colorSpace |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
-| Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
+| Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel exact stop lerp, 8-wide (≤0.16/255 of exact, hard stops exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end) | ◑ no font-family/weight; full `measureText` TextMetrics |
@@ -439,8 +439,8 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 12.0 ms | 11.8 ms | **1.01×** |
-| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 73 ms | 72 ms | **1.01×** |
+| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 71 ms | 71 ms | **1.00×** |
+| `bench_gradient_fill` — gradient fill: 8-wide radial solve + 8-wide exact stop lerp | 14.5 ms | 14.4 ms | **1.01×** |
 | `bench_flatten` — cubic-Bézier flattening | 116 ms | 114 ms | **1.02×** |
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.0 ms | 8.8 ms | **1.02×** |
 | `bench_stroke` — stroke expansion (joins/caps) | 48 ms | 47 ms | **1.03×** |
@@ -502,12 +502,19 @@ fill-rule fold, 8-bit convert) runs 8-wide, and the accumulate telescopes each r
 span's interior columns into a contiguous constant-add, also 8-wide with one
 whole-vector check per block — taking `bench_fill` from 1.22× to **1.07×**; the
 only writes still scattered are the one or two partial columns at each span's
-ends. Gradients got both treatments — a 1024-entry colour
-ramp built per fill (turning the per-pixel stop scan into one indexed lookup,
-≤1/255 of colour error) *and* an 8-wide radial parameter solve — so
-`bench_gradient_fill` (the renderer's actual path) is **~5.8× faster** than the
-naive per-pixel scan (`bench_gradient`), at ~1.01× overhead: the SIMD parameter
-solve stores eight lanes per `memcpy`, one bounds check instead of eight. The last
+ends. Gradients got the same treatment in two stages — an 8-wide radial parameter
+solve, then (after a measured bake-off,
+[docs/decisions/gradient-eval.md](docs/decisions/gradient-eval.md)) an 8-wide
+**exact** colour evaluation that retired the old per-fill 1024-entry ramp: the
+stop search runs as compares + bitwise lane selects across eight pixels, the lerp
+is the scalar evaluator's arithmetic eight wide (bit-identical, gated at tolerance
+zero), and there is no table to build, no 8 KB ramp per canvas, and no
+quantization error (the ramp's nearest-entry lookup erred up to **196/255** at
+coincident hard stops; the exact path's worst case is 0.16/255, the f16 lerp's
+rounding). `bench_gradient_fill` (the renderer's actual path) is **~4.9× faster**
+than the naive per-pixel scan (`bench_gradient`) at ~1.01× overhead — one
+whole-vector bounds check per eight lanes at the load and store seams — and both
+flagship renders got 2–3 % faster when the switch landed. The last
 holdout was the **horizontal blur pass**, the shadow pipeline's sliding-window
 sum: contiguous loads never stall, so its checks sat squarely on the critical path
 at **1.55×** — until the same recipe landed there too (eight windows per step via
