@@ -1841,6 +1841,10 @@ void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h)
     cnvs_path_free(&rp);
 }
 
+// The pinned font family: shaping, the primary font handle, and the text
+// cache's vmetrics record all key on this one name.
+static char const k_font_family[] = "Libian TC";
+
 // Rebuild the cached font when the requested size changes; NULL on failure.
 static cnvs_font *__single ensure_font(canvas *__single cv) {
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
@@ -1849,6 +1853,43 @@ static cnvs_font *__single ensure_font(canvas *__single cv) {
         cv->font_built_size = cv->cur.font_size;
     }
     return cv->font;
+}
+
+// The primary font's vertical metrics at the current size, in user px, through
+// the text cache's per-name record (vmetrics normalized at size 1.0): a
+// replayed program reads the recorded values and never needs the real font,
+// and the live path scales through the same normalized floats so recording
+// and replay place baselines bit-identically.  Populated from a live font
+// handle on first use.  False only when no record exists and the font can't
+// be built (then there are no metrics to give).
+static bool canvas_vmetrics(canvas *__single cv, float *__single ascent,
+                            float *__single descent) {
+    float size = cv->cur.font_size;
+    int fid = cnvs_text_cache_intern(&cv->text_cache, k_font_family,
+                                     (int)sizeof k_font_family - 1);
+    float a1 = 0.0f, d1 = 0.0f;
+    if (cnvs_text_cache_get_vmetrics(&cv->text_cache, fid, &a1, &d1)) {
+        *ascent = a1 * size;
+        *descent = d1 * size;
+        return true;
+    }
+    cnvs_font *__single f = ensure_font(cv);
+    if (!f) {
+        return false;
+    }
+    float a = 0.0f, d = 0.0f;
+    cnvs_font_vmetrics(f, &a, &d);
+    if (fid >= 0 && size > 0.0f) {
+        cnvs_text_cache_set_vmetrics(&cv->text_cache, fid, a / size, d / size);
+        if (cnvs_text_cache_get_vmetrics(&cv->text_cache, fid, &a1, &d1)) {
+            *ascent = a1 * size;  // re-derive through the stored record, so the
+            *descent = d1 * size; // live values match a future replay's exactly
+            return true;
+        }
+    }
+    *ascent = a;
+    *descent = d;
+    return true;
 }
 
 void canvas_set_font_size(canvas *__single cv, float px) {
@@ -1896,13 +1937,16 @@ static float text_align_frac(canvas_text_align a) {
 
 // Offset added to the pen y to place the requested textBaseline at y, derived
 // from the font's ascent/descent (no BASE table: hanging ~ top, ideographic ~
-// bottom).
-static float text_baseline_offset(canvas *__single cv, cnvs_font *__single f) {
+// bottom).  The metrics come through the cached vmetrics record, so a replayed
+// program needs no font handle to place a baseline.
+static float text_baseline_offset(canvas *__single cv) {
     if (cv->cur.text_baseline == CANVAS_BASELINE_ALPHABETIC) {
         return 0.0f;
     }
     float a = 0.0f, d = 0.0f;
-    cnvs_font_vmetrics(f, &a, &d);
+    if (!canvas_vmetrics(cv, &a, &d)) {
+        return 0.0f;
+    }
     switch (cv->cur.text_baseline) {
         case CANVAS_BASELINE_ALPHABETIC:  return 0.0f;
         case CANVAS_BASELINE_TOP:         return a;
@@ -2006,10 +2050,6 @@ static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
 // glyphs, so emoji and fallback runs are measured the same way they are drawn.
 static void do_text(canvas *__single cv, char const *__counted_by(len) text, int len,
                     float x, float y, float max_width, bool stroke) {
-    cnvs_font *__single f = ensure_font(cv);
-    if (!f) {
-        return;
-    }
     cnvs_shaped const *__single s = shape_text(cv, text, len);
     if (!s) {
         return;
@@ -2020,7 +2060,7 @@ static void do_text(canvas *__single cv, char const *__counted_by(len) text, int
         sx = max_width / advance;  // condense in x to fit
     }
     float ox = x - text_align_frac(cv->cur.text_align) * advance * sx;
-    float oy = y + text_baseline_offset(cv, f);
+    float oy = y + text_baseline_offset(cv);
     cnvs_mat td = cv->cur.ctm;
     if (sx != 1.0f) {
         // Scale x by sx about the anchor: X' = sx*X + ox*(1-sx), Y' = Y; then the CTM.
@@ -2045,13 +2085,14 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
                                              char const *__null_terminated text) {
     canvas_text_metrics m;
     memset(&m, 0, sizeof m);  // all-zero if the font/shaping can't be built
-    cnvs_font *__single f = ensure_font(cv);
+    float a = 0.0f, d = 0.0f;
+    bool have_vm = canvas_vmetrics(cv, &a, &d);  // cached: no font handle needed
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     cnvs_shaped const *__single s = shape_text(cv, t, len);
-    if (f && s) {
-        cnvs_text_metrics tm;
-        cnvs_shaped_metrics(s, f, &tm);  // fallback-aware: each glyph in its run's font
+    if (have_vm && s) {
+        cnvs_text_metrics tm;  // fallback-aware: each glyph in its run's font
+        cnvs_shaped_metrics(&cv->text_cache, s, cv->cur.font_size, a, d, &tm);
         m.width = tm.width;
         m.actual_bounding_box_left = tm.actual_left;
         m.actual_bounding_box_right = tm.actual_right;

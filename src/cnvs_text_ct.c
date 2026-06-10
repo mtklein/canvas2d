@@ -58,6 +58,11 @@ static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
     CFDictionaryRef ra = CTRunGetAttributes(run);
     CTFontRef rf = ra ? CFDictionaryGetValue(ra, kCTFontAttributeName) : NULL;
     dst->font = rf ? (void *)CFRetain(rf) : NULL;
+    // Color (emoji) runs are flagged here, once, so the checked walks never need
+    // a per-run boundary query; the live run resolves its interned name id later.
+    dst->is_color = rf &&
+        (CTFontGetSymbolicTraits(rf) & kCTFontTraitColorGlyphs) != 0;
+    dst->name_id = -1;
     dst->glyph = malloc((size_t)gc * sizeof *dst->glyph);
     dst->xadv = malloc((size_t)gc * sizeof *dst->xadv);
     dst->cluster = malloc((size_t)gc * sizeof *dst->cluster);
@@ -174,11 +179,18 @@ void cnvs_glyph_draw(void *font, uint16_t glyph, float x, float y,
     CGColorSpaceRelease(cs);
 }
 
-bool cnvs_run_is_color(void const *font) {
+void cnvs_run_vmetrics(void const *font, float *asc1, float *desc1) {
+    *asc1 = 0.0f;
+    *desc1 = 0.0f;
     if (!font) {
-        return false;
+        return;
     }
-    return (CTFontGetSymbolicTraits((CTFontRef)font) & kCTFontTraitColorGlyphs) != 0;
+    double size = CTFontGetSize((CTFontRef)font);
+    if (size <= 0.0) {
+        return;
+    }
+    *asc1 = (float)(CTFontGetAscent((CTFontRef)font) / size);
+    *desc1 = (float)(CTFontGetDescent((CTFontRef)font) / size);
 }
 
 void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
@@ -277,68 +289,6 @@ void cnvs_font_destroy(cnvs_font *f) {
     }
     CFRelease(f->font);
     free(f);
-}
-
-// Full TextMetrics for a shaped line: font-wide metrics from `primary`, width and
-// the actual (ink) box from the shaped runs -- each glyph's tight rect measured in
-// its own (possibly fallback) font and offset by the running pen.
-void cnvs_shaped_metrics(cnvs_shaped const *s, cnvs_font *primary, cnvs_text_metrics *m) {
-    memset(m, 0, sizeof *m);
-    if (!primary) {
-        return;
-    }
-    CTFontRef font = primary->font;
-    double ascent = CTFontGetAscent(font);
-    double descent = CTFontGetDescent(font);
-    double size = CTFontGetSize(font);
-    m->font_ascent = (float)ascent;
-    m->font_descent = (float)descent;
-    // Split the em square (height == size) by the ascent/descent ratio.
-    double denom = ascent + descent;
-    double em_asc = denom > 0.0 ? size * ascent / denom : size;
-    m->em_ascent = (float)em_asc;
-    m->em_descent = (float)(size - em_asc);
-    m->alphabetic_baseline = 0.0f;
-    m->hanging_baseline = (float)ascent;        // ~top of the ascenders
-    m->ideographic_baseline = -(float)descent;  // ~bottom of the descenders
-    if (!s) {
-        return;
-    }
-    // Walk the shaped runs, summing advances and unioning each glyph's tight rect
-    // (its run's font, glyph space y up, baseline at 0) offset by the running pen.
-    double pen = 0.0;
-    bool any = false;
-    double minx = 0.0, maxx = 0.0, miny = 0.0, maxy = 0.0;
-    for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
-        CTFontRef rf = (CTFontRef)run.font;
-        for (int i = 0; i < run.count; i++) {
-            CGGlyph g = (CGGlyph)run.glyph[i];
-            CGRect rr = CTFontGetBoundingRectsForGlyphs(rf, kCTFontOrientationHorizontal,
-                                                        &g, NULL, 1);
-            if (!CGRectIsNull(rr) && !CGRectIsEmpty(rr)) {
-                double x0 = pen + rr.origin.x;
-                double x1 = x0 + rr.size.width;
-                double y0 = rr.origin.y;
-                double y1 = y0 + rr.size.height;
-                if (!any) {
-                    minx = x0; maxx = x1; miny = y0; maxy = y1;
-                    any = true;
-                } else {
-                    if (x0 < minx) { minx = x0; }
-                    if (x1 > maxx) { maxx = x1; }
-                    if (y0 < miny) { miny = y0; }
-                    if (y1 > maxy) { maxy = y1; }
-                }
-            }
-            pen += run.xadv[i];
-        }
-    }
-    m->width = (float)pen;
-    m->actual_left = any ? (float)(-minx) : 0.0f;
-    m->actual_right = any ? (float)maxx : 0.0f;
-    m->actual_ascent = any ? (float)maxy : 0.0f;
-    m->actual_descent = any ? (float)(-miny) : 0.0f;
 }
 
 void cnvs_font_vmetrics(cnvs_font *f, float *ascent, float *descent) {

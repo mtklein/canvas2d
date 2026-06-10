@@ -28,7 +28,16 @@ typedef struct {
     int32_t *__counted_by(count) cluster;    // source UTF-16 index per glyph (logical)
     int count;
     bool rtl;
-    void *__single font;   // opaque CTFontRef for this run (font fallback), retained
+    bool is_color;  // a color (emoji) font's run: glyphs are drawn, not outlined.
+                    // Set at the boundary when the run is copied out, so the draw
+                    // walk never needs a per-run boundary query.
+    int name_id;    // interned font-name id in the owning canvas's text cache, or
+                    // -1 = resolve through `font`.  Live runs from the boundary
+                    // carry -1; runs rebuilt by replay carry the recorded id and
+                    // may have font == NULL -- their curves and metrics come from
+                    // the cache by name id, no CTFontRef needed to draw.
+    void *__single font;   // opaque CTFontRef for this run (font fallback),
+                           // retained; NULL for a replay-built run
 } cnvs_glyph_run;
 
 typedef struct {
@@ -138,6 +147,7 @@ typedef struct {
     uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
     uint64_t stamp;      // last-use tick, the LRU ordering
     cnvs_shaped *__single s;  // owned; freed on eviction/clear
+    bool emitted;  // already serialized into the active recording (cnvs_record.c)
 } cnvs_shape_slot;
 
 // One cached glyph outline.  A blank or color glyph caches as upem == 0 with no
@@ -147,14 +157,25 @@ typedef struct {
     cnvs_vec2 *__counted_by(npts) pt;
     int nverbs, npts;
     float upem;    // units_per_em; 0 for a glyph with no outline
+    float ink_x0, ink_y0, ink_x1, ink_y1;  // tight ink box, FONT UNITS, y up,
+                   // baseline-relative (x0,y0 bottom-left) -- size-independent
+                   // like the curves, so one entry serves measureText at every
+                   // size; all zero for a blank glyph
     uint32_t key;  // font_id << 16 | glyph id
     bool used;
+    bool emitted;  // already serialized into the active recording
 } cnvs_glyph_slot;
 
-// An interned font name (the sized model: length + bytes, no NUL games).
+// An interned font name (the sized model: length + bytes, no NUL games), plus
+// the font's vertical metrics normalized to size 1.0 -- ascent/descent are
+// linear in size, so one record (and one serialized `font` block) serves every
+// font size; the consumer multiplies by size_px.
 typedef struct {
     char *__counted_by(len) name;
     int len;
+    float asc1, desc1;  // ascent/descent at size 1.0, positive magnitudes from
+    bool has_vm;        // the baseline; valid only once has_vm is set
+    bool emitted;       // already serialized into the active recording
 } cnvs_font_name;
 
 typedef struct {
@@ -190,8 +211,57 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
 // Intern `font`'s name (one boundary name fetch per run, not per glyph) and
 // return its id for glyph keys; -1 when there is no cache, the intern table is
 // full, or any allocation fails -- the glyph walk then takes plain boundary
-// calls.
+// calls.  A fresh intern also records the font's vmetrics (cnvs_run_vmetrics).
 int cnvs_text_cache_font(cnvs_text_cache *__single c, void *__single font);
+
+// Intern a font name by its bytes, no boundary call: the replay path, and the
+// canvas's own pinned family.  Same -1 contract as cnvs_text_cache_font.
+int cnvs_text_cache_intern(cnvs_text_cache *__single c,
+                           char const *__counted_by(len) name, int len);
+
+// The per-name vertical metrics record (asc1/desc1 in cnvs_font_name): set
+// keeps the first value it is given (live and replayed values agree, so first
+// wins keeps one canonical pair); get returns false until one is set.
+void cnvs_text_cache_set_vmetrics(cnvs_text_cache *__single c, int fid,
+                                  float asc1, float desc1);
+bool cnvs_text_cache_get_vmetrics(cnvs_text_cache *__single c, int fid,
+                                  float *__single asc1, float *__single desc1);
+
+// The glyph lookup behind the outline and metrics walks: the cached canonical
+// curves + ink bounds for (fid, glyph).  A miss fetches BOTH from the boundary
+// (one curves fetch + one bounds fetch per (font, glyph) ever), normalizes the
+// ink box to font units (size_px is the size `font` is built at, the px scale's
+// numerator), and inserts.  NULL when the cache can't serve -- no cache, fid <
+// 0, no `font` handle to fetch with (a replay-built run whose glyph block was
+// missing), a full table, or a failed allocation -- and the caller degrades to
+// a plain boundary call (or, with no handle, to a blank glyph).
+cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
+        int fid, void *__single font, uint16_t glyph, float size_px);
+
+// Insert one glyph's canonical data under (fid, glyph) without a boundary
+// handle: the replay path.  Takes ownership of the heap arrays `verb` and `pt`
+// whether or not it inserts; an existing entry wins (replaying onto a canvas
+// that already drew live), and a full table or failed build just leaves the
+// entry out -- the cache's usual best-effort degradation, not an error.
+void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
+        uint16_t glyph, cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
+        cnvs_vec2 *__counted_by(npts) pt, int npts, float upem,
+        float ink_x0, float ink_y0, float ink_x1, float ink_y1);
+
+// Insert a rebuilt shaped line for (size_px, text): the replay path.  Takes
+// ownership of `s` always (freeing it when it can't insert); copies the key
+// bytes; replaces an existing entry for the same key.
+void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
+        char const *__counted_by(len) text, int len, cnvs_shaped *__single s);
+
+// The recorder's view of a cached line: the slot holding (size_px, text), or
+// NULL when it isn't cached.  A peek -- no stats, no LRU bump, no shaping.
+cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c,
+        float size_px, char const *__counted_by(len) text, int len);
+
+// Clear every `emitted` mark (font names, glyphs, shaped lines): a new
+// recording starts with nothing serialized yet.
+void cnvs_text_cache_unmark(cnvs_text_cache *__single c);
 
 // The per-canvas cache handle, for tests and stats (implemented in canvas.c).
 // Deliberately not in the public canvas.h: tests include internal headers.
@@ -235,10 +305,12 @@ void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
 void cnvs_glyph_draw(void *__single font, uint16_t glyph, float x, float y,
                      uint8_t *__counted_by(w * h * 4) px, int w, int h);
 
-// Whether `font` is a color (bitmap-glyph) font, e.g. the AppleColorEmoji a mixed
-// string falls back to.  Its glyphs have no outline and must be drawn with
-// cnvs_glyph_draw rather than cnvs_glyph_outline.  Boundary helper.
-bool cnvs_run_is_color(void const *__single font);
+// A run font's vertical metrics normalized to size 1.0 (positive magnitudes
+// from the baseline; multiply by size_px).  Boundary helper: feeds the interned
+// name's vmetrics record so one fetch -- and one serialized `font` block --
+// serves every size.
+void cnvs_run_vmetrics(void const *__single font, float *__single asc1,
+                       float *__single desc1);
 
 // One glyph's tight ink bounding box in font px, baseline-relative, y up (x0,y0 =
 // bottom-left, x1,y1 = top-right).  All zero for a blank glyph.  Boundary helper:
@@ -273,9 +345,18 @@ typedef struct {
     float hanging_baseline, ideographic_baseline;
 } cnvs_text_metrics;
 
-// Full TextMetrics for a shaped line, fallback-aware: width and the actual (ink)
-// box come from the shaped runs (each glyph measured in its own fallback font); the
-// font-wide metrics (ascent/descent/em/baselines) come from `primary`.  Boundary
-// helper -- it reads the run glyphs the shaper handed back.
-void cnvs_shaped_metrics(cnvs_shaped const *__single s, cnvs_font *__single primary,
+// Full TextMetrics for a shaped line, fallback-aware and checked-core.  Width
+// sums the run advances; the actual (ink) box unions each glyph's tight box
+// from the cache's font-unit entry (populating it through the boundary on a
+// miss, exactly like the outline walk) scaled to size_px -- so a warm or
+// replayed canvas measures without a boundary call.  A color (emoji) run's
+// glyphs fall back to a live cnvs_glyph_bounds when the run still has its font
+// handle and contribute no ink otherwise (the replay case; see canvas.h).  The
+// font-wide metrics (ascent/descent/em/baselines) derive from ascent_px/
+// descent_px -- the primary font's vertical metrics at size_px, which canvas.c
+// reads through its cached vmetrics record -- and size_px.  s may be NULL
+// (font-wide metrics only).
+void cnvs_shaped_metrics(cnvs_text_cache *__single cache,
+                         cnvs_shaped const *__single s, float size_px,
+                         float ascent_px, float descent_px,
                          cnvs_text_metrics *__single out);
