@@ -226,10 +226,16 @@ def main():
     # build-system metadata (ninja won't delete it on interrupt or clean it).
     # The globbed directories are implicit inputs: a directory's mtime bumps
     # exactly when an entry is added/removed/renamed (not when a file's contents
-    # change), so creating or deleting a source file also regenerates the graph,
-    # while ordinary edits don't.  Keep this list in sync with the glob.glob
-    # calls (gallery PNGs are rewritten in place by `ninja images`, which leaves
-    # the directory mtime alone, so watching gallery/ does not loop).
+    # change), so creating a source file also regenerates the graph, while
+    # ordinary edits don't.  Keep this list in sync with the glob.glob calls
+    # (gallery PNGs are rewritten in place by `ninja images`, which leaves the
+    # directory mtime alone, so watching gallery/ does not loop).
+    #
+    # DELETING a globbed source still needs a manual `python3 configure.py`:
+    # ninja refuses to load a graph whose stale manifest references the missing
+    # file ("needed by ... missing and no known rule to make it") before it
+    # ever reaches the regen edge -- even when asked for build.ninja alone.
+    # Verified empirically when bench_blur_vpf.c was retired.
     w("rule configure")
     w("  command = python3 configure.py")
     w("  generator = 1")
