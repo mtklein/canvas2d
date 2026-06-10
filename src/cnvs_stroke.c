@@ -1,8 +1,21 @@
 #include "cnvs_stroke.h"
 
 #include <math.h>
+#include <string.h>
 
 static float const TAU = 6.2831853f;
+
+// Planar (SoA) segment batches: x- and y-planes of four segments' directions
+// and normals, so the per-segment normalize (one sqrt and two divides) runs
+// four lanes per instruction.  Each lane computes the SAME operations in the
+// SAME order as the scalar path -- batching across lanes, never reassociating
+// within one -- so every emitted vertex is bit-identical and the
+// order-sensitive coverage sums downstream can't tell the difference.
+// Lane values the scalar join/bookkeeping code needs are spilled ONCE per
+// block into small arrays: a variable-index vector subscript makes clang
+// round-trip the whole register through the stack at every access.
+typedef float cnvs_f4 __attribute__((ext_vector_type(4)));
+typedef float cnvs_f8 __attribute__((ext_vector_type(8)));
 
 // Unit direction and length of p0->p1; false if degenerate.
 static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
@@ -106,19 +119,32 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
     return 3;
 }
 
+// The join at vertex v between incoming dir d0 and outgoing dir d1, staged at
+// stage[k..] (wedge joins) or landed directly (round joins -- the staged verts
+// flush first so emission order holds).  Returns the new stage cursor, or -1
+// on allocation failure.
+static int join_at(cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
+                   cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1, float hw,
+                   cnvs_line_join join, float miter_limit) {
+    float cross = d0.x * d1.y - d0.y * d1.x;
+    if (cross > -1e-6f && cross < 1e-6f) {
+        return k;  // collinear: no gap to fill
+    }
+    if (join == CNVS_JOIN_ROUND) {
+        if (!cnvs_verts_append(out, stage, k) || !emit_disc(out, v, hw)) {
+            return -1;
+        }
+        return 0;
+    }
+    return k + stage_wedge(stage + k, v, d0, d1, cross, hw, join, miter_limit);
+}
+
 // Fill the join at vertex v between incoming dir d0 and outgoing dir d1.
 static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
                       float hw, cnvs_line_join join, float miter_limit) {
-    float cross = d0.x * d1.y - d0.y * d1.x;
-    if (cross > -1e-6f && cross < 1e-6f) {
-        return true;  // collinear: no gap to fill
-    }
-    if (join == CNVS_JOIN_ROUND) {
-        return emit_disc(out, v, hw);
-    }
-    cnvs_vec2 stage[6];
-    int k = stage_wedge(stage, v, d0, d1, cross, hw, join, miter_limit);
-    return cnvs_verts_append(out, stage, k);
+    cnvs_vec2 stage[48];
+    int k = join_at(out, stage, 0, v, d0, d1, hw, join, miter_limit);
+    return k >= 0 && cnvs_verts_append(out, stage, k);
 }
 
 // Cap at open end `e`, with `capdir` pointing outward along the line.
@@ -169,29 +195,123 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
     cnvs_vec2 first_pt = { .x = 0.0f, .y = 0.0f };
     cnvs_vec2 last_pt = { .x = 0.0f, .y = 0.0f };
 
-    for (int s = 0; s < nseg; s++) {
-        cnvs_vec2 p0 = pts[s];
-        cnvs_vec2 p1 = pts[(s + 1) % m];
-        cnvs_vec2 dir;
-        float len;
-        if (!seg_dir(p0, p1, &dir, &len)) {
-            continue;
+    // Segments go four per block: two AoS point loads, direction/normal math
+    // on x/y planes (see the cnvs_f4 comment above), the four quads transposed
+    // back to vertex order with constant-index shuffles, then a scalar pass
+    // over the lanes stages each segment's quad and join in emission order and
+    // lands the block with one checked append.  The loads want pts[s..s+4]
+    // contiguous, so a closed loop's wrapping tail (at most four segments) and
+    // short tails take the segment-at-a-time path below -- same expressions,
+    // same bits, just unbatched.
+    int s = 0;
+    while (s < nseg) {
+        if (nseg - s >= 4 && s + 4 < m) {
+            cnvs_f8 q0, q1;
+            memcpy(&q0, pts + s, sizeof q0);      // one bounds check, 4 points
+            memcpy(&q1, pts + s + 1, sizeof q1);  // (x0,y0,x1,y1,...)
+            cnvs_f8 dq = q1 - q0;                 // lane-wise p1 - p0
+            cnvs_f4 dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
+            cnvs_f4 dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
+            cnvs_f4 len = __builtin_elementwise_sqrt(dx * dx + dy * dy);
+            // Degenerate lanes divide too (IEEE: huge/inf/NaN, all discarded);
+            // the emission pass skips them exactly where seg_dir bails.
+            cnvs_f4 dirx = dx / len;
+            cnvs_f4 diry = dy / len;
+            cnvs_f4 nrmx = -diry * hw;
+            cnvs_f4 nrmy = dirx * hw;
+            // Corners in AoS form: nrm re-interleaved, then p +/- nrm is the
+            // same lane-wise fadd/fsub the scalar corner math does.
+            cnvs_f8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
+            cnvs_f8 za0 = q0 + nrm;
+            cnvs_f8 zb0 = q0 - nrm;
+            cnvs_f8 za1 = q1 + nrm;
+            cnvs_f8 zb1 = q1 - nrm;
+
+            // Transpose each quad's corners into vertex order -- (a0,b0,b1)
+            // (a0,b1,a1) -- as three 16-byte stores.  A macro because shuffle
+            // indices must be literal constants.
+            cnvs_vec2 quads[24];
+#define CNVS_PUT_QUAD(i)                                                          \
+    do {                                                                          \
+        cnvs_f4 t0 = __builtin_shufflevector(za0, zb0, 2 * (i), 2 * (i) + 1,      \
+                                             8 + 2 * (i), 9 + 2 * (i));           \
+        cnvs_f4 t1 = __builtin_shufflevector(zb1, za0, 2 * (i), 2 * (i) + 1,      \
+                                             8 + 2 * (i), 9 + 2 * (i));           \
+        cnvs_f4 t2 = __builtin_shufflevector(zb1, za1, 2 * (i), 2 * (i) + 1,      \
+                                             8 + 2 * (i), 9 + 2 * (i));           \
+        memcpy(quads + 6 * (i), &t0, sizeof t0);                                  \
+        memcpy(quads + 6 * (i) + 2, &t1, sizeof t1);                              \
+        memcpy(quads + 6 * (i) + 4, &t2, sizeof t2);                              \
+    } while (0)
+            CNVS_PUT_QUAD(0);
+            CNVS_PUT_QUAD(1);
+            CNVS_PUT_QUAD(2);
+            CNVS_PUT_QUAD(3);
+#undef CNVS_PUT_QUAD
+
+            // Spill the lanes the scalar pass reads (see the typedef comment).
+            float l4[4], dx4[4], dy4[4];
+            cnvs_vec2 pp0[4], pp1[4];
+            memcpy(l4, &len, sizeof l4);
+            memcpy(dx4, &dirx, sizeof dx4);
+            memcpy(dy4, &diry, sizeof dy4);
+            memcpy(pp0, &q0, sizeof pp0);
+            memcpy(pp1, &q1, sizeof pp1);
+
+            cnvs_vec2 stage[48];  // 4 segments x (6 quad verts + 6 join verts)
+            int k = 0;
+            for (int i = 0; i < 4; i++) {
+                if (l4[i] < 1e-6f) {
+                    continue;  // degenerate: seg_dir's cutoff, lane form
+                }
+                memcpy(stage + k, quads + 6 * i, 6 * sizeof *stage);
+                k += 6;
+                cnvs_vec2 dir = { .x = dx4[i], .y = dy4[i] };
+                if (have_prev) {
+                    k = join_at(out, stage, k, pp0[i], prev_dir, dir, hw, join,
+                                miter_limit);
+                    if (k < 0) {
+                        return false;
+                    }
+                }
+                if (!have_first) {
+                    first_dir = dir;
+                    first_pt = pp0[i];
+                    have_first = true;
+                }
+                prev_dir = dir;
+                last_pt = pp1[i];
+                have_prev = true;
+            }
+            if (!cnvs_verts_append(out, stage, k)) {
+                return false;
+            }
+            s += 4;
+        } else {
+            cnvs_vec2 p0 = pts[s];
+            cnvs_vec2 p1 = pts[(s + 1) % m];
+            cnvs_vec2 dir;
+            float len;
+            if (seg_dir(p0, p1, &dir, &len)) {
+                cnvs_vec2 nrm = { .x = -dir.y * hw, .y = dir.x * hw };
+                if (!emit_quad(out, p0, p1, nrm)) {
+                    return false;
+                }
+                if (have_prev &&
+                    !emit_join(out, p0, prev_dir, dir, hw, join, miter_limit)) {
+                    return false;
+                }
+                if (!have_first) {
+                    first_dir = dir;
+                    first_pt = p0;
+                    have_first = true;
+                }
+                prev_dir = dir;
+                last_pt = p1;
+                have_prev = true;
+            }
+            s += 1;
         }
-        cnvs_vec2 nrm = { .x = -dir.y * hw, .y = dir.x * hw };
-        if (!emit_quad(out, p0, p1, nrm)) {
-            return false;
-        }
-        if (have_prev && !emit_join(out, p0, prev_dir, dir, hw, join, miter_limit)) {
-            return false;
-        }
-        if (!have_first) {
-            first_dir = dir;
-            first_pt = p0;
-            have_first = true;
-        }
-        prev_dir = dir;
-        last_pt = p1;
-        have_prev = true;
     }
     if (!have_first) {
         return true;

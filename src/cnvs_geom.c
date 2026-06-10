@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef float cnvs_geom_f8 __attribute__((ext_vector_type(8)));
+
 static bool verts_reserve(cnvs_verts *v, int need) {
     if (need <= v->cap) {
         return true;
@@ -26,7 +28,25 @@ bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int 
     if (!verts_reserve(v, v->len + k)) {
         return false;
     }
-    memcpy(v->data + v->len, src, (size_t)k * sizeof *src);
+    // Blocks are small (a quad stages 6 verts, a join wedge 3), so a variable-
+    // size memcpy goes out of line to libc memmove and the call costs more than
+    // the copy -- it was a third of bench_stroke's self-time.  Copy four verts
+    // (one 32-byte vector) per step instead: the constant-size memcpys inline
+    // to one load/store pair.  The destination converts to a counted local
+    // FIRST -- that's the block's one real bounds check; copying through
+    // v->data directly would reload data/len/cap and recheck every step, since
+    // the stores could alias *v.
+    int cnt = k;  // __counted_by on a local can't name a parameter
+    cnvs_vec2 *__counted_by(cnt) dst = v->data + v->len;
+    int i = 0;
+    for (; i + 4 <= cnt; i += 4) {
+        cnvs_geom_f8 q;
+        memcpy(&q, src + i, sizeof q);
+        memcpy(dst + i, &q, sizeof q);
+    }
+    for (; i < cnt; i++) {
+        dst[i] = src[i];
+    }
     v->len += k;
     return true;
 }
