@@ -45,8 +45,14 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    stdDev = the given px) over the op's premultiplied tile, blurring against
    transparency rather than clamped edges; each paint site widens its bbox by
    the filter chain's spread so the soft skirt outgrows the shape. Held to a
-   brute-force reference in `test_filter`. `drop-shadow()` — the last filter
-   function, which composes this kernel with the shadow machinery — remains.
+   brute-force reference in `test_filter`.
+6. ~~**`filter` `drop-shadow()`**~~ — **done**, and with it the filter list is
+   feature-complete. The entry composites the op's tile source-over on top of
+   a blurred (item 5's passes), offset, colour-tinted copy of its own alpha —
+   shadow-under-drawing as one image, which later list entries keep filtering
+   (a colour function after a drop-shadow recolours the shadow too; both
+   orders pinned in `test_filter`). All that's left of `filter` spec-wise is
+   the CSS string form, deliberately out of scope — see the partial row below.
 
 Internals (not API features) considered and deferred: a sparse/RLE coverage format
 to skip the transparent ~40–60% of a fill's bbox — analysis and why dense+SIMD stays
@@ -88,18 +94,21 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   silhouette is the op's coverage (exact for opaque paint/images, an
   approximation for semi-transparent gradient/pattern alpha or a sprite's own
   alpha shape).
-- **`filter`** covers the eight colour functions (`brightness`, `contrast`,
-  `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`) and
-  `blur()` (three box passes ≈ the spec's Gaussian, like shadows), applied in
-  list order to every painted op, behind a typed API (`canvas_add_filter_*` —
-  no CSS string parsing). `drop-shadow()` — which composes the blur kernel
-  with the shadow machinery — remains.
+- **`filter`** is functionally complete — the eight colour functions
+  (`brightness`, `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`,
+  `saturate`, `sepia`), `blur()`, and `drop-shadow()` (both three box passes ≈
+  the spec's Gaussian, like shadows), applied in list order to every painted
+  op. What keeps it in this section is the interface: it's a typed API
+  (`canvas_add_filter_*`), and the CSS string form (`ctx.filter =
+  "grayscale(1) blur(2px)"`) is deliberately not parsed — string parsing has
+  nothing for `-fbounds-safety` to say, the same call as `Path2D`'s SVG
+  path-data strings above. `drop-shadow()`'s offsets also round to whole
+  device pixels, the shadowOffset deviation above.
 
 ## Missing entirely
 
 - Nothing at the moment: every remaining gap is a narrower-than-spec row above
-  or out of scope below. (`filter`'s `drop-shadow()` is the nearest thing —
-  tracked under partial now that the colour functions and `blur()` are in.)
+  or out of scope below.
 
 ## Out of scope for a headless renderer
 
