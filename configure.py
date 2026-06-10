@@ -145,14 +145,16 @@ FUZZ_COMPILE_SAN = "-fsanitize=fuzzer-no-link " + FUZZ_SAN_COMMON
 FUZZ_LINK_SAN = "-fsanitize=fuzzer " + FUZZ_SAN_COMMON
 FUZZ_CFLAGS = ("-std=c23 -g -O1 -fno-omit-frame-pointer -Ifuzz/shim -Ifuzz "
                "-Iinclude -Isrc -Wall -Wno-unknown-warning-option")
-# Modules the libFuzzer harnesses do NOT link: the pixvm VM, the colour LUT, and
-# the ring buffer aren't reached by any harness.  The fuzz core is otherwise the
-# whole canvas render core (core_c, globbed) plus the CPU compositor backend -- so
-# a new cnvs_*.c module is picked up automatically.  Kept as an *exclude* set
-# because it's small and stable, where the include list grows with every feature
-# (and silently drifting out of date is exactly how the old hand-listed CORE rotted).
-FUZZ_CORE_EXCLUDE = {"lut.c", "ring.c", "pixvm_pipe.c", "pixvm_switch.c",
-                     "pixvm_thread.c"}
+# Modules the libFuzzer harnesses do NOT link.  Currently empty: every src/*.c is
+# part of the render core a harness can reach.  (It used to hold the pixvm VM, the
+# colour LUT, and the ring buffer -- self-contained -fbounds-safety probes no
+# harness exercised -- but those have been retired from the tree.)  The fuzz core
+# is the whole canvas render core (core_c, globbed) plus the CPU compositor backend,
+# so a new cnvs_*.c module is picked up automatically.  Kept as an *exclude* set
+# (rather than an include list) because the include list grows with every feature
+# and silently drifting out of date is exactly how the old hand-listed CORE rotted;
+# an empty exclude needs no maintenance.
+FUZZ_CORE_EXCLUDE = set()
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?).
 VARIANTS = {
