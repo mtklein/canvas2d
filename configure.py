@@ -6,9 +6,18 @@ Build variants (one source tree):
   release  -Os -g -fbounds-safety           (shipping build)
   debug    -O0 -g -fbounds-safety -fsanitize=address,integer,undefined
   unsafe   -Os -g                           (release minus -fbounds-safety)
+  tsan     -O1 -g -fbounds-safety -fsanitize=thread   (thread harness only)
 
 `release` vs `unsafe` isolates the cost of -fbounds-safety: same sources and
 optimisation, only the flag differs. `ninja benchcmp` runs hyperfine over the two.
+
+`tsan` exists because -fsanitize=thread cannot combine with the debug variant's
+address/integer/UB sanitizers; it CAN combine with -fbounds-safety (verified on
+Apple clang 21), so the bounds story holds under it.  It builds the core plus
+exactly one test, tests/test_threads.c -- the threaded-user harness (pthread
+workers each rendering their own canvas; see docs/rasterization.md 3.5) -- and
+runs it as part of a bare `ninja`.  Data races are this variant's whole job;
+every other test stays on the release/debug runners.
 
 The C core is built -std=c23 -Werror -Weverything (plus -fbounds-safety for
 release/debug); the few disabled warnings below are each justified.
@@ -178,10 +187,17 @@ FUZZ_CORE_EXCLUDE = set()
 # profiling them (the linked binaries keep a debug map into build/*/obj/*.o,
 # where the DWARF lives).  Debug info changes no codegen -- the gallery
 # byte-diff would catch it if it did.
+#
+# tsan builds no suite tests (its flag is False) but the variant loop
+# special-cases in the ONE binary it exists for, the threaded-user harness
+# (tests/test_threads.c): -fsanitize=thread watches for data races while the
+# harness's workers render distinct canvases concurrently.  -O1 per the TSan
+# docs; -fbounds-safety stays on (the combination works on Apple clang 21).
 VARIANTS = {
     "release": ("-Os -g", True,  True,  True),
     "debug":   (_DEBUG, True, True,  False),
     "unsafe":  ("-Os -g", False, False, True),
+    "tsan":    ("-O1 -g -fsanitize=thread", True, False, False),
 }
 
 
@@ -458,6 +474,21 @@ def main():
                 w(f"build {o}: cc_{variant} {e}")
                 w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
                 produced.append(exe)
+        if variant == "tsan":
+            # The one binary this variant exists for: the threaded-user harness,
+            # under -fsanitize=thread.  halt_on_error aborts on the first race
+            # (TSan's default merely tallies and exits 66 at the end), so the
+            # gate fails fast with the report adjacent to the failed edge.
+            t = os.path.join("tests", "test_threads.c")
+            o = obj(variant, t)
+            exe = os.path.join("build", variant, "test_threads")
+            stamp = exe + ".runok"
+            w(f"build {o}: cc_{variant} {t}")
+            w(f"build {exe}: link_{variant} {o} {' '.join(lib_objs)}")
+            w(f"build {stamp}: run {exe}")
+            w(f"  bin = TSAN_OPTIONS=halt_on_error=1 ./{exe}")
+            produced.append(exe)
+            test_stamps.append(stamp)
         w("")
         w(f"build {variant}: phony {' '.join(produced)}")
         w("")
@@ -797,7 +828,8 @@ def main():
     w("build oom: phony build/oom/test_oom.runok")
 
     # The default `all` builds every variant's executables -- tests, benches and
-    # examples -- runs the whole test suite (`test`), re-renders the gallery PNGs
+    # examples -- runs the whole test suite (`test`, which includes the threaded-
+    # user harness under the tsan variant), re-renders the gallery PNGs
     # (`images`) so they track the renderer in lockstep, replays the fuzz corpus
     # (`fuzzcorpus`), runs the security gates `analyze` (static UAF/double-free/leak),
     # `leakcheck` (the macOS `leaks` tool), and `forgecheck` (no `__unsafe_` escape
@@ -805,7 +837,7 @@ def main():
     # is meant to do everything, so all of these gate it; the gates are idempotent
     # (stamps), so a clean tree is still "no work to do".  Only the always-rerun
     # measurement targets (benchcmp, profile, coverage) stay opt-in.
-    all_targets = ("release debug unsafe test images "
+    all_targets = ("release debug unsafe tsan test images "
                    "analyze leakcheck forgecheck oom")
     if fuzz_corpus:
         all_targets += " fuzzcorpus"
