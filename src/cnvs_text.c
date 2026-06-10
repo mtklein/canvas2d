@@ -269,14 +269,15 @@ int cnvs_text_cache_font(cnvs_text_cache *__single c, void *__single font) {
 }
 
 // MurmurHash3's 32-bit finalizer: avalanche the packed key across the table.
-// Its multiplies wrap by design, so run them in 64-bit and truncate explicitly
-// -- the same bits, but nothing for -fsanitize=integer's unsigned-wrap check
-// (the debug variant) to flag.
+// Its multiplies wrap by design; __builtin_mul_overflow with the overflow flag
+// ignored is the sanctioned spelling of that intent -- the builtin is *defined*
+// as wrapping, so -fsanitize=integer's unsigned-wrap check (the debug variant)
+// leaves it alone, and the call site says "deliberate" without width games.
 static uint32_t mix32(uint32_t h) {
     h ^= h >> 16;
-    h = (uint32_t)((uint64_t)h * 0x85EBCA6Bu);
+    (void)__builtin_mul_overflow(h, 0x85EBCA6Bu, &h);
     h ^= h >> 13;
-    h = (uint32_t)((uint64_t)h * 0xC2B2AE35u);
+    (void)__builtin_mul_overflow(h, 0xC2B2AE35u, &h);
     h ^= h >> 16;
     return h;
 }
