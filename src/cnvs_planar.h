@@ -155,6 +155,19 @@ static inline cnvs_px8 cnvs_px8_scale(cnvs_px8 p, cnvs_h8 k) {
     return (cnvs_px8){ p.r * k, p.g * k, p.b * k, p.a * k };
 }
 
+// Planar premultiply: scale the rgb planes by the alpha plane and clamp every
+// plane -- alpha included -- to [0,1].  Lane-wise exactly cnvs_premultiply
+// (cnvs_math.c), planes instead of one pixel's lanes.
+static inline cnvs_px8 cnvs_px8_premultiply(cnvs_px8 p) {
+    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
+    cnvs_px8 o = { p.r * p.a, p.g * p.a, p.b * p.a, p.a };
+    o.r = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.r));
+    o.g = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.g));
+    o.b = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.b));
+    o.a = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.a));
+    return o;
+}
+
 // The compositor's output clamp: ao = min(a, 1) ('lighter' can exceed 1), and
 // every channel -- alpha included -- pins into [0, ao], preserving the
 // premultiplied invariant rgb <= a.  Lane-wise the exact fminnm/fmaxnm fold

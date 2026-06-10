@@ -2721,14 +2721,29 @@ static void put_image_sub(canvas *__single cv,
     }
     // Source column/row of the first painted canvas pixel; col0+px stays in
     // [sx, sx+sw) ⊆ [0,w) and row0+py in [sy, sy+sh) ⊆ [0,h), so si < w*h*4 <= len.
+    // Eight pixels per step: ld4 deinterleaves the RGBA8 source into channel
+    // planes (cnvs_planar.h), a true _Float16 divide scales each to [0,1] --
+    // bit-equal to the old per-channel (float)x / 255.0f-then-narrow for every
+    // u8 value (checked exhaustively; f16 division of an exact-in-f16 integer
+    // rounds once, where the f32 path rounds twice to the same place) -- and
+    // the planar premultiply writes finished tile pixels through st4.
     int col0 = (int)(cx0 - dx);
     int row0 = (int)(cy0 - dy);
+    _Float16 const k255 = (_Float16)255.0f;
     for (int py = 0; py < rh; py++) {
-        for (int px = 0; px < rw; px++) {
+        int px = 0;
+        for (; px + 8 <= rw; px += 8) {
             int si = ((row0 + py) * w + (col0 + px)) * 4;
-            cv->tile[py * rw + px] = cnvs_premultiply(cnvs_unpremul_of(
-                (float)data[si] / 255.0f, (float)data[si + 1] / 255.0f,
-                (float)data[si + 2] / 255.0f, (float)data[si + 3] / 255.0f));
+            cnvs_px8 p = cnvs_px8_load_rgba8(data + si);
+            p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
+            cnvs_px8_store(cv->tile + py * rw + px, cnvs_px8_premultiply(p));
+        }
+        if (px < rw) {  // tail: k < 8 pixels through the same planar block
+            int k = rw - px;
+            int si = ((row0 + py) * w + (col0 + px)) * 4;
+            cnvs_px8 p = cnvs_px8_load_rgba8_k(data + si, k);
+            p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
+            cnvs_px8_store_k(cv->tile + py * rw + px, k, cnvs_px8_premultiply(p));
         }
     }
     // putImageData overwrites and ignores the clip: composite COPY with the clip
