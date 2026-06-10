@@ -1981,8 +1981,8 @@ static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
             if (color) {
                 draw_color_glyph(cv, run.font, run.glyph[i], pen, oy);
             } else {
-                cnvs_glyph_outline(run.font, run.glyph[i], pen, oy, to_device,
-                                   CANVAS_FLATTEN_TOL, &cv->text_path);
+                cnvs_glyph_outline(run.font, run.glyph[i], s->size_px, pen, oy,
+                                   to_device, CANVAS_FLATTEN_TOL, &cv->text_path);
             }
             pen += run.xadv[i];
         }

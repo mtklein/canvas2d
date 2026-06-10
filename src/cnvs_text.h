@@ -34,7 +34,10 @@ typedef struct {
 typedef struct {
     cnvs_glyph_run *__counted_by(nruns) run;
     int nruns;
-    int text_len;  // source UTF-16 length, the bound for cluster indices
+    int text_len;   // source UTF-16 length, the bound for cluster indices
+    float size_px;  // font size the line was shaped at, user px (every run's font,
+                    // fallback included, is at this size; the numerator of the
+                    // canonical-curve px scale)
 } cnvs_shaped;
 
 // Shape UTF-8 `text` with font `name` at `size_px`.  Runs come back in visual order.
@@ -68,17 +71,49 @@ int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
 // that fell back to a different font reports a different name).
 int cnvs_run_font_name(void const *__single font, char *__counted_by(cap) buf, int cap);
 
+// A glyph outline crosses the boundary as canonical curve data: verbs plus control
+// points in FONT UNITS -- the font's design grid, `units_per_em` units to the em,
+// y up, baseline-relative, x from the glyph origin.  The same bytes describe the
+// glyph at every size, pen, and transform; the checked core scales them by
+// size_px / units_per_em (flipping y for canvas's y-down user space), places them
+// at the pen, maps them through the CTM, and flattens -- nothing device- or
+// call-specific crosses.
+typedef enum : uint8_t {
+    CNVS_GLYPH_MOVE,   // 1 point
+    CNVS_GLYPH_LINE,   // 1 point
+    CNVS_GLYPH_QUAD,   // 2 points: control, end
+    CNVS_GLYPH_CUBIC,  // 3 points: control 1, control 2, end
+    CNVS_GLYPH_CLOSE,  // no points
+} cnvs_glyph_verb;
+
+// Fetch one glyph's canonical curves.  The checked caller owns the buffers and the
+// boundary fills within their caps (the cnvs_glyph_draw hand-off, twice over); the
+// true counts come back in *nverbs/*npts and may exceed the caps, in which case the
+// caller grows its buffers and calls again.  *units_per_em is the font's design-grid
+// resolution, the denominator of the px scale.  A blank or color (emoji) glyph has
+// no outline: both counts come back 0.  Boundary helper.
+void cnvs_glyph_curves(void *__single font, uint16_t glyph,
+                       cnvs_glyph_verb *__counted_by(vcap) verb, int vcap,
+                       cnvs_vec2 *__counted_by(pcap) pt, int pcap,
+                       int *__single nverbs, int *__single npts,
+                       float *__single units_per_em);
+
 // Outline a shaped line at pen origin (ox,oy) in user space into `out` (device space,
 // mapped by to_device, curves flattened at `tol` px).  Layout -- the pen advance --
-// runs checked in the core; each glyph's outline is fetched per-glyph by the boundary
-// using its run's font.  Returns the advance width.  Color glyphs (emoji) have no
-// outline path and contribute only their advance.
+// runs checked in the core; each glyph's canonical curves are fetched from the
+// boundary and transformed + flattened here too.  Returns the advance width.  Color
+// glyphs (emoji) have no outline path and contribute only their advance.
 float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
                           cnvs_mat to_device, float tol, cnvs_path *__single out);
 
-// Outline one glyph of the opaque `font` at pen origin (ox,oy).  Boundary helper.
-void cnvs_glyph_outline(void *__single font, uint16_t glyph, float ox, float oy,
-                        cnvs_mat to_device, float tol, cnvs_path *__single out);
+// Outline one glyph at pen origin (ox,oy) in user space into `out` (device space,
+// mapped by to_device, curves flattened at `tol` px).  Checked core: fetches the
+// glyph's canonical font-unit curves from the boundary, scales them to user px at
+// `size_px`, and runs the transform and the adaptive flattening every other path
+// takes -- in checked C, not in the shim.
+void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
+                        float ox, float oy, cnvs_mat to_device, float tol,
+                        cnvs_path *__single out);
 
 // Draw one glyph of the opaque `font` into an RGBA8 premultiplied buffer at (x,y) in
 // bitmap space (origin bottom-left, y up).  The rendering path for color glyphs

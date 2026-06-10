@@ -82,52 +82,78 @@ static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
     return ok;
 }
 
-// Glyph-outline walk: Core Text glyph space is y-up, baseline-relative; flip y,
-// place at the pen origin, map user->device.
-struct walk {
-    cnvs_path *out;
-    cnvs_mat to_device;
-    float ox, oy;
-    float tol;
+// Canonical-curve walk: translate CGPath elements into the caller's verb + point
+// arrays, converting to font units.  Core Text emits CGPathApply points at the
+// font's point size (y up, baseline-relative), so multiply by units-per-em / size
+// to land on the font's design grid.  No pen, no transform, no flattening -- those
+// run in the checked core now (cnvs_glyph_outline in cnvs_text.c).
+struct curves {
+    cnvs_glyph_verb *verb;
+    cnvs_vec2 *pt;
+    int vcap, pcap;
+    int nv, np;       // true counts, kept past the caps so the caller can grow
+    double to_units;  // CT point-size px -> font units
 };
 
-static cnvs_vec2 gpt(struct walk const *w, CGPoint p) {
-    cnvs_vec2 u = { w->ox + (float)p.x, w->oy - (float)p.y };
-    return cnvs_mat_apply(w->to_device, u);
+static void put(struct curves *c, cnvs_glyph_verb v, CGPoint const *p, int n) {
+    if (c->nv < c->vcap) {
+        c->verb[c->nv] = v;
+    }
+    c->nv++;
+    for (int i = 0; i < n; i++) {
+        if (c->np < c->pcap) {
+            c->pt[c->np] = (cnvs_vec2){ (float)(p[i].x * c->to_units),
+                                        (float)(p[i].y * c->to_units) };
+        }
+        c->np++;
+    }
 }
 
 static void emit(void *info, CGPathElement const *e) {
-    struct walk *w = info;
+    struct curves *c = info;
     switch (e->type) {
         case kCGPathElementMoveToPoint:
-            cnvs_path_move_to(w->out, gpt(w, e->points[0]));
+            put(c, CNVS_GLYPH_MOVE, e->points, 1);
             break;
         case kCGPathElementAddLineToPoint:
-            cnvs_path_line_to(w->out, gpt(w, e->points[0]));
+            put(c, CNVS_GLYPH_LINE, e->points, 1);
             break;
         case kCGPathElementAddQuadCurveToPoint:
-            cnvs_path_quad_to(w->out, gpt(w, e->points[0]), gpt(w, e->points[1]), w->tol);
+            put(c, CNVS_GLYPH_QUAD, e->points, 2);
             break;
         case kCGPathElementAddCurveToPoint:
-            cnvs_path_cubic_to(w->out, gpt(w, e->points[0]), gpt(w, e->points[1]),
-                               gpt(w, e->points[2]), w->tol);
+            put(c, CNVS_GLYPH_CUBIC, e->points, 3);
             break;
         case kCGPathElementCloseSubpath:
-            cnvs_path_close(w->out);
+            put(c, CNVS_GLYPH_CLOSE, e->points, 0);
             break;
     }
 }
 
-void cnvs_glyph_outline(void *font, uint16_t glyph, float ox, float oy,
-                        cnvs_mat to_device, float tol, cnvs_path *out) {
+void cnvs_glyph_curves(void *font, uint16_t glyph,
+                       cnvs_glyph_verb *verb, int vcap,
+                       cnvs_vec2 *pt, int pcap,
+                       int *nverbs, int *npts, float *units_per_em) {
+    *nverbs = 0;
+    *npts = 0;
+    *units_per_em = 0.0f;
     if (!font) {
         return;
     }
+    unsigned upem = CTFontGetUnitsPerEm((CTFontRef)font);
+    double size = CTFontGetSize((CTFontRef)font);
+    if (upem == 0 || size <= 0.0) {
+        return;
+    }
+    *units_per_em = (float)upem;
     CGPathRef path = CTFontCreatePathForGlyph((CTFontRef)font, (CGGlyph)glyph, NULL);
     if (path) {  // NULL for blanks and for color glyphs (emoji) -- no outline
-        struct walk w = { .out = out, .to_device = to_device, .ox = ox, .oy = oy, .tol = tol };
-        CGPathApply(path, &w, emit);
+        struct curves c = { .verb = verb, .pt = pt, .vcap = vcap, .pcap = pcap,
+                            .to_units = (double)upem / size };
+        CGPathApply(path, &c, emit);
         CGPathRelease(path);
+        *nverbs = c.nv;
+        *npts = c.np;
     }
 }
 
@@ -192,6 +218,7 @@ cnvs_shaped *cnvs_shape(char const *name, float size_px, char const *text) {
         out = calloc(1, sizeof *out);
         if (out) {
             out->text_len = (int)CFStringGetLength(str);
+            out->size_px = size_px;
             out->nruns = (int)nruns;
             out->run = calloc((size_t)nruns, sizeof *out->run);
             bool ok = out->run != NULL;
