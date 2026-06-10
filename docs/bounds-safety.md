@@ -259,14 +259,14 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 | phase | overhead |
 |---|---|
 | 2D RGBA8 blit | 1.00× |
-| PNG encode | 1.01× |
 | gradient eval / gradient fill | 1.01–1.02× |
 | cubic-Bézier flattening | 1.02× |
 | stroke expansion | 1.03× |
 | analytic coverage fill | 1.07× |
-| end-to-end | 1.07× |
+| end-to-end (now deflate-dominated) | — see below |
 | box blur, vertical pass | 1.09× |
-| box blur, horizontal pass | **1.10×** |
+| box blur, horizontal pass | 1.10× |
+| PNG encode (in-house deflate) | **2.1×** |
 
 The isolation matters. The end-to-end ~1.07× is a blend that hides a wide spread
 between phases — and a regression in a fast phase could disappear into it. What
@@ -279,9 +279,16 @@ the spread shows:
   the checks at all. But each clipped row is one contiguous run, so the inner loop
   is really a `memcpy`; collapsing the eight per-pixel checks into a single per-row
   span check ran **13× faster, and dropped the overhead to ~1.0×**. PNG
-  encode tells the same story: its CRC went from a byte-at-a-time table to ARMv8's
-  `crc32` instruction (~7× faster, also 1.00×). The check you can hoist out of the
-  hot loop stops costing.
+  encode told the same story while it was stored-zlib: its CRC went from a
+  byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, 1.00×).
+- **The in-house deflate is the new worst case (~2.1×), and it's the blit's
+  shape all over again**: the LZ77 matcher's hash-chain walk and
+  byte-at-a-time match verify are scalar indexed loads with almost no
+  arithmetic between them — per-element checks with nothing to hide behind.
+  The Up-only PNG row filters that feed it, by contrast, are whole-row
+  vector subtract/add (one check per 16-lane block) and cost nothing. The
+  matcher is the standing candidate for the blit treatment; until then this
+  row is the honest price of a from-scratch compressor under the flag.
 - **The coverage fill (~1.07×, down from ~1.22×)** got the same treatment twice:
   the resolve (per-row prefix sum, fill-rule fold, 8-bit convert) runs 8-wide,
   and the accumulate telescopes each row span's interior columns — all depositing
