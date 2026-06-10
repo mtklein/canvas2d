@@ -1,7 +1,9 @@
 #pragma once
 
-// Compositor boundary.  The canvas produces finished premultiplied tiles; the
-// compositor only composites them (compositor_cpu.c implements this ABI).
+// Compositor boundary.  The canvas produces premultiplied tiles -- with the
+// op's coverage either folded into the tile's alpha (over-family modes,
+// filtered ops) or riding alongside as a coverage plane -- and the compositor
+// composites them (compositor_cpu.c implements this ABI).
 //
 // Tiles and the target are premultiplied RGBA16F (cnvs_premul), row-major, top row
 // first; read() returns the premultiplied target verbatim.  putImageData is blend

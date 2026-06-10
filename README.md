@@ -164,7 +164,10 @@ x to fit):
 `globalCompositeOperation`, the Porter-Duff operators — how source alpha combines
 with the destination (`source-in`, `xor`, `copy`, the `destination-*` family, …),
 each compositing a blue "destination" square with an orange "source" disc over a
-transparency checkerboard:
+transparency checkerboard. The operators are bounded by the source's coverage:
+partial coverage lerps between the blend and the destination, so pixels the disc
+doesn't touch keep the destination — even under `copy` and the `-in`/`-out`
+family (docs/rasterization.md §3.8):
 
 ![porterduff](gallery/porterduff.png)
 

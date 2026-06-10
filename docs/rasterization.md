@@ -108,20 +108,26 @@ One pipeline, per op, over the op's device-space bounding box
    (nonzero = clamp |run|; evenodd = triangle wave), and quantizes once to a
    dense u8 coverage buffer.
 4. **Shade** (`paint_tile` / `paint_tile_pattern` / `draw_image_quad`): eight
-   pixels per step over channel planes (the §3.1 conversion). Coverage widens
-   to one f32 plane, the fold (paint alpha × global alpha × coverage) is f32
-   vector arithmetic with the scalar form's exact association, one narrowing
-   convert to f16, then the planar premultiply (`cnvs_px8_premultiply`) and an
-   st4 into the premultiplied RGBA16F tile. Gradients get their parameters and
-   colors solved 8-wide per row ([gradient-eval.md](decisions/gradient-eval.md))
-   and are picked back up as planes (ld4 over the row buffer). Pattern and
-   image sampling stay scalar per lane — the taps are data-dependent gathers —
-   inside the planar fold, with the device→source coordinate chain vectorized
-   (elementwise, bit-exact per lane).
+   pixels per step over channel planes (the §3.1 conversion). For over-family
+   composite modes (and any filtered op), coverage widens to one f32 plane and
+   the fold (paint alpha × global alpha × coverage) is f32 vector arithmetic
+   with the scalar form's exact association; for every other mode the tile is
+   the source at full strength (paint alpha × global alpha only) and the op's
+   u8 coverage buffer rides to composite as its own plane (§3.8's ruling,
+   landed). Either way: one narrowing convert to f16, then the planar
+   premultiply (`cnvs_px8_premultiply`) and an st4 into the premultiplied
+   RGBA16F tile. Gradients get their parameters and colors solved 8-wide per
+   row ([gradient-eval.md](decisions/gradient-eval.md)) and are picked back up
+   as planes (ld4 over the row buffer). Pattern and image sampling stay scalar
+   per lane — the taps are data-dependent gathers — inside the planar fold,
+   with the device→source coordinate chain vectorized (elementwise, bit-exact
+   per lane).
 5. **Composite** ([compositor_cpu.c](../src/compositor_cpu.c) +
    [cnvs_planar.h](../src/cnvs_planar.h)): 8 pixels per step as four f16 channel
-   planes, ld4/st4 at the seams, all 26 modes straight-line vector code, clip
-   attenuation folded in. This is the fast, finished part.
+   planes, ld4/st4 at the seams, all 26 modes straight-line vector code.
+   Effective coverage (op plane × clip mask) applies per the §3.8 ruling:
+   folded into src for the over-family, `lerp(dst, blend, cov)` after the
+   full-strength blend for the rest. This is the fast, finished part.
 
 Strokes go through the same path: [cnvs_stroke.c](../src/cnvs_stroke.c) expands
 the polyline to triangles, `stroke_device_path` feeds each triangle's edges with
@@ -586,19 +592,31 @@ The fused shape deletes the tile on the no-filter path outright.
 
 Two things the model surfaces that a refactor must not blur past:
 
-- **Coverage semantics, ruled (Mike, 2026-06-10):** "in principle it's done as
-  a lerp between the output of the blend function and the destination" —
-  folding coverage into source alpha "is correct math for several blend modes,
-  but not all of them." The criterion, from `co = Fa·s + Fb·d`: fold ≡ lerp
-  exactly when `Fa` is `sa`-free and `Fb` is affine in `sa` with `Fb(0)=1` —
-  the over-family (source-over, destination-over, destination-out,
-  source-atop, xor, lighter) qualifies; copy, the in/out family, and every
-  separable/non-separable blend do not. Implementation shape: the dedicated
-  source-over kernel keeps its fold (proven equal); the generic kernel lerps,
-  becoming spec-exact for the rest. The switch re-baselines porterduff/blend
-  AA-edge pixels — a correctness fix, same genre as the gradient hard-stop
-  fix — verified against a supersampled oracle (§3.7's conflation scenes
-  share the apparatus) and Mike's eyeballs.
+- **Coverage semantics, ruled (Mike, 2026-06-10) — IMPLEMENTED (same day):**
+  "in principle it's done as a lerp between the output of the blend function
+  and the destination" — folding coverage into source alpha "is correct math
+  for several blend modes, but not all of them." The criterion, from
+  `co = Fa·s + Fb·d`: fold ≡ lerp exactly when `Fa` is `sa`-free and `Fb` is
+  affine in `sa` with `Fb(0)=1`. As landed (`compositor_coverage_folds`,
+  [compositor.h](../src/compositor.h)): source-over, destination-over,
+  destination-out, source-atop, and xor fold; copy, the in/out family,
+  destination-atop, **lighter**, and all 20 blend-family modes lerp — shade
+  skips its coverage fold for those, the op's u8 coverage buffer rides to
+  `compositor_blend` as its own plane, and the kernel computes
+  `out = lerp(dst, blend(src,dst), op_cov × clip_cov)` (clip coverage was the
+  same bug and takes the same lerp). Two findings sharpened the ruling while
+  implementing, both pinned by the oracle (tests/test_coverage_lerp.c):
+  (1) lighter passes the Fa/Fb criterion only unclamped — its `co = s + d`
+  saturates, the supersampled truth clamps per subsample, and the fold was up
+  to 0.25 off the oracle where it clamps, so lighter lerps; (2) every
+  separable/non-separable blend is fold-EXACT in exact arithmetic — the
+  premultiplied term `T = sa·da·B(d/da, s/sa)` is degree-1 homogeneous in
+  `(s, sa)`, so for blends the lerp moved only f16 rounding (gallery
+  blend.png: 368 px, max delta 1/255), never semantics. The genuine fixes are
+  copy/in/out/dst-atop (oracle error sums collapsed ~800×; porterduff.png
+  re-baselined, 1030 px, max delta 163) and lighter's clamp edge. Filtered
+  ops still fold before the filter runs — blur consumes the silhouette from
+  the tile's alpha, after which coverage genuinely is source alpha.
 - **Materialization boundaries stay.** blur()/drop-shadow()/shadows need the
   op's spatial extent: the filter path keeps a tile; shadows are a second
   pipeline invocation (blurred cov_fn, tint shader_fn). The fused pipeline is
@@ -620,15 +638,28 @@ parallelism a caller already has via N canvases over cached tiles; §3.5 carries
 the ruling and the essentiality bar a future threading proposal must clear. The
 how-to-thread analysis stays parked there.)
 
-1. **The unified draw pipeline** (§3.8, Mike's model — race staged-buffers vs
-   fused registers). *Why first:* it's the structural move everything else
-   lands inside — deleting the ~16 B/px tile round trip on the no-filter path
-   attacks bandwidth the sample profile can't even see, and the coverage
-   semantics ruling it forces (fold vs lerp) should happen before more code
-   accretes on the fold. The sampling and clip work below survive it (they
-   live inside shader_fn / upstream of it). *Kill:* the fused shape loses to
-   the staged shape AND the staged shape loses to status quo (then the tile
-   was free and the model is documentation, not code).
+(§3.8's coverage-semantics ruling **landed 2026-06-10** — the fold-vs-lerp
+split is in the kernel, the oracle pins it, porterduff/blend re-baselined; the
+outcome is recorded in §3.8. Mike's sequencing for the rest: seam efficiency
+next, then the unification question.)
+
+1. **Seam efficiency** (§3.8's experiment, the structural half): the
+   shade→composite seam is now a premultiplied f16 tile *plus, for lerping
+   modes, the op's u8 coverage plane* — a ~16 B/px round trip (plus 1 B/px
+   coverage re-read) that exists only because canvas and compositor were once
+   different machines. Race Mike's two shapes — (a) staged planar row buffers
+   between stages vs (b) a fused per-block register pipeline (`cnvs_px8` is an
+   HVA; stage functions compose through q0–q3) — and let paired benches pick.
+   The fused shape deletes the tile on the no-filter path outright, and the
+   coverage plane stops being a buffer at all (cov_fn feeds the lerp in
+   registers). *Why first:* it attacks bandwidth the sample profile can't even
+   see, and the coverage seam just gained a second buffer to delete. The
+   sampling and clip work below survive it (they live inside shader_fn /
+   upstream of it). *Kill:* the fused shape loses to the staged shape AND the
+   staged shape loses to status quo (then the tile was free and the model is
+   documentation, not code). If the race never beats status quo, the broader
+   unified-pipeline rewrite (§3.8's full model) is a consideration to revisit
+   only after this evidence exists.
 2. **Vectorize the sampling interior of `draw_image_quad`** (the 25 %
    pole). The taps stay scalar — there is no NEON gather — but per block the
    four tap colours can land in f32 planes and the bilinear weight/lerp
