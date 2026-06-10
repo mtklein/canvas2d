@@ -11,6 +11,7 @@
 #include "cnvs_mem.h"
 #include "cnvs_path.h"
 #include "cnvs_path2d.h"
+#include "cnvs_planar.h"
 #include "cnvs_png.h"
 #include "cnvs_record.h"
 #include "cnvs_replay.h"
@@ -2590,18 +2591,35 @@ void canvas_draw_image_scaled(canvas *__single cv,
     cnvs_rec_leave(cv->rec);
 }
 
-// One pixel's four channels as a vector: a premultiplied cnvs_premul is four
-// contiguous _Float16, so it loads straight into an h4.
-typedef _Float16 h4 __attribute__((ext_vector_type(4)));
-typedef uint8_t u8x4 __attribute__((ext_vector_type(4)));
+// One planar block's un-premultiply and 8-bit quantize, in _Float16: the
+// divide, clamp, and 255-scale with no f32 anywhere (docs/decisions/
+// color-axis.md).  A fully transparent lane (a <= 0) un-premultiplies to all
+// zero -- selected bitwise BEFORE the byte convert, so the masked divide's
+// inf/NaN lanes never reach the (undefined for them) float->int conversion.
+// Every 8-bit edge value still quantizes back exactly (test_image's
+// exhaustive round-trip).  Returns finished byte values in [0.5, 255.5) for
+// the truncating store seam (cnvs_px8_store_rgba8).
+static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
+    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
+    cnvs_m8 opaque = p.a > zero;
+    cnvs_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
+    u.r = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
+                          __builtin_elementwise_max(zero, u.r)), zero);
+    u.g = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
+                          __builtin_elementwise_max(zero, u.g)), zero);
+    u.b = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
+                          __builtin_elementwise_max(zero, u.b)), zero);
+    u.a = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
+                          __builtin_elementwise_max(zero, u.a)), zero);
+    _Float16 const half = (_Float16)0.5f, k255 = (_Float16)255.0f;
+    return (cnvs_px8){ u.r * k255 + half, u.g * k255 + half,
+                       u.b * k255 + half, u.a * k255 + half };
+}
 
 // Read the canvas back as unpremultiplied RGBA8: the compositor returns
-// premultiplied pixels, and the un-premultiply and 8-bit quantize happen here.
-// All in _Float16 arithmetic -- the divide, clamp, and 255-scale, with no f32
-// anywhere (docs/decisions/color-axis.md).  Vectorized per pixel across the
-// four channels: one vector divide instead of three scalar divides, branchless
-// clamp+convert instead of four cnvs_f2u8 calls.  Every 8-bit edge value still
-// quantizes back exactly (test_image's exhaustive round-trip).
+// premultiplied pixels, and the un-premultiply and 8-bit quantize happen here,
+// eight pixels per step over channel planes with st4 re-interleaving at the
+// RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same block gathered.
 static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
@@ -2612,22 +2630,14 @@ static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, i
         return;
     }
     compositor_read(cv->comp, buf, n);
-    for (int i = 0; i < n; i++) {
-        h4 ph;
-        memcpy(&ph, &buf[i], sizeof ph);          // load (r,g,b,a) _Float16
-        _Float16 a = ph[3];
-        u8x4 b;
-        if (a <= (_Float16)0.0f) {  // fully transparent un-premultiplies to all zero
-            b = (u8x4){ 0, 0, 0, 0 };
-        } else {
-            h4 u = ph / a;  // r/a, g/a, b/a (lane 3 = a/a, overwritten next)
-            u[3] = a;
-            u = __builtin_elementwise_min((h4)(_Float16)1.0f,
-                                          __builtin_elementwise_max((h4)(_Float16)0.0f, u));
-            h4 v = u * (_Float16)255.0f + (_Float16)0.5f;  // in [0.5, 255.5];
-            b = __builtin_convertvector(v, u8x4);          // truncating convert rounds
-        }
-        memcpy(out + i * 4, &b, sizeof b);
+    int i = 0;
+    for (; i + 8 <= n; i += 8) {
+        cnvs_px8_store_rgba8(out + i * 4, unpremul_quant8(cnvs_px8_load(buf + i)));
+    }
+    if (i < n) {
+        int k = n - i;
+        cnvs_px8_store_rgba8_k(out + i * 4, k,
+                               unpremul_quant8(cnvs_px8_load_k(buf + i, k)));
     }
     free(buf);
 }
