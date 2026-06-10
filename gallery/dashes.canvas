@@ -1,0 +1,28 @@
+set_fill_rgba 0.100000001 0.109999999 0.140000001 1
+fill_rect 0 0 260 120
+set_line_width 4
+set_line_dash 14 9
+set_stroke_rgba 0.899999976 0.449999988 0.449999988 1
+begin_path
+move_to 15 26
+line_to 245 26
+stroke
+set_line_dash 2 7 14 7
+set_stroke_rgba 0.449999988 0.850000024 0.550000012 1
+begin_path
+move_to 15 50
+line_to 245 50
+stroke
+set_line_dash 2 6
+set_stroke_rgba 0.550000012 0.649999976 0.949999988 1
+begin_path
+move_to 15 72
+line_to 245 72
+stroke
+set_line_dash 11 8
+set_line_width 3
+set_stroke_rgba 0.949999988 0.850000024 0.300000012 1
+begin_path
+arc 130 98 16 0 6.28318548 0
+close_path
+stroke

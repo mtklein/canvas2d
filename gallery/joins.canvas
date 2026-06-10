@@ -1,0 +1,43 @@
+set_fill_rgba 0.100000001 0.109999999 0.140000001 1
+fill_rect 0 0 280 160
+set_line_width 16
+set_line_join miter
+set_stroke_rgba 0.949999988 0.550000012 0.349999994 1
+begin_path
+move_to 27 80
+line_to 55 26
+line_to 83 80
+stroke
+set_line_join round
+set_stroke_rgba 0.949999988 0.550000012 0.349999994 1
+begin_path
+move_to 112 80
+line_to 140 26
+line_to 168 80
+stroke
+set_line_join bevel
+set_stroke_rgba 0.949999988 0.550000012 0.349999994 1
+begin_path
+move_to 197 80
+line_to 225 26
+line_to 253 80
+stroke
+set_line_join miter
+set_line_cap butt
+set_stroke_rgba 0.400000006 0.800000012 0.949999988 1
+begin_path
+move_to 45 130
+line_to 90 130
+stroke
+set_line_cap round
+set_stroke_rgba 0.400000006 0.800000012 0.949999988 1
+begin_path
+move_to 125 130
+line_to 170 130
+stroke
+set_line_cap square
+set_stroke_rgba 0.400000006 0.800000012 0.949999988 1
+begin_path
+move_to 205 130
+line_to 250 130
+stroke

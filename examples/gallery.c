@@ -31,14 +31,15 @@ static void save(canvas *__single cv, char const *__null_terminated path) {
     canvas_destroy(cv);
 }
 
-// Begin recording a text scene to its committed gallery/<scene>.canvas program,
-// emitted alongside the PNG.  Called at the TOP of a text scene, before any
+// Begin recording a scene to its committed gallery/<scene>.canvas program,
+// emitted alongside the PNG.  Called at the TOP of every scene, before any
 // draws, so the file captures the whole scene; recording finalizes when the
 // scene's canvas is destroyed in save().  Like the PNG, only the final rep
 // writes (GALLERY_REPS profiling reruns skip it), so a bare `ninja images` run
-// emits each text scene's program exactly once.  The program embeds the
-// font/glyph/bitmap/shape blocks the scene's text needs, so it replays on a
-// machine without the fonts -- the cross-machine determinism gate
+// emits each scene's program exactly once.  The program is self-contained --
+// font/glyph/bitmap/shape blocks for the text, image blocks for the
+// drawImage/putImageData/pattern sources, path blocks for the Path2D draws --
+// so it replays on a machine without the fonts: the determinism gate
 // (tests/test_replay_gallery.c) replays each one and byte-compares to the PNG.
 static void record_scene(canvas *__single cv, char const *__null_terminated path) {
     if (!g_skip_save && !canvas_record_to(cv, path)) {
@@ -65,6 +66,7 @@ static void shapes(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/shapes.canvas");
     canvas_set_fill_rgba(c, 0.12f, 0.12f, 0.16f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 240.0f, 180.0f);
 
@@ -120,6 +122,7 @@ static void winding(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/winding.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
@@ -153,6 +156,7 @@ static void dashes(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/dashes.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 260.0f, 120.0f);
     canvas_set_line_width(c, 4.0f);
@@ -199,6 +203,7 @@ static void imagedata(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/imagedata.canvas");
     canvas_set_fill_rgba(c, 0.12f, 0.12f, 0.16f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 240.0f, 90.0f);
 
@@ -229,6 +234,7 @@ static void joinscaps(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/joins.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 160.0f);
 
@@ -268,6 +274,7 @@ static void paths(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/paths.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 170.0f);
 
@@ -307,6 +314,7 @@ static void roundrect(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/roundrect.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 548.0f, 232.0f);
 
@@ -375,6 +383,7 @@ static void strokerect(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/strokerect.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 232.0f);
 
@@ -446,6 +455,7 @@ static void conic(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/conic.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 176.0f);
 
@@ -550,6 +560,7 @@ static void pattern(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/pattern.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 474.0f, 212.0f);
 
@@ -596,6 +607,7 @@ static void smoothing(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/smoothing.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 210.0f);
 
@@ -901,6 +913,7 @@ static void hittest(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/hittest.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 262.0f);
 
@@ -982,6 +995,7 @@ static void dirtyrect(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/dirtyrect.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 518.0f, 210.0f);
 
@@ -1043,6 +1057,7 @@ static void path2d_demo(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/path2d.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 240.0f);
 
@@ -1161,6 +1176,7 @@ static void porterduff(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/porterduff.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 504.0f, 329.0f);
 
@@ -1268,6 +1284,7 @@ static void subrect(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/subrect.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 196.0f);
 
@@ -1332,6 +1349,7 @@ static void affine(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/affine.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 478.0f, 272.0f);
 
@@ -1381,6 +1399,7 @@ static void miterdash(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/miterdash.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 258.0f);
 
@@ -1467,6 +1486,7 @@ static void clipping(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/clip.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
@@ -1503,6 +1523,7 @@ static void gradients(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/gradients.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
@@ -1557,6 +1578,7 @@ static void batching(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/batch.canvas");
     canvas_set_fill_rgba(c, 0.07f, 0.08f, 0.10f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
@@ -1584,6 +1606,7 @@ static void drawimage(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/drawimage.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
@@ -1669,6 +1692,7 @@ static void blend(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/blend.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 724.0f, 396.0f);
 
@@ -1717,6 +1741,7 @@ static void shadows(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/shadows.canvas");
     canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.96f, 1.0f);  // light ground
     canvas_fill_rect(c, 0.0f, 0.0f, 400.0f, 130.0f);
 
@@ -1972,6 +1997,7 @@ static void filters(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/filters.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 644.0f);
 

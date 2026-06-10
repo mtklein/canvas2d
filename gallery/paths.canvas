@@ -1,0 +1,23 @@
+set_fill_rgba 0.100000001 0.109999999 0.140000001 1
+fill_rect 0 0 280 170
+set_fill_rgba 0.400000006 0.649999976 0.949999988 1
+begin_path
+ellipse 72 52 52 28 0 0 6.28318548 0
+fill
+set_fill_rgba 0.550000012 0.850000024 0.449999988 1
+begin_path
+round_rect 158 16 100 72 22
+fill
+set_stroke_rgba 0.949999988 0.600000024 0.200000003 1
+set_line_width 4
+begin_path
+round_rect 158 16 100 72 22
+stroke
+set_stroke_rgba 0.850000024 0.449999988 0.899999976 1
+set_line_width 6
+set_line_cap round
+begin_path
+move_to 30 150
+arc_to 150 150 150 105 30
+line_to 150 105
+stroke

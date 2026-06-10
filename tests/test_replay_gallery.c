@@ -1,11 +1,12 @@
-// The capstone of the text-determinism arc: each committed gallery/<scene>.canvas
-// text program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls.
+// The capstone of the record/replay arc: each committed gallery/<scene>.canvas
+// program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
+// ZERO Core Text boundary calls -- all 32 scenes, the format's whole surface.
 //
-// The seven text scenes record self-contained programs alongside their PNGs
-// (examples/gallery.c's record_scene; src/cnvs_record.c serializes the font/
-// glyph/bitmap/shape blocks the text needs).  This test is the cross-machine
-// determinism gate: for each program it
+// Every scene records a self-contained program alongside its PNG
+// (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
+// font/glyph/bitmap/shape blocks the text needs, the image blocks behind
+// drawImage/putImageData/patterns, and the path blocks behind the Path2D
+// draws).  This test is the determinism gate: for each program it
 //   (a) loads the committed PNG via canvas_load_png (the Z2 decoder),
 //   (b) replays the program onto a fresh canvas of the PNG's dimensions,
 //   (c) byte-compares the canvas's read_rgba to the decoded PNG, and
@@ -15,17 +16,20 @@
 // match the committed render exactly.  The zero-miss assertion proves the
 // glyphs and emoji captures came from the program's embedded blocks, not from
 // host fonts -- a single miss would mean a fill_text fell back through the
-// boundary to Core Text (and on a machine WITHOUT the recording machine's fonts
-// -- the CI runner has no Libian TC, it is download-on-demand -- that fallback
-// would also have produced different, wrong, or blank glyphs, which the byte
-// compare independently catches).  Run on the fontless runner via bare ninja,
-// this is what proves replay used the embedded data, not the host's fonts;
-// locally (where the fonts exist) it must also pass, so a stale .canvas or a
-// renderer change that didn't re-emit the program is caught here too.
+// boundary to Core Text (and on a machine WITHOUT the recording machine's
+// fonts -- the CI runner has no Libian TC, it is download-on-demand -- that
+// fallback would also have produced different, wrong, or blank glyphs, which
+// the byte compare independently catches).  Scenes that draw no text pass (d)
+// trivially; the seven TEXT scenes additionally assert the cache saw real
+// traffic (shape/glyph hits > 0), so the zero-miss claim can't pass vacuously
+// where it matters.  Run on the fontless runner via bare ninja, this is what
+// proves replay used the embedded data, not the host's fonts; locally (where
+// the fonts exist) it must also pass, so a stale .canvas or a renderer change
+// that didn't re-emit the program is caught here too.
 //
-// See test_record_text.c (the in-memory round-trip + strict-parse unit) and
-// docs/text-boundary.md.  The gallery PNGs/programs are committed build
-// artifacts re-emitted in lockstep by `ninja images`.
+// See test_record.c / test_record_text.c (the in-memory round-trip +
+// strict-parse units) and docs/text-boundary.md.  The gallery PNGs/programs
+// are committed build artifacts re-emitted in lockstep by `ninja images`.
 
 #include "test_util.h"
 
@@ -38,26 +42,53 @@
 #include <stdlib.h>
 #include <string.h>
 
-// The seven text scenes, each a (program, image) pair of committed artifacts.
+// All 32 scenes, each a (program, image) pair of committed artifacts; `text`
+// marks the seven text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
 // test_pngload.c lists its corpus rather than assembling paths from dirent
-// names: -fbounds-safety has no safe runtime-bytes -> __null_terminated bridge).
-// The directory walk below counts the committed .canvas files to prove this
-// list is complete -- recording a new text scene without listing it here fails
-// the count loudly.
+// names: -fbounds-safety has no safe runtime-bytes -> __null_terminated
+// bridge).  The directory walk below counts the committed .canvas files to
+// prove this list is complete -- recording a new scene without listing it
+// here fails the count loudly.
 typedef struct {
     char const *__null_terminated canvas;
     char const *__null_terminated png;
+    bool text;
 } scene_pair;
 
 static scene_pair const k_scenes[] = {
-    { "gallery/emoji.canvas",        "gallery/emoji.png"        },
-    { "gallery/emojiscale.canvas",   "gallery/emojiscale.png"   },
-    { "gallery/shaping.canvas",      "gallery/shaping.png"      },
-    { "gallery/text.canvas",         "gallery/text.png"         },
-    { "gallery/textgrid.canvas",     "gallery/textgrid.png"     },
-    { "gallery/textmaxwidth.canvas", "gallery/textmaxwidth.png" },
-    { "gallery/textmetrics.canvas",  "gallery/textmetrics.png"  },
+    { "gallery/affine.canvas",       "gallery/affine.png",       false },
+    { "gallery/batch.canvas",        "gallery/batch.png",        false },
+    { "gallery/blend.canvas",        "gallery/blend.png",        false },
+    { "gallery/clip.canvas",         "gallery/clip.png",         false },
+    { "gallery/conic.canvas",        "gallery/conic.png",        false },
+    { "gallery/dashes.canvas",       "gallery/dashes.png",       false },
+    { "gallery/dirtyrect.canvas",    "gallery/dirtyrect.png",    false },
+    { "gallery/drawimage.canvas",    "gallery/drawimage.png",    false },
+    { "gallery/emoji.canvas",        "gallery/emoji.png",        true  },
+    { "gallery/emojiscale.canvas",   "gallery/emojiscale.png",   true  },
+    { "gallery/filters.canvas",      "gallery/filters.png",      false },
+    { "gallery/gradients.canvas",    "gallery/gradients.png",    false },
+    { "gallery/hittest.canvas",      "gallery/hittest.png",      false },
+    { "gallery/imagedata.canvas",    "gallery/imagedata.png",    false },
+    { "gallery/joins.canvas",        "gallery/joins.png",        false },
+    { "gallery/miterdash.canvas",    "gallery/miterdash.png",    false },
+    { "gallery/path2d.canvas",       "gallery/path2d.png",       false },
+    { "gallery/paths.canvas",        "gallery/paths.png",        false },
+    { "gallery/pattern.canvas",      "gallery/pattern.png",      false },
+    { "gallery/porterduff.canvas",   "gallery/porterduff.png",   false },
+    { "gallery/roundrect.canvas",    "gallery/roundrect.png",    false },
+    { "gallery/shadows.canvas",      "gallery/shadows.png",      false },
+    { "gallery/shapes.canvas",       "gallery/shapes.png",       false },
+    { "gallery/shaping.canvas",      "gallery/shaping.png",      true  },
+    { "gallery/smoothing.canvas",    "gallery/smoothing.png",    false },
+    { "gallery/strokerect.canvas",   "gallery/strokerect.png",   false },
+    { "gallery/subrect.canvas",      "gallery/subrect.png",      false },
+    { "gallery/text.canvas",         "gallery/text.png",         true  },
+    { "gallery/textgrid.canvas",     "gallery/textgrid.png",     true  },
+    { "gallery/textmaxwidth.canvas", "gallery/textmaxwidth.png", true  },
+    { "gallery/textmetrics.canvas",  "gallery/textmetrics.png",  true  },
+    { "gallery/winding.canvas",      "gallery/winding.png",      false },
 };
 enum { SCENE_N = (int)(sizeof k_scenes / sizeof k_scenes[0]) };
 
@@ -91,12 +122,14 @@ static void check_scene(scene_pair s) {
     // Zero boundary misses: every shape and glyph (outline AND emoji capture --
     // captures bump glyph_misses on a boundary fetch) came from the program's
     // embedded blocks.  A nonzero miss is a Core Text fallback -- exactly what a
-    // fontless machine cannot do.
+    // fontless machine cannot do.  (Trivially zero for a scene with no text.)
     cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     CHECK(c->shape_misses == 0);
     CHECK(c->glyph_misses == 0);
-    CHECK(c->shape_hits > 0);   // the program really exercised the text cache
-    CHECK(c->glyph_hits > 0);
+    if (s.text) {
+        CHECK(c->shape_hits > 0);  // the program really exercised the text cache
+        CHECK(c->glyph_hits > 0);
+    }
     if (c->shape_misses != 0 || c->glyph_misses != 0) {
         (void)fprintf(stderr,
                       "  %s crossed the boundary: shape_miss=%d glyph_miss=%d\n",
@@ -111,7 +144,11 @@ static void check_scene(scene_pair s) {
         int cmp = memcmp(ref, got, (size_t)n);
         CHECK(cmp == 0);
         if (cmp != 0) {
-            (void)fprintf(stderr, "  %s diverged from %s\n", s.canvas, s.png);
+            (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);
+        } else if (getenv("REPLAY_GALLERY_VERBOSE")) {
+            // Tests are silent on success (the suite's convention); the
+            // per-scene IDENTICAL table is opt-in for a human run.
+            (void)fprintf(stderr, "  %-32s IDENTICAL\n", s.canvas);
         }
     }
 

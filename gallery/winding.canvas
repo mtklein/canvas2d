@@ -1,0 +1,32 @@
+set_fill_rgba 0.100000001 0.109999999 0.140000001 1
+fill_rect 0 0 300 120
+set_fill_rule nonzero
+set_fill_rgba 0.949999988 0.800000012 0.25 1
+begin_path
+rect 20 20 80 80
+move_to 85 35
+line_to 35 35
+line_to 35 85
+line_to 85 85
+close_path
+fill
+begin_path
+move_to 160 20
+line_to 183.511414 92.3606796
+line_to 121.957741 47.6393204
+line_to 198.042267 47.6393204
+line_to 136.488571 92.3606644
+close_path
+set_fill_rule nonzero
+set_fill_rgba 0.899999976 0.300000012 0.400000006 1
+fill
+begin_path
+move_to 250 20
+line_to 273.511414 92.3606796
+line_to 211.957733 47.6393204
+line_to 288.042267 47.6393204
+line_to 226.488571 92.3606644
+close_path
+set_fill_rule evenodd
+set_fill_rgba 0.300000012 0.75 0.949999988 1
+fill

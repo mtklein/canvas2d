@@ -218,21 +218,18 @@ def main():
         "textmetrics", "winding",
     ]
     gallery_pngs = [f"gallery/{name}.png" for name in gallery_scenes]
-    # The seven TEXT scenes also record a self-contained .canvas program
-    # alongside their PNG (examples/gallery.c's record_scene): the serialized
-    # font/glyph/bitmap/shape blocks let the program replay on a FONTLESS
-    # machine.  Committed build artifacts exactly like the PNGs, and listed
-    # STATICALLY for the same reason (a glob of the run_gallery edge's own
-    # outputs reintroduces the clean-then-empty-edge circularity ed65b4d
-    # killed).  tests/test_replay_gallery.c replays each and byte-compares to
-    # its PNG -- the cross-machine determinism gate; the CI runner has no Libian
-    # TC, so a replay that reproduced the PNG used the embedded blocks, not host
-    # fonts.  Keep this list in sync with the record_scene calls in gallery.c.
-    gallery_text_scenes = [
-        "emoji", "emojiscale", "shaping", "text", "textgrid", "textmaxwidth",
-        "textmetrics",
-    ]
-    gallery_canvases = [f"gallery/{name}.canvas" for name in gallery_text_scenes]
+    # EVERY scene also records a self-contained .canvas program alongside its
+    # PNG (examples/gallery.c's record_scene): the serialized font/glyph/
+    # bitmap/shape blocks plus the numbered image and path blocks let the
+    # program replay on a FONTLESS machine.  Committed build artifacts exactly
+    # like the PNGs, and listed STATICALLY for the same reason (a glob of the
+    # run_gallery edge's own outputs reintroduces the clean-then-empty-edge
+    # circularity ed65b4d killed) -- one .canvas per gallery scene, derived
+    # from the same static list.  tests/test_replay_gallery.c replays each and
+    # byte-compares to its PNG -- the determinism gate; the CI runner has no
+    # Libian TC, so a replay that reproduced a text scene's PNG used the
+    # embedded blocks, not host fonts.
+    gallery_canvases = [f"gallery/{name}.canvas" for name in gallery_scenes]
     # Committed fuzz regression corpus (distinct from the gitignored fuzz/seeds/
     # scratch).  `ninja` replays every input under the debug sanitizers, so a
     # crasher -- once reduced and dropped in here -- stays a permanent regression.
