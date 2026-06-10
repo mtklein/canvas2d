@@ -434,14 +434,38 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 //     set_global_composite_operation multiply
 //     fill_text 12 30 Hello
 // Enums (set_global_composite_operation / set_line_join / set_line_cap /
-// set_fill_rule) are written by name; the bool arg of arc/ellipse is 0/1 or
-// false/true; set_line_dash takes a variable number of lengths; fill_text and
-// stroke_text take the rest of the line as their text.  Blank lines and lines
-// whose first non-space character is `#` are ignored.  Parsing is strict: an
-// unknown command, a bad argument, or an over-long line stops replay and returns
-// false (commands before the faulty line have already been applied).  The query
-// and image ops (measure_text, read_rgba, write_png, get/put_image_data,
-// draw_image) are not part of the text format.
+// set_fill_rule / set_text_align / set_text_baseline) are written by name; the
+// bool arg of arc/ellipse is 0/1 or false/true; set_line_dash takes a variable
+// number of lengths; fill_text and stroke_text take the rest of the line as
+// their text.  Blank lines and lines whose first non-space character is `#`
+// are ignored.
+//
+// Text-block lines make a recorded program self-contained (no fonts needed to
+// replay): the recorder writes, ahead of each text op that first needs them,
+//     font <id> <ascent> <descent> <name...>
+//     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
+//     shape <size_px> <utf16-len> <nruns> <byte-len> <text...>
+//     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
+// font declares a file-local font id: its name (rest of the line, spaces
+// allowed) and vertical metrics at size 1.0.  glyph carries one glyph's
+// canonical outline -- verbs + control points and its ink box, all in FONT
+// UNITS (units-per-em to the em, y up, baseline-relative), so one block serves
+// every size and transform.  shape + its immediately-following run lines carry
+// one shaped line (the text is exactly byte-len raw bytes after one space).
+// Replaying the blocks pre-populates the canvas's text cache, so the text ops
+// that follow never call the platform shaper -- a recorded program replays
+// byte-identically on machines without the recording machine's fonts.  Color
+// (emoji) runs are the one exception: their bitmaps don't serialize, so replay
+// without the font draws them as blank advances.
+//
+// Parsing is strict: an unknown command, a bad argument, an over-long line, or
+// a malformed block (an undeclared font id, a bad verb token, a cluster index
+// past the text length, a non-finite number where the recorder writes finite
+// ones) stops replay and returns false (commands before the faulty line have
+// already been applied; the canvas remains valid and drawable).  Numbers are
+// written with %.9g and reparse to the identical float32.  The query and image
+// ops (measure_text, read_rgba, write_png, get/put_image_data, draw_image) are
+// not part of the text format.
 bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path);
 
 // Begin recording subsequent drawing calls to `path` as a text canvas-program in
@@ -453,13 +477,23 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // same `path` again only after the first is closed.  Returns false (recording
 // nothing) if the file cannot be opened.
 //
+// Text ops round-trip self-contained: before each fill_text/stroke_text the
+// recorder emits the font/glyph/shape blocks (see canvas_replay_from) for the
+// derived data the op uses -- the shaped runs and each glyph's canonical
+// font-unit curves and ink bounds -- deduplicated within the file, so a
+// recorded program replays byte-identically (pixels and measureText alike)
+// on a machine without the recording machine's fonts, with no platform text
+// call at all.  Known limitation: color (emoji) glyphs are drawn from font
+// bitmaps that don't serialize; their shaped runs and advances are recorded,
+// but a fontless replay renders them as blank advances.
+//
 // Only the ops the text format covers are recorded -- the same subset
 // replay_from understands.  arc/round_rect/arc_to are written as themselves;
 // calls outside the format (stroke_rect, round_rect_radii, conic gradients,
-// patterns, image smoothing, text align/baseline, fill_text_max, draw_image,
-// get/put_image_data, Path2D fill/stroke/clip, the filter list
-// (set_filter_none / add_filter_*), reset, resize) are not recorded, so a
-// session that uses them does not round-trip through the text format.
+// patterns, image smoothing, fill_text_max, draw_image, get/put_image_data,
+// Path2D fill/stroke/clip, the filter list (set_filter_none / add_filter_*),
+// reset, resize) are not recorded, so a session that uses them does not
+// round-trip through the text format.
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh

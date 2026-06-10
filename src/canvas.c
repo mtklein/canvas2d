@@ -272,6 +272,9 @@ void canvas_destroy(canvas *__single cv) {
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path) {
     cnvs_recorder_close(cv->rec);  // stop any prior recording first
     cv->rec = cnvs_recorder_open(path);
+    // A new file holds no blocks yet: forget what any prior recording emitted,
+    // so warm cache entries serialize afresh into this one.
+    cnvs_text_cache_unmark(&cv->text_cache);
     return cv->rec != NULL;
 }
 
@@ -1904,6 +1907,7 @@ void canvas_set_text_align(canvas *__single cv, canvas_text_align align) {
         case CANVAS_ALIGN_LEFT:
         case CANVAS_ALIGN_RIGHT:
         case CANVAS_ALIGN_CENTER:
+            if (cv->rec) { cnvs_rec_text_align(cv->rec, align); }
             cv->cur.text_align = align;
             break;
     }
@@ -1917,6 +1921,7 @@ void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline
         case CANVAS_BASELINE_MIDDLE:
         case CANVAS_BASELINE_IDEOGRAPHIC:
         case CANVAS_BASELINE_BOTTOM:
+            if (cv->rec) { cnvs_rec_text_baseline(cv->rec, baseline); }
             cv->cur.text_baseline = baseline;
             break;
     }
@@ -2115,9 +2120,26 @@ cnvs_text_cache *__single cnvs_canvas_text_cache(canvas *__single cv) {
     return &cv->text_cache;
 }
 
+// Recording a text op: first make sure the cache holds everything the op is
+// about to use (the family's vmetrics record and the shaped line -- the same
+// lookups the draw takes, so this adds no boundary traffic), then serialize
+// the not-yet-emitted font/glyph/shape blocks ahead of the op line.  The
+// recorded program is self-contained: replay rebuilds the cache from the
+// blocks and draws with no text boundary at all.
+static void record_text_blocks(canvas *__single cv,
+                               char const *__counted_by(len) text, int len) {
+    float a = 0.0f, d = 0.0f;
+    (void)canvas_vmetrics(cv, &a, &d);  // intern the family + its vmetrics
+    (void)shape_text(cv, text, len);    // ensure the line is cached
+    cnvs_rec_text_blocks(cv->rec, &cv->text_cache, cv->cur.font_size, text, len);
+}
+
 void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
                         int len, float x, float y) {
-    if (cv->rec) { cnvs_rec_text(cv->rec, "fill_text", x, y, text, len); }
+    if (cv->rec) {
+        record_text_blocks(cv, text, len);
+        cnvs_rec_text(cv->rec, "fill_text", x, y, text, len);
+    }
     do_text(cv, text, len, x, y, -1.0f, false);
 }
 
@@ -2137,7 +2159,10 @@ void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated tex
 
 void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,
                           int len, float x, float y) {
-    if (cv->rec) { cnvs_rec_text(cv->rec, "stroke_text", x, y, text, len); }
+    if (cv->rec) {
+        record_text_blocks(cv, text, len);
+        cnvs_rec_text(cv->rec, "stroke_text", x, y, text, len);
+    }
     do_text(cv, text, len, x, y, -1.0f, true);
 }
 

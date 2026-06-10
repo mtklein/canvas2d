@@ -11,6 +11,7 @@
 // verbatim as the rest of the line.
 
 #include "canvas.h"
+#include "cnvs_text.h"
 
 #include <ptrcheck.h>
 
@@ -38,8 +39,27 @@ void cnvs_rec_floats_bool(cnvs_recorder *__single r, char const *__null_terminat
 void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name,
                    float x, float y, char const *__counted_by(len) text, int len);
 
+// Serialize the derived text data a fill_text/stroke_text op is about to use --
+// interned fonts (with their size-1.0 vmetrics), canonical glyph curves + ink
+// bounds, and the shaped line -- as `font` / `glyph` / `shape`+`run` block
+// lines ahead of the op line, so the recorded program is self-contained: replay
+// pre-populates the text cache from the blocks and never crosses the text
+// boundary.  Deduplicated against what this recording already wrote via the
+// cache slots' `emitted` marks (canvas_record_to clears them), so a repeated
+// string costs one block set per recording.  `text`/`len`/`size_px` name the
+// cached shaped line (the live lookup has already run); when it isn't cached
+// (shaping failed) nothing is emitted and replay degrades to live shaping.
+// Color (emoji) runs serialize their advances but no glyph data -- replay draws
+// them as blank advances (see canvas.h).
+void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c,
+                          float size_px, char const *__counted_by(len) text,
+                          int len);
+
 // Enum-valued setters, written by name (the spellings the parser accepts).
 void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule);
 void cnvs_rec_line_join(cnvs_recorder *__single r, canvas_line_join join);
 void cnvs_rec_line_cap(cnvs_recorder *__single r, canvas_line_cap cap);
 void cnvs_rec_composite(cnvs_recorder *__single r, canvas_composite_op op);
+void cnvs_rec_text_align(cnvs_recorder *__single r, canvas_text_align align);
+void cnvs_rec_text_baseline(cnvs_recorder *__single r,
+                            canvas_text_baseline baseline);

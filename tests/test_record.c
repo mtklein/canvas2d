@@ -84,9 +84,13 @@ static void draw_program(canvas *__single cv) {
     canvas_stroke(cv);
 
     // Text (Latin + CJK, no leading whitespace / newline so it round-trips).
+    // The text ops also emit their font/glyph/shape blocks (see canvas.h), so
+    // this pins the blocks' spellings against the parser too.
     canvas_set_font_size(cv, 12.0f);
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hi 隸", 4.0f, 20.0f);
+    canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
+    canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
     canvas_stroke_text(cv, "yo", 4.0f, 30.0f);
 
     // A clip last, so a non-empty path region is exercised by the clip command.

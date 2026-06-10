@@ -9,15 +9,21 @@
 #include "cnvs_replay.h"
 
 #include "canvas.h"
+#include "cnvs_text.h"
 
+#include <math.h>
 #include <ptrcheck.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define REPLAY_LINE_MAX 4096u        // over-long line -> reject (DoS guard)
+#define REPLAY_LINE_MAX 65536u       // over-long line -> reject (DoS guard; a
+                                     // glyph block line carries one outline's
+                                     // whole curve list -- a dense CJK glyph
+                                     // runs ~10-20 KB)
 #define REPLAY_FILE_MAX (64u << 20)  // 64 MiB file cap
 #define REPLAY_DASH_MAX 64           // max dash segments from one line
+#define REPLAY_RUNS_MAX 1024         // run lines one shape block may declare
 
 static bool is_ws(char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
@@ -55,9 +61,26 @@ static bool tok_eq(char const *__counted_by(le) data, size_t le, size_t ts,
     return *lit == '\0';  // exact-length match: literal ends right here too
 }
 
+// Exact powers of ten: 10^k for k <= 22 is exactly representable in a double
+// (5^22 < 2^53), so each scaling step in read_float is one correctly-rounded
+// multiply or divide by an exact constant.
+static double const k_pow10[23] = {
+    1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
+    1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
+};
+
 // Next token parsed as a float, in place by index -- no strtof, no
 // __null_terminated, no forge.  Stricter than strtof: the whole token must be a
 // number (sign? digits, optional .fraction, optional e[+-]exp).
+//
+// EXACT for everything the recorder emits: a %.9g-printed float32 has a <=
+// 9-digit mantissa (exact in the double accumulator) and a base-10 exponent
+// within +/-53, so the table-stepped scaling below costs at most three
+// roundings (~2^-51 relative) -- orders of magnitude inside the margin nine
+// significant digits leave around any float32, so the (float) conversion lands
+// on the identical value (record -> replay round-trips bit for bit;
+// test_record_text sweeps this).  Hostile exponents keep the old clamping
+// posture: the magnitude saturates and the value flushes to +/-inf or 0.
 static bool read_float(char const *__counted_by(le) data, size_t le,
                        size_t *__single jp, float *__single out) {
     size_t ts, tlen;
@@ -103,13 +126,48 @@ static bool read_float(char const *__counted_by(le) data, size_t le,
     if (i != te) {
         return false;  // trailing junk in the token (e.g. "1.5.2", "1x")
     }
-    // Scale by 10^(fexp+eexp).  Exact for canvas-range values; for extreme
-    // exponents this loop drifts where strtof is correctly-rounded (a power table
-    // would fix it), but such inputs are clamped by the canvas API anyway.
+    // Scale by 10^(fexp+eexp) in exact-table steps (see k_pow10).  Negative
+    // exponents divide by the exact power rather than multiplying by an inexact
+    // 10^-k.  |fexp| <= the token length and |eexp| <= 1000, so the loops are
+    // bounded; once the value saturates to inf or flushes to 0 further steps
+    // hold it there.
     int e = fexp + eexp;
-    double scale = 1.0, base = e < 0 ? 0.1 : 10.0;
-    for (int k = 0, n = e < 0 ? -e : e; k < n; k++) { scale *= base; }
-    *out = (float)((neg ? -mant : mant) * scale);
+    double d = mant;
+    for (int rem = e; rem > 0;) {
+        int step = rem > 22 ? 22 : rem;
+        d *= k_pow10[step];
+        rem -= step;
+    }
+    for (int rem = -e; rem > 0;) {
+        int step = rem > 22 ? 22 : rem;
+        d /= k_pow10[step];
+        rem -= step;
+    }
+    *out = (float)(neg ? -d : d);
+    return true;
+}
+
+// Next token parsed as a non-negative decimal integer <= cap (block counts,
+// ids, glyph ids, cluster indices).  Stricter than the float reader: digits
+// only, and the cap doubles as the overflow guard.
+static bool read_uint(char const *__counted_by(le) data, size_t le,
+                      size_t *__single jp, long cap, long *__single out) {
+    size_t ts, tlen;
+    if (!read_token(data, le, jp, &ts, &tlen) || tlen == 0) {
+        return false;
+    }
+    long v = 0;
+    for (size_t k = 0; k < tlen; k++) {
+        char ch = data[ts + k];
+        if (ch < '0' || ch > '9') {
+            return false;
+        }
+        v = v * 10 + (ch - '0');
+        if (v > cap) {
+            return false;
+        }
+    }
+    *out = v;
     return true;
 }
 
@@ -146,6 +204,315 @@ static bool read_bool(char const *__counted_by(le) data, size_t le,
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// Text blocks: `font` / `glyph` / `shape`+`run` lines (written by
+// cnvs_rec_text_blocks) pre-populate the canvas's text cache so the text ops
+// that follow replay with no Core Text boundary call at all -- the serialized
+// half of the params -> derived-data lookup (docs/text-boundary.md).  The
+// parser carries two pieces of cross-line state: the file-local font-id map,
+// and the shape block whose `run` lines are still arriving.  Same posture as
+// the op lines, applied to richer data: every count, id, verb token, and
+// cluster index is validated before it is trusted (the slice-A "untrusted verb
+// stream" rule, now at the parser), and any violation -- or an allocation
+// failure while rebuilding -- stops replay false.  Cache-side degradation
+// (a full intern/glyph table) is not a parse error: those entries drop and
+// the affected text degrades exactly as a live cache under pressure does.
+
+struct replay_blocks {
+    int map[CNVS_FONT_INTERN_N];    // file font id -> interned cache id (-1 =
+                                    // interning degraded; references still parse)
+    bool seen[CNVS_FONT_INTERN_N];  // file font id declared by a `font` line
+    cnvs_shaped *__single s;        // shape block under construction (owned
+                                    // until its last `run` line inserts it)
+    int runs_done;
+    float size_px;                  // the pending shape's cache key
+    char *__counted_by(text_len) text;  // owned copy of the pending key bytes
+    int text_len;
+};
+
+// Free the cross-line state (the pending shape, if its run lines never
+// arrived, and the key copy).  cnvs_shaped_free handles a partially-built
+// line: calloc'd runs hold NULL arrays with zero counts and no font handle.
+static void blocks_drop(struct replay_blocks *__single b) {
+    cnvs_shaped_free(b->s);
+    b->s = NULL;
+    b->runs_done = 0;
+    free(b->text);
+    b->text_len = 0;
+    b->text = NULL;
+}
+
+// The pending shape's last run line landed: hand it to the cache, which takes
+// ownership, under its (size_px, text) key -- exactly the key a live lookup
+// uses, so the fill_text/stroke_text op that follows hits.
+static void blocks_finish_shape(canvas *__single cv,
+                                struct replay_blocks *__single b) {
+    cnvs_text_cache_put_shape(cnvs_canvas_text_cache(cv), b->size_px, b->text,
+                              b->text_len, b->s);
+    b->s = NULL;  // ownership went to the cache
+    blocks_drop(b);
+}
+
+// font <id> <asc1> <desc1> <name...> -- declare a file-local font id: intern
+// the name (the rest of the line; names can contain spaces) and record its
+// vertical metrics (normalized at size 1.0).  Strict: id in range and not yet
+// declared, finite metrics, non-empty name.
+static bool replay_font(canvas *__single cv, struct replay_blocks *__single b,
+                        char const *__counted_by(le) data, size_t le, size_t j) {
+    long id = 0;
+    float vm[2];
+    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || b->seen[id]) {
+        return false;
+    }
+    if (!read_floats(data, le, &j, vm, 2) ||
+        !isfinite(vm[0]) || !isfinite(vm[1])) {
+        return false;
+    }
+    if (j < le && data[j] == ' ') { j++; }  // the single separator before the name
+    if (j >= le) {
+        return false;  // empty name
+    }
+    b->seen[id] = true;
+    int fid = cnvs_text_cache_intern(cnvs_canvas_text_cache(cv), data + j,
+                                     (int)(le - j));
+    b->map[id] = fid;
+    if (fid >= 0) {
+        cnvs_text_cache_set_vmetrics(cnvs_canvas_text_cache(cv), fid,
+                                     vm[0], vm[1]);
+    }
+    return true;
+}
+
+// glyph <font-id> <gid> <upem> <ink x0 y0 x1 y1> <curves...> -- one glyph's
+// canonical font-unit data, inserted under the interned (font, gid) key.  The
+// curve list is m/l/q/c/z verb tokens with their control points, validated
+// structurally in a counting pass and built in a second; a blank glyph (upem
+// 0) carries no curves.  Strict: declared font id, gid <= 0xFFFF, finite
+// numbers, upem >= 0.
+static bool replay_glyph(canvas *__single cv, struct replay_blocks *__single b,
+                         char const *__counted_by(le) data, size_t le, size_t j) {
+    long id = 0, gid = 0;
+    float meta[5];  // upem, then the font-unit ink box x0 y0 x1 y1
+    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || !b->seen[id]) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, 0xFFFF, &gid)) {
+        return false;
+    }
+    if (!read_floats(data, le, &j, meta, 5)) {
+        return false;
+    }
+    for (int k = 0; k < 5; k++) {
+        if (!isfinite(meta[k])) {
+            return false;
+        }
+    }
+    if (meta[0] < 0.0f) {
+        return false;
+    }
+    // Pass 1: validate every token and count the verbs and points.
+    size_t curves = j;
+    int nv = 0, np = 0;
+    while (!at_eol(data, le, j)) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl) || tl != 1) {
+            return false;
+        }
+        int k;
+        switch (data[ts]) {
+            case 'm':
+            case 'l': k = 1; break;
+            case 'q': k = 2; break;
+            case 'c': k = 3; break;
+            case 'z': k = 0; break;
+            default: return false;  // not a verb token
+        }
+        for (int p = 0; p < k; p++) {
+            float xy[2];
+            if (!read_floats(data, le, &j, xy, 2) ||
+                !isfinite(xy[0]) || !isfinite(xy[1])) {
+                return false;
+            }
+        }
+        nv++;
+        np += k;
+    }
+    if (meta[0] == 0.0f && nv != 0) {
+        return false;  // a blank glyph has no curves
+    }
+    if (b->map[id] < 0) {
+        return true;  // interning degraded: a well-formed block with nowhere
+    }                 // to land; its references degrade to blank glyphs
+    // Pass 2: rebuild the owned arrays (the cache takes ownership).
+    cnvs_glyph_verb *verbs = NULL;
+    cnvs_vec2 *pts = NULL;
+    if (nv > 0) {
+        verbs = malloc((size_t)nv * sizeof *verbs);
+        pts = malloc((size_t)(np > 0 ? np : 1) * sizeof *pts);
+        if (!verbs || !pts) {
+            free(verbs);
+            free(pts);
+            return false;  // OOM while rebuilding: stop replay
+        }
+        j = curves;
+        int iv = 0, ip = 0;
+        while (iv < nv && !at_eol(data, le, j)) {
+            size_t ts = 0, tl = 0;
+            (void)read_token(data, le, &j, &ts, &tl);  // validated by pass 1
+            cnvs_glyph_verb v = CNVS_GLYPH_CLOSE;
+            int k = 0;
+            switch (data[ts]) {
+                case 'm': v = CNVS_GLYPH_MOVE;  k = 1; break;
+                case 'l': v = CNVS_GLYPH_LINE;  k = 1; break;
+                case 'q': v = CNVS_GLYPH_QUAD;  k = 2; break;
+                case 'c': v = CNVS_GLYPH_CUBIC; k = 3; break;
+                default: break;  // 'z': close, no points
+            }
+            verbs[iv++] = v;
+            for (int p = 0; p < k && ip < np; p++) {
+                float xy[2] = { 0.0f, 0.0f };
+                (void)read_floats(data, le, &j, xy, 2);
+                pts[ip++] = (cnvs_vec2){ xy[0], xy[1] };
+            }
+        }
+    }
+    cnvs_text_cache_put_glyph(cnvs_canvas_text_cache(cv), b->map[id],
+                              (uint16_t)gid, verbs, nv, pts, np, meta[0],
+                              meta[1], meta[2], meta[3], meta[4]);
+    return true;
+}
+
+// shape <size_px> <utf16-len> <nruns> <byte-len> <text...> -- begin one shaped
+// line; its `run` lines must follow immediately.  The text is exactly byte-len
+// raw bytes after a single separating space (it is the cache key, byte for
+// byte).  Strict: finite size, utf16-len <= byte-len (every UTF-16 unit costs
+// at least one UTF-8 byte), and the byte count exactly fills the line.
+static bool replay_shape(canvas *__single cv, struct replay_blocks *__single b,
+                         char const *__counted_by(le) data, size_t le, size_t j) {
+    float size = 0.0f;
+    long t16 = 0, nruns = 0, blen = 0;
+    if (!read_float(data, le, &j, &size) || !isfinite(size) || size < 0.0f) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &t16) ||
+        !read_uint(data, le, &j, REPLAY_RUNS_MAX, &nruns) ||
+        !read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &blen)) {
+        return false;
+    }
+    if (j < le && data[j] == ' ') { j++; }  // the single separator before the text
+    if ((size_t)blen != le - j || t16 > blen) {
+        return false;
+    }
+    cnvs_shaped *s = calloc(1, sizeof *s);
+    if (!s) {
+        return false;
+    }
+    s->size_px = size;
+    s->text_len = (int)t16;
+    if (nruns > 0) {
+        cnvs_glyph_run *runs = calloc((size_t)nruns, sizeof *runs);
+        if (!runs) {
+            free(s);
+            return false;
+        }
+        s->run = runs;
+        s->nruns = (int)nruns;
+    }
+    char *txt = malloc((size_t)blen > 0 ? (size_t)blen : 1);
+    if (!txt) {
+        cnvs_shaped_free(s);
+        return false;
+    }
+    if (blen > 0) {
+        memcpy(txt, data + j, (size_t)blen);
+    }
+    b->s = s;
+    b->runs_done = 0;
+    b->size_px = size;
+    b->text = txt;
+    b->text_len = (int)blen;
+    if (nruns == 0) {
+        blocks_finish_shape(cv, b);  // nothing more to wait for
+    }
+    return true;
+}
+
+// run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)* -- one
+// visual-order run of the pending shape block.  The rebuilt run carries the
+// interned name id in place of a font handle (font == NULL): drawing reads its
+// curves from the cache by name, so no CTFontRef is ever needed.  Strict: only
+// legal while a shape block is pending, a declared (or -1) font id, finite
+// advances, and every cluster index within the shape's UTF-16 length.
+static bool replay_run(canvas *__single cv, struct replay_blocks *__single b,
+                       char const *__counted_by(le) data, size_t le, size_t j) {
+    if (!b->s) {
+        return false;  // no shape block pending
+    }
+    int name_id = -1;
+    size_t j0 = j, ts = 0, tl = 0;
+    if (!read_token(data, le, &j, &ts, &tl)) {
+        return false;
+    }
+    if (!tok_eq(data, le, ts, tl, "-1")) {  // -1 = an unkeyed (or color) run
+        long id = 0;
+        j = j0;
+        if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) ||
+            !b->seen[id]) {
+            return false;
+        }
+        name_id = b->map[id];  // -1 when interning degraded
+    }
+    bool rtl = false, color = false;
+    long n = 0;
+    if (!read_bool(data, le, &j, &rtl) || !read_bool(data, le, &j, &color) ||
+        !read_uint(data, le, &j, (long)(le - j), &n)) {
+        return false;  // (each glyph triple takes >= 6 bytes, so the remaining
+    }                  // line length safely bounds the allocation below)
+    uint16_t *g = NULL;
+    float *adv = NULL;
+    int32_t *cl = NULL;
+    if (n > 0) {
+        g = malloc((size_t)n * sizeof *g);
+        adv = malloc((size_t)n * sizeof *adv);
+        cl = malloc((size_t)n * sizeof *cl);
+        bool ok = g && adv && cl;
+        for (long i = 0; ok && i < n; i++) {
+            long gid = 0, cluster = 0;
+            float a = 0.0f;
+            ok = read_uint(data, le, &j, 0xFFFF, &gid) &&
+                 read_float(data, le, &j, &a) && isfinite(a) &&
+                 read_uint(data, le, &j, (long)b->s->text_len - 1, &cluster);
+            if (ok) {
+                g[i] = (uint16_t)gid;
+                adv[i] = a;
+                cl[i] = (int32_t)cluster;
+            }
+        }
+        if (!ok || !at_eol(data, le, j)) {
+            free(g);
+            free(adv);
+            free(cl);
+            return false;
+        }
+    } else if (!at_eol(data, le, j)) {
+        return false;
+    }
+    cnvs_glyph_run *run = &b->s->run[b->runs_done];
+    run->glyph = g;
+    run->xadv = adv;
+    run->cluster = cl;
+    run->count = (int)n;
+    run->rtl = rtl;
+    run->is_color = color;
+    run->name_id = color ? -1 : name_id;
+    run->font = NULL;
+    b->runs_done++;
+    if (b->runs_done == b->s->nruns) {
+        blocks_finish_shape(cv, b);
+    }
+    return true;
+}
+
 // Composite-op names in enum order (canvas_composite_op).
 static char const *const k_composite[] = {
     "source-over", "source-in", "source-out", "source-atop", "destination-over",
@@ -155,15 +522,18 @@ static char const *const k_composite[] = {
     "saturation", "color", "luminosity",
 };
 
-static bool replay_line(canvas *__single cv, char const *__counted_by(le) data,
-                        size_t ls, size_t le) {
+static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
+                        char const *__counted_by(le) data, size_t ls, size_t le) {
     size_t j = ls;
     size_t cs, cl;
     if (!read_token(data, le, &j, &cs, &cl)) {
-        return true;  // blank line
+        return blk->s == NULL;  // blank line (illegal inside a shape block)
     }
     if (data[cs] == '#') {
-        return true;  // comment line
+        return blk->s == NULL;  // comment line (ditto)
+    }
+    if (blk->s && !tok_eq(data, le, cs, cl, "run")) {
+        return false;  // a shape block's run lines must follow it directly
     }
 
     float f[8];
@@ -250,6 +620,27 @@ static bool replay_line(canvas *__single cv, char const *__counted_by(le) data,
         else if (tok_eq(data, le, ts, tl, "square")) canvas_set_line_cap(cv, CANVAS_CAP_SQUARE);
         else return false;
     }
+    else if (tok_eq(data, le, cs, cl, "set_text_align")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "start"))       canvas_set_text_align(cv, CANVAS_ALIGN_START);
+        else if (tok_eq(data, le, ts, tl, "end"))    canvas_set_text_align(cv, CANVAS_ALIGN_END);
+        else if (tok_eq(data, le, ts, tl, "left"))   canvas_set_text_align(cv, CANVAS_ALIGN_LEFT);
+        else if (tok_eq(data, le, ts, tl, "right"))  canvas_set_text_align(cv, CANVAS_ALIGN_RIGHT);
+        else if (tok_eq(data, le, ts, tl, "center")) canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
+        else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_text_baseline")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "alphabetic"))       canvas_set_text_baseline(cv, CANVAS_BASELINE_ALPHABETIC);
+        else if (tok_eq(data, le, ts, tl, "top"))         canvas_set_text_baseline(cv, CANVAS_BASELINE_TOP);
+        else if (tok_eq(data, le, ts, tl, "hanging"))     canvas_set_text_baseline(cv, CANVAS_BASELINE_HANGING);
+        else if (tok_eq(data, le, ts, tl, "middle"))      canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
+        else if (tok_eq(data, le, ts, tl, "ideographic")) canvas_set_text_baseline(cv, CANVAS_BASELINE_IDEOGRAPHIC);
+        else if (tok_eq(data, le, ts, tl, "bottom"))      canvas_set_text_baseline(cv, CANVAS_BASELINE_BOTTOM);
+        else return false;
+    }
     else if (tok_eq(data, le, cs, cl, "set_global_composite_operation")) {
         size_t ts, tl;
         if (!read_token(data, le, &j, &ts, &tl)) return false;
@@ -273,6 +664,12 @@ static bool replay_line(canvas *__single cv, char const *__counted_by(le) data,
         return true;  // dash consumed the rest of the line
     }
 
+    // --- text blocks (cross-line state; see canvas.h on the program format) ---
+    else if (tok_eq(data, le, cs, cl, "font"))  { return replay_font(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "glyph")) { return replay_glyph(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "shape")) { return replay_shape(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "run"))   { return replay_run(cv, blk, data, le, j); }
+
     // --- text tail (rest of line, UTF-8) ---
     else if (tok_eq(data, le, cs, cl, "fill_text") || tok_eq(data, le, cs, cl, "stroke_text")) {
         bool fill = data[cs] == 'f';
@@ -294,19 +691,26 @@ static bool replay_line(canvas *__single cv, char const *__counted_by(le) data,
 }
 
 bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, size_t len) {
+    struct replay_blocks b = { .s = NULL, .runs_done = 0, .size_px = 0.0f,
+                               .text_len = 0, .text = NULL };
+    for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {
+        b.map[k] = -1;
+        b.seen[k] = false;
+    }
+    bool ok = true;
     size_t i = 0;
-    while (i < len) {
+    while (ok && i < len) {
         size_t le = i;
         while (le < len && data[le] != '\n') { le++; }
-        if (le - i >= REPLAY_LINE_MAX) {
-            return false;  // over-long line
-        }
-        if (!replay_line(cv, data, i, le)) {
-            return false;
-        }
+        ok = le - i < REPLAY_LINE_MAX            // over-long line: reject
+             && replay_line(cv, &b, data, i, le);
         i = le + 1;  // past the '\n' (or past end)
     }
-    return true;
+    if (b.s) {
+        ok = false;  // truncated shape block: its run lines never arrived
+    }
+    blocks_drop(&b);
+    return ok;
 }
 
 bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path) {

@@ -94,7 +94,11 @@ for the OOB-write classes.
   on adversarial raw bytes (need not be UTF-8 or NUL-terminated): tokenizing,
   number parsing, line handling, and the `__null_terminated` seam — a classic C
   text-parsing attack surface, and the "Role B" strict-format validating parser
-  (bounds-safe, zero forges) as a fuzz target in its own right.
+  (bounds-safe, zero forges) as a fuzz target in its own right. Seed it with
+  `fuzz/seeds_replay/` (committed), which includes a `font`/`glyph`/`shape`
+  block program so mutations reach the cross-line block state machine, the
+  verb-token validation, and the cache-insert paths:
+  `./build/fuzz/fuzz_replay -max_len=8192 fuzz/seeds_replay`.
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
 `-fsanitize-address-use-after-return=always`, matching the debug variant.
@@ -107,6 +111,8 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
   `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
+- `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`, including
+  an inline font/glyph/shape block program.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
 
 There's no build script here: `ninja fuzz` builds every harness (Homebrew clang +
