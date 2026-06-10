@@ -44,7 +44,7 @@ static void read8(compositor *__single c, int w, int h,
 static void clear_all(compositor *__single c, int w, int h) {
     cnvs_premul *t = make_tile16(w, h, 0.0f, 0.0f, 0.0f, 1.0f);
     if (t) {
-        compositor_blend(c, 0, 0, w, h, t, COMPOSITOR_DST_OUT);
+        compositor_blend(c, 0, 0, w, h, t, NULL, COMPOSITOR_DST_OUT);
         free(t);
     }
 }
@@ -84,8 +84,8 @@ static void source_over_vs_double(void) {
             for (int y = 1; y < N; y++) {
                 memcpy(src + y * N, src, (size_t)N * sizeof *src);
             }
-            compositor_blend(c, 0, 0, N, N, dst, COMPOSITOR_COPY);
-            compositor_blend(c, 0, 0, N, N, src, COMPOSITOR_SRC_OVER);
+            compositor_blend(c, 0, 0, N, N, dst, NULL, COMPOSITOR_COPY);
+            compositor_blend(c, 0, 0, N, N, src, NULL, COMPOSITOR_SRC_OVER);
             compositor_read(c, out, n);
             for (int y = 0; y < N; y++) {
                 for (int x = 0; x < N; x++) {
@@ -128,7 +128,7 @@ int main(void) {
     // Blend an opaque red tile over a 4x4 region.
     cnvs_premul *red = make_tile16(4, 4, 1.0f, 0.0f, 0.0f, 1.0f);
     if (red) {
-        compositor_blend(c, 2, 2, 4, 4, red, COMPOSITOR_SRC_OVER);
+        compositor_blend(c, 2, 2, 4, 4, red, NULL, COMPOSITOR_SRC_OVER);
         read8(c, w, h, px);
         CHECK(px_near(pixel_at(px, len, w, 3, 3), 255, 0, 0, 255, 1));  // painted
         CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 0));      // outside
@@ -138,7 +138,7 @@ int main(void) {
     // COPY overwrites the destination -- putImageData's compositing operator.
     cnvs_premul *blue = make_tile16(2, 2, 0.0f, 0.0f, 1.0f, 1.0f);
     if (blue) {
-        compositor_blend(c, 3, 3, 2, 2, blue, COMPOSITOR_COPY);
+        compositor_blend(c, 3, 3, 2, 2, blue, NULL, COMPOSITOR_COPY);
         read8(c, w, h, px);
         CHECK(px_near(pixel_at(px, len, w, 3, 3), 0, 0, 255, 255, 1));  // overwritten
         CHECK(px_near(pixel_at(px, len, w, 2, 2), 255, 0, 0, 255, 1));  // still red
@@ -154,7 +154,7 @@ int main(void) {
     // is stored premultiplied (0.5,0,0,0.5) but un-premultiplies to (255,0,0,128).
     cnvs_premul *half_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 0.5f);
     if (half_red) {
-        compositor_blend(c, 0, 0, w, h, half_red, COMPOSITOR_SRC_OVER);
+        compositor_blend(c, 0, 0, w, h, half_red, NULL, COMPOSITOR_SRC_OVER);
         read8(c, w, h, px);
         CHECK(px_near(pixel_at(px, len, w, 8, 8), 255, 0, 0, 128, 3));
         free(half_red);
@@ -172,7 +172,7 @@ int main(void) {
         compositor_set_clip(c, mask, w * h);
         cnvs_premul *green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 1.0f);
         if (green) {
-            compositor_blend(c, 0, 0, w, h, green, COMPOSITOR_SRC_OVER);
+            compositor_blend(c, 0, 0, w, h, green, NULL, COMPOSITOR_SRC_OVER);
             read8(c, w, h, px);
             CHECK(px_near(pixel_at(px, len, w, 4, 8), 0, 255, 0, 255, 1));  // clip open
             CHECK(px_near(pixel_at(px, len, w, 12, 8), 0, 0, 0, 0, 1));     // clip closed
@@ -187,8 +187,8 @@ int main(void) {
     cnvs_premul *opaque_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 1.0f);
     cnvs_premul *half_green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 0.5f);
     if (opaque_red && half_green) {
-        compositor_blend(c, 0, 0, w, h, opaque_red, COMPOSITOR_SRC_OVER);
-        compositor_blend(c, 0, 0, w, h, half_green, COMPOSITOR_SRC_OVER);
+        compositor_blend(c, 0, 0, w, h, opaque_red, NULL, COMPOSITOR_SRC_OVER);
+        compositor_blend(c, 0, 0, w, h, half_green, NULL, COMPOSITOR_SRC_OVER);
         read8(c, w, h, px);
         struct px4 m = pixel_at(px, len, w, 8, 8);
         CHECK(m.r > 110 && m.r < 145);  // ~half red survives

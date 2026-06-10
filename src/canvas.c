@@ -427,7 +427,7 @@ void canvas_reset(canvas *__single cv) {
             cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = (_Float16)1.0f };
         }
         compositor_blend(cv->comp, 0, 0, cv->width, cv->height, cv->tile,
-                         COMPOSITOR_DST_OUT);
+                         NULL, COMPOSITOR_DST_OUT);
     }
 }
 
@@ -1108,11 +1108,26 @@ static foldv8 mat_apply8(cnvs_mat m, foldf8 x, float y) {
                      .y = m.b * x + m.d * y + m.f };
 }
 
+// Does the shade stage fold the op's coverage into the tile's alpha?  The
+// over-family folds exactly (compositor_coverage_folds, the §3.8 ruling); for
+// every other mode the tile carries the source at full strength and the
+// coverage plane rides to compositor_blend separately, which lerps.  Filters
+// force the fold regardless: blur()/drop-shadow() consume the op's silhouette
+// from the tile's alpha, so coverage must be materialized before they run --
+// after a filter the coverage genuinely is source alpha.
+static bool shade_folds_coverage(canvas const *__single cv) {
+    return compositor_coverage_folds(cv->cur.composite) ||
+           cv->cur.filter_count > 0;
+}
+
 // Build an RGBA16F tile from the coverage in cv->cov and the given paint, then
-// composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage.
+// composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage
+// when the composite mode folds coverage (shade_folds_coverage); otherwise
+// paint_alpha * global_alpha, with cv->cov handed to the compositor's lerp.
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                        cnvs_gradient const *gr, cnvs_unpremul solid) {
     float const ga = cv->cur.global_alpha;
+    bool const fold = shade_folds_coverage(cv);
     if (!is_grad) {
         // Solid paint: the colour planes are splats and every alpha factor but
         // coverage is one constant, so the loop is a coverage widen, two
@@ -1122,15 +1137,30 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         cnvs_h8 const cr = (cnvs_h8)solid.r, cg = (cnvs_h8)solid.g,
                  cb = (cnvs_h8)solid.b;
         int const npix = b.w * b.h;
-        int i = 0;
-        for (; i + 8 <= npix; i += 8) {
-            cnvs_px8_store(cv->tile + i,
-                           shade8(cr, cg, cb, base * cover8(cv->cov + i)));
-        }
-        if (i < npix) {  // tail: k < 8 pixels through the same planar block
-            int const k = npix - i;
-            cnvs_px8_store_k(cv->tile + i, k,
-                             shade8(cr, cg, cb, base * cover8_k(cv->cov + i, k)));
+        if (fold) {
+            int i = 0;
+            for (; i + 8 <= npix; i += 8) {
+                cnvs_px8_store(cv->tile + i,
+                               shade8(cr, cg, cb, base * cover8(cv->cov + i)));
+            }
+            if (i < npix) {  // tail: k < 8 pixels through the same planar block
+                int const k = npix - i;
+                cnvs_px8_store_k(cv->tile + i, k,
+                                 shade8(cr, cg, cb,
+                                        base * cover8_k(cv->cov + i, k)));
+            }
+        } else {
+            // Full-strength source: every pixel is the same premultiplied
+            // colour (at full coverage the folded form's base * 1.0 is base
+            // exactly, so interiors agree bit for bit).
+            cnvs_px8 const px = shade8(cr, cg, cb, base);
+            int i = 0;
+            for (; i + 8 <= npix; i += 8) {
+                cnvs_px8_store(cv->tile + i, px);
+            }
+            if (i < npix) {
+                cnvs_px8_store_k(cv->tile + i, npix - i, px);
+            }
         }
     } else if (ensure_grad_rows(cv, b.w)) {
         // Evaluate the gradient a row at a time, all three stages vectorized:
@@ -1147,16 +1177,20 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             int px = 0;
             for (; px + 8 <= b.w; px += 8) {
                 cnvs_px8 const col = cnvs_px8_load_unpremul(cv->crow + px);
-                foldf8 const alpha = __builtin_convertvector(col.a, foldf8) *
-                                     ga * cover8(cv->cov + row + px);
+                foldf8 alpha = __builtin_convertvector(col.a, foldf8) * ga;
+                if (fold) {
+                    alpha = alpha * cover8(cv->cov + row + px);
+                }
                 cnvs_px8_store(cv->tile + row + px,
                                shade8(col.r, col.g, col.b, alpha));
             }
             if (px < b.w) {  // tail: k < 8 pixels through the same planar block
                 int const k = b.w - px;
                 cnvs_px8 const col = cnvs_px8_load_unpremul_k(cv->crow + px, k);
-                foldf8 const alpha = __builtin_convertvector(col.a, foldf8) *
-                                     ga * cover8_k(cv->cov + row + px, k);
+                foldf8 alpha = __builtin_convertvector(col.a, foldf8) * ga;
+                if (fold) {
+                    alpha = alpha * cover8_k(cv->cov + row + px, k);
+                }
                 cnvs_px8_store_k(cv->tile + row + px, k,
                                  shade8(col.r, col.g, col.b, alpha));
             }
@@ -1167,23 +1201,27 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         for (int py = 0; py < b.h; py++) {
             for (int px = 0; px < b.w; px++) {
                 int i = py * b.w + px;
-                float covf = (float)cv->cov[i] / 255.0f;
                 float t;
                 cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
                                 .y = (float)b.y + (float)py + 0.5f };
                 cnvs_unpremul col = cnvs_gradient_param(gr, p, &t)
                                         ? cnvs_gradient_color_at(gr, t)
                                         : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
-                // Fold coverage and global alpha into the paint's alpha, then
-                // premultiply -- the tile stores premultiplied pixels.
-                float alpha = (float)col.a * ga * covf;
+                // Fold global alpha (and, for folding modes, coverage) into
+                // the paint's alpha, then premultiply -- the tile stores
+                // premultiplied pixels.
+                float alpha = (float)col.a * ga;
+                if (fold) {
+                    alpha = alpha * ((float)cv->cov[i] / 255.0f);
+                }
                 cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
                     .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
             }
         }
     }
     apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
+                     fold ? NULL : cv->cov, cv->cur.composite);
 }
 
 // Map a sample index onto an axis of length n: wrap mod n for a repeating axis
@@ -1249,6 +1287,7 @@ static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
 // the planar premultiply.
 static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const *p) {
     float const ga = cv->cur.global_alpha;
+    bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
     foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
@@ -1273,12 +1312,15 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            foldf8 const covf = k < 8 ? cover8_k(cv->cov + i, k)
-                                      : cover8(cv->cov + i);
+            foldf8 alpha = sa * ga;
+            if (fold) {
+                alpha = alpha * (k < 8 ? cover8_k(cv->cov + i, k)
+                                       : cover8(cv->cov + i));
+            }
             cnvs_px8 const out = shade8(__builtin_convertvector(sr, cnvs_h8),
                                         __builtin_convertvector(sg, cnvs_h8),
                                         __builtin_convertvector(sb, cnvs_h8),
-                                        sa * ga * covf);
+                                        alpha);
             if (k < 8) {
                 cnvs_px8_store_k(cv->tile + i, k, out);
             } else {
@@ -1287,7 +1329,8 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
         }
     }
     apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
+                     fold ? NULL : cv->cov, cv->cur.composite);
 }
 
 // Grow the two shadow ping-pong masks to at least n bytes each.
@@ -1396,25 +1439,42 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
             blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, r);
         }
     }
-    // Tint the blurred mask into the tile, eight pixels per step: the shadow
-    // colour is a splat, so this is the planar shade fold with the blurred
-    // mask as its coverage plane -- the scalar form's f32 arithmetic and
-    // association ((mask / 255.0f) * sc.a * ga) kept lane for lane.
+    // Tint the blurred mask into the tile.  For folding modes, eight pixels
+    // per step: the shadow colour is a splat, so this is the planar shade
+    // fold with the blurred mask as its coverage plane -- the scalar form's
+    // f32 arithmetic and association ((mask / 255.0f) * sc.a * ga) kept lane
+    // for lane.  For lerping modes the tile is the full-strength tint and the
+    // blurred mask rides to the compositor as the op's coverage plane.
+    // (Filters never apply to the shadow tile, so unlike paint_tile the
+    // decision is the composite mode alone.)
+    bool const fold = compositor_coverage_folds(cv->cur.composite);
     cnvs_unpremul const sc = cv->cur.shadow_color;
     float const ga = cv->cur.global_alpha;
     cnvs_h8 const cr = (cnvs_h8)sc.r, cg = (cnvs_h8)sc.g, cb = (cnvs_h8)sc.b;
     float const sa = (float)sc.a;
-    int i = 0;
-    for (; i + 8 <= n; i += 8) {
-        foldf8 const alpha = cover8(cv->shadow_src + i) * sa * ga;
-        cnvs_px8_store(cv->tile + i, shade8(cr, cg, cb, alpha));
+    if (fold) {
+        int i = 0;
+        for (; i + 8 <= n; i += 8) {
+            foldf8 const alpha = cover8(cv->shadow_src + i) * sa * ga;
+            cnvs_px8_store(cv->tile + i, shade8(cr, cg, cb, alpha));
+        }
+        if (i < n) {  // tail: k < 8 pixels through the same planar block
+            int const k = n - i;
+            foldf8 const alpha = cover8_k(cv->shadow_src + i, k) * sa * ga;
+            cnvs_px8_store_k(cv->tile + i, k, shade8(cr, cg, cb, alpha));
+        }
+    } else {
+        cnvs_px8 const px = shade8(cr, cg, cb, (foldf8)(sa * ga));
+        int i = 0;
+        for (; i + 8 <= n; i += 8) {
+            cnvs_px8_store(cv->tile + i, px);
+        }
+        if (i < n) {
+            cnvs_px8_store_k(cv->tile + i, n - i, px);
+        }
     }
-    if (i < n) {  // tail: k < 8 pixels through the same planar block
-        int const k = n - i;
-        foldf8 const alpha = cover8_k(cv->shadow_src + i, k) * sa * ga;
-        cnvs_px8_store_k(cv->tile + i, k, shade8(cr, cg, cb, alpha));
-    }
-    compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile, cv->cur.composite);
+    compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile,
+                     fold ? NULL : cv->shadow_src, cv->cur.composite);
 }
 
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
@@ -1454,7 +1514,8 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
     for (int i = 0; i < npix; i++) {
         cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = (_Float16)1.0f };
     }
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, COMPOSITOR_DST_OUT);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, NULL,
+                     COMPOSITOR_DST_OUT);
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
@@ -2616,6 +2677,7 @@ static void draw_image_quad(canvas *__single cv,
     // lane for lane.
     cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float const ga = cv->cur.global_alpha;
+    bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
     foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
@@ -2649,20 +2711,25 @@ static void draw_image_quad(canvas *__single cv,
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            foldf8 const covf = k < 8 ? cover8_k(cv->cov + i, k)
-                                      : cover8(cv->cov + i);
+            foldf8 const covf = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
+                                              : cover8(cv->cov + i))
+                                     : (foldf8)1.0f;  // unused factor when !fold
             cnvs_px8 out;
             if (premul_src) {
-                foldf8 const m = ga * covf;
+                foldf8 const m = fold ? ga * covf : (foldf8)ga;
                 out = (cnvs_px8){ __builtin_convertvector(sr * m, cnvs_h8),
                                   __builtin_convertvector(sg * m, cnvs_h8),
                                   __builtin_convertvector(sb * m, cnvs_h8),
                                   __builtin_convertvector(sa * m, cnvs_h8) };
             } else {
+                foldf8 alpha = sa * ga;
+                if (fold) {
+                    alpha = alpha * covf;
+                }
                 out = shade8(__builtin_convertvector(sr, cnvs_h8),
                              __builtin_convertvector(sg, cnvs_h8),
                              __builtin_convertvector(sb, cnvs_h8),
-                             sa * ga * covf);
+                             alpha);
             }
             if (k < 8) {
                 cnvs_px8_store_k(cv->tile + i, k, out);
@@ -2672,7 +2739,8 @@ static void draw_image_quad(canvas *__single cv,
         }
     }
     apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
+                     fold ? NULL : cv->cov, cv->cur.composite);
 }
 
 void canvas_draw_image_subrect(canvas *__single cv,
@@ -2892,7 +2960,8 @@ static void put_image_sub(canvas *__single cv,
     // putImageData overwrites and ignores the clip: composite COPY with the clip
     // open, then restore it.
     compositor_set_clip(cv->comp, NULL, 0);
-    compositor_blend(cv->comp, (int)cx0, (int)cy0, rw, rh, cv->tile, COMPOSITOR_COPY);
+    compositor_blend(cv->comp, (int)cx0, (int)cy0, rw, rh, cv->tile, NULL,
+                     COMPOSITOR_COPY);
     compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
 }
 

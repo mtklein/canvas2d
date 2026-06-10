@@ -24,6 +24,16 @@
 // lane carries the arithmetic the scalar kernel produced, bit for bit
 // (verified exhaustively against the scalar form, all 26 modes, random +
 // edge-value sweeps -- the gallery byte-gate holds).
+//
+// Coverage (the op's AA plane x the clip mask) applies per the §3.8 ruling
+// (docs/rasterization.md): in principle out = lerp(dst, blend(src, dst), cov)
+// -- the uncovered fraction of a pixel keeps its destination.  Folding
+// coverage into source alpha instead is identical math exactly when, in
+// co = Fa*s + Fb*d, Fa is free of sa and Fb is affine in sa with Fb(0) = 1
+// (compositor_coverage_folds): the over-family folds -- cheaper, and
+// bit-compatible with the folded source-over pipeline -- and every other
+// mode blends at full strength and lerps (test_coverage_lerp is the
+// supersampled-oracle gate).
 
 // minh/maxh as lane selects -- exactly the scalar `a < b ? a : b`, which can
 // differ from fminnm/fmaxnm on signed zeros and NaN ordering, so spell the
@@ -215,6 +225,18 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
     return cnvs_px8_clamp_premul(co);  // additive 'lighter' can exceed 1
 }
 
+// The coverage lerp: out = blend*k + dst*(1-k) per plane.  Two products, not
+// dst + (blend-dst)*k, so k == 1 returns the blend bit-exactly and k == 0
+// returns dst bit-exactly (full coverage must not perturb the blend; zero
+// coverage must not perturb the destination).  The clamp restores the
+// premultiplied invariant against the one-ULP drift of k + (1-k) in f16.
+static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, cnvs_h8 k) {
+    cnvs_h8 j = (cnvs_h8)(_Float16)1.0f - k;
+    cnvs_px8 o = { co.r * k + d.r * j, co.g * k + d.g * j,
+                   co.b * k + d.b * j, co.a * k + d.a * j };
+    return cnvs_px8_clamp_premul(o);
+}
+
 struct compositor {
     int width;
     int height;
@@ -282,6 +304,7 @@ void compositor_set_clip(compositor *__single c,
 
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       cnvs_premul const *__counted_by(w * h) tile,
+                      uint8_t const *__counted_by_or_null(w * h) cov,
                       compositor_blend_mode mode) {
     if (!c || !tile || w <= 0 || h <= 0) {
         return;
@@ -295,7 +318,9 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         // at the tile seams, the blend is four fused multiply-adds with sa as
         // a plain vector -- no alpha-splat shuffles -- and everything stays in
         // _Float16 arithmetic end to end (docs/decisions/color-axis.md).
-        // Clip attenuation is f16 too -- this deliberately reverses the
+        // Source-over folds: op coverage (normally already folded by the
+        // shade stage, so cov is NULL here) and clip attenuation both scale
+        // the premultiplied source, in f16 -- this deliberately reverses the
         // float32-attenuation choice the Metal-parity era kept (there is no
         // shader left to bit-match, and full coverage still attenuates by
         // exactly 1.0: 255 * RN16(1/255) rounds back to 1).  A w%8 tail runs
@@ -304,8 +329,12 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         for (int row = 0; row < h; row++) {
             int col = 0;
             for (; col + 8 <= w; col += 8) {
+                int ti = row * w + col;
                 int di = (y + row) * c->width + (x + col);
-                cnvs_px8 s = cnvs_px8_load(tile + row * w + col);
+                cnvs_px8 s = cnvs_px8_load(tile + ti);
+                if (cov) {      // fold op coverage into the source (exact here)
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
+                }
                 if (c->clip) {  // attenuate premultiplied source by clip coverage
                     s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
                 }
@@ -314,8 +343,12 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
             }
             if (col < w) {  // tail: k < 8 pixels through the same planar block
                 int k = w - col;
+                int ti = row * w + col;
                 int di = (y + row) * c->width + (x + col);
-                cnvs_px8 s = cnvs_px8_load_k(tile + row * w + col, k);
+                cnvs_px8 s = cnvs_px8_load_k(tile + ti, k);
+                if (cov) {
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(cov + ti, k) * k255);
+                }
                 if (c->clip) {
                     s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(c->clip + di, k) * k255);
                 }
@@ -326,28 +359,59 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         return;
     }
     // The generic modes: the same planar block walk as source-over, with the
-    // 26-mode kernel in place of the source-over fold.
+    // 26-mode kernel in place of the source-over fold.  Effective coverage is
+    // the op plane x the clip mask (each absent factor is 1); the over-family
+    // folds it into the source exactly as the fast path does, every other
+    // mode blends at full strength and lerps toward the destination
+    // (cov_lerp8) -- the §3.8 ruling.
+    bool const folds = compositor_coverage_folds(mode);
+    bool const atten = cov || c->clip;  // any coverage to apply?
     _Float16 const k255 = (_Float16)(1.0f / 255.0f);
+    cnvs_h8 const one = (cnvs_h8)(_Float16)1.0f;
     for (int row = 0; row < h; row++) {
         int col = 0;
         for (; col + 8 <= w; col += 8) {
+            int ti = row * w + col;
             int di = (y + row) * c->width + (x + col);
-            cnvs_px8 s = cnvs_px8_load(tile + row * w + col);
-            if (c->clip) {  // attenuate premultiplied source by clip coverage
-                s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
-            }
+            cnvs_px8 s = cnvs_px8_load(tile + ti);
             cnvs_px8 d = cnvs_px8_load(c->target + di);
-            cnvs_px8_store(c->target + di, blend8(s, d, mode));
+            cnvs_px8 o;
+            if (atten) {
+                cnvs_h8 k = one;  // 1*x is exact: a lone factor passes through
+                if (cov) {
+                    k = k * (cnvs_h8_from_u8(cov + ti) * k255);
+                }
+                if (c->clip) {
+                    k = k * (cnvs_h8_from_u8(c->clip + di) * k255);
+                }
+                o = folds ? blend8(cnvs_px8_scale(s, k), d, mode)
+                          : cov_lerp8(d, blend8(s, d, mode), k);
+            } else {
+                o = blend8(s, d, mode);
+            }
+            cnvs_px8_store(c->target + di, o);
         }
         if (col < w) {  // tail: k < 8 pixels through the same planar block
-            int k = w - col;
+            int n = w - col;
+            int ti = row * w + col;
             int di = (y + row) * c->width + (x + col);
-            cnvs_px8 s = cnvs_px8_load_k(tile + row * w + col, k);
-            if (c->clip) {
-                s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(c->clip + di, k) * k255);
+            cnvs_px8 s = cnvs_px8_load_k(tile + ti, n);
+            cnvs_px8 d = cnvs_px8_load_k(c->target + di, n);
+            cnvs_px8 o;
+            if (atten) {
+                cnvs_h8 k = one;
+                if (cov) {
+                    k = k * (cnvs_h8_from_u8_k(cov + ti, n) * k255);
+                }
+                if (c->clip) {
+                    k = k * (cnvs_h8_from_u8_k(c->clip + di, n) * k255);
+                }
+                o = folds ? blend8(cnvs_px8_scale(s, k), d, mode)
+                          : cov_lerp8(d, blend8(s, d, mode), k);
+            } else {
+                o = blend8(s, d, mode);
             }
-            cnvs_px8 d = cnvs_px8_load_k(c->target + di, k);
-            cnvs_px8_store_k(c->target + di, k, blend8(s, d, mode));
+            cnvs_px8_store_k(c->target + di, n, o);
         }
     }
 }
