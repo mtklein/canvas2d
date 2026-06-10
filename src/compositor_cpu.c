@@ -3,6 +3,7 @@
 // copies it out.
 
 #include "compositor.h"
+#include "cnvs_planar.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -68,10 +69,16 @@ static _Float16 blend_term(compositor_blend_mode mode,
 
 // One premultiplied pixel as a vector: cnvs_premul is four contiguous _Float16.
 typedef _Float16 blendh4 __attribute__((ext_vector_type(4)));
-// Two premultiplied pixels as one 8-lane _Float16 vector -- a full 128-bit
-// NEON register of native fp16 arithmetic, the colour pipeline's wide unit
-// (docs/decisions/color-axis.md).
-typedef _Float16 blendh8 __attribute__((ext_vector_type(8)));
+
+// Source-over for one planar block: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
+// the same fold over every channel plane, alpha included.  Takes and returns
+// whole blocks in registers (cnvs_px8 is a four-vector HVA, q0-q3).
+static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
+    cnvs_h8 fb = (cnvs_h8)(_Float16)1.0f - s.a;
+    cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
+                    s.b + fb * d.b, s.a + fb * d.a };
+    return cnvs_px8_clamp_premul(co);
+}
 
 typedef struct {
     _Float16 r, g, b;
@@ -262,53 +269,37 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         return;
     }
     if (mode == COMPOSITOR_SRC_OVER) {
-        // The overwhelmingly common mode (every ordinary fill).  Its math --
-        // co = s + (1-sa)*d, ao = sa + (1-sa)*da -- folds identically over all
-        // four channels (lanes 3 and 7 yield ao), so blend two whole pixels as
-        // one 8-lane _Float16 vector: load f16, blend f16, clamp f16, store
-        // f16, no widen/narrow converts anywhere (docs/decisions/color-axis.md).
+        // The overwhelmingly common mode (every ordinary fill).  Eight pixels
+        // per step as four channel planes (cnvs_planar.h): ld4 deinterleaves
+        // at the tile seams, the blend is four fused multiply-adds with sa as
+        // a plain vector -- no alpha-splat shuffles -- and everything stays in
+        // _Float16 arithmetic end to end (docs/decisions/color-axis.md).
         // Clip attenuation is f16 too -- this deliberately reverses the
         // float32-attenuation choice the Metal-parity era kept (there is no
         // shader left to bit-match, and full coverage still attenuates by
-        // exactly 1.0: 255 * RN16(1/255) rounds back to 1).  An odd-width
-        // tail does one pixel at 4 lanes.
+        // exactly 1.0: 255 * RN16(1/255) rounds back to 1).  A w%8 tail runs
+        // the same planar block over gathered pixels, zero-filled.
         _Float16 const k255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
             int col = 0;
-            for (; col + 2 <= w; col += 2) {
+            for (; col + 8 <= w; col += 8) {
                 int di = (y + row) * c->width + (x + col);
-                blendh8 s, d;
-                memcpy(&s, &tile[row * w + col], sizeof s);  // one check, two pixels
-                memcpy(&d, &c->target[di], sizeof d);
+                cnvs_px8 s = cnvs_px8_load(tile + row * w + col);
                 if (c->clip) {  // attenuate premultiplied source by clip coverage
-                    _Float16 k0 = (_Float16)c->clip[di] * k255;
-                    _Float16 k1 = (_Float16)c->clip[di + 1] * k255;
-                    s = s * (blendh8){ k0, k0, k0, k0, k1, k1, k1, k1 };
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
                 }
-                blendh8 fb = (blendh8)(_Float16)1.0f -
-                             __builtin_shufflevector(s, s, 3, 3, 3, 3, 7, 7, 7, 7);
-                blendh8 co = s + fb * d;               // lanes 3,7 = ao
-                blendh8 aoc = __builtin_elementwise_min(
-                    __builtin_shufflevector(co, co, 3, 3, 3, 3, 7, 7, 7, 7),
-                    (blendh8)(_Float16)1.0f);
-                co = __builtin_elementwise_max((blendh8)(_Float16)0.0f,
-                                               __builtin_elementwise_min(aoc, co));
-                memcpy(&c->target[di], &co, sizeof co);
+                cnvs_px8 d = cnvs_px8_load(c->target + di);
+                cnvs_px8_store(c->target + di, src_over8(s, d));
             }
-            for (; col < w; col++) {  // odd-width tail: one pixel, 4 lanes
+            if (col < w) {  // tail: k < 8 pixels through the same planar block
+                int k = w - col;
                 int di = (y + row) * c->width + (x + col);
-                blendh4 s, d;
-                memcpy(&s, &tile[row * w + col], sizeof s);
-                memcpy(&d, &c->target[di], sizeof d);
+                cnvs_px8 s = cnvs_px8_load_k(tile + row * w + col, k);
                 if (c->clip) {
-                    s = s * ((_Float16)c->clip[di] * k255);
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(c->clip + di, k) * k255);
                 }
-                _Float16 fb = (_Float16)1.0f - s[3];
-                blendh4 co = s + fb * d;
-                _Float16 aoc = co[3] < (_Float16)1.0f ? co[3] : (_Float16)1.0f;
-                co = __builtin_elementwise_max((blendh4)(_Float16)0.0f,
-                                               __builtin_elementwise_min((blendh4)aoc, co));
-                memcpy(&c->target[di], &co, sizeof co);
+                cnvs_px8 d = cnvs_px8_load_k(c->target + di, k);
+                cnvs_px8_store_k(c->target + di, k, src_over8(s, d));
             }
         }
         return;
