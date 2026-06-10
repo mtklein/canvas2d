@@ -308,9 +308,11 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
 
 - The [Metal compositor](src/compositor_metal.m) is *just* a compositor — all
   geometry, **analytic antialiasing**, gradient evaluation, and clipping happen on
-  the CPU in checked C and bake into finished `_Float16` RGBA16F tiles (colour's
-  lingua franca here — native on this hardware, 8-bit only at the spec-mandated
-  edges), so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific:
+  the CPU in checked C and bake into finished `_Float16` RGBA16F tiles (the
+  narrowest storage type that round-trips the spec's 8-bit edges exactly — every
+  colour×alpha pair survives the premultiplied store unchanged — at half f32's
+  footprint; see [docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md)),
+  so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific:
   the [software compositor](src/compositor_cpu.c) implements `compositor.h`
   identically in ~350 lines of checked C (its file-local per-pixel `blend()` kernel
   is the same premultiplied math the Metal shader runs), selected instead of Metal
