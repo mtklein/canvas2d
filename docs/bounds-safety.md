@@ -266,7 +266,8 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 | end-to-end (now deflate-dominated) | — see below |
 | box blur, vertical pass | 1.09× |
 | box blur, horizontal pass | 1.10× |
-| PNG encode (in-house deflate) | **2.1×** |
+| PNG decode (in-house inflate) | 1.09× |
+| PNG encode (in-house deflate) | 1.32–1.43× |
 
 The isolation matters. The end-to-end ~1.07× is a blend that hides a wide spread
 between phases — and a regression in a fast phase could disappear into it. What
@@ -281,14 +282,17 @@ the spread shows:
   span check ran **13× faster, and dropped the overhead to ~1.0×**. PNG
   encode told the same story while it was stored-zlib: its CRC went from a
   byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, 1.00×).
-- **The in-house deflate is the new worst case (~2.1×), and it's the blit's
-  shape all over again**: the LZ77 matcher's hash-chain walk and
-  byte-at-a-time match verify are scalar indexed loads with almost no
-  arithmetic between them — per-element checks with nothing to hide behind.
-  The Up-only PNG row filters that feed it, by contrast, are whole-row
-  vector subtract/add (one check per 16-lane block) and cost nothing. The
-  matcher is the standing candidate for the blit treatment; until then this
-  row is the honest price of a from-scratch compressor under the flag.
+- **The in-house deflate held the worst-case crown (~2.1×) for one day** —
+  the blit's shape all over again: hash-chain walks and byte-at-a-time match
+  verification, per-element checks with nothing to hide behind. The blit
+  treatment then landed (8-byte vectorized match verify, XOR+ctz; 64-bit bit
+  readers; table-driven Huffman decode; a 4-byte hash that made output
+  *smaller* too): encode ended **10.5× faster at 1.32–1.43×**, decode 3.5×
+  faster at 1.09×. One twist worth recording: the vectorized verify sped the
+  unchecked build even more at first, briefly *raising* the ratio (2.0→2.2)
+  before the chain-walk tuning collapsed it — amortizing checks and chasing
+  absolute speed are correlated but not identical errands. What residue
+  remains is data-dependent pointer chasing both builds pay for alike.
 - **The coverage fill (~1.07×, down from ~1.22×)** got the same treatment twice:
   the resolve (per-row prefix sum, fill-rule fold, 8-bit convert) runs 8-wide,
   and the accumulate telescopes each row span's interior columns — all depositing
