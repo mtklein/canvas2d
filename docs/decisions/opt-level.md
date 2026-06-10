@@ -229,6 +229,37 @@ table, and a possible gallery re-baseline; or (c) hold the flag and greenlight a
 vectorization pass instead, which the data suggests captures most of (b)'s upside inside (a)'s
 posture.
 
+### Addendum (2026-06-10): option (c) executed — the stroker got the blit treatment
+
+Mike ratified (c) and the pass has landed: vertex emission stages triangles in local arrays and
+lands whole blocks through one counted-pointer copy (the one-check-per-block idiom, applied to
+geometry *output*), and segments and miter/bevel wedge joins run four per block on x/y planes —
+each lane the scalar operation sequence exactly, so all 33 gallery PNGs stayed byte-identical
+and the feared re-baseline never happened.  Paired hyperfine (before+after binaries in one
+invocation, copied out of tree, no compiler running):
+
+| `bench_stroke` | before | after |
+|---|---|---|
+| `-Os` checked | 49.7 ms | **26.1 ms** (1.90×) |
+| `-Os` unsafe | 48.2 ms | 26.2 ms (1.85×) |
+| checked / unsafe | 1.03× | **1.00×** |
+
+The hand version beats `-O2`'s autovectorized 46.0 ms by ~43 % while staying at `-Os`, and
+erases the same overhead `-O2` erased.  §7's second trigger resolves the right way: the new
+stroker rebuilt at `-O2` measures 25.6 vs 25.8 ms — a wash (1.01 ± 0.02) — so "`-O2` only helps
+un-tuned kernels" stands, no re-sweep needed, and §6's strongest counter-argument is gone.
+Spillover: e2e `bench` −5 % checked (its scene strokes every frame; its checked/unsafe ratio
+*rose* 1.08× → 1.11× for the README's Amdahl reason — the stroke share both postures split
+evenly shrank, leaving the codec-heavy remainder a larger slice); flagship renders and the
+fill/flatten controls unmoved.
+
+Two `-fbounds-safety` codegen lessons from the work, for the next kernel: a variable-index
+vector lane read (`v[i]`) round-trips the whole register through the stack at every access —
+spill lanes once per block into small arrays, or better, transpose results to memory order
+in-register with constant-index shuffles; and a copy loop that writes through a struct's
+`__counted_by` field reloads data/len/cap and re-derives its check every iteration (the stores
+may alias the struct) — convert to a counted local once, then loop on that.
+
 ## 7. What would change my mind
 
 - **The flagship moves.** If gallery-shaped scenes stop being the product (e.g. a stroke- or

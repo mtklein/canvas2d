@@ -440,14 +440,14 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
 | `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 71 ms | 71 ms | **1.00×** |
+| `bench_stroke` — stroke expansion: 4-wide segment/join planes, block-staged verts | 26 ms | 26 ms | **1.00×** |
 | `bench_gradient_fill` — gradient fill: 8-wide radial solve + 8-wide exact stop lerp | 14.5 ms | 14.4 ms | **1.01×** |
 | `bench_flatten` — cubic-Bézier flattening | 116 ms | 114 ms | **1.02×** |
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.0 ms | 8.8 ms | **1.02×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 48 ms | 47 ms | **1.03×** |
-| `bench` — end-to-end (renders + PNG-encodes each frame; codec-bound) | 45 ms | 42 ms | **1.08×** |
 | `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.10×** |
 | `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 30 ms | **1.11×** |
 | `bench_pngdec` — PNG decode of a committed gallery scene (strict inflate + un-Up) | 17 ms | 16 ms | **1.11×** |
+| `bench` — end-to-end (renders + PNG-encodes each frame; codec-bound) | 42 ms | 38 ms | **1.11×** |
 | `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 30 ms | 26 ms | **1.14×** |
 | `bench_render_large` — the flagship: a full gallery-scale scene, planar f16 compositing | 179 ms | 147 ms | **1.22×** |
 | `bench_render` — the flagship at default size | 18 ms | 15 ms | **1.23×** |
@@ -527,7 +527,21 @@ prefix sum) — **~5.8× faster**, and its checks went from free (1.00×, hidden
 the scalar walk's slack) to **1.09×**: a loop where the checks cost nothing is a
 loop with headroom left. The full anatomy — both fixes, the scheduling story, and
 a since-retired prefetch experiment — is
-[docs/stencil-blur.md](docs/stencil-blur.md). Real canvas
+[docs/stencil-blur.md](docs/stencil-blur.md). The **stroker** — the one hot kernel
+the opt-level memo caught still leaning on the autovectorizer, and the only bench
+where `-O2` beat the shipping `-Os` — closed the recipe's loop from the *output*
+side: its cost wasn't per-element input checks but an out-of-line append per
+triangle with three individually checked stores (62 % of self-time). Emission now
+stages triangles in small local arrays and lands whole blocks through one
+counted-pointer copy, while segments and miter/bevel joins run four per block on
+x/y planes — each lane the scalar operation sequence exactly, so every vertex
+(and the order-sensitive coverage sums downstream) is bit-identical and all 33
+gallery PNGs stayed byte-still. `bench_stroke` is **1.9× faster** at **1.00×**
+overhead, and rebuilt at `-O2` the new stroker no longer cares (±1 %) — the
+memo's "hand-vectorized kernels stop caring about the flag" prediction, confirmed
+on the kernel that motivated it (the e2e row's ratio nudged up for the Amdahl
+reason above: a phase both postures split evenly shrank, leaving the codec-heavy
+remainder a larger slice). Real canvas
 rendering is CPU-bound — the whole pipeline (tile bake, premultiply, coverage,
 blend, readback) runs in checked C — so these per-kernel prices *are* the
 end-to-end cost of safety, not a fraction of it; two commands to
