@@ -281,9 +281,9 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   lingua franca here — native on this hardware, 8-bit only at the spec-mandated
   edges), so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific:
   the [software compositor](src/compositor_cpu.c) implements `compositor.h`
-  identically in ~350 lines of checked C (its per-pixel blend kernel, shared via
-  [cnvs_blend.h](src/cnvs_blend.h), is the same premultiplied math the Metal shader
-  runs), selected instead of Metal at build time. The two agree **bit-for-bit**
+  identically in ~350 lines of checked C (its file-local per-pixel `blend()` kernel
+  is the same premultiplied math the Metal shader runs), selected instead of Metal
+  at build time. The two agree **bit-for-bit**
   — the software blend rounds its half stores toward zero to match Metal's
   RGBA16Float store, and the `backenddiff` gate holds the match at tolerance 0
   (see [docs/backend-differential.md](docs/backend-differential.md)) — and the

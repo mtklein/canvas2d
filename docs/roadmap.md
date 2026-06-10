@@ -22,9 +22,9 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    blend kernel (item 2).
 2. ~~**A software compositor backend**~~ — **done**.
    [compositor_cpu.c](../src/compositor_cpu.c) implements the same `compositor.h`
-   ABI in ~350 lines of checked C; the per-pixel `cnvs_blend(src, dst, mode)`
-   kernel ([cnvs_blend.h](../src/cnvs_blend.h)) is all 26 composite/blend modes,
-   premultiplied, over `__counted_by` tiles. Chosen instead of Metal at build time
+   ABI in ~350 lines of checked C; its file-local per-pixel `blend(src, dst, mode)`
+   kernel is all 26 composite/blend modes, premultiplied, over `__counted_by`
+   tiles. Chosen instead of Metal at build time
    (the `-cpu` variants), it links no GPU frameworks and cross-validates the Metal
    backend — every pixel test runs against both, and they agree bit-for-bit
    (the software blend rounds half stores toward zero to match Metal's
