@@ -1945,6 +1945,81 @@ static void shaping(void) {
     save(c, "gallery/shaping.png");
 }
 
+// Proper RTL: the direction attribute drives bidi layout.  Hebrew and Arabic
+// paragraphs hang from the right margin (start == right under rtl), the
+// Arabic joining contextually; a mixed line shows the rtl paragraph
+// reordering embedded Latin; and the bottom rows hang one bidi string off a
+// single anchor under every direction x start/end pairing -- the alignment
+// flips with direction, and the string itself reorders.
+static void rtl(void) {
+    canvas *__single c = canvas_create(500, 330);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/rtl.canvas");
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 330.0f);
+
+    // Headline, ltr.
+    canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 464.0f, 0.0f);
+    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_set_font_size(c, 20.0f);
+    canvas_fill_text(c, "direction: rtl", 36.0f, 40.0f);
+
+    // RTL paragraphs from the right margin: start anchors right under rtl.
+    float const right = 464.0f;
+    canvas_set_direction(c, CANVAS_DIRECTION_RTL);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    canvas_set_font_size(c, 30.0f);
+    canvas_set_fill_rgba(c, 0.95f, 0.83f, 0.45f, 1.0f);
+    canvas_fill_text(c, "שלום עולם", right, 88.0f);          // Hebrew
+    canvas_set_fill_rgba(c, 0.55f, 0.85f, 0.65f, 1.0f);
+    canvas_fill_text(c, "مرحبا بالعالم", right, 130.0f);     // Arabic, joined
+    canvas_set_font_size(c, 26.0f);
+    canvas_set_fill_rgba(c, 0.70f, 0.75f, 0.95f, 1.0f);
+    canvas_fill_text(c, "טקסט עם canvas2d בפנים", right, 172.0f);  // mixed bidi
+
+    // Captions, back to ltr at the left margin.
+    canvas_set_direction(c, CANVAS_DIRECTION_LTR);
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "Hebrew", 36.0f, 84.0f);
+    canvas_fill_text(c, "Arabic joins", 36.0f, 126.0f);
+    canvas_fill_text(c, "mixed bidi", 36.0f, 168.0f);
+
+    // start/end resolve against direction: four rows off one anchor line.
+    float const ax = 250.0f;
+    canvas_set_fill_rgba(c, 0.85f, 0.35f, 0.35f, 1.0f);
+    canvas_fill_rect(c, ax - 0.5f, 196.0f, 1.0f, 122.0f);
+    struct {
+        canvas_direction dir;
+        canvas_text_align align;
+        char const *label;
+    } const row[4] = {
+        { CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START, "ltr start" },
+        { CANVAS_DIRECTION_LTR, CANVAS_ALIGN_END,   "ltr end" },
+        { CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START, "rtl start" },
+        { CANVAS_DIRECTION_RTL, CANVAS_ALIGN_END,   "rtl end" },
+    };
+    for (int i = 0; i < 4; i++) {
+        float y = 222.0f + (float)i * 28.0f;
+        canvas_set_direction(c, row[i].dir);
+        canvas_set_text_align(c, row[i].align);
+        canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
+        canvas_set_font_size(c, 18.0f);
+        canvas_fill_text(c, "אב ab", ax, y);
+        canvas_set_direction(c, CANVAS_DIRECTION_LTR);
+        canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+        canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+        canvas_set_font_size(c, 12.0f);
+        canvas_fill_text(c, row[i].label, 36.0f, y);
+    }
+
+    save(c, "gallery/rtl.png");
+}
+
 // The CSS filter functions: each cell paints the same motif -- a
 // diagonal-gradient rounded tile under two translucent discs -- through one
 // filter (top-left unfiltered for reference).  Each colour function is a
@@ -2083,6 +2158,7 @@ static void render_all(void) {
     emoji();
     emojiscale();
     shaping();
+    rtl();
     filters();
 }
 
