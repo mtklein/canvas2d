@@ -54,15 +54,25 @@ typedef enum {
 // coverage applies in principle as a lerp between the destination and the
 // full-strength blend, out = lerp(dst, blend(src, dst), cov) -- a pixel the
 // shape doesn't cover keeps its destination.  Folding coverage into source
-// alpha instead (src *= cov, premultiplied) is identical math only where the
-// Porter-Duff form co = Fa*s + Fb*d has Fa free of sa and Fb affine in sa
-// with Fb(0) = 1, AND the result never trips the output clamp: the modes
-// below.  Those fold (cheaper, and bit-compatible with the established
-// source-over pipeline); every other mode takes the lerp in compositor_blend.
-// 'lighter' passes the Fa/Fb criterion (Fa = Fb = 1) but its co = s + d
-// exceeds 1 exactly where it saturates, and clamp(c*s + d) != lerp(d,
-// clamp(s + d), c) there -- the supersampled truth clamps per subsample, so
-// lighter lerps (test_coverage_lerp measures the difference).
+// alpha instead (src *= cov, premultiplied) is identical math in EXACT
+// arithmetic for two families, which fold (cheaper, and bit-compatible with
+// the established source-over pipeline):
+//   - Porter-Duff modes where co = Fa*s + Fb*d has Fa free of sa and Fb
+//     affine in sa with Fb(0) = 1, and the output clamp never trips:
+//     source-over, source-atop, destination-over, destination-out, xor.
+//   - ALL 15 blend modes: their composite is co = s*(1-da) + d*(1-sa) + T
+//     with the W3C premultiplied term T = sa*da*B(d/da, s/sa), which is
+//     degree-1 homogeneous in (s, sa) -- B's arguments are scale-invariant --
+//     so T(c*s, c*sa) = c*T(s, sa) and fold == lerp exactly; the two differ
+//     only by f16 rounding, <= 1/255 (the #28 finding, re-applied here as
+//     the re-fold: it deletes the coverage-plane read and the lerp on the
+//     hottest non-over modes).
+// Every other mode takes the lerp in compositor_blend: copy, the in/out
+// family, and destination-atop fail the criterion outright (Fb(0) = 0 scales
+// the destination away where the shape doesn't cover), and 'lighter' passes
+// it only unclamped -- its co = s + d saturates, the supersampled truth
+// clamps per subsample, and clamp(c*s + d) != lerp(d, clamp(s + d), c) there
+// (test_coverage_lerp pins all of this against a double-precision oracle).
 static inline bool compositor_coverage_folds(compositor_blend_mode m) {
     switch ((int)m) {
         case COMPOSITOR_SRC_OVER:   // Fa = 1,      Fb = 1 - sa
@@ -71,8 +81,8 @@ static inline bool compositor_coverage_folds(compositor_blend_mode m) {
         case COMPOSITOR_DST_OUT:    // Fa = 0,      Fb = 1 - sa
         case COMPOSITOR_XOR:        // Fa = 1 - da, Fb = 1 - sa
             return true;
-        default:  // copy, the in/out family, dst-atop, lighter, blends
-            return false;
+        default:  // copy, the in/out family, dst-atop, lighter
+            return (int)m >= COMPOSITOR_MULTIPLY;  // blends: T homogeneous
     }
 }
 
