@@ -1794,6 +1794,58 @@ static void emoji(void) {
     save(c, "gallery/emoji.png");
 }
 
+// Mip quality on a ruler.  The classic way to judge minification quality is an
+// animation zooming over time; laying the sweep along x captures the same
+// information in one still.  One emoji at geometrically increasing sizes --
+// equal steps cross mip levels at equal rates, so level-selection popping would
+// read as periodic sharpness banding -- overlapping at 80% alpha so compositing
+// shows, and running past the 160px canonical capture into honest upscale
+// softness.  The second row repeats the ramp under progressive rotation: level
+// selection answers the transformed device footprint, not the nominal font size.
+static void emojiscale(void) {
+    canvas *__single c = canvas_create(700, 600);
+    if (!c) {
+        return;
+    }
+    canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 600.0f);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    int const n = 12;
+    float const s0 = 8.0f, s1 = 200.0f;
+    canvas_set_global_alpha(c, 0.8f);
+    float x = 14.0f;
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / (float)(n - 1);
+        float size = s0 * powf(s1 / s0, t);
+        canvas_set_font_size(c, size);
+        canvas_fill_text(c, "🚀", x, 240.0f);
+        x += size * 0.72f;  // tighter than the advance: the overlaps blend
+    }
+    x = 14.0f;
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / (float)(n - 1);
+        float size = s0 * powf(s1 / s0, t);
+        canvas_save(c);
+        canvas_translate(c, x, 545.0f);
+        canvas_rotate(c, -0.11f * (float)i);
+        canvas_set_font_size(c, size);
+        canvas_fill_text(c, "🚀", 0.0f, 0.0f);
+        canvas_restore(c);
+        x += size * 0.72f;
+    }
+    canvas_set_global_alpha(c, 1.0f);
+
+    canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "8px → 200px, geometric; canonical capture 160px", 14.0f, 268.0f);
+    canvas_fill_text(c, "the same ramp, progressively rotated", 14.0f, 580.0f);
+
+    save(c, "gallery/emojiscale.png");
+}
+
 // Text shaping + font fallback: one fill_text per line, each a greeting in a
 // different script.  Core Text picks the right fallback font per run, joins Arabic
 // contextually, lays RTL out right-to-left, reorders Devanagari -- all rendered by
@@ -1981,6 +2033,7 @@ static void render_all(void) {
     blend();
     shadows();
     emoji();
+    emojiscale();
     shaping();
     filters();
 }

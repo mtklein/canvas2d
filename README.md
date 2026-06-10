@@ -202,6 +202,16 @@ rasterizer:
 
 ![shaping](gallery/shaping.png)
 
+Mip quality on a ruler — the classic minification test is an animation zooming
+over time; laying the sweep along x captures it in one still. One emoji at
+geometrically increasing sizes (equal steps cross mip levels at equal rates, so
+level-selection popping would read as periodic sharpness banding), overlapping
+at 80% alpha, running past the 160px canonical capture into honest upscale
+softness — then the same ramp progressively rotated, since level selection
+answers the transformed device footprint, not the nominal font size:
+
+![emojiscale](gallery/emojiscale.png)
+
 `filter` — the same motif (a gradient tile under two translucent discs) through
 each of the eight colour functions, unfiltered at top-left, plus `blur()` and
 `drop-shadow()` rows. Every function is a typed API call (`canvas_add_filter_*`,
