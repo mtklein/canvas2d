@@ -23,6 +23,54 @@ static void ref_blur_h_row(uint8_t *__counted_by(w) dst,
     }
 }
 
+// O(h*r) brute-force reference for one column of the vertical pass: the literal
+// window sum down column x, edge-clamped, with the same (sum + win/2) / win
+// quantize.
+static void ref_blur_v_col(uint8_t *__counted_by(h) dst,
+                           uint8_t const *__counted_by(w * h) src,
+                           int w, int h, int x, int r) {
+    int win = 2 * r + 1;
+    for (int y = 0; y < h; y++) {
+        int sum = 0;
+        for (int k = -r; k <= r; k++) {
+            sum += src[clampi(y + k, 0, h - 1) * w + x];
+        }
+        dst[y] = (uint8_t)((sum + win / 2) / win);
+    }
+}
+
+// blur_box_v must match the brute-force reference bit-for-bit across awkward
+// shapes: widths off the 8-column lane grid (tail columns), heights of 1 and 2,
+// radii of 0, >= h, and crossing the height.
+static void check_v_vs_ref(void) {
+    static int const ws[] = { 1, 2, 7, 8, 9, 31, 33, 64 };
+    static int const hs[] = { 1, 2, 7, 24 };
+    static int const rs[] = { 0, 1, 2, 5, 17, 300 };
+    enum { MAXW = 64, MAXH = 24 };
+    uint8_t src[MAXW * MAXH], dst[MAXW * MAXH], ref[MAXH];
+    for (size_t wi = 0; wi < sizeof ws / sizeof *ws; wi++) {
+        for (size_t hi = 0; hi < sizeof hs / sizeof *hs; hi++) {
+            for (size_t ri = 0; ri < sizeof rs / sizeof *rs; ri++) {
+                int const w = ws[wi], h = hs[hi], r = rs[ri], n = w * h;
+                for (int i = 0; i < n; i++) {
+                    src[i] = (uint8_t)((i * 73 + (int)hi * 57 + (int)wi * 31 + (int)ri * 11) & 0xFF);
+                }
+                blur_box_v(dst, src, w, h, r);
+                bool same = true;
+                for (int x = 0; x < w; x++) {
+                    ref_blur_v_col(ref, src, w, h, x, r);
+                    for (int y = 0; y < h; y++) {
+                        if (dst[y * w + x] != ref[y]) {
+                            same = false;
+                        }
+                    }
+                }
+                CHECK(same);
+            }
+        }
+    }
+}
+
 // blur_box_h must match the brute-force reference bit-for-bit across awkward
 // shapes: widths off the vector-block grid, radii of 0, >= w, and crossing the
 // width, single-pixel rows.
@@ -56,6 +104,7 @@ static void check_h_vs_ref(void) {
 
 int main(void) {
     check_h_vs_ref();
+    check_v_vs_ref();
 
     int const w = 32, h = 24, n = w * h, r = 2, win = 2 * r + 1;
     uint8_t *__counted_by(n) src = malloc((size_t)n);
