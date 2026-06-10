@@ -494,14 +494,17 @@ def main():
     # clean; it links the bounds-safe debug core, which keeps that core's
     # -fbounds-safety traps under the same replay.
     if fuzz_corpus:
+        # Named corpus_replay, not fuzz_replay: it replays the corpus through
+        # the fuzz_api harness, and build/fuzz/fuzz_replay is a different
+        # binary entirely (the libFuzzer harness for the .canvas parser).
         fuzz_obj = "build/debug/obj/fuzz_api.o"
-        fuzz_replay = "build/debug/fuzz_replay"
+        corpus_replay = "build/debug/corpus_replay"
         fuzz_stamp = "build/debug/fuzz_corpus.runok"
         w(f"build {fuzz_obj}: cc_boundary_debug fuzz/fuzz_api.c")
-        w(f"build {fuzz_replay}: link_debug {fuzz_obj} "
+        w(f"build {corpus_replay}: link_debug {fuzz_obj} "
           f"{' '.join(variant_lib_objs['debug'])}")
-        w(f"build {fuzz_stamp}: corpus_replay {' '.join(fuzz_corpus)} | {fuzz_replay}")
-        w(f"  bin = ./{fuzz_replay}")
+        w(f"build {fuzz_stamp}: corpus_replay {' '.join(fuzz_corpus)} | {corpus_replay}")
+        w(f"  bin = ./{corpus_replay}")
         w(f"build fuzzcorpus: phony {fuzz_stamp}")
 
     # `ninja fuzzers`: build the libFuzzer harnesses (opt-in -- needs Homebrew clang;
