@@ -234,7 +234,7 @@ python3 configure.py     # generate build.ninja (first run; it self-regenerates 
 ninja                    # build every variant, run the suite, re-render the gallery
 ninja test               # just the tests (subset of the default build)
 ninja images             # just (re)render the gallery PNGs (subset of default)
-ninja fuzz               # build the libFuzzer harnesses (needs brew llvm; fuzz/README.md)
+ninja fuzzers            # build the libFuzzer harnesses (needs brew llvm; fuzz/README.md)
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
 ninja profile-scene      # sample(1): self-time across the whole gallery (real scenes)
@@ -523,7 +523,7 @@ include/canvas.h         public API
 src/                     C core; the software compositor (compositor_cpu.c); Core Text shim
 tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep
 bench/                   isolated kernel benches + end-to-end (ninja benchcmp / profile / throughput)
-fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzz)
+fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzzers)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs
 docs/bounds-safety.md    the write-up

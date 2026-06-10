@@ -3,11 +3,11 @@
 // Stub <ptrcheck.h> for the fuzz build ONLY.
 //
 // -fbounds-safety is an Apple-clang feature; the real <ptrcheck.h> lives in the
-// Apple toolchain's resource dir.  The fuzz build (`ninja fuzz`) uses Homebrew
+// Apple toolchain's resource dir.  The fuzz build (`ninja fuzzers`) uses Homebrew
 // clang for coverage instrumentation + ASan/UBSan, with the flag OFF, so the
 // bounds annotations must expand to nothing -- exactly as they do in the
 // `unsafe` variant under Apple clang.  This header is on the include path only
-// for `ninja fuzz` (its cc_fuzz rule adds -Ifuzz/shim); the main build uses Apple
+// for `ninja fuzzers` (its cc_fuzz rule adds -Ifuzz/shim); the main build uses Apple
 // clang and its real header.
 //
 // Pointing -I at Apple's resource dir instead would drag in a *different* clang

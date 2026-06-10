@@ -5,6 +5,6 @@
 /.ninja_deps
 .DS_Store
 
-# Fuzzing: generated seed corpus and AFL findings (regenerate with `ninja fuzz`).
+# Fuzzing: generated seed corpus and AFL findings (regenerate with `ninja fuzzers`).
 /fuzz/seeds/
 /fuzz/findings/

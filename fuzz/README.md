@@ -30,11 +30,11 @@ probes clip/clamp logic without OOMing on multi-GB allocations.
 ## Build
 
 ```sh
-ninja fuzz   # -> build/fuzz/{fuzz_api,fuzz_state,fuzz_text,fuzz_png,fuzz_replay} + seeds in fuzz/seeds
+ninja fuzzers   # -> build/fuzz/{fuzz_api,fuzz_state,fuzz_text,fuzz_png,fuzz_replay} + seeds in fuzz/seeds
 ```
 
 The libFuzzer build folds into the main ninja graph (configure.py), so `ninja
-fuzz` is the only entry point. It's opt-in (not built by a bare `ninja`) and
+fuzzers` is the only entry point. It's opt-in (not built by a bare `ninja`) and
 auto-skipped when Homebrew llvm is absent, so the default build never depends on
 it. Requires `brew install llvm` (provides clang + the libFuzzer runtime). No root.
 
@@ -125,8 +125,8 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
   encoder.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
 
-There's no build script here: `ninja fuzz` builds every harness (Homebrew clang +
-libFuzzer) straight from the main ninja graph — see configure.py's `fuzz` target.
+There's no build script here: `ninja fuzzers` builds every harness (Homebrew clang +
+libFuzzer) straight from the main ninja graph — see configure.py's `fuzzers` target.
 
 Not yet done: adding `fuzz_state`/`fuzz_text`/`fuzz_png`/`fuzz_pngdec`/
 `fuzz_replay` to the committed-corpus replay gate (coordinate with `fuzzcorpus`,

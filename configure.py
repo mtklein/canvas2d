@@ -20,6 +20,7 @@ see docs/bounds-safety.md.
 """
 
 import os
+import re
 import glob
 import subprocess
 
@@ -40,7 +41,7 @@ def homebrew_clang():
     the `unsafe` variant does -- the annotations vanish via fuzz/shim/ptrcheck.h.
     Homebrew clang needs -isysroot pointed at the SDK explicitly (Apple clang finds
     it implicitly).  When llvm isn't installed we return None and the `fuzz` target
-    is simply not emitted, so a bare `ninja` is unaffected (`ninja fuzz` needs
+    is simply not emitted, so a bare `ninja` is unaffected (`ninja fuzzers` needs
     `brew install llvm`).  $CC overrides the compiler."""
     cc = os.environ.get("CC")
     if not cc:
@@ -132,7 +133,7 @@ _DEBUG = ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all
 OOM_DEFINES = ("-Dmalloc=cnvs_oom_malloc -Drealloc=cnvs_oom_realloc "
                "-Dcalloc=cnvs_oom_calloc")
 
-# --- libFuzzer fuzz targets (opt-in `ninja fuzz`; see homebrew_clang() above) ----
+# --- libFuzzer fuzz targets (opt-in `ninja fuzzers`; see homebrew_clang() above) ----
 # fuzzer-no-link instruments every TU for SanitizerCoverage; the libFuzzer driver
 # is pulled in only at the final link.  The use-after-{scope,return} flags match the
 # debug variant's temporal ASan; -fno-sanitize-recover=all so a UBSan finding aborts
@@ -206,24 +207,33 @@ def main():
     # configure.py takes effect on the next `ninja` -- no stale-graph builds from
     # forgetting to rerun it by hand.  `generator = 1` marks the output as
     # build-system metadata (ninja won't delete it on interrupt or clean it).
-    # The globbed directories are implicit inputs: a directory's mtime bumps
-    # exactly when an entry is added/removed/renamed (not when a file's contents
-    # change), so creating a source file also regenerates the graph, while
-    # ordinary edits don't.  Keep this list in sync with the glob.glob calls
+    # The globbed directories (regen_dirs) are implicit inputs: a directory's mtime
+    # bumps exactly when an entry is added/removed/renamed (not when a file's
+    # contents change), so creating a source file also regenerates the graph, while
+    # ordinary edits don't.  Keep regen_dirs in sync with the glob.glob calls
     # (gallery PNGs are rewritten in place by `ninja images`, which leaves the
     # directory mtime alone, so watching gallery/ does not loop).
+    #
+    # A watched directory name must NOT also be the output of a build edge.  When it
+    # is (e.g. a `phony` alias of the same name), ninja resolves the regen input to
+    # that target node and brings it up to date as a *prerequisite of regenerating
+    # build.ninja* -- so a bare `ninja` drags in whatever the alias points at.  This
+    # once shipped: a `fuzz` phony made `ninja` build the entire opt-in libFuzzer
+    # suite.  The phony aliases are therefore named off the source-dir names -- test
+    # (not tests), images (not gallery), benches (not bench), fuzzers (not fuzz) --
+    # and the assert at the end of main() keeps the two namespaces disjoint.
     #
     # DELETING a globbed source still needs a manual `python3 configure.py`:
     # ninja refuses to load a graph whose stale manifest references the missing
     # file ("needed by ... missing and no known rule to make it") before it
     # ever reaches the regen edge -- even when asked for build.ninja alone.
     # Verified empirically when bench_blur_vpf.c was retired.
+    regen_dirs = ["src", "tests", "bench", "examples", "gallery", "fuzz", "fuzz/corpus"]
     w("rule configure")
     w("  command = python3 configure.py")
     w("  generator = 1")
     w("")
-    w("build build.ninja: configure configure.py | "
-      "src tests bench examples gallery fuzz fuzz/corpus")
+    w(f"build build.ninja: configure configure.py | {' '.join(regen_dirs)}")
     w("")
 
     for variant, (opt, bounds, _tests, _bench) in VARIANTS.items():
@@ -367,7 +377,7 @@ def main():
     benchcmp_cmd = " ; ".join(calls)
 
     w(f"build test: phony {' '.join(test_stamps)}")
-    w(f"build bench: phony {' '.join(bench_exes)}")
+    w(f"build benches: phony {' '.join(bench_exes)}")
     # `images` renders straight into the committed gallery/*.png.  The PNGs are
     # outputs gated on the gallery binary, so a bare `ninja` keeps them in
     # lockstep with the renderer -- and dirties the tree the moment a code change
@@ -392,7 +402,7 @@ def main():
         w(f"  bin = ./{fuzz_replay}")
         w(f"build fuzzcorpus: phony {fuzz_stamp}")
 
-    # `ninja fuzz`: build the libFuzzer harnesses (opt-in -- needs Homebrew clang;
+    # `ninja fuzzers`: build the libFuzzer harnesses (opt-in -- needs Homebrew clang;
     # see homebrew_clang()).  This is the whole fuzz build -- previously a
     # standalone shell script, now folded in so `ninja` is the single entry point:
     # native per-TU edges (real incremental + parallel builds, header deps tracked
@@ -454,7 +464,7 @@ def main():
         w("build build/fuzz/seed_gen: cc_seedgen fuzz/seed_gen.c")
         w("build build/fuzz/seeds.stamp: gen_seeds build/fuzz/seed_gen")
         w("  bin = ./build/fuzz/seed_gen")
-        w(f"build fuzz: phony {' '.join(fuzz_bins)} build/fuzz/seeds.stamp")
+        w(f"build fuzzers: phony {' '.join(fuzz_bins)} build/fuzz/seeds.stamp")
 
     # benchcmp names a file that is never created, so ninja always reruns it.
     w(f"build benchcmp: benchcmp {' '.join(bench_exes)}")
@@ -674,6 +684,25 @@ def main():
     w(f"build all: phony {all_targets}")
     w("default all")
     w("")
+
+    # Disjointness guard for the regen edge (see its comment above): a build output
+    # that shares a name with a watched directory is built as a prerequisite of
+    # regenerating build.ninja, silently pulling that target into a bare `ninja`.
+    # This shipped once (a `fuzz` phony dragged in the whole libFuzzer suite); the
+    # assert turns any recurrence into a loud configure-time error.  Phony outputs
+    # only -- those are the convenience aliases liable to reuse a source-dir name.
+    phony_outputs = set()
+    for line in n:
+        m = re.match(r"build (.+?): phony\b", line)
+        if m:
+            phony_outputs.update(m.group(1).split())
+    clash = set(regen_dirs) & phony_outputs
+    if clash:
+        raise SystemExit(
+            f"configure.py: phony target(s) {sorted(clash)} collide with the regen "
+            "edge's watched directories; rename them, or ninja will build the target "
+            "as a prerequisite of regenerating build.ninja (dragging it into a bare "
+            "`ninja`)")
 
     with open(os.path.join(HERE, "build.ninja"), "w") as f:
         f.write("\n".join(n))

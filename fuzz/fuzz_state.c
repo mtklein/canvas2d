@@ -6,7 +6,7 @@
 // the fuzz build) is the oracle.  Complements fuzz_api.c, which spreads thin over
 // the whole API; here the op set is small so the churn is dense.
 //
-// Build: ninja fuzz.  Standard libFuzzer entry; the file-replay main (behind
+// Build: ninja fuzzers.  Standard libFuzzer entry; the file-replay main (behind
 // FUZZ_NO_MAIN) lets the same binary reproduce a crasher.
 
 #include "canvas.h"
