@@ -85,13 +85,16 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
-- **Text caching** is live-only. Every canvas memoizes boundary results
-  ([text-boundary.md](text-boundary.md)): shaped lines by (size, text) and
-  canonical glyph curves by (font name, glyph id), checked before Core Text is
-  called — repeated strings shape once, repeated glyphs fetch once
-  (`test_textcache`). What's still missing is the *serialized* half of that
-  lookup: a self-contained canvas-program format carrying the derived glyph
-  data, so a recording replays without a text boundary at all.
+- **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
+  every canvas memoizes boundary results — shaped lines by (size, text), and
+  canonical glyph curves + ink bounds by (font name, glyph id) — checked before
+  Core Text is called, so repeated strings shape once and repeated glyphs fetch
+  once (`test_textcache`). Serialized: a recorded canvas program carries that
+  derived data inline (`font`/`glyph`/`shape` blocks), so it replays
+  byte-identically — pixels and measureText — with *no text boundary at all*,
+  fonts installed or not (`test_record_text`). Emoji are the deferred corner:
+  color-glyph bitmaps don't serialize, so a fontless replay draws them as blank
+  advances.
 - **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
   coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
   [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in

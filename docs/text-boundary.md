@@ -298,8 +298,74 @@ because the unsafe TU isn't called at all. On a text-heavy tight loop (2000×
 the whole-gallery number doesn't move because each scene renders once on a fresh
 canvas — cold caches, by construction.
 
-This is the **live half** of the params → derived-data lookup. The serialized half —
-the self-contained canvas-program format that carries shaped runs and canonical
-glyph curves so a recording replays with *no text boundary at all* — is what comes
-next, and it reads straight from these cache entries: stable name-keyed,
-size-independent bytes are already the wire format.
+This is the **live half** of the params → derived-data lookup. The serialized half
+reads straight from these cache entries: stable name-keyed, size-independent bytes
+are already the wire format.
+
+## The serialized half: one self-contained file per program
+
+A recorded canvas program ([canvas.h](../include/canvas.h)'s
+`canvas_record_to`/`canvas_replay_from`) now carries the lookup's contents inline —
+no sidecar, one file. Before each text op that first needs them, the recorder
+([../src/cnvs_record.c](../src/cnvs_record.c)) emits block lines straight from the
+cache entries the op is about to use:
+
+- **`font <id> <ascent> <descent> <name…>`** — an interned font name (the rest of
+  the line; names contain spaces) with its vertical metrics normalized to size 1.0.
+  Ascent/descent are linear in size, so one block serves every font size — the
+  consumer multiplies by `size_px`. The canvas's baseline placement and font-wide
+  TextMetrics read the same per-name record, deriving even the *live* values
+  through the stored floats, so recording and replay place baselines identically.
+- **`glyph <font-id> <gid> <units-per-em> <ink x0 y0 x1 y1> <m/l/q/c/z curves…>`**
+  — one glyph's canonical data, exactly the cache entry: verb tokens with their
+  control points *and* the tight ink box, all in font units (y up,
+  baseline-relative), so one block serves every size, pen, and transform — and
+  `measureText` replays deterministically too, with no format revision needed when
+  CI wants metrics scenes. A blank glyph is `units-per-em` 0 with no curves
+  ("known to have no outline" serializes like it caches).
+- **`shape <size_px> <utf16-len> <nruns> <byte-len> <text…>`** followed by `nruns`
+  **`run <font-id|-1> <rtl> <color> <nglyphs> (gid adv cluster)*`** lines —
+  everything `cnvs_shaped` carries, keyed exactly as the live cache keys it
+  (`size_px` bits + raw text bytes, length-prefixed to end of line). The
+  line-based format already cannot represent text containing newlines, so one
+  line per shape block is faithful.
+
+Blocks are deduplicated within the file by per-slot `emitted` marks (a new
+recording clears them), so a frame's repeated label costs one block set and then
+one op line per draw.
+
+Replay ([../src/cnvs_replay.c](../src/cnvs_replay.c)) parses the blocks **strictly**
+— the slice-A "untrusted verb stream" posture, now at the parser: ids
+range-checked and declared-before-use, verb tokens validated with their point
+counts, cluster indices checked against the shape's UTF-16 length, counts bounded
+by the line, non-finite numbers rejected where the recorder writes finite ones,
+and the `shape`→`run` cross-line state tolerating no interleaving. Any violation
+stops replay false; the canvas stays valid. Parsed blocks pre-populate the text
+cache, and a rebuilt run carries its *interned name id* with `font == NULL` — the
+CTFontRef-free path: outline drawing reads curves from the cache by name id,
+baseline placement reads the vmetrics record, metrics read the ink boxes, and the
+run's `is_color`/`rtl` ride in the struct. No boundary call is needed to draw a
+recorded non-emoji line; `test_record_text` pins the proof through the stats
+surface (replaying a recorded text program performs **zero** shape/glyph boundary
+calls) plus byte-identical pixels and bit-identical measureText.
+
+Float round-trip is a correctness requirement, not a nicety — the shape key is
+`size_px`'s *bits*, and byte-identical rendering needs every advance and control
+point back exactly. Numbers are written with `%.9g` (nine significant digits
+uniquely identify any float32, and the file stays human-readable); the parser's
+number reader scales by *exact* powers of ten (10^k is exact in a double for k ≤
+22, stepped), so its at-most-three roundings sit orders of magnitude inside the
+half-ulp margin and every emitted float reparses to the identical float32 —
+property-tested across denormals, −0, and both extremes, while hostile exponents
+keep the old saturate-to-inf/0 clamping.
+
+Deferred by design: **color (emoji) glyphs are bitmaps**, not curves, and bitmap
+serialization is out of scope. A program whose text shaped to color runs records
+the shape with its runs and advances, but a fontless replay draws those glyphs as
+blank advances (layout intact, ink absent) — the limitation is documented on
+`canvas_record_to`. Degradations stay best-effort, mirroring the live cache: a
+full glyph table or intern table during recording simply leaves those blocks out
+(replay falls back to live shaping where fonts exist), and a cache-side
+allocation failure during replay drops the entry rather than failing the parse —
+only *malformed input* or an allocation failure while rebuilding a block returns
+false.

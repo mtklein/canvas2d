@@ -476,9 +476,10 @@ But the seam is avoidable entirely, and removing both forges is instructive:
   place by index* (sign, digits, `.`fraction, `e`exponent). It never builds a
   C string, so it never touches `__null_terminated`. It's also *stricter* than
   `strtof` (rejects `1.5.2`, trailing junk, hex/`inf`/`nan`), which is the right
-  posture for untrusted input; the only cost is decimal rounding that can drift
-  from correctly-rounded at extreme exponents (irrelevant for clamped canvas
-  values).
+  posture for untrusted input. (Its scaling now steps through *exact* powers of
+  ten, so every `%.9g` the recorder emits reparses to the identical float32 —
+  the text-block format made that round-trip a correctness requirement; see
+  [text-boundary.md](text-boundary.md).)
 - **Text:** give the engine a length-counted `canvas_fill_text_n` /
   `stroke_text_n` (`__counted_by(len)`), and the parser hands the tail straight
   through as a slice — `data + j` carries its own remaining count — with no copy,
