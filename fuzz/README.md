@@ -126,9 +126,12 @@ for the OOB-write classes.
   mutations reach the cross-line block state machine, the verb-token
   validation, and the cache-insert paths; an emoji `bitmap` and an `image`
   block (base64 `bits` lines over a deflated stream — the zlib seam);
-  a Path2D `path` block with all three referencing ops; and the scalar ops
+  a Path2D `path` block with all three referencing ops; the scalar ops
   (conic gradients, the filter list, `round_rect_radii`, smoothing,
-  `reset`/`resize`):
+  `reset`/`resize`); an rtl-direction program (the shape block's direction
+  bit + `set_direction` op lines); and a reduced crasher regression
+  (`subrect_saturated_sample.canvas`: a huge `draw_image_subrect` source rect
+  whose saturated bilinear tap once overflowed `int`):
   `./build/fuzz/fuzz_replay -max_len=8192 fuzz/seeds_replay`.
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
@@ -145,7 +148,8 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`: inline
   font/glyph/shape and emoji-bitmap block programs, an `image`-block program
-  driving every image op, a Path2D `path`-block program, and the scalar ops.
+  driving every image op, a Path2D `path`-block program, the scalar ops, an
+  rtl-direction program, and a reduced sampler-overflow crasher.
 - `seeds_pngdec/` — committed PNG seeds for `fuzz_pngdec`, written by our own
   encoder.
 - `seeds_zlib/` — committed zlib streams for `fuzz_inflate` and

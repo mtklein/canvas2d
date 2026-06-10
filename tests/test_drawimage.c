@@ -70,6 +70,15 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 4, 4), 128, 0, 128, 255, 4));    // half blue over red
 
+    // A huge source rect maps device pixels to source coordinates that
+    // saturate cnvs_f2i to INT_MAX; the bilinear sampler's second tap (x0+1)
+    // must not overflow past it (fuzz_replay found the signed wrap; the
+    // sanitized debug run of this case is the regression).  Just must not
+    // trap -- the draw itself samples a clamped edge texel.
+    canvas_set_global_alpha(cv, 1.0f);
+    canvas_draw_image_subrect(cv, src, 2, 2, 0.0f, 0.0f, 1.0f, 1e30f,
+                              0.0f, 3.0f, 3.0f, 1.0f);
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

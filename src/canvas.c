@@ -2400,7 +2400,11 @@ static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
     float gx = fx - 0.5f, gy = fy - 0.5f;
     float fxx = floorf(gx), fyy = floorf(gy);
     int x0 = cnvs_f2i(fxx), y0 = cnvs_f2i(fyy);
-    int x1 = x0 + 1, y1 = y0 + 1;
+    // cnvs_f2i saturates a huge source coordinate (an inf/1e30 subrect maps
+    // device pixels far off the source) to INT_MAX, so the +1 must saturate
+    // too: the edge clamps below fold both taps to the same column/row either
+    // way, and in-range samples are untouched.
+    int x1 = x0 < INT_MAX ? x0 + 1 : x0, y1 = y0 < INT_MAX ? y0 + 1 : y0;
     float tx = gx - fxx, ty = gy - fyy;
     if (x0 < 0) { x0 = 0; } else if (x0 > sw - 1) { x0 = sw - 1; }
     if (x1 < 0) { x1 = 0; } else if (x1 > sw - 1) { x1 = sw - 1; }
