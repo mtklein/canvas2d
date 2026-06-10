@@ -356,15 +356,25 @@ static void rd_align(struct bitrd *b) {  // discard the partial byte's bits
 // shape) -- no untrusted length drives an index until construction has proven
 // the code well-formed.
 enum {
-    zlib_max_bits = 15,   // longest Huffman code
-    zlib_nlitlen  = 288,  // literal/length alphabet (285 used + 2 reserved + EOB)
-    zlib_ndist    = 32,   // fixed code covers all 5-bit codes; 30/31 rejected at decode
-    zlib_ncl      = 19,   // code-length-code alphabet
+    zlib_max_bits   = 15,   // longest Huffman code
+    zlib_nlitlen    = 288,  // literal/length alphabet (285 used + 2 reserved + EOB)
+    zlib_ndist      = 32,   // fixed code covers all 5-bit codes; 30/31 rejected at decode
+    zlib_ncl        = 19,   // code-length-code alphabet
+    // Direct-lookup fast path: codes up to this long decode with one table
+    // load.  9 covers every fixed-tree code (7-9 bits), i.e. all of our own
+    // PNG streams; longer (dynamic-tree) codes fall back to the length walk.
+    zlib_table_bits = 9,
 };
 
 struct huffman {
     uint16_t count[zlib_max_bits + 1];
     uint16_t symbol[zlib_nlitlen];
+    // fast[peek] memoizes the walk for codes <= zlib_table_bits long:
+    // (len << 9) | sym for the code whose LSB-first bits are peek's low len
+    // bits (replicated across the unused upper bits), 0 where no short code
+    // lands -- the walk handles those.  Pure memoization: a table hit returns
+    // exactly what the walk would, so acceptance behavior is unchanged.
+    uint16_t fast[1 << zlib_table_bits];
 };
 
 // Build h from code lengths (0 = unused).  Returns 0 for a complete code, > 0
@@ -377,6 +387,8 @@ struct huffman {
 // structurally (3-bit fields, CL symbols 0-15, or constants), so count[] is
 // indexed in bounds by construction; -fbounds-safety would trap otherwise.
 static int huff_build(struct huffman *h, uint8_t const *__counted_by(nsym) lens, int nsym) {
+    memset(h->fast, 0, sizeof h->fast);  // all-miss until proven otherwise: a
+                                         // no-codes table must decode nothing
     int cnt[zlib_max_bits + 1] = { 0 };
     for (int s = 0; s < nsym; s++) {
         cnt[lens[s]] += 1;
@@ -409,6 +421,27 @@ static int huff_build(struct huffman *h, uint8_t const *__counted_by(nsym) lens,
             offs[lens[s]] += 1;
         }
     }
+    // Fill the fast table by enumerating exactly what huff_decode's walk
+    // tracks: codes of one length are consecutive from `first`, their symbols
+    // from `index`.  A length-len code's stream bits arrive MSB-first, so its
+    // table slots are its bit-reversed value at every setting of the unused
+    // upper bits.  first + k < 2^len here: the oversubscription check above
+    // already rejected anything else.
+    {
+        int first = 0, index = 0;
+        for (int len = 1; len <= zlib_table_bits; len++) {
+            for (int k = 0; k < cnt[len]; k++) {
+                uint16_t const entry =
+                    (uint16_t)((len << zlib_table_bits) | h->symbol[index + k]);
+                for (uint32_t j = bitrev((uint32_t)(first + k), len);
+                     j < (1u << zlib_table_bits); j += 1u << len) {
+                    h->fast[j] = entry;
+                }
+            }
+            index += cnt[len];
+            first = (first + cnt[len]) << 1;
+        }
+    }
     return left;
 }
 
@@ -423,6 +456,18 @@ static int huff_build(struct huffman *h, uint8_t const *__counted_by(nsym) lens,
 static int huff_decode(struct bitrd *b, struct huffman const *h) {
     if (b->nbits < zlib_max_bits) {
         refill(b);
+    }
+    // Fast path: one load answers any code <= zlib_table_bits long.  The
+    // entry is replicated across the peek's unused upper bits, so it depends
+    // only on its own len bits; elen <= nbits keeps the lookup to accounted
+    // bits even within the stream's last bytes.
+    uint32_t const peek = (uint32_t)b->acc & ((1u << zlib_table_bits) - 1u);
+    uint32_t const e = h->fast[peek];
+    int const elen = (int)(e >> zlib_table_bits);
+    if (elen != 0 && elen <= b->nbits) {
+        b->acc >>= elen;
+        b->nbits -= elen;
+        return (int)(e & ((1u << zlib_table_bits) - 1u));
     }
     if (b->nbits >= zlib_max_bits) {
         uint32_t acc = (uint32_t)b->acc;
