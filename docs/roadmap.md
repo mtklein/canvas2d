@@ -66,12 +66,13 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
   `maxWidth` all go through Core Text shaping (`cnvs_shape`) with font fallback — so
-  code points Libian TC lacks now both draw and measure (color emoji as RGBA8
-  bitmaps via `cnvs_glyph_draw`, other fallback runs as outlines), and a string
-  measures the way it draws. What the shaper produces but the renderer doesn't yet
-  exploit is *complex layout*: ligatures, contextual forms, and bidi reordering are
-  carried in the runs (and exercised by `test_shape`) but not yet surfaced as a
-  layout the public text API lays out — that's the remaining text-shaping work.
+  code points Libian TC lacks now both draw and measure (color emoji from one
+  canonical 160px RGBA8 capture per glyph, mip-sampled at draw; other fallback
+  runs as outlines), and a string measures the way it draws. What the shaper
+  produces but the renderer doesn't yet exploit is *complex layout*: ligatures,
+  contextual forms, and bidi reordering are carried in the runs (and exercised by
+  `test_shape`) but not yet surfaced as a layout the public text API lays out —
+  that's the remaining text-shaping work.
 - **`fill`/`stroke`/`clip`** on the *current* path take the fill rule from state,
   not an explicit argument (the `Path2D` overloads — `fill_path`/`stroke_path`/
   `clip_path` — do take an explicit rule).
@@ -87,14 +88,15 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
 - **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
   every canvas memoizes boundary results — shaped lines by (size, text), and
-  canonical glyph curves + ink bounds by (font name, glyph id) — checked before
-  Core Text is called, so repeated strings shape once and repeated glyphs fetch
-  once (`test_textcache`). Serialized: a recorded canvas program carries that
-  derived data inline (`font`/`glyph`/`shape` blocks), so it replays
-  byte-identically — pixels and measureText — with *no text boundary at all*,
-  fonts installed or not (`test_record_text`). Emoji are the deferred corner:
-  color-glyph bitmaps don't serialize, so a fontless replay draws them as blank
-  advances.
+  canonical glyph data by (font name, glyph id): outline curves + ink bounds, or
+  a color glyph's fixed-size capture — checked before Core Text is called, so
+  repeated strings shape once and repeated glyphs fetch (or rasterize) once
+  (`test_textcache`, `test_emoji`). Serialized: a recorded canvas program
+  carries that derived data inline (`font`/`glyph`/`bitmap`/`shape` blocks), so
+  it replays byte-identically — pixels and measureText — with *no text boundary
+  at all*, fonts installed or not, emoji included (`test_record_text`). The mip
+  pyramid each emoji draw samples is derived checked-C data, deliberately not
+  serialized.
 - **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
   coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
   [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in

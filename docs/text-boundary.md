@@ -359,13 +359,85 @@ half-ulp margin and every emitted float reparses to the identical float32 —
 property-tested across denormals, −0, and both extremes, while hostile exponents
 keep the old saturate-to-inf/0 clamping.
 
-Deferred by design: **color (emoji) glyphs are bitmaps**, not curves, and bitmap
-serialization is out of scope. A program whose text shaped to color runs records
-the shape with its runs and advances, but a fontless replay draws those glyphs as
-blank advances (layout intact, ink absent) — the limitation is documented on
-`canvas_record_to`. Degradations stay best-effort, mirroring the live cache: a
-full glyph table or intern table during recording simply leaves those blocks out
-(replay falls back to live shaping where fonts exist), and a cache-side
-allocation failure during replay drops the entry rather than failing the parse —
-only *malformed input* or an allocation failure while rebuilding a block returns
-false.
+Deferred at this point (and closed in the next section): **color (emoji) glyphs
+are bitmaps**, not curves, and bitmap serialization needed its own design. Until
+it landed, a fontless replay drew color runs as blank advances. Degradations
+stay best-effort throughout, mirroring the live cache: a full glyph table or
+intern table during recording simply leaves those blocks out (replay falls back
+to live shaping where fonts exist), and a cache-side allocation failure during
+replay drops the entry rather than failing the parse — only *malformed input* or
+an allocation failure while rebuilding a block returns false.
+
+## Emoji canonicalization: the bitmap boundary crosses once
+
+The original color-glyph path (`cnvs_glyph_draw` above) crossed the bitmap
+boundary **per draw**: every `fillText` with an emoji asked Core Text to
+rasterize the glyph at device size into a fresh checked buffer. Correct, but
+the boundary's output was call-specific — the same problem the outline re-cut
+solved for curves, in raster form. And it made emoji unserializable: there was
+no stable artifact to record.
+
+A color glyph now has a **canonical capture**: one premultiplied RGBA8 render
+per (font name, glyph id), rasterized by the boundary at a fixed, documented
+size — `CNVS_CAPTURE_EM` = 160 px to the em, AppleColorEmoji's largest bitmap
+strike, so the capture loses nothing the font has to give. The capture is a
+square 160x160 buffer placed by the same machinery the per-draw path used:
+`cnvs_glyph_bounds` (at the capture size, via a `cnvs_font_resized` handle)
+gives the ink box in capture px, and `cnvs_glyph_draw` renders with the ink
+box's bottom-left pinned to the buffer's corner. The ink box rides along in
+the glyph slot, so placement and `measureText` both derive from cached data —
+scale by `size_px / CNVS_CAPTURE_EM`, the exact analogue of the outline path's
+`size_px / units_per_em`. The boundary crossing is the same `(ptr, w, h)`
+hand-off as before; it just happens **once per glyph ever** instead of once
+per draw.
+
+Everything derived from the capture is checked C:
+
+- **The mip pyramid.** Repeated 2x2 box halving of the premultiplied capture
+  down to 1x1 (`cnvs_mip_halve`), ceil-halving odd dimensions with the edge
+  row/column replicated. One shared rounding (`(sum + 2) >> 2`) keeps the
+  premul invariant `r,g,b <= a` exact at every level. Levels are separate
+  `__counted_by(w*h*4)` allocations rather than offsets into one arena: each
+  level's bound is exact (an overrun traps at *that level's* edge), the
+  ownership story is trivial, and a failed level keeps the prefix — selection
+  degrades to the coarsest level that built, worst case the capture itself.
+  The pyramid is built lazily on first draw and **never serialized**: the
+  capture alone is canonical, so the derived form can change shape at zero
+  format cost.
+- **Drawing.** The glyph quad's device footprint (its longer CTM-mapped edge)
+  selects the *smallest level still >= the footprint*, and the existing
+  transform-aware bilinear image path samples within it — bilinear then never
+  downscales by more than 2x, which box-halved sources handle without visible
+  softness or aliasing (the gallery's emoji scenes moved imperceptibly;
+  trilinear stays in reserve if continuous-zoom popping ever matters). The
+  sampler grew a premultiplied-source flag rather than a second copy of the
+  quad walk — interpolating premultiplied bytes is fringe-free, and emoji keep
+  taking the transform, clip, global alpha, and shadow like any image. No
+  `CTFontRef` is needed to draw: a capture from the cache (or a replayed
+  block) renders fontlessly, and the per-draw boundary render survives only as
+  the degraded path when the cache cannot serve and a live handle exists.
+- **Serialization.** The capture is the recorded form: a `bitmap` block
+  (`bitmap <font-id> <gid> <w> <h> <ink box> <nlines>`) followed by exactly
+  `nlines` base64 `bits` lines. The chunking is forced by arithmetic: 160x160x4
+  = 102,400 raw bytes is ~137 KB encoded, against the parser's 64 KiB line cap
+  — so the recorder emits 12,288-byte (16,384-char) lines, divisible by 3 so
+  only the final line pads. The strict parser extends to chunked binary:
+  declared-before-use ids, capped dimensions (bounding the allocation), exact
+  chunk counts, padding legal only in the final group of the final line, and
+  the decoded total required to equal `w*h*4` exactly. Premul sanity of the
+  *bytes* is deliberately not validated — bytes are bytes, and a hostile
+  capture can only mis-render its own quad.
+
+The `-fbounds-safety` story here is the pyramid: byte-level image math over
+related buffer sizes, all checked, with the one real friction being that a
+slot's `__counted_by(nmips) mip` array cannot grow its count in place (a
+loaded pointer's bounds are its *current* count), so the build assembles the
+level array in a local and installs pointer + count once, adjacent — the same
+grouped-assignment idiom the rest of the cache uses.
+
+With this, the bitmap boundary matches the outline boundary's shape exactly:
+**canonical, keyed, size-independent bytes cross once**, the cache serves
+every draw, and the serialized form is the cache entry verbatim. The last
+boundary-per-draw path in text is gone — a warm canvas renders emoji, and a
+replayed program renders *and measures* them, without Core Text existing at
+all.

@@ -187,9 +187,11 @@ offset, and composited under the shape — all in checked C, so both backends ma
 
 ![shadows](gallery/shadows.png)
 
-Color emoji — Core Text falls back to AppleColorEmoji and the run's color glyphs
-are drawn as RGBA8 bitmaps (the second text boundary), composited like any image,
-so emoji mix inline with Latin + Chinese and take the transform and shadow:
+Color emoji — Core Text falls back to AppleColorEmoji; each color glyph is
+rasterized **once** into a canonical 160px RGBA8 capture (the second text
+boundary), and every draw samples a checked-C mip pyramid derived from it
+through the same bilinear path as `drawImage` — so emoji mix inline with
+Latin + Chinese and take the transform and shadow:
 
 ![emoji](gallery/emoji.png)
 
@@ -306,9 +308,11 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   (see [docs/backend-differential.md](docs/backend-differential.md)) — and the
   `-cpu` build links no GPU frameworks at all.
 - The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with font
-  fallback) and turns each glyph into either a device-space `cnvs_path` outline —
-  which the *same* coverage rasterizer fills/strokes, so text gets gradients,
-  transforms, clips and AA for free — or, for a color glyph (emoji), an RGBA8 bitmap.
+  fallback) and hands each glyph across once in canonical form: font-unit outline
+  curves — which the *same* coverage rasterizer fills/strokes at every size and
+  transform, so text gets gradients, transforms, clips and AA for free — or, for a
+  color glyph (emoji), one fixed-size RGBA8 capture that every draw samples
+  through a checked-C mip pyramid.
 
 > These two `.c`/`.m` files are the only translation units *not* under
 > `-fbounds-safety`. The Metal one *can't* be — the flag is C-only and rejects
@@ -372,7 +376,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel, 1024-entry ramp (≤1/255 of exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
-| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
+| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline` | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Hit testing — `isPointInPath` / `isPointInStroke` (+ `Path2D` overloads) | ✅ winding + even-odd, transform-aware |
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |
