@@ -235,6 +235,22 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
             int cand = chains[hash3(src[i], src[i + 1], src[i + 2])];
             for (int steps = 0; steps < zlib_chain_max && cand >= 0 && i - cand <= zlib_window;
                  steps++) {
+                // First-byte reject (zlib's scan_end idea): a candidate whose
+                // byte at best_len mismatches can match at most best_len bytes
+                // and could never update best, so skip its verify entirely.
+                // Gated on best_len >= 8 -- with a long best the verify below
+                // is expensive and the single byte is selective, while for
+                // short bests the two extra checked loads were measured as
+                // pure overhead.  Skipping never changes which match wins:
+                // emitted bytes are unchanged.
+                if (best_len >= 8 && src[cand + best_len] != src[i + best_len]) {
+                    int const skip = chains[zlib_hash_size + (cand & (zlib_window - 1))];
+                    if (skip >= cand) {
+                        break;  // recycled slot: real chains strictly decrease
+                    }
+                    cand = skip;
+                    continue;
+                }
                 // Byte-verify the advisory chain link, 8 bytes per step via the
                 // memcpy idiom (the blit treatment): one bounds check per
                 // 8-byte block instead of two per byte.  Both loads stay in
