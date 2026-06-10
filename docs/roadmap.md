@@ -73,6 +73,16 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   contextual forms, and bidi reordering are carried in the runs (and exercised by
   `test_shape`) but not yet surfaced as a layout the public text API lays out —
   that's the remaining text-shaping work.
+- **PNG I/O**: `canvas_write_png` writes real compression (Up-filtered rows +
+  the in-house `cnvs_zlib` deflate — Up-only because it vectorizes as whole-row
+  ops with no left-neighbor recurrence, and the adaptive five-filter chooser
+  only measured ~2% smaller across the gallery), and `canvas_load_png` reads
+  those files back, byte-exact. The decoder is deliberately scoped to our own
+  encoder's output — 8-bit RGBA, non-interlaced, None/Up filters, every chunk
+  CRC-verified, dimensions capped — and strictly rejects the rest of the PNG
+  universe (palette, gray, 16-bit, interlace, Sub/Avg/Paeth), keeping the
+  untrusted-parser surface small. There is no general-purpose PNG importer,
+  and no `toDataURL`/`toBlob` string forms.
 - **`fill`/`stroke`/`clip`** on the *current* path take the fill rule from state,
   not an explicit argument (the `Path2D` overloads — `fill_path`/`stroke_path`/
   `clip_path` — do take an explicit rule).

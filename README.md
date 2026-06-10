@@ -12,8 +12,9 @@ The point of the project is twofold:
 2. **Show that C can play with the modern big boys (Rust).** The whole codebase
    compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only six
    warnings disabled (each documented), and the interesting work — path math,
-   curve flattening, analytic-coverage antialiasing, stroking, gradients, a PNG
-   encoder — lives in bounds-checked C. Metal is just a tile compositor.
+   curve flattening, analytic-coverage antialiasing, stroking, gradients, a
+   from-scratch zlib and PNG codec — lives in bounds-checked C. Metal is just a
+   tile compositor.
 
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
@@ -286,7 +287,8 @@ shows only its progress line; a failing test prints the offending `CHECK` to std
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
       │  ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
       │  ├── cnvs_geom     growable vertex/int buffers
-      │  ├── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
+      │  ├── cnvs_zlib     deflate + strict inflate (RFC 1950/1951) + adler32, from scratch
+      │  ├── cnvs_png      RGBA8 ↔ PNG: Up-filtered encoder + strict own-output decoder
       │  ├── cnvs_record   draw calls → text canvas-program (the write side)
       │  ├── cnvs_replay   text canvas-program → draw calls (the read side)
       │  │
@@ -358,7 +360,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
 canvas_fill / canvas_stroke / canvas_clip / is_point_in_path / is_point_in_stroke
 canvas_path2d_create / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
-canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png
+canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / load_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline
@@ -377,7 +379,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Area | Status |
 |---|---|
 | Transforms, save/restore, alpha blending | ✅ |
-| `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export | ✅ |
+| `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export + load (Up-filtered rows, in-house deflate; the loader is strict and scoped to our own files) | ✅ |
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: per-corner elliptical radii) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
@@ -427,15 +429,15 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 8.6 ms | 8.6 ms | **1.00×** |
-| `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 7.0 ms | 6.9 ms | **1.01×** |
 | `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 13.0 ms | 12.8 ms | **1.01×** |
 | `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 75 ms | 74 ms | **1.02×** |
 | `bench_flatten` — cubic-Bézier flattening | 120 ms | 117 ms | **1.02×** |
 | `bench_stroke` — stroke expansion (joins/caps) | 50 ms | 49 ms | **1.03×** |
 | `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 32 ms | 30 ms | **1.07×** |
-| `bench` — end-to-end | 42 ms | 39 ms | **1.07×** |
 | `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.09×** |
 | `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 31 ms | **1.10×** |
+| `bench` — end-to-end (renders + PNG-encodes each frame, so deflate now dominates it) | 106 ms | 67 ms | **1.58×** |
+| `bench_png` — PNG encode (Up filter + LZ77 deflate + HW CRC32) | 140 ms | 65 ms | **2.1×** |
 
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
 overhead tracks how much it indexes vs how much it computes — **and the same
@@ -443,9 +445,16 @@ vectorization that speeds a tight loop up amortizes its checks away too.** The 2
 blit used to be the worst case at **2.5×** (four checked byte loads and stores per
 pixel, no arithmetic to hide them); rewriting its inner loop as one per-row
 `memcpy` made it **13× faster and dropped the safety overhead to ~1.0×** — one span
-check per row instead of eight per pixel. PNG encode did the same when its CRC
-moved from a byte-at-a-time table to ARMv8's `crc32` instruction (~7× faster, also
-1.00×). The coverage fill got the same treatment twice — the resolve (prefix sum,
+check per row instead of eight per pixel. PNG encode learned that lesson once
+(its CRC moved from a byte-at-a-time table to ARMv8's `crc32` instruction, ~7×
+faster at ~1.00×) and now demonstrates the converse: real compression made the
+encoder LZ77-bound, and the deflate matcher's hash-chain walk is scalar indexed
+byte work with nothing vectorizable to hide the checks behind, so `bench_png`
+sits at the bottom of the table at **~2.1×** — the honest price of an encode
+that is ~24× slower than the old stored-block escape hatch but writes files
+**11× smaller** (the whole gallery went from 14.1 MB to 1.27 MB). The matcher
+is the obvious next candidate for the blit treatment. The coverage fill got
+the same treatment twice — the resolve (prefix sum,
 fill-rule fold, 8-bit convert) runs 8-wide, and the accumulate telescopes each row
 span's interior columns into a contiguous constant-add, also 8-wide with one
 whole-vector check per block — taking `bench_fill` from 1.22× to **1.07×**; the

@@ -11,8 +11,9 @@
 // and committed as bytes, so inflate is proven against the ecosystem's encoder,
 // not just our own.  Three block flavours: level 9 on repeated pangrams emits a
 // dynamic-Huffman block (BTYPE=10, verified at generation time), level 0 emits
-// a stored block (BTYPE=00 -- the shape every gallery PNG to date carries), and
-// level 9 on a tiny string emits a fixed-Huffman block (BTYPE=01).
+// a stored block (BTYPE=00 -- the shape every gallery PNG carried before the
+// encoder switched to real deflate), and level 9 on a tiny string emits a
+// fixed-Huffman block (BTYPE=01).
 
 static uint8_t const fix_dynamic_plain[369] = {
     0x74, 0x68, 0x65, 0x20, 0x71, 0x75, 0x69, 0x63, 0x6B, 0x20, 0x62, 0x72,
@@ -291,8 +292,9 @@ static void test_fixtures(void) {
                   fix_fixed_plain, (int)sizeof fix_fixed_plain);
 }
 
-// A multi-block stored stream, the exact shape cnvs_png's emit_zlib writes for
-// every gallery PNG to date: 65535-byte blocks, last one final.
+// A multi-block stored stream, the exact shape cnvs_png's stored-block emitter
+// wrote for every gallery PNG before real compression landed: 65535-byte
+// blocks, last one final.  Kept: inflate must keep decoding old files.
 static void test_multiblock_stored(void) {
     enum { pn = 70000 };
     int const zn = 2 + 5 + 65535 + 5 + (pn - 65535) + 4;
