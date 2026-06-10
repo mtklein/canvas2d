@@ -1354,12 +1354,23 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
             blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, r);
         }
     }
-    cnvs_unpremul sc = cv->cur.shadow_color;
-    float ga = cv->cur.global_alpha;
-    for (int i = 0; i < n; i++) {
-        float alpha = (float)cv->shadow_src[i] / 255.0f * (float)sc.a * ga;
-        cv->tile[i] = cnvs_premultiply(
-            (cnvs_unpremul){ .r = sc.r, .g = sc.g, .b = sc.b, .a = (_Float16)alpha });
+    // Tint the blurred mask into the tile, eight pixels per step: the shadow
+    // colour is a splat, so this is the planar shade fold with the blurred
+    // mask as its coverage plane -- the scalar form's f32 arithmetic and
+    // association ((mask / 255.0f) * sc.a * ga) kept lane for lane.
+    cnvs_unpremul const sc = cv->cur.shadow_color;
+    float const ga = cv->cur.global_alpha;
+    cnvs_h8 const cr = (cnvs_h8)sc.r, cg = (cnvs_h8)sc.g, cb = (cnvs_h8)sc.b;
+    float const sa = (float)sc.a;
+    int i = 0;
+    for (; i + 8 <= n; i += 8) {
+        foldf8 const alpha = cover8(cv->shadow_src + i) * sa * ga;
+        cnvs_px8_store(cv->tile + i, shade8(cr, cg, cb, alpha));
+    }
+    if (i < n) {  // tail: k < 8 pixels through the same planar block
+        int const k = n - i;
+        foldf8 const alpha = cover8_k(cv->shadow_src + i, k) * sa * ga;
+        cnvs_px8_store_k(cv->tile + i, k, shade8(cr, cg, cb, alpha));
     }
     compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile, cv->cur.composite);
 }
