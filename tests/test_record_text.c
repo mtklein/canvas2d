@@ -1,15 +1,18 @@
 // The serialized half of the text lookup: a recorded program carries inline
-// font/glyph/shape blocks (canonical font-unit curves, ink bounds, vmetrics,
-// shaped runs), so replay pre-populates the text cache and never crosses the
-// Core Text boundary.  Pinned here:
-//   - round trip: record a text scene, replay it onto a fresh canvas ->
-//     byte-identical pixels AND zero shape/glyph boundary misses (the stats
-//     surface proves the boundary was never consulted);
+// font/glyph/bitmap/shape blocks (canonical font-unit curves, ink bounds,
+// vmetrics, emoji captures, shaped runs), so replay pre-populates the text
+// cache and never crosses the Core Text boundary.  Pinned here:
+//   - round trip: record a text scene (emoji included), replay it onto a
+//     fresh canvas -> byte-identical pixels AND zero shape/glyph boundary
+//     misses (the stats surface proves the boundary was never consulted --
+//     replayed emoji DRAW, from their serialized captures, fontless);
 //   - measureText / measureTextFull after replay match the recording canvas
 //     bit for bit (the serialized ink bounds + vmetrics earning their keep);
-//   - dedup: a repeated string emits its blocks once per recording;
-//   - strict parsing: truncated/malformed blocks stop replay false and leave
-//     the canvas drawable;
+//   - dedup: a repeated string emits its blocks once per recording, the
+//     ~137 KB emoji bitmap block very much included;
+//   - strict parsing: truncated/malformed blocks (bitmap chunk miscounts,
+//     bad/mis-padded base64, wrong decoded size among them) stop replay false
+//     and leave the canvas drawable;
 //   - the float round-trip property: every %.9g-printed float32 (denormals,
 //     -0, extremes included) reparses to the identical float32.
 // See docs/text-boundary.md and canvas.h's record_to/replay_from contracts.
@@ -35,8 +38,10 @@
 // __null_terminated->__counted_by seam at the call.
 #define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
 
-// A text scene: Latin + CJK, two sizes, align/baseline variations, fill and
-// stroke.  Coordinates are simple decimals; the text round-trips by design.
+// A text scene: Latin + CJK + emoji, two sizes, align/baseline variations,
+// fill and stroke.  Coordinates are simple decimals; the text round-trips by
+// design.  The emoji line proves the bitmap blocks earn their keep: replay
+// draws it from the serialized capture, fontless and boundary-free.
 static void draw_text_scene(canvas *__single cv) {
     canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.9f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
@@ -56,6 +61,11 @@ static void draw_text_scene(canvas *__single cv) {
     canvas_set_stroke_rgba(cv, 0.1f, 0.3f, 0.1f, 1.0f);
     canvas_set_line_width(cv, 1.0f);
     canvas_stroke_text(cv, "kerning", 120.0f, 64.0f);
+
+    canvas_set_text_align(cv, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(cv, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_font_size(cv, 21.0f);
+    canvas_fill_text(cv, "a\xF0\x9F\x8C\x88z", 4.0f, 88.0f);  // a 🌈 z
 }
 
 // Read up to cap bytes of `path` into buf; byte count, or -1 if it won't open.
@@ -129,10 +139,11 @@ static void check_round_trip(void) {
     char const *__null_terminated path = "build/test_record_text_a.canvas";
 
     uint8_t recorded_px[NPX];
-    float w17 = 0.0f, w23 = 0.0f;
-    canvas_text_metrics m17, m23;
+    float w17 = 0.0f, w23 = 0.0f, we = 0.0f;
+    canvas_text_metrics m17, m23, me;
     memset(&m17, 0, sizeof m17);
     memset(&m23, 0, sizeof m23);
+    memset(&me, 0, sizeof me);
     {
         canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
@@ -148,9 +159,13 @@ static void check_round_trip(void) {
         canvas_set_font_size(cv, 23.0f);
         w23 = canvas_measure_text(cv, "Waffle 隸書");
         m23 = canvas_measure_text_full(cv, "Waffle 隸書");
+        canvas_set_font_size(cv, 21.0f);
+        we = canvas_measure_text(cv, "a\xF0\x9F\x8C\x88z");
+        me = canvas_measure_text_full(cv, "a\xF0\x9F\x8C\x88z");
         canvas_destroy(cv);  // flush + close the file
     }
-    CHECK(w17 > 0.0f && w23 > w17);
+    CHECK(w17 > 0.0f && w23 > w17 && we > 0.0f);
+    CHECK(me.actual_bounding_box_ascent > 0.0f);  // the emoji ink measured
 
     {
         canvas *__single cv = canvas_create(W, H);
@@ -174,13 +189,18 @@ static void check_round_trip(void) {
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
 
         // Measurement replays from the serialized ink bounds + vmetrics: the
-        // values match the recording canvas's bit for bit, still boundary-free.
+        // values match the recording canvas's bit for bit, still boundary-free
+        // -- the emoji line included (its ink box rides the bitmap block, and
+        // both canvases scale it through the same capture-px math).
         canvas_set_font_size(cv, 17.5f);
         CHECK(feq_bits(canvas_measure_text(cv, "Waffle 隸書"), w17));
         CHECK(metrics_eq(canvas_measure_text_full(cv, "Waffle 隸書"), m17));
         canvas_set_font_size(cv, 23.0f);
         CHECK(feq_bits(canvas_measure_text(cv, "Waffle 隸書"), w23));
         CHECK(metrics_eq(canvas_measure_text_full(cv, "Waffle 隸書"), m23));
+        canvas_set_font_size(cv, 21.0f);
+        CHECK(feq_bits(canvas_measure_text(cv, "a\xF0\x9F\x8C\x88z"), we));
+        CHECK(metrics_eq(canvas_measure_text_full(cv, "a\xF0\x9F\x8C\x88z"), me));
         CHECK(c->shape_misses == 0);
         CHECK(c->glyph_misses == 0);
 
@@ -189,7 +209,7 @@ static void check_round_trip(void) {
 }
 
 // Dedup: drawing the same string twice (and measuring it) emits its font,
-// glyph, and shape blocks exactly once; the second op is just its op line.
+// glyph, and bitmap blocks exactly once; the second op is just its op line.
 static void check_dedup(void) {
     char const *__null_terminated once = "build/test_record_text_d1.canvas";
     char const *__null_terminated twice = "build/test_record_text_d2.canvas";
@@ -203,6 +223,7 @@ static void check_dedup(void) {
         CHECK(canvas_record_to(cv, once));
         canvas_set_font_size(cv, 16.0f);
         canvas_fill_text(cv, "echo", 4.0f, 24.0f);
+        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
         canvas_destroy(cv);
     }
     {
@@ -215,11 +236,14 @@ static void check_dedup(void) {
         canvas_set_font_size(cv, 16.0f);
         canvas_fill_text(cv, "echo", 4.0f, 24.0f);
         canvas_fill_text(cv, "echo", 4.0f, 48.0f);
+        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);
+        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 40.0f, 48.0f);
         canvas_destroy(cv);
     }
 
-    char a[1 << 14];
-    char b[1 << 14];
+    // The buffers are static: a bitmap block alone is ~137 KB of base64.
+    static char a[1 << 19];
+    static char b[1 << 19];
     int na = slurp(once, a, (int)sizeof a);
     int nb = slurp(twice, b, (int)sizeof b);
     CHECK(na > 0 && na < (int)sizeof a);
@@ -227,15 +251,20 @@ static void check_dedup(void) {
     if (na <= 0 || nb <= 0) {
         return;
     }
-    // Same block lines whether the string draws once or twice...
+    // Same block lines whether each string draws once or twice...
     CHECK(count_lines(a, na, "font ") == count_lines(b, nb, "font "));
     CHECK(count_lines(a, na, "glyph ") == count_lines(b, nb, "glyph "));
-    CHECK(count_lines(a, na, "shape ") == 1);
-    CHECK(count_lines(b, nb, "shape ") == 1);
-    // ...and the blocks really exist (one shaped run, three distinct glyphs).
+    CHECK(count_lines(a, na, "bitmap ") == count_lines(b, nb, "bitmap "));
+    CHECK(count_lines(a, na, "bits ") == count_lines(b, nb, "bits "));
+    CHECK(count_lines(a, na, "shape ") == 2);
+    CHECK(count_lines(b, nb, "shape ") == 2);
+    // ...and the blocks really exist (three distinct outline glyphs, one
+    // capture: 160x160x4 bytes at 12288 per bits line = 9 lines).
     CHECK(count_lines(b, nb, "glyph ") >= 3);  // e, c, h, o -> >= 3 distinct
-    CHECK(count_lines(b, nb, "run ") == 1);
-    CHECK(count_lines(b, nb, "fill_text ") == 2);
+    CHECK(count_lines(b, nb, "bitmap ") == 1);
+    CHECK(count_lines(b, nb, "bits ") == 9);
+    CHECK(count_lines(b, nb, "run ") == 2);
+    CHECK(count_lines(b, nb, "fill_text ") == 4);
 }
 
 // Strict parsing: malformed blocks stop replay (false) without corrupting the
@@ -285,6 +314,39 @@ static void check_strict(void) {
     CHECK(!REPLAY(cv,
         "shape 12 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
+
+    // Bitmap blocks: a well-formed capture parses (2x2, two bits lines, the
+    // second padded)...
+    CHECK(REPLAY(cv,
+        "font 0 1 0.25 AppleColorEmoji\n"
+        "bitmap 0 64 2 2 0 -0.5 2 1.5 2\n"
+        "bits AAAAAAAAAAAAAAAA\n"
+        "bits /////w==\n"));
+
+    // ...and malformed ones are rejected, the canvas drawable throughout.
+    CHECK(!REPLAY(cv, "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAAAA==\n"));  // undeclared font
+    #define BM_FONT "font 0 1 0.25 AppleColorEmoji\n"
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 70000 1 1 0 0 1 1 1\nbits AAAAAA==\n"));  // gid > 0xFFFF
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 0 1 0 0 1 1 1\nbits AAAAAA==\n"));     // zero width
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 513 1 0 0 1 1 1\nbits AAAAAA==\n"));   // width > cap
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 1e999 0 1 1 1\nbits AAAAAA==\n")); // inf ink
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 1 0 1 1 1\nbits AAAAAA==\n"));     // empty ink (x1 <= x0)
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 0\nbits AAAAAA==\n"));     // zero lines
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 3\n"));                    // nlines > ceil(bytes/3)
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1 junk\nbits AAAAAA==\n"));// trailing junk
+    CHECK(!REPLAY(cv, "bits AAAAAA==\n"));                                        // bits with no bitmap
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AA!AAA==\n"));     // bad base64 char
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAAA\n"));        // length % 4 != 0
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits =AAAAAAA\n"));     // '=' up front
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AA==AAAA\n"));     // padding mid-line
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 2 2 0 0 1 1 2\nbits AA==\nbits AAAAAAAAAAAAAAAAAAAA==\n"));  // padding before the final line
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAA\n"));         // short: 3 of 4 bytes
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAAAAAA\n"));     // long: 6 of 4 bytes
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\n"));                    // truncated: no bits line
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nfill_rect 0 0 4 4\n")); // non-bits inside
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\n# comment\nbits AAAAAA==\n"));  // ditto
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nshape 12 1 0 1 A\n"));  // shape inside
+    #undef BM_FONT
 
     // Not corrupted: the canvas still draws.
     canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);

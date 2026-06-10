@@ -444,25 +444,33 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // replay): the recorder writes, ahead of each text op that first needs them,
 //     font <id> <ascent> <descent> <name...>
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
+//     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <nlines>
+//     bits <base64...>                            (exactly nlines of these)
 //     shape <size_px> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
 // font declares a file-local font id: its name (rest of the line, spaces
 // allowed) and vertical metrics at size 1.0.  glyph carries one glyph's
 // canonical outline -- verbs + control points and its ink box, all in FONT
 // UNITS (units-per-em to the em, y up, baseline-relative), so one block serves
-// every size and transform.  shape + its immediately-following run lines carry
-// one shaped line (the text is exactly byte-len raw bytes after one space).
+// every size and transform.  bitmap + its immediately-following bits lines
+// carry one color (emoji) glyph's canonical capture: w x h premultiplied RGBA8
+// rendered once at a fixed 160 px to the em, with its ink box in capture px --
+// likewise one block per glyph serving every size and transform -- chunked
+// into base64 lines because the raw capture (160x160x4 bytes, ~137 KB encoded)
+// cannot fit one line.  shape + its immediately-following run lines carry one
+// shaped line (the text is exactly byte-len raw bytes after one space).
 // Replaying the blocks pre-populates the canvas's text cache, so the text ops
-// that follow never call the platform shaper -- a recorded program replays
-// byte-identically on machines without the recording machine's fonts.  Color
-// (emoji) runs are the one exception: their bitmaps don't serialize, so replay
-// without the font draws them as blank advances.
+// that follow never call the platform text system -- a recorded program,
+// emoji included, replays byte-identically on machines without the recording
+// machine's fonts.
 //
 // Parsing is strict: an unknown command, a bad argument, an over-long line, or
 // a malformed block (an undeclared font id, a bad verb token, a cluster index
 // past the text length, a non-finite number where the recorder writes finite
-// ones) stops replay and returns false (commands before the faulty line have
-// already been applied; the canvas remains valid and drawable).  Numbers are
+// ones, a bitmap whose bits lines are miscounted, mis-padded, or decode to
+// anything but exactly w*h*4 bytes) stops replay and returns false (commands
+// before the faulty line have already been applied; the canvas remains valid
+// and drawable).  Numbers are
 // written with %.9g and reparse to the identical float32.  The query and image
 // ops (measure_text, read_rgba, write_png, get/put_image_data, draw_image) are
 // not part of the text format.
@@ -478,14 +486,14 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // nothing) if the file cannot be opened.
 //
 // Text ops round-trip self-contained: before each fill_text/stroke_text the
-// recorder emits the font/glyph/shape blocks (see canvas_replay_from) for the
-// derived data the op uses -- the shaped runs and each glyph's canonical
-// font-unit curves and ink bounds -- deduplicated within the file, so a
-// recorded program replays byte-identically (pixels and measureText alike)
-// on a machine without the recording machine's fonts, with no platform text
-// call at all.  Known limitation: color (emoji) glyphs are drawn from font
-// bitmaps that don't serialize; their shaped runs and advances are recorded,
-// but a fontless replay renders them as blank advances.
+// recorder emits the font/glyph/bitmap/shape blocks (see canvas_replay_from)
+// for the derived data the op uses -- the shaped runs, each glyph's canonical
+// font-unit curves and ink bounds, and each color (emoji) glyph's canonical
+// capture (one fixed-size RGBA8 render per glyph, fetched at record time if
+// the draw hasn't already) -- deduplicated within the file, so a recorded
+// program replays byte-identically (pixels and measureText alike) on a
+// machine without the recording machine's fonts, with no platform text call
+// at all, emoji included.
 //
 // Only the ops the text format covers are recorded -- the same subset
 // replay_from understands.  arc/round_rect/arc_to are written as themselves;

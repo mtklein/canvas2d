@@ -121,17 +121,40 @@ static char const *__null_terminated verb_token(cnvs_glyph_verb v,
     return NULL;
 }
 
-// The glyph key for one run: a replay-built run carries its interned id; a
-// live outline run interns through the boundary (idempotent); color runs have
-// no canonical curves to key (-1).
+// The glyph key for one run, color (emoji) runs included -- captures key by
+// font name exactly as curves do: a replay-built run carries its interned id;
+// a live run interns through the boundary (idempotent).
 static int run_fid(cnvs_text_cache *__single c, cnvs_glyph_run const *__single run) {
-    if (run->is_color) {
-        return -1;
-    }
     if (run->name_id >= 0) {
         return run->name_id;
     }
     return cnvs_text_cache_font(c, run->font);
+}
+
+// Capture bytes per `bits` line: divisible by 3, so every line but the last
+// encodes to base64 without padding; the 16384-char line stays well inside
+// the parser's 64 KiB line cap.  A 160x160 capture (102400 bytes) takes nine
+// lines.
+enum { CNVS_REC_BITS_PER_LINE = 12288 };
+
+// One `bits` line: `n` capture bytes as standard base64 (padding only when n
+// is not a multiple of 3 -- the block's final line).
+static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
+                          int n) {
+    static char const k[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"  // 64 values + NUL
+                              "abcdefghijklmnopqrstuvwxyz0123456789+/";
+    fputs("bits ", f);
+    for (int i = 0; i < n; i += 3) {
+        int const m = n - i;
+        uint32_t v = (uint32_t)p[i] << 16;
+        if (m > 1) { v |= (uint32_t)p[i + 1] << 8; }
+        if (m > 2) { v |= (uint32_t)p[i + 2]; }
+        fputc(k[(v >> 18) & 63u], f);
+        fputc(k[(v >> 12) & 63u], f);
+        fputc(m > 1 ? k[(v >> 6) & 63u] : '=', f);
+        fputc(m > 2 ? k[v & 63u] : '=', f);
+    }
+    fputc('\n', f);
 }
 
 void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c,
@@ -169,8 +192,8 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
         cnvs_glyph_run const *__single run = &s->run[ri];
         int fid = run_fid(c, run);
         if (run->is_color || fid < 0) {
-            continue;  // emoji (drawn, not outlined) and unkeyable runs carry
-        }              // no glyph data; replay degrades them to blank advances
+            continue;  // emoji carry bitmap blocks below; unkeyable runs carry
+        }              // nothing and replay degrades them to blank advances
         for (int i = 0; i < run->count; i++) {
             cnvs_glyph_slot *__single g =
                 cnvs_text_cache_glyph(c, fid, run->font, run->glyph[i], size_px);
@@ -196,6 +219,43 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
                 ip += k;
             }
             fputc('\n', r->f);
+            g->emitted = true;
+        }
+    }
+    // Bitmap blocks: one per color (emoji) glyph not yet in this recording --
+    // the canonical capture, fetched here if the draw hasn't yet (the same
+    // lookup, so it still costs one boundary rasterization per glyph ever),
+    // chunked into base64 `bits` lines because the raw capture (160x160x4 =
+    // 102400 bytes, ~137 KB base64) cannot fit the one-line-per-block pattern
+    // under the parser's line cap.  A blank color glyph (no ink) has no
+    // capture and serializes nothing -- replay draws it as the blank advance
+    // it is.  The derived mip pyramid is deliberately NOT serialized: the
+    // capture alone is canonical, and replay re-derives the levels in checked
+    // C at no format cost.
+    for (int ri = 0; ri < s->nruns; ri++) {
+        cnvs_glyph_run const *__single run = &s->run[ri];
+        int fid = run_fid(c, run);
+        if (!run->is_color || fid < 0) {
+            continue;
+        }
+        for (int i = 0; i < run->count; i++) {
+            cnvs_glyph_slot *__single g =
+                cnvs_text_cache_color(c, fid, run->font, run->glyph[i]);
+            if (!g || g->emitted || g->cap_w <= 0) {
+                continue;
+            }
+            int const nlines =
+                (g->cap_len + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
+            fprintf(r->f, "bitmap %d %u %d %d %.9g %.9g %.9g %.9g %d\n", fid,
+                    (unsigned)run->glyph[i], g->cap_w, g->cap_h,
+                    (double)g->ink_x0, (double)g->ink_y0, (double)g->ink_x1,
+                    (double)g->ink_y1, nlines);
+            for (int off = 0; off < g->cap_len; off += CNVS_REC_BITS_PER_LINE) {
+                int const rem = g->cap_len - off;
+                put_bits_line(r->f, g->capture + off,
+                              rem < CNVS_REC_BITS_PER_LINE ? rem
+                                                           : CNVS_REC_BITS_PER_LINE);
+            }
             g->emitted = true;
         }
     }

@@ -20,10 +20,14 @@
 #define REPLAY_LINE_MAX 65536u       // over-long line -> reject (DoS guard; a
                                      // glyph block line carries one outline's
                                      // whole curve list -- a dense CJK glyph
-                                     // runs ~10-20 KB)
+                                     // runs ~10-20 KB -- and a bitmap block's
+                                     // `bits` lines carry 16 KiB of base64)
 #define REPLAY_FILE_MAX (64u << 20)  // 64 MiB file cap
 #define REPLAY_DASH_MAX 64           // max dash segments from one line
 #define REPLAY_RUNS_MAX 1024         // run lines one shape block may declare
+#define REPLAY_BITMAP_DIM_MAX 512    // capture dims cap: bounds a bitmap
+                                     // block's allocation at 1 MiB (the
+                                     // recorder writes CNVS_CAPTURE_EM = 160)
 
 static bool is_ws(char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
@@ -205,18 +209,20 @@ static bool read_bool(char const *__counted_by(le) data, size_t le,
 }
 
 // ---------------------------------------------------------------------------
-// Text blocks: `font` / `glyph` / `shape`+`run` lines (written by
-// cnvs_rec_text_blocks) pre-populate the canvas's text cache so the text ops
-// that follow replay with no Core Text boundary call at all -- the serialized
-// half of the params -> derived-data lookup (docs/text-boundary.md).  The
-// parser carries two pieces of cross-line state: the file-local font-id map,
-// and the shape block whose `run` lines are still arriving.  Same posture as
-// the op lines, applied to richer data: every count, id, verb token, and
-// cluster index is validated before it is trusted (the slice-A "untrusted verb
-// stream" rule, now at the parser), and any violation -- or an allocation
-// failure while rebuilding -- stops replay false.  Cache-side degradation
-// (a full intern/glyph table) is not a parse error: those entries drop and
-// the affected text degrades exactly as a live cache under pressure does.
+// Text blocks: `font` / `glyph` / `bitmap`+`bits` / `shape`+`run` lines
+// (written by cnvs_rec_text_blocks) pre-populate the canvas's text cache so
+// the text ops that follow replay with no Core Text boundary call at all --
+// the serialized half of the params -> derived-data lookup
+// (docs/text-boundary.md).  The parser carries three pieces of cross-line
+// state: the file-local font-id map, the shape block whose `run` lines are
+// still arriving, and the bitmap block whose `bits` lines are.  Same posture
+// as the op lines, applied to richer data: every count, id, verb token,
+// base64 chunk, and cluster index is validated before it is trusted (the
+// slice-A "untrusted verb stream" rule, now at the parser), and any violation
+// -- or an allocation failure while rebuilding -- stops replay false.
+// Cache-side degradation (a full intern/glyph table) is not a parse error:
+// those entries drop and the affected text degrades exactly as a live cache
+// under pressure does.
 
 struct replay_blocks {
     int map[CNVS_FONT_INTERN_N];    // file font id -> interned cache id (-1 =
@@ -228,6 +234,19 @@ struct replay_blocks {
     float size_px;                  // the pending shape's cache key
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
     int text_len;
+    // The bitmap block under construction (owned until its last `bits` line
+    // hands it to the cache).  bm stays NULL when the block's font id maps to
+    // a degraded intern (-1): the bits still parse and validate, they just
+    // have nowhere to land -- the glyph-block posture.
+    uint8_t *__counted_by(bm_len) bm;
+    int bm_len;     // the buffer's byte size (bm_total when allocated)
+    int bm_total;   // expected decoded bytes: w*h*4
+    int bm_fill;    // decoded so far
+    int bm_lines;   // `bits` lines still expected; > 0 = a block is pending
+    int bm_fid;     // interned cache id for the insert, or -1
+    long bm_gid;
+    int bm_w, bm_h;
+    float bm_ink[4];  // capture-px ink box x0 y0 x1 y1
 };
 
 // Free the cross-line state (the pending shape, if its run lines never
@@ -240,6 +259,21 @@ static void blocks_drop(struct replay_blocks *__single b) {
     free(b->text);
     b->text_len = 0;
     b->text = NULL;
+}
+
+// Free the pending bitmap state (a block whose `bits` lines never finished,
+// or one just handed to the cache -- the caller NULLs bm first in that case).
+static void bitmap_drop(struct replay_blocks *__single b) {
+    free(b->bm);
+    b->bm_len = 0;
+    b->bm = NULL;
+    b->bm_total = 0;
+    b->bm_fill = 0;
+    b->bm_lines = 0;
+    b->bm_fid = -1;
+    b->bm_gid = 0;
+    b->bm_w = 0;
+    b->bm_h = 0;
 }
 
 // The pending shape's last run line landed: hand it to the cache, which takes
@@ -382,6 +416,159 @@ static bool replay_glyph(canvas *__single cv, struct replay_blocks *__single b,
     return true;
 }
 
+// bitmap <font-id> <gid> <w> <h> <ink x0 y0 x1 y1> <nlines> -- begin one color
+// glyph's canonical capture: w x h premultiplied RGBA8 at CNVS_CAPTURE_EM px
+// to the em, whose w*h*4 bytes arrive base64-chunked in exactly <nlines>
+// `bits` lines immediately following.  The ink box is in capture px (y up,
+// baseline-relative; the buffer's bottom-left corner sits at (x0, y0)).
+// Strict: declared font id, gid <= 0xFFFF, dims in [1, REPLAY_BITMAP_DIM_MAX],
+// finite non-empty ink (the recorder never captures empty ink), and nlines in
+// [1, ceil(w*h*4 / 3)] (each line must contribute at least one decoded byte).
+static bool replay_bitmap(struct replay_blocks *__single b,
+                          char const *__counted_by(le) data, size_t le, size_t j) {
+    long id = 0, gid = 0, w = 0, h = 0, nlines = 0;
+    float ink[4];
+    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || !b->seen[id]) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, 0xFFFF, &gid)) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, REPLAY_BITMAP_DIM_MAX, &w) || w < 1 ||
+        !read_uint(data, le, &j, REPLAY_BITMAP_DIM_MAX, &h) || h < 1) {
+        return false;
+    }
+    if (!read_floats(data, le, &j, ink, 4)) {
+        return false;
+    }
+    for (int k = 0; k < 4; k++) {
+        if (!isfinite(ink[k])) {
+            return false;
+        }
+    }
+    if (ink[2] <= ink[0] || ink[3] <= ink[1]) {
+        return false;  // empty ink never records a capture
+    }
+    long const total = w * h * 4;  // <= 1 MiB by the dims cap
+    if (!read_uint(data, le, &j, (total + 2) / 3, &nlines) || nlines < 1) {
+        return false;
+    }
+    if (!at_eol(data, le, j)) {
+        return false;
+    }
+    b->bm_fid = b->map[id];  // -1 = interning degraded: validate, don't land
+    if (b->bm_fid >= 0) {
+        uint8_t *px = malloc((size_t)total);
+        if (!px) {
+            return false;  // OOM while rebuilding: stop replay
+        }
+        b->bm = px;
+        b->bm_len = (int)total;
+    }
+    b->bm_total = (int)total;
+    b->bm_fill = 0;
+    b->bm_lines = (int)nlines;
+    b->bm_gid = gid;
+    b->bm_w = (int)w;
+    b->bm_h = (int)h;
+    for (int k = 0; k < 4; k++) {
+        b->bm_ink[k] = ink[k];
+    }
+    return true;
+}
+
+// One base64 character's 6-bit value, or -1 (the strict alphabet: A-Z a-z 0-9
+// + / only; '=' padding is handled structurally by the caller).
+static int b64v(char ch) {
+    if (ch >= 'A' && ch <= 'Z') { return ch - 'A'; }
+    if (ch >= 'a' && ch <= 'z') { return ch - 'a' + 26; }
+    if (ch >= '0' && ch <= '9') { return ch - '0' + 52; }
+    if (ch == '+') { return 62; }
+    if (ch == '/') { return 63; }
+    return -1;
+}
+
+// bits <base64> -- one chunk of the pending bitmap block's capture bytes.
+// Strict: only legal while a bitmap block is pending, one token of 4-char
+// base64 groups, '=' padding only in the final group of the block's final
+// line, the decoded bytes never exceeding w*h*4 -- and the block's last line
+// must land the total exactly, at which point the capture is handed to the
+// cache (which takes ownership; an existing entry wins, the usual best-effort
+// posture).
+static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
+                        char const *__counted_by(le) data, size_t le, size_t j) {
+    if (b->bm_lines <= 0) {
+        return false;  // no bitmap block pending
+    }
+    size_t ts = 0, tl = 0;
+    if (!read_token(data, le, &j, &ts, &tl) || !at_eol(data, le, j)) {
+        return false;
+    }
+    if (tl == 0 || tl % 4 != 0) {
+        return false;
+    }
+    bool const last_line = b->bm_lines == 1;
+    int fill = b->bm_fill;
+    for (size_t g = 0; g < tl; g += 4) {
+        int const v0 = b64v(data[ts + g]);
+        int const v1 = b64v(data[ts + g + 1]);
+        if (v0 < 0 || v1 < 0) {
+            return false;
+        }
+        char const c2 = data[ts + g + 2], c3 = data[ts + g + 3];
+        int v2 = b64v(c2), v3 = b64v(c3);
+        int nbytes = 3;
+        if (c3 == '=') {  // padding: only the final group of the final line
+            if (!last_line || g + 4 != tl) {
+                return false;
+            }
+            if (c2 == '=') {
+                nbytes = 1;
+                v2 = 0;
+            } else {
+                if (v2 < 0) {
+                    return false;
+                }
+                nbytes = 2;
+            }
+            v3 = 0;
+        } else if (v2 < 0 || v3 < 0) {
+            return false;  // a bad character, or '=' anywhere but the tail
+        }
+        if (fill + nbytes > b->bm_total) {
+            return false;  // more bytes than the header declared
+        }
+        uint32_t const v = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12) |
+                           ((uint32_t)v2 << 6) | (uint32_t)v3;
+        uint8_t const by[3] = { (uint8_t)(v >> 16), (uint8_t)((v >> 8) & 0xFFu),
+                                (uint8_t)(v & 0xFFu) };
+        for (int k = 0; k < nbytes; k++) {
+            if (b->bm) {
+                b->bm[fill + k] = by[k];
+            }
+        }
+        fill += nbytes;
+    }
+    b->bm_fill = fill;
+    b->bm_lines -= 1;
+    if (b->bm_lines == 0) {
+        if (fill != b->bm_total) {
+            return false;  // short block: fewer bytes than declared
+        }
+        if (b->bm) {
+            cnvs_text_cache_put_capture(cnvs_canvas_text_cache(cv), b->bm_fid,
+                                        (uint16_t)b->bm_gid, b->bm, b->bm_total,
+                                        b->bm_w, b->bm_h, b->bm_ink[0],
+                                        b->bm_ink[1], b->bm_ink[2],
+                                        b->bm_ink[3]);
+            b->bm_len = 0;  // ownership went to the cache
+            b->bm = NULL;
+        }
+        bitmap_drop(b);
+    }
+    return true;
+}
+
 // shape <size_px> <utf16-len> <nruns> <byte-len> <text...> -- begin one shaped
 // line; its `run` lines must follow immediately.  The text is exactly byte-len
 // raw bytes after a single separating space (it is the cache key, byte for
@@ -440,9 +627,10 @@ static bool replay_shape(canvas *__single cv, struct replay_blocks *__single b,
 // run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)* -- one
 // visual-order run of the pending shape block.  The rebuilt run carries the
 // interned name id in place of a font handle (font == NULL): drawing reads its
-// curves from the cache by name, so no CTFontRef is ever needed.  Strict: only
-// legal while a shape block is pending, a declared (or -1) font id, finite
-// advances, and every cluster index within the shape's UTF-16 length.
+// curves -- or, for a color run, its captures -- from the cache by name, so no
+// CTFontRef is ever needed.  Strict: only legal while a shape block is
+// pending, a declared (or -1) font id, finite advances, and every cluster
+// index within the shape's UTF-16 length.
 static bool replay_run(canvas *__single cv, struct replay_blocks *__single b,
                        char const *__counted_by(le) data, size_t le, size_t j) {
     if (!b->s) {
@@ -504,7 +692,7 @@ static bool replay_run(canvas *__single cv, struct replay_blocks *__single b,
     run->count = (int)n;
     run->rtl = rtl;
     run->is_color = color;
-    run->name_id = color ? -1 : name_id;
+    run->name_id = name_id;  // color runs too: the capture cache keys by name
     run->font = NULL;
     b->runs_done++;
     if (b->runs_done == b->s->nruns) {
@@ -527,13 +715,17 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     size_t j = ls;
     size_t cs, cl;
     if (!read_token(data, le, &j, &cs, &cl)) {
-        return blk->s == NULL;  // blank line (illegal inside a shape block)
+        return blk->s == NULL &&
+               blk->bm_lines == 0;  // blank line (illegal inside a block)
     }
     if (data[cs] == '#') {
-        return blk->s == NULL;  // comment line (ditto)
+        return blk->s == NULL && blk->bm_lines == 0;  // comment line (ditto)
     }
     if (blk->s && !tok_eq(data, le, cs, cl, "run")) {
         return false;  // a shape block's run lines must follow it directly
+    }
+    if (blk->bm_lines > 0 && !tok_eq(data, le, cs, cl, "bits")) {
+        return false;  // a bitmap block's bits lines must follow it directly
     }
 
     float f[8];
@@ -665,10 +857,12 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     }
 
     // --- text blocks (cross-line state; see canvas.h on the program format) ---
-    else if (tok_eq(data, le, cs, cl, "font"))  { return replay_font(cv, blk, data, le, j); }
-    else if (tok_eq(data, le, cs, cl, "glyph")) { return replay_glyph(cv, blk, data, le, j); }
-    else if (tok_eq(data, le, cs, cl, "shape")) { return replay_shape(cv, blk, data, le, j); }
-    else if (tok_eq(data, le, cs, cl, "run"))   { return replay_run(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "font"))   { return replay_font(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "glyph"))  { return replay_glyph(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "bitmap")) { return replay_bitmap(blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "bits"))   { return replay_bits(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "shape"))  { return replay_shape(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "run"))    { return replay_run(cv, blk, data, le, j); }
 
     // --- text tail (rest of line, UTF-8) ---
     else if (tok_eq(data, le, cs, cl, "fill_text") || tok_eq(data, le, cs, cl, "stroke_text")) {
@@ -692,7 +886,10 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
 
 bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, size_t len) {
     struct replay_blocks b = { .s = NULL, .runs_done = 0, .size_px = 0.0f,
-                               .text_len = 0, .text = NULL };
+                               .text_len = 0, .text = NULL, .bm = NULL,
+                               .bm_len = 0, .bm_total = 0, .bm_fill = 0,
+                               .bm_lines = 0, .bm_fid = -1, .bm_gid = 0,
+                               .bm_w = 0, .bm_h = 0, .bm_ink = { 0 } };
     for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {
         b.map[k] = -1;
         b.seen[k] = false;
@@ -706,10 +903,11 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
              && replay_line(cv, &b, data, i, le);
         i = le + 1;  // past the '\n' (or past end)
     }
-    if (b.s) {
-        ok = false;  // truncated shape block: its run lines never arrived
-    }
+    if (b.s || b.bm_lines > 0) {
+        ok = false;  // truncated shape or bitmap block: its run/bits lines
+    }                // never arrived
     blocks_drop(&b);
+    bitmap_drop(&b);
     return ok;
 }
 
