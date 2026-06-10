@@ -290,30 +290,56 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
 // ---------------------------------------------------------------- inflate ----
 
 // Input bit stream over the untrusted bytes.  Every refill advances `at`
-// through the __counted_by bound; between calls at most 7 bits stay buffered
-// (getbits refills only to the requested count), which stored_block and the
-// trailer check rely on.
+// through the __counted_by bound.  The accumulator is 64-bit so the common
+// refill is ONE checked 8-byte load instead of a checked byte load per 8 bits;
+// whole buffered bytes can therefore sit in acc between calls, and the two
+// places that need a byte position (stored_block, the trailer check) recover
+// it exactly as at - nbits/8.
 struct bitrd {
     uint8_t const *__counted_by(n) src;
     int n;
     int at;        // next unread byte
-    uint32_t acc;  // buffered bits, LSB-first
-    int nbits;
+    uint64_t acc;  // buffered bits, LSB-first
+    int nbits;     // accounted bits in acc, <= 64
 };
+
+// Bulk refill: one checked 8-byte load tops the accumulator up to >= 56
+// buffered bits while at least 8 input bytes remain.  `take` counts the whole
+// bytes that fit below bit 64; the loaded word's bits beyond them stay in acc
+// above nbits as exact duplicates of the bytes at `at` not yet consumed, so a
+// later refill ORs identical bits over them and every consumer below nbits is
+// unaffected.  Near the end of input this is a no-op and getbits' byte loop
+// remains the (strict) refiller of record.
+static void refill(struct bitrd *b) {
+    if (b->nbits <= 48 && b->at + 8 <= b->n) {
+        uint64_t v;
+        memcpy(&v, b->src + b->at, sizeof v);  // one bounds check per 8 bytes
+        // Mask to the bits that fit below bit 64 before shifting: same result
+        // as letting the shift drop them, spelled so -fsanitize=integer's
+        // unsigned-shift-base check sees no bits lost.
+        b->acc |= (v & (~0ull >> b->nbits)) << b->nbits;
+        int const take = (64 - b->nbits) >> 3;
+        b->at += take;
+        b->nbits += take * 8;
+    }
+}
 
 // Pull cnt (<= 16) bits.  Returns false if the stream is exhausted, so a
 // truncated stream can never supply bits that drive an index -- every caller
 // turns false into the single -1 error path.
 static bool getbits(struct bitrd *b, int cnt, uint32_t *__single out) {
-    while (b->nbits < cnt) {
+    if (b->nbits < cnt) {
+        refill(b);
+    }
+    while (b->nbits < cnt) {  // within the last 7 input bytes: byte-at-a-time
         if (b->at == b->n) {
             return false;
         }
-        b->acc |= (uint32_t)b->src[b->at] << b->nbits;
+        b->acc |= (uint64_t)b->src[b->at] << b->nbits;
         b->at += 1;
         b->nbits += 8;
     }
-    *out = b->acc & ((1u << cnt) - 1u);
+    *out = (uint32_t)(b->acc & ((1u << cnt) - 1u));
     b->acc >>= cnt;
     b->nbits -= cnt;
     return true;
@@ -389,8 +415,33 @@ static int huff_build(struct huffman *h, uint8_t const *__counted_by(nsym) lens,
 // Decode one symbol: walk lengths 1..15 tracking the first code and symbol-
 // table offset of each length (canonical codes of one length are consecutive).
 // huff_build validated count[], so index + (code - first) < sum(count) <= nsym
-// -- the untrusted stream picks which in-range symbol, never the range.
+// -- the untrusted stream picks which in-range symbol, never the range.  With
+// >= 15 buffered bits (the common case after one bulk refill) the walk runs on
+// locals with no per-bit refill or exhaustion checks and writes the consumed
+// length back once; the byte-at-a-time path only runs within the stream's
+// last bytes, where getbits' exhaustion check is the truncation detector.
 static int huff_decode(struct bitrd *b, struct huffman const *h) {
+    if (b->nbits < zlib_max_bits) {
+        refill(b);
+    }
+    if (b->nbits >= zlib_max_bits) {
+        uint32_t acc = (uint32_t)b->acc;
+        int code = 0, first = 0, index = 0;
+        for (int len = 1; len <= zlib_max_bits; len++) {
+            code |= (int)(acc & 1u);
+            acc >>= 1;
+            int count = h->count[len];
+            if (code - first < count) {
+                b->acc >>= len;
+                b->nbits -= len;
+                return h->symbol[index + (code - first)];
+            }
+            index += count;
+            first = (first + count) << 1;
+            code <<= 1;
+        }
+        return -1;  // ran into an incomplete code's unclaimed space
+    }
     int code = 0, first = 0, index = 0;
     for (int len = 1; len <= zlib_max_bits; len++) {
         uint32_t bit;
@@ -467,12 +518,29 @@ static bool run_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int dcap
             if (len > dcap - out) {
                 return false;  // output overflow
             }
-            // Overlapping copy (d < len) is the classic LZ77 RLE idiom:
-            // byte-by-byte forward, so fresh bytes feed the rest of the copy.
-            for (int k = 0; k < len; k++) {
-                dst[out] = dst[out - d];
-                out += 1;
+            if (d >= len) {
+                // Disjoint source and destination: one checked memcpy moves
+                // the whole run -- one bounds check per match, not two per
+                // byte (the blit treatment).
+                memcpy(dst + out, dst + (out - d), (size_t)len);
+            } else {
+                // Overlapping copy (d < len) is the classic LZ77 RLE idiom:
+                // the run repeats with period d, so it builds by doubling.
+                // Each chunk's source [out-d, out-d+chunk) is fully written
+                // (chunk <= done + d) and ends at or before its destination
+                // out + done, so every memcpy is a plain disjoint copy, and
+                // done stays a multiple of d (chunk == have, except the last)
+                // which keeps the period aligned.  Byte-identical to the
+                // byte-at-a-time loop.
+                int done = 0, have = d;
+                while (done < len) {
+                    int const chunk = have < len - done ? have : len - done;
+                    memcpy(dst + (out + done), dst + (out - d), (size_t)chunk);
+                    done += chunk;
+                    have <<= 1;
+                }
             }
+            out += len;
         }
     }
 }
@@ -480,16 +548,21 @@ static bool run_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int dcap
 static bool stored_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int dcap,
                          int *__single outp) {
     rd_align(b);  // LEN starts at the next byte boundary
-    uint32_t len, nlen;
-    if (!getbits(b, 16, &len) || !getbits(b, 16, &nlen)) {
-        return false;
+    // The 64-bit reader may hold whole buffered bytes; hand them back so LEN,
+    // NLEN and the bulk copy read from src directly (every buffered byte maps
+    // 1:1 to an input byte, so the position recovers exactly).
+    b->at -= b->nbits / 8;
+    b->acc = 0;
+    b->nbits = 0;
+    if (b->n - b->at < 4) {
+        return false;  // truncated LEN/NLEN
     }
+    uint32_t const len = (uint32_t)b->src[b->at] | ((uint32_t)b->src[b->at + 1] << 8);
+    uint32_t const nlen = (uint32_t)b->src[b->at + 2] | ((uint32_t)b->src[b->at + 3] << 8);
+    b->at += 4;
     if ((len ^ nlen) != 0xFFFFu) {
         return false;
     }
-    if (b->nbits != 0) {
-        return false;  // unreachable: aligned reads consume whole bytes; keeps
-    }                  // the bulk copy's precondition local, not at-a-distance
     int out = *outp;
     int remaining = (int)len;
     if (remaining > dcap - out) {
@@ -657,9 +730,9 @@ int cnvs_zlib_inflate(uint8_t *__counted_by(dcap) dst, int dcap,
     }
 
     // Strict end state: after the final block, exactly the 4 adler bytes remain
-    // -- truncation and trailing garbage both fail here.  The reader buffers at
-    // most 7 bits, so after discarding the partial byte its position IS the
-    // byte position (the subtraction is the general form).
+    // -- truncation and trailing garbage both fail here.  After discarding the
+    // partial byte, whatever whole bytes the 64-bit reader still buffers map
+    // 1:1 to input bytes, so the subtraction recovers the exact byte position.
     rd_align(&b);
     int pos = b.at - b.nbits / 8;
     if (n - pos != 4) {
