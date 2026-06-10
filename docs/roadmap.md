@@ -55,9 +55,18 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    orders pinned in `test_filter`). All that's left of `filter` spec-wise is
    the CSS string form, deliberately out of scope — see the partial row below.
 
-Internals (not API features) considered and deferred: a sparse/RLE coverage format
-to skip the transparent ~40–60% of a fill's bbox — analysis and why dense+SIMD stays
-the default in [sparse-coverage.md](sparse-coverage.md).
+Internals (not API features) considered and deferred:
+
+- A sparse/RLE coverage format to skip the transparent ~40–60% of a fill's bbox —
+  analysis and why dense+SIMD stays the default in [sparse-coverage.md](sparse-coverage.md).
+- The internal colour type. A devil's-advocate pass kept `_Float16` storage with
+  f32 compute but corrected its rationale (it round-trips the spec's 8-bit edges
+  exactly where u8 corrupts ~half of them) — see
+  [decisions/float16-color-type.md](decisions/float16-color-type.md). One arm is
+  still open and unmeasured: a three-way bench of f32-everywhere vs the status quo
+  vs **pervasive 8-wide `_Float16` compute** in the blend kernel. Now that the
+  Metal backend is gone there is no shader left to bit-match, so the experiment is
+  clean to run; results will land as a decision record.
 
 ## Partial — implemented but narrower than spec
 
