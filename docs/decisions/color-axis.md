@@ -1,0 +1,298 @@
+# Memo: pricing the color axis — f32 everywhere, f16 storage + f32 compute, or f16 everywhere?
+
+**Scope read:** `docs/decisions/float16-color-type.md` (whose §6.4(a) "run the f32-tile
+production benchmark" is the debt this memo pays), `docs/decisions/metal-backend.md` (the D1
+ruling: Metal and the RTZ hack are gone, so there is no shader left to bit-match — both
+non-status-quo arms are clean to run), `docs/decisions/opt-level.md` (methodology),
+`src/cnvs_math.{h,c}`, `src/compositor_cpu.c`, `src/blur.{h,c}`, `src/cnvs_filter.c`,
+`src/cnvs_gradient.{h,c}`, `src/canvas.c` (paint_tile / read_unpremul / put_image_sub flows),
+`bench/` (the 8 reported benches), `tests/test_gradient_solve.c`, `tests/test_replay_gallery.c`.
+**Measured (this machine, Apple M4 Max, Darwin 25.5, Apple clang 21.0.0, hyperfine 1.20):**
+3 arms × 8 benches, `hyperfine -N --warmup 3 --min-runs 20` (fast benches got 65–290 runs from
+hyperfine's 3 s floor), every binary built first and **copied out of the tree to
+`/tmp/coloraxis/`**, all timing runs on a quiet machine with no compiler running.  A sentinel
+(status-quo `bench_fill`) re-run at sweep end came back **+1.1 %** off its original median —
+about one σ on that row and an order of magnitude below the effects reported, so no thermal
+correction applied (the four control rows in §2 bound the same noise independently).  `__text`
+sizes via `size -m`.  Pixel deltas: all 32 gallery scenes rendered per arm and compared to the
+committed PNGs with a /tmp decoder; the tree was `git restore`d after each arm.  Accuracy:
+two exhaustive /tmp experiments (65,280 premultiply round-trips; 16.7M source-over triples vs
+a double-precision reference) modeling each arm's exact store/compute semantics, plus the
+float16 memo's iterated-trail pathology re-run with f16 *compute*.
+
+**The premise being tested.** Since the float16 memo, the internal pipeline has been
+`_Float16` storage with f32 compute: every kernel widens at load and narrows at store, and the
+8-wide-f16-SIMD argument in the README's orbit has never been realized in production code.
+That memo's recommendation survived on one unmeasured claim — that f32 tiles cost real money —
+and the roadmap has carried a three-way fork ever since:
+
+- **(a) f32-everywhere** — storage AND compute in float: doubles tile/target bytes, deletes
+  every convert instruction;
+- **(b) status quo** — `_Float16` storage, f32 compute: half the bytes, converts at every
+  load/store boundary;
+- **(c) pervasive f16 compute** — storage and arithmetic in `_Float16`, 8 lanes where the
+  kernels currently go 4-wide f32 (Apple Silicon has native fp16 SIMD arithmetic).
+
+## 1. What each prototype actually converted
+
+Stated exactly, because the numbers only mean what the prototypes did.
+
+**Arm (a)** was a *total* mechanical retype: `_Float16` → `float` across 9 files (46 lines —
+`cnvs_math.{h,c}`, `compositor_cpu.c`, `blur.{h,c}`, `canvas.c`, `cnvs_filter.c`,
+`cnvs_gradient.{h,c}`).  The two structs, every vector typedef, every cast; the
+`__builtin_convertvector` widen/narrow sites become same-type no-ops the compiler deletes.
+Nothing was left in f16 — `cnvs_premul`/`cnvs_unpremul` are 16 B, the tile, target, and
+gradient ramp double in footprint.  Builds `-Weverything`-clean with no other change.
+
+**Arm (c)** was three hand edits (~80 lines), covering the kernels the flagship profile
+actually passes through:
+
+- `compositor_blend`'s SRC_OVER kernel: the whole blend in `_Float16` arithmetic, **two
+  pixels (8 lanes) per step** where the f32 kernel did one pixel (4 lanes) — load f16, blend
+  f16, clamp f16, store f16, zero converts; clip attenuation in f16 too (note: this trades
+  away the float32 attenuation the metal-backend ruling kept; see §6's counter-argument);
+  odd-width tail does one pixel at 4 lanes.
+- `cnvs_premultiply`: multiply and clamp in f16 directly (was: widen, f32 multiply, narrow).
+- `read_unpremul`: un-premultiply divide, clamp, and 255-quantize in f16 (was: f32 divide
+  with an f16 double-round before quantizing).
+
+**Left in f32 under arm (c), deliberately:** the generic blend modes (`blend`/`blend_term`/
+the non-separable HSL path — still scalar f32 with widen/narrow at the edges), the filter
+color-matrix loop (`cnvs_filter_apply`), the f16 blur passes' f32 accumulation, the gradient
+stop interpolation (`cnvs_gradient_color_at`, which narrows per `cnvs_unpremul_of` as today),
+paint_tile's scalar coverage/alpha fold, and the shadow tint loop.  None of these are
+SRC_OVER-shaped hot paths, but the generic modes are not negligible: a `sample` of the
+status-quo flagship attributes ~9 % of top-of-stack time to `blend_term` (the MULTIPLY/
+SCREEN/LIGHTEN composites in the scene).  So arm (c)'s flagship number is *conservative* —
+a full conversion has that headroom left.
+
+For attribution: the same sample puts ~50 % of `bench_render_large`'s top-of-stack time in
+the kernels arm (c) converted (`compositor_blend` 34 %, `cnvs_premultiply` 12 %,
+`read_unpremul` 4 %), ~26 % in `paint_tile` (the f32 coverage fold + ramp lookup, untouched),
+and the rest in rasterization/gradient/clip, which no arm touches.
+
+## 2. Wall clock
+
+Median ± σ in ms; ratio columns are each arm's median over status quo (b).  The last four
+rows never touch a `cnvs_premul` (the u8 blit, the coverage rasterizer, the u8 blurs, the
+ramp+solve loop with f16-storage entries) and serve as controls: their spread (≤1.7 %,
+both directions) is the noise floor, and the blur rows in particular confirm the arms'
+library-wide retypes didn't perturb untouched kernels.
+
+| bench | (a) f32 | (b) status quo | (c) f16 8-wide | a/b | c/b |
+|---|---|---|---|---|---|
+| **`bench_render`** | 24.7 ± 0.3 | 25.9 ± 0.3 | **23.7 ± 0.3** | 0.955 | **0.917** |
+| **`bench_render_large`** | 261.0 ± 0.9 | 274.0 ± 1.0 | **252.9 ± 1.0** | 0.952 | **0.923** |
+| `bench` (e2e) | 45.1 ± 0.4 | 45.6 ± 0.4 | 45.2 ± 0.3 | 0.991 | 0.992 |
+| `bench_blit` (control) | 8.1 ± 0.3 | 8.2 ± 0.3 | 8.3 ± 0.3 | 0.988 | 1.010 |
+| `bench_fill` (control) | 28.2 ± 0.4 | 28.7 ± 0.3 | 28.9 ± 0.4 | 0.983 | 1.007 |
+| `bench_blur_h` (control) | 32.3 ± 0.3 | 32.6 ± 0.3 | 32.4 ± 0.3 | 0.991 | 0.993 |
+| `bench_blur_v` (control) | 14.1 ± 0.2 | 14.1 ± 0.2 | 14.1 ± 0.2 | 0.999 | 1.002 |
+| `bench_gradient_fill` (control) | 11.9 ± 0.3 | 12.0 ± 0.3 | 12.2 ± 0.3 | 0.990 | 1.015 |
+| **geomean** | | | | 0.981 | 0.981 |
+
+**The status quo loses the flagship to both alternatives.**  On the two real-pipeline
+benches — the project's product — f16-storage-with-f32-compute is the *slowest* of the three
+arms: −4.5 %/−4.8 % to f32-everywhere, −8.3 %/−7.7 % to pervasive f16.  The geomean ties at
+0.981 for both arms only because the control rows dilute it; on the rows where the color
+pipeline runs at all, the ordering is unambiguous and stable (gaps of 5–8× σ).
+
+The mechanism reads cleanly off §1's attribution.  Arm (b) pays a convert at every boundary
+of every hot loop and gets nothing back for it.  Arm (a) deletes the converts but doubles the
+bytes through tile, target, and the readback temp — a net win over (b), so the conversion
+overhead was *worth more than the bandwidth*, the opposite of what the float16 memo's pixvm
+proxy suggested for the checked build.  Arm (c) deletes the converts *and* keeps the bytes
+*and* doubles the lanes — it stacks both wins and beats everything, bounds checks and all.
+The README's "8-wide f16 = 128-bit NEON" argument, unrealized in production code since birth,
+turns out to have been correct: this is the measurement converting it from slogan to data.
+
+## 3. Code size
+
+`__text` of the e2e `bench` binary (links the whole library); all three `__TEXT` segments
+round to the same 131,072 B.
+
+| arm | `__text` | vs status quo |
+|---|---|---|
+| (a) f32 | 109,800 B | −0.2 % |
+| (b) status quo | 110,028 B | — |
+| (c) f16 8-wide | 110,332 B | +0.3 % |
+
+A wash.  Size charges nothing for either direction.
+
+## 4. Pixels: what a switch costs the gallery
+
+Each arm's 32 freshly-rendered scenes vs the committed PNGs (max channel delta in /255
+units, per scene; the tree was restored afterwards):
+
+| | (a) f32 | (c) f16 compute |
+|---|---|---|
+| scenes changed | **32 of 32** | **32 of 32** |
+| max channel delta | 1, except `subrect` = **2** | **1** everywhere |
+| pixels changed, median scene | ~65 % | ~66 % |
+| pixels changed, range | 0.2 % (`imagedata`) – 97 % (`textgrid`) | 0.2 % – 98 % |
+
+Both arms move pixels essentially everywhere (anything antialiased or translucent shifts by
+one quantum), and both stay at the 1/255 scale — the lone 2/255 is arm (a)'s `subrect`, a
+scratch-canvas readback redrawn through the pipeline (two quantization regimes compound).
+Note the asymmetry of intuition here: the *more precise* arm produces the *larger* committed
+diff, because the baseline isn't truth, it's f16-storage rounding.
+
+**Re-baseline price, measured not guessed:** flipping either arm means one churny commit of
+all **32 PNGs plus 2 `.canvas` programs** (`imagedata.canvas`, `subrect.canvas` — the two
+whose recorded image blocks embed readback pixels).  The workflow is built for it (`ninja
+images` regenerates everything in lockstep, `test_replay_gallery` re-gates determinism), and
+the committed-PNG decision memo already prices this class of churn as routine.  Review of
+that commit is necessarily trust-the-harness (no human eyeballs 32 diffs at 1/255).
+
+## 5. Tests and the two accuracy experiments
+
+**Unit tests.**  Arm (c) fails exactly one: `test_replay_gallery` (byte-compares replays to
+the committed PNGs — §4's re-baseline, not a bug).  Arm (a) fails that plus
+`test_gradient_solve`, and the second failure is instructive: the test asserts the documented
+identity `build_ramp[i] == color_at(i/(N-1))` at **tolerance zero**, but `build_ramp`
+computes `t = i * (1/(N-1))` while the test computes `i / (N-1)` — a 1-ULP f32 difference in
+`t` that f16 narrowing has been silently absorbing.  Rounding-scale, trivially fixable
+(divide in the ramp loop, or loosen the tolerance), but a finding in its own right: **some of
+the tree's "exact" invariants are exact only because f16 storage forgives the last f32 bit.**
+Everything else — `test_compositor`'s blend constants, `test_composite`, `test_image`'s
+get/put round-trip, `test_metamorphic`, `test_shadow` — passes under **both** arms, including
+arm (c)'s f16 source-over, premultiply, and readback.
+
+**Experiment 1 — the float16 memo's round-trip claim, re-checked for f16 *compute*.**  All
+65,280 (u8 color × u8 alpha) pairs through premultiply → store → unpremultiply → 8-bit
+quantize, modeling each arm exactly (arm (c) does the premultiply *and* the divide *and* the
+255-quantize in f16):
+
+| arm | mismatched pairs |
+|---|---|
+| (a) f32 | 0 |
+| (b) f16 store / f32 compute | 0 |
+| (c) f16 store / **f16 compute** | **0** |
+
+**The memo's key claim survives compute narrowing.**  f16 arithmetic — not just storage —
+round-trips every 8-bit edge value.  The u8-corrupts-half row from the prior memo is
+unaffected and still damns u8; nothing here reopens that.
+
+**Experiment 2 — a representative blend.**  All 16,777,216 (src color × src alpha × dst
+color) triples through source-over onto an opaque destination, vs the correctly-rounded
+double-precision reference:
+
+| arm | off-by-one results | max delta | exact-8-bit-edge results hit (of 447,436) |
+|---|---|---|---|
+| (a) f32 | **0 (0.000 %)** | 0 | 447,436 (100 %) |
+| (b) status quo | 507,756 (3.03 %) | 1 | 447,436 (100 %) |
+| (c) f16 compute | 811,369 (4.84 %) | 1 | 447,436 (100 %) |
+
+Three readings.  First, **arm (a) is bit-exact against the double oracle across the entire
+sweep** — f32 compute with f32 storage *is* the correctly-rounded answer for this kernel, an
+oracle-grade property the metal-backend memo's replacement-oracle agenda would appreciate.
+Second, arm (c) widens the off-by-one band over the status quo by 1.8 points of blend space —
+real, monotone with how much f16 rounding accumulates, and invisible at 1/255 scale.  Third,
+**every result that should land exactly on an 8-bit edge does, in all three arms** — the
+direct answer to this memo's assigned question: f16 compute does not miss the edges.
+
+**The trail pathology, re-run with f16 compute** (iterated white-at-α over black; limit 255;
+the prior memo's worst case for f16, now RNE since the RTZ hack died with Metal):
+
+| α / iterations | (a) f32 | (b) f16 store | (c) f16 compute |
+|---|---|---|---|
+| 0.05 / 2,000 | 255 | 254 | 255 |
+| 0.02 / 5,000 | 255 | 252 | 252 |
+| 0.01 / 10,000 | 255 | 249 | 255 |
+| 0.004 / 20,000 | 255 | 240 | 245 |
+
+Counter to intuition, pervasive f16 is *not worse* than f16 storage here — the f16-arithmetic
+fixed point happens to land at or above the store-rounded one at every tested α.  f32 remains
+the only arm that actually reaches the limit, but arm (c) does not deepen the prior memo's
+conceded artifact.
+
+(Modeling caveat for all three experiments: straight-line C mirrors of the kernels, compiled
+with the build's flags; vector codegen could contract FMAs differently in corner cases.  The
+gallery deltas in §4 — max 1/255 across 3.3M rendered pixels — corroborate the scale.)
+
+## 6. Options, worked through
+
+| Option | Flagship | Memory (tile+target) | Blend accuracy vs oracle | Switch cost | Verdict |
+|---|---|---|---|---|---|
+| **(b) status quo** | slowest of the three (−0 %) | 8 B/px | 3.0 % off-by-one | — | Holds neither the speed crown nor the accuracy crown; survives only as the no-churn option |
+| **(a) f32** | −4.5/−4.8 % | **16 B/px** (doubles) | **bit-exact** | 32 PNGs + 2 .canvas + 2 test fixes | The correctness arm: correctly rounded by construction, kills ~60 convert sites, deepest pathology headroom — for 2× footprint and second place on speed |
+| **(c) f16 8-wide** | **−8.3/−7.7 %** | 8 B/px | 4.8 % off-by-one (max 1/255; all exact edges hit) | 32 PNGs + 2 .canvas + 1 test re-render | **Recommended.** Fastest, smallest, round-trip-exact, and finally makes the README's f16 story true |
+
+## 7. Recommendation
+
+**Take arm (c): convert the SRC_OVER blend, premultiply, and readback to pervasive 8-wide
+`_Float16` compute, and re-baseline the gallery.**  Ranked reasons:
+
+1. **It wins the workload that matters, by the largest honest margin available.**  −8 % on
+   both flagship renders is the biggest single-change speedup measured on this pipeline since
+   the memos began, it comes from the shipping checked build, and §1 says it's conservative
+   (the generic modes' ~9 % is still on the table).
+2. **The status quo is revealed as the worst point on the curve.**  It pays f16's rounding
+   *and* f32's conversion traffic and collects neither arm's win.  "f16 storage, f32 compute"
+   was a reasonable default when the Metal shader dictated the storage format; with Metal
+   deleted, it's just the slow middle.
+3. **The accuracy cost is bounded and the load-bearing claims survive.**  Every 8-bit edge
+   round-trips (exp 1), every exactly-representable blend result lands (exp 2), the trail
+   pathology doesn't deepen (§5), max delta anywhere is 1/255, and the entire committed test
+   suite minus the re-baseline gate passes unmodified.  What's conceded: off-by-one on ~5 %
+   of translucent blends vs ~3 % today — sub-quantum noise with no committed artifact, test,
+   or doc claim that can see it.
+4. **It repairs the README's story instead of rewording it.**  The float16 memo found the
+   "lingua franca, native on this hardware" line described code that didn't exist — f16 never
+   computed.  Arm (c) is that code.  After the switch, the line is simply true, and the
+   `cnvs_math.h` comment's "compute happens in f32" clause updates to match.
+
+**Execution notes for the real change (beyond this memo's prototype):** convert the generic
+blend modes too (or document the kernel as two-language); decide clip attenuation
+deliberately — the prototype attenuates in f16, which is `pervasive` but reverses the
+float32-attenuation choice the metal-backend ruling kept on correctness grounds (keeping the
+f32 multiply there costs two converts per clipped pixel; either way, say so in the code);
+re-render the gallery (`ninja images`, one commit: 32 PNGs + `imagedata.canvas` +
+`subrect.canvas`); and re-run `ninja benchcmp` so the README's overhead table reflects the
+new kernels.
+
+**The strongest argument against this recommendation:** arm (a) is the only arm that is
+**correctly rounded by construction** — zero error against a double-precision oracle over the
+entire 16.7M-triple sweep — and the metal-backend memo's whole replacement-oracle agenda
+points toward exactly that property: a pipeline you can verify against `double` with `==`
+rather than `±1`.  Choosing (c) chooses a renderer that is *permanently* one ulp fuzzy on a
+twentieth of blend space, forecloses tolerance-0 differential testing against a reference
+implementation, and banks instead on speed (−3 % vs (a)) and footprint (2× vs (a)) — the
+latter being real money only if canvases grow (a 1920×1080 target is 16.6 MB vs 33 MB; at 4K
+it's 66 vs 133).  If the project's thesis drifts from "fast checked C" toward "provably
+correct checked C," (a) was the right fork and this memo's tables — flagship −4.8 %, edge
+fidelity perfect, one extra test fix — price that road too.  A second, smaller concession:
+arm (c)'s win rests on hand-vectorized fp16 NEON; if the code ever targets a machine without
+native fp16 arithmetic, the f16 kernels demote to soft-float catastrophe, where (a) and (b)
+degrade gracefully.
+
+**Fork for Mike:**
+- **(c) — this memo's pick:** pervasive f16, −8 % flagship, re-baseline 32 PNGs + 2 .canvas,
+  one test re-render; accept the 4.8 % off-by-one band and update `cnvs_math.h`/README to the
+  now-true story.
+- **(a) — the correctness fork:** f32 everywhere, −5 % flagship, same re-baseline churn plus
+  the `test_gradient_solve` 1-ULP fix; buy bit-exactness against a double oracle and the
+  option of tolerance-0 reference differentials, pay 2× color-buffer memory.
+- **(b) — ratify the status quo:** zero churn, keep the committed baseline byte-stable; spend
+  the 5–8 % flagship margin on not re-reviewing 32 PNGs.  Defensible only if baseline
+  stability outranks the project's own flagship benches.
+
+## 8. What would change my mind
+
+- **A reference-renderer differential lands on the roadmap.**  The moment canvas2d wants
+  tolerance-0 comparison against a double-precision oracle (the metal memo's D2 spirit),
+  arm (a)'s zero-mismatch column becomes the decisive row and this recommendation flips.
+- **The off-by-one band shows up in an artifact.**  No committed test or scene can see ±1/255
+  today; if a future scene (long fade loops, repeated filter passes, accumulation buffers)
+  surfaces a visible f16-compute artifact the trail experiment missed, re-run §5 with that
+  workload before defending (c).
+- **Canvas sizes grow past the cache.**  Arm (c) already wins partly on bandwidth; at 4K+
+  targets the f32 footprint penalty doubles down and the (a)-vs-(c) gap should widen in (c)'s
+  favor — but *measure*, because the readback temp and PNG encode also scale.
+- **Portability beyond Apple Silicon materializes.**  Native fp16 SIMD is the load-bearing
+  assumption; an x86 target without AVX-512 FP16 demotes arm (c) to scalar soft-float and
+  the right answer is probably (a) with 8-wide f32.
+- **The generic-mode conversion disappoints.**  If converting `blend_term`/HSL to f16 costs
+  accuracy on the non-linear modes (divides and square roots in 11 bits) in a way the
+  porterduff/blend scenes can see, the "two-language kernel" residue becomes permanent and
+  (c)'s simplicity argument weakens — the §1 attribution caps the residual upside at ~9 %.
