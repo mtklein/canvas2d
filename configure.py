@@ -288,6 +288,16 @@ def main():
     w("")
     w("rule run_gallery")
     w("  command = $bin")
+    # generator: the gallery PNGs are committed build outputs, and configure.py
+    # discovers them by globbing gallery/*.png (below).  Marking this rule a
+    # generator keeps `ninja -t clean` from deleting them -- the same exemption
+    # build.ninja itself gets -- so the glob is never left empty (a plain clean
+    # used to nuke the committed PNGs, then the next configure emitted
+    # `build : run_gallery ...` with no outputs and ninja refused to load).  They
+    # still re-render whenever the gallery binary input changes; only the
+    # rebuild-on-command-change and clean-by-default behaviours are dropped, both
+    # irrelevant here.  (`ninja -t clean -g` still removes them if you mean it.)
+    w("  generator = 1")
     w("")
     w("rule analyze")
     w(f"  command = clang {ANALYZE} $cstd $cinc $in && touch $out")
@@ -382,6 +392,13 @@ def main():
     # outputs gated on the gallery binary, so a bare `ninja` keeps them in
     # lockstep with the renderer -- and dirties the tree the moment a code change
     # moves a pixel.  `ninja images` is the same edge on its own.
+    if not gallery_pngs:
+        # The output list is globbed from the committed PNGs (run_gallery is a
+        # generator rule so clean leaves them in place).  Empty means they were
+        # removed out-of-band; emitting `build : run_gallery ...` would be invalid
+        # ninja.  Fail clearly with the fix instead.
+        raise SystemExit("configure.py: gallery/*.png missing -- run "
+                         "`git restore gallery/` (committed build outputs)")
     w(f"build {' '.join(gallery_pngs)}: run_gallery build/release/gallery")
     w("  bin = ./build/release/gallery")
     w(f"build images: phony {' '.join(gallery_pngs)}")
@@ -570,6 +587,10 @@ def main():
       "| python3 tools/cov_report.py > $out && "
       f"xcrun llvm-cov report $mainbin $objargs -instr-profile=$profdata {cov_scope}")
     w("  pool = console")
+    # generator: docs/coverage.md is committed (browsable on GitHub), like the
+    # gallery PNGs -- keep `ninja -t clean` from deleting it.  `ninja coverage`
+    # regenerates it on demand regardless.
+    w("  generator = 1")
     w("")
     cov_lib = []
     for c in core_c:
