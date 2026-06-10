@@ -32,15 +32,21 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
 3. ~~**Shadows**~~ — **done** (fills/strokes/text). The op's coverage mask is
    blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
-   shape — all in checked C, so the backends stay bit-identical. `filter` blur
-   reuses the same kernel and is next.
+   shape — all in checked C, so the backends stay bit-identical. `filter`
+   `blur()` (item 5) shares the same three-pass structure.
 4. ~~**`filter`, the colour functions**~~ — **done** (`brightness`, `contrast`,
    `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`), behind
    a typed API (`canvas_add_filter_*` — no CSS string parsing). Each compiles
    at add time to a 3x3 matrix + alpha-scaled offset in closed premultiplied
    form ([cnvs_filter.c](../src/cnvs_filter.c)) and applies per pixel to the
-   op's premultiplied tile, before its shadow and composite. `blur()` and
-   `drop-shadow()` — which reuse [blur.c](../src/blur.c) — remain.
+   op's premultiplied tile, before its shadow and composite.
+5. ~~**`filter` `blur()`**~~ — **done**. An RGBA16F flavour of
+   [blur.c](../src/blur.c)'s running-sum box blur (three passes ≈ Gaussian,
+   stdDev = the given px) over the op's premultiplied tile, blurring against
+   transparency rather than clamped edges; each paint site widens its bbox by
+   the filter chain's spread so the soft skirt outgrows the shape. Held to a
+   brute-force reference in `test_filter`. `drop-shadow()` — the last filter
+   function, which composes this kernel with the shadow machinery — remains.
 
 Internals (not API features) considered and deferred: a sparse/RLE coverage format
 to skip the transparent ~40–60% of a fill's bbox — analysis and why dense+SIMD stays
@@ -83,16 +89,17 @@ the default in [sparse-coverage.md](sparse-coverage.md).
   approximation for semi-transparent gradient/pattern alpha or a sprite's own
   alpha shape).
 - **`filter`** covers the eight colour functions (`brightness`, `contrast`,
-  `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`), applied
-  in list order to every painted op, behind a typed API (`canvas_add_filter_*`
-  — no CSS string parsing). `blur()` and `drop-shadow()` — which reuse the
-  shadow pipeline's separable box blur — remain.
+  `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`) and
+  `blur()` (three box passes ≈ the spec's Gaussian, like shadows), applied in
+  list order to every painted op, behind a typed API (`canvas_add_filter_*` —
+  no CSS string parsing). `drop-shadow()` — which composes the blur kernel
+  with the shadow machinery — remains.
 
 ## Missing entirely
 
 - Nothing at the moment: every remaining gap is a narrower-than-spec row above
-  or out of scope below. (`filter`'s `blur()`/`drop-shadow()` are the nearest
-  thing — tracked under partial now that the colour functions are in.)
+  or out of scope below. (`filter`'s `drop-shadow()` is the nearest thing —
+  tracked under partial now that the colour functions and `blur()` are in.)
 
 ## Out of scope for a headless renderer
 

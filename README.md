@@ -200,12 +200,15 @@ rasterizer:
 
 ![shaping](gallery/shaping.png)
 
-`filter`, the CSS colour functions — the same motif (a gradient tile under two
-translucent discs) through each of the eight functions, unfiltered at top-left.
-Each is a typed API call (`canvas_add_filter_*`, no string parsing) compiled at
-add time to a 3×3 matrix + alpha-scaled offset and applied per pixel to the op's
-premultiplied tile, in checked C, before the shadow is cast and the tile
-composites — the translucent discs are what make the premultiplied forms visible:
+`filter` — the same motif (a gradient tile under two translucent discs) through
+each of the eight colour functions, unfiltered at top-left, plus a `blur()` row.
+Every function is a typed API call (`canvas_add_filter_*`, no string parsing)
+applied to the op's premultiplied tile in checked C, before the shadow is cast
+and the tile composites: the colour functions compile at add time to a 3×3
+matrix + alpha-scaled offset (the translucent discs are what make the
+premultiplied forms visible), and `blur()` runs three box passes (≈ the spec's
+Gaussian) with the painted region grown so the soft skirt outruns each shape —
+the last cell chains it with `saturate(3)`, in list order:
 
 ![filters](gallery/filters.png)
 
@@ -266,7 +269,7 @@ shows only its progress line; a failing test prints the offending `CHECK` to std
       │  ├── cnvs_gradient linear/radial/conic ramp, evaluated per pixel into a tile
       │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
       │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
-      │  ├── blur          separable box blur (shadow masks, ≈ Gaussian)
+      │  ├── blur          separable box blur (shadow masks + filter blur(), ≈ Gaussian)
       │  ├── cnvs_geom     growable vertex/int buffers
       │  ├── cnvs_png      RGBA8 → PNG encoder (CRC32 + adler32 + stored zlib)
       │  ├── cnvs_record   draw calls → text canvas-program (the write side)
@@ -325,8 +328,9 @@ canvas_translate / scale / rotate / transform / set_transform / reset_transform 
 canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
 canvas_set_global_composite_operation                        // 26 GCO modes
 canvas_set_shadow_color_rgba / set_shadow_blur / set_shadow_offset_x / set_shadow_offset_y
-canvas_set_filter_none / add_filter_brightness / add_filter_contrast / add_filter_grayscale /
-    add_filter_hue_rotate / add_filter_invert / add_filter_opacity / add_filter_saturate / add_filter_sepia
+canvas_set_filter_none / add_filter_blur / add_filter_brightness / add_filter_contrast /
+    add_filter_grayscale / add_filter_hue_rotate / add_filter_invert / add_filter_opacity /
+    add_filter_saturate / add_filter_sepia
 canvas_set_fill_linear_gradient / set_fill_radial_gradient / set_fill_conic_gradient / add_fill_color_stop / set_fill_pattern
 canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / set_stroke_conic_gradient / add_stroke_color_stop / set_stroke_pattern
 canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
@@ -371,7 +375,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |
 | `Path2D` — build, `addPath`, fill/stroke/clip/isPointIn* overloads | ✅ no SVG path-data string |
 | Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}`, under fills/strokes/text/images | ✅ CPU box-blur (≈ Gaussian), coverage silhouette |
-| `filter` — the eight colour functions (brightness/contrast/grayscale/hue-rotate/invert/opacity/saturate/sepia), per painted op | ◑ typed API (no CSS strings); no `blur()`/`drop-shadow()` yet |
+| `filter` — the eight colour functions (brightness/contrast/grayscale/hue-rotate/invert/opacity/saturate/sepia) + `blur()` (3-pass box ≈ Gaussian, painted region grows by the spread), per painted op | ◑ typed API (no CSS strings); no `drop-shadow()` yet |
 | Batched compositor submission | ✅ consecutive ops share one command buffer |
 
 ## Warning policy
@@ -463,11 +467,12 @@ say (and which vectorize well). The previous picks on those grounds —
 next:
 
 - **`filter`** — the colour functions (`brightness`, `contrast`, `grayscale`,
-  `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`) are done: per-pixel
+  `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`) are done — per-pixel
   matrix kernels over checked premultiplied tiles
-  ([cnvs_filter.c](src/cnvs_filter.c)). What remains is `blur()` and
-  `drop-shadow()`, which reuse the shadow pipeline's separable box blur
-  ([blur.c](src/blur.c)).
+  ([cnvs_filter.c](src/cnvs_filter.c)) — and so is `blur()`, an RGBA16F
+  flavour of the shadow pipeline's separable box blur ([blur.c](src/blur.c))
+  that blurs the op's tile against transparency. What remains is
+  `drop-shadow()`, which composes that kernel with the shadow machinery.
 
 What we deliberately **won't** do:
 
