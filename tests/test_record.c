@@ -112,6 +112,41 @@ static void draw_program(canvas *__single cv) {
     canvas_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
     canvas_set_stroke_pattern(cv, img, 4, 3, CANVAS_REPEAT_X);
     canvas_stroke_rect(cv, 16.0f, 24.0f, 10.0f, 6.0f);
+    canvas_set_fill_rgba(cv, 0.2f, 0.6f, 0.4f, 1.0f);
+    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+
+    // Path2D: every builder command in one path, drawn by all three ops --
+    // twice each for fill/stroke, so the content dedupe pins ONE `path` block
+    // (the idempotence compare again) -- plus the two hit-test overloads,
+    // which are queries and must record nothing.
+    canvas_path2d *__single p2 = canvas_path2d_create();
+    if (p2) {
+        canvas_path2d_move_to(p2, 20.0f, 4.0f);
+        canvas_path2d_line_to(p2, 30.0f, 4.0f);
+        canvas_path2d_quadratic_curve_to(p2, 32.0f, 8.0f, 30.0f, 12.0f);
+        canvas_path2d_bezier_curve_to(p2, 28.0f, 14.0f, 24.0f, 14.0f,
+                                      22.0f, 12.0f);
+        canvas_path2d_arc_to(p2, 20.0f, 12.0f, 20.0f, 8.0f, 2.0f);
+        canvas_path2d_close_path(p2);
+        canvas_path2d_arc(p2, 25.0f, 8.0f, 2.0f, 0.0f, 3.0f, true);
+        canvas_path2d_ellipse(p2, 25.0f, 8.0f, 4.0f, 2.0f, 0.25f, 0.0f, 3.0f,
+                              false);
+        canvas_path2d_rect(p2, 21.0f, 5.0f, 3.0f, 3.0f);
+        canvas_path2d_round_rect(p2, 26.0f, 5.0f, 4.0f, 4.0f, 1.0f);
+        canvas_fill_path(cv, p2, CANVAS_EVENODD);
+        canvas_fill_path(cv, p2, CANVAS_NONZERO);
+        canvas_set_line_width(cv, 1.0f);
+        canvas_stroke_path(cv, p2);
+        canvas_stroke_path(cv, p2);
+        (void)canvas_is_point_in_path2d(cv, p2, 25.0f, 8.0f, CANVAS_NONZERO);
+        (void)canvas_is_point_in_stroke_path(cv, p2, 20.0f, 4.0f);
+        canvas_save(cv);
+        canvas_clip_path(cv, p2, CANVAS_NONZERO);
+        canvas_set_fill_rgba(cv, 0.9f, 0.4f, 0.1f, 1.0f);
+        canvas_fill_rect(cv, 18.0f, 2.0f, 16.0f, 14.0f);
+        canvas_restore(cv);
+        canvas_path2d_destroy(p2);
+    }
 
     // A clip last, so a non-empty path region is exercised by the clip command.
     canvas_begin_path(cv);

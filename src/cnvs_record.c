@@ -6,6 +6,7 @@
 
 #include "cnvs_record.h"
 
+#include "cnvs_path2d.h"
 #include "cnvs_zlib.h"
 
 #include <ptrcheck.h>
@@ -24,11 +25,21 @@ typedef struct {
     int w, h;
 } rec_image;
 
+// Likewise one `path` block: an owned copy of the Path2D's command list --
+// content, not pointer identity, is the key, since the caller's object may be
+// mutated (or freed and another allocated at the same address) between draws.
+typedef struct {
+    p2d_cmd *__counted_by(len) cmds;
+    int len;
+} rec_path;
+
 struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
     rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
     int nimg;
+    rec_path path[CNVS_REC_PATHS_MAX];   // [0, npath) are its path blocks
+    int npath;
 };
 
 cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path) {
@@ -53,6 +64,9 @@ void cnvs_recorder_close(cnvs_recorder *__single r) {
     (void)fclose(r->f);
     for (int i = 0; i < r->nimg; i++) {
         free(r->img[i].px);
+    }
+    for (int i = 0; i < r->npath; i++) {
+        free(r->path[i].cmds);
     }
     free(r);
 }
@@ -437,6 +451,110 @@ void cnvs_rec_pattern(cnvs_recorder *__single r,
     fputs(name, r->f);
     fprintf(r->f, " %d ", id);
     fputs(k_repeat[i], r->f);
+    fputc('\n', r->f);
+}
+
+// One Path2D command's verb token and float-argument count; NULL for a value
+// that is not a p2d_op.  The list comes from our own builders, but the
+// serializer validates it anyway (the glyph emission posture): an invalid
+// command means the whole block is skipped, never a short block.
+static char const *__null_terminated p2d_token(p2d_op op, int *__single nargs) {
+    switch (op) {
+        case P2D_MOVE:       *nargs = 2; return "m";
+        case P2D_LINE:       *nargs = 2; return "l";
+        case P2D_QUAD:       *nargs = 4; return "q";
+        case P2D_CUBIC:      *nargs = 6; return "c";
+        case P2D_ARC:        *nargs = 5; return "a";
+        case P2D_ELLIPSE:    *nargs = 7; return "e";
+        case P2D_ARC_TO:     *nargs = 5; return "t";
+        case P2D_RECT:       *nargs = 4; return "r";
+        case P2D_ROUND_RECT: *nargs = 5; return "rr";
+        case P2D_CLOSE:      *nargs = 0; return "z";
+    }
+    *nargs = 0;
+    return NULL;
+}
+
+// Field-wise command-list equality: op, winding, and the argument floats
+// bit-for-bit (memcmp over the contiguous a[8] -- NaN payloads and -0 compare
+// exactly; struct padding is never read).
+static bool path_cmds_eq(p2d_cmd const *__counted_by(n) a,
+                         p2d_cmd const *__counted_by(n) b, int n) {
+    for (int i = 0; i < n; i++) {
+        if (a[i].op != b[i].op || a[i].ccw != b[i].ccw ||
+            memcmp(a[i].a, b[i].a, sizeof a[i].a) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int cnvs_rec_path(cnvs_recorder *__single r, canvas_path2d const *__single p) {
+    if (!r || r->suspend != 0) {
+        return -1;
+    }
+    int const n = p->len;
+    for (int iv = 0; iv < n; iv++) {
+        int k = 0;
+        if (!p2d_token(p->cmds[iv].op, &k)) {
+            return -1;  // not a command: emit nothing rather than a short block
+        }
+    }
+    // Content dedupe: the same petal stamped under twelve transforms costs
+    // one block, however many fill_path/stroke_path reference it.
+    for (int i = 0; i < r->npath; i++) {
+        if (r->path[i].len == n && path_cmds_eq(r->path[i].cmds, p->cmds, n)) {
+            return i;
+        }
+    }
+    if (r->npath >= CNVS_REC_PATHS_MAX) {
+        return -1;  // id space exhausted: skip the block (and its op)
+    }
+    p2d_cmd *__counted_by_or_null(n) copy = NULL;
+    if (n > 0) {
+        copy = malloc((size_t)n * sizeof *copy);
+        if (!copy) {
+            return -1;  // OOM: nothing emitted, the file stays well-formed
+        }
+        memcpy(copy, p->cmds, (size_t)n * sizeof *copy);
+    }
+    int const id = r->npath;
+    fprintf(r->f, "path %d %d\n", id, n);
+    for (int i = 0; i < n; i++) {
+        int k = 0;
+        char const *__null_terminated tok = p2d_token(p->cmds[i].op, &k);
+        fputs(tok, r->f);
+        put_floats(r->f, p->cmds[i].a, k);
+        if (p->cmds[i].op == P2D_ARC || p->cmds[i].op == P2D_ELLIPSE) {
+            fputs(p->cmds[i].ccw ? " 1" : " 0", r->f);
+        }
+        fputc('\n', r->f);
+    }
+    r->path[id].cmds = copy;
+    r->path[id].len = n;
+    r->npath = id + 1;
+    return id;
+}
+
+void cnvs_rec_path_op(cnvs_recorder *__single r,
+                      char const *__null_terminated name, int id) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    fprintf(r->f, " %d", id);
+    fputc('\n', r->f);
+}
+
+void cnvs_rec_path_rule(cnvs_recorder *__single r,
+                        char const *__null_terminated name, int id,
+                        canvas_fill_rule rule) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    fprintf(r->f, " %d ", id);
+    fputs(rule == CANVAS_EVENODD ? "evenodd" : "nonzero", r->f);
     fputc('\n', r->f);
 }
 

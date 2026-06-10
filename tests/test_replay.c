@@ -77,6 +77,46 @@ int main(void) {
     canvas_get_image_data(cv, 24, 4, 1, 1, px, 4);
     CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255);
 
+    // Path blocks: every command verb, then the three ops that reference the
+    // path by id (an empty path is legal and paints nothing).
+    CHECK(REPLAY(cv,
+        "path 0 10\n"
+        "m 4 4\n"
+        "l 30 4\n"
+        "q 34 12 30 20\n"
+        "c 26 24 12 24 8 20\n"
+        "t 4 20 4 12 4\n"
+        "z\n"
+        "a 17 12 5 0 3 1\n"
+        "e 17 12 9 4 0.25 0 3 0\n"
+        "r 6 6 6 6\n"
+        "rr 22 6 8 8 2\n"
+        "fill_path 0 evenodd\n"
+        "stroke_path 0\n"
+        "path 1 0\n"
+        "fill_path 1 nonzero\n"
+        "save\n"
+        "clip_path 0 nonzero\n"
+        "fill_rect 0 0 64 48\n"
+        "restore\n"));
+
+    // Malformed path blocks and references are all rejected.
+    CHECK(!REPLAY(cv, "fill_path 0 nonzero\n"));         // undeclared id
+    CHECK(!REPLAY(cv, "path 0 1\n"
+                      "fill_rect 0 0 1 1\n"));           // not a path command
+    CHECK(!REPLAY(cv, "path 0 1\n"
+                      "m 1\n"));                         // short command args
+    CHECK(!REPLAY(cv, "path 0 2\n"
+                      "m 1 2\n"));                       // truncated block
+    CHECK(!REPLAY(cv, "path 0 1\n"
+                      "z 9\n"));                         // trailing junk
+    CHECK(!REPLAY(cv, "path 0 0\n"
+                      "path 0 0\n"));                    // id redeclared
+    CHECK(!REPLAY(cv, "path 0 0\n"
+                      "fill_path 0 sideways\n"));        // bad fill rule
+    CHECK(!REPLAY(cv, "path 0 1\n"
+                      "a 1 2 3 4 5 maybe\n"));           // bad winding bool
+
     // Malformed image blocks and references are all rejected.
     CHECK(!REPLAY(cv, "draw_image 7 0 0\n"));            // undeclared id
     CHECK(!REPLAY(cv, "image 0 0 1 12 1\n"));            // zero dimension

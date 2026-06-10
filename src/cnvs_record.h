@@ -50,15 +50,16 @@ void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated 
 
 // File-local numbered-object id spaces, shared with the replay parser: the
 // recorder never emits an id at or past the cap, and the parser rejects one.
-// A recording that uses more distinct images than this stops carrying the
-// extras (their op lines are skipped too, so the file stays well-formed) --
-// the recorder's usual best-effort posture.  The byte cap bounds one image
+// A recording that uses more distinct images/paths than this stops carrying
+// the extras (their op lines are skipped too, so the file stays well-formed)
+// -- the recorder's usual best-effort posture.  The byte cap bounds one image
 // block's decoded allocation on replay; it is validated before either of the
 // block's buffers is allocated, and an incompressible image much past it
 // could not fit the 64 MiB file cap anyway.
 enum {
     CNVS_REC_IMAGES_MAX = 256,
     CNVS_REC_IMAGE_BYTES_MAX = 64 << 20,  // w*h*4 cap per image block
+    CNVS_REC_PATHS_MAX = 256,
 };
 
 // Serialize one RGBA8 image (w*h*4 == len bytes, top row first) as an `image`
@@ -89,6 +90,26 @@ void cnvs_rec_image_ints(cnvs_recorder *__single r,
 void cnvs_rec_pattern(cnvs_recorder *__single r,
                       char const *__null_terminated name, int id,
                       canvas_pattern_repeat repeat);
+
+// Serialize one Path2D's command list as a numbered `path` block -- a
+// `path <id> <ncmds>` header, then one verb line per command (m/l/q/c with
+// their points, a/e with a trailing winding bool, t/r/rr, z) -- returning its
+// file-local id.  Deduplicated by CONTENT within the recording (the recorder
+// keeps its own copy of the command list; the caller's object may be mutated
+// or destroyed between draws), so a path stamped under many transforms costs
+// one block.  Returns -1, emitting nothing, when the path cannot be carried
+// (id space exhausted, or an allocation failure) -- the caller skips its op
+// line too.
+int cnvs_rec_path(cnvs_recorder *__single r,
+                  canvas_path2d const *__single p);
+
+// One op line referencing a path block: `stroke_path <path-id>`, or
+// fill_path/clip_path with their explicit rule appended by name.
+void cnvs_rec_path_op(cnvs_recorder *__single r,
+                      char const *__null_terminated name, int id);
+void cnvs_rec_path_rule(cnvs_recorder *__single r,
+                        char const *__null_terminated name, int id,
+                        canvas_fill_rule rule);
 
 // Serialize the derived text data a fill_text/stroke_text op is about to use --
 // interned fonts (with their size-1.0 vmetrics), canonical glyph curves + ink

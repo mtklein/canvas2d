@@ -496,6 +496,24 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // source), and one program declares at most 256 images of at most 64 MiB
 // (w*h*4) each -- both validated before the block's buffers are allocated.
 //
+// Path-block lines carry Path2D objects the same numbered way:
+//     path <id> <ncmds>
+//     <verb> <args...>                            (exactly ncmds of these)
+// declares file-local numbered path <id>; each command line is one builder
+// call -- m/l <x y>, q <cpx cpy x y>, c <c1x c1y c2x c2y x y>,
+// a <x y r sa ea ccw>, e <x y rx ry rot sa ea ccw>, t <x1 y1 x2 y2 r>
+// (arcTo), r <x y w h> (rect), rr <x y w h radius>, z (closePath) -- in user
+// space, transformed by the CTM at draw time like any Path2D.  The recorder
+// serializes a path at its first fill_path/stroke_path/clip_path (the
+// builders are canvas-free, so there is nothing to hook until a draw),
+// deduplicated by content so one object stamped under many transforms costs
+// one block, at most 256 per program.  addPath needs no spelling of its own:
+// a Path2D holds its composed command list, which is what serializes.  The
+// ops reference the id, the fill rule explicit where the API takes one:
+//     fill_path <id> <nonzero|evenodd>
+//     stroke_path <id>
+//     clip_path <id> <nonzero|evenodd>
+//
 // Parsing is strict: an unknown command, a bad argument, an over-long line, or
 // a malformed block (an undeclared font id, a bad verb token, a cluster index
 // past the text length, a non-finite number where the recorder writes finite
@@ -532,15 +550,20 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // Image ops round-trip the same way: draw_image (all three forms),
 // put_image_data (plain + dirty-rect), and set_fill_pattern/set_stroke_pattern
 // embed their RGBA8 source as an `image` block (deflated, deduplicated by
-// content within the file) and write one op line referencing it -- see
-// canvas_replay_from for the caps past which an image degrades un-recorded.
+// content within the file) and write one op line referencing it.  Path2D
+// draws likewise: fill_path/stroke_path/clip_path serialize the path's
+// command list as a content-deduplicated `path` block at first use and write
+// one op line referencing it (the builders themselves record nothing -- they
+// have no canvas -- and the hit-test overloads, being queries, record
+// nothing either).  See canvas_replay_from for the caps past which an image
+// or path degrades un-recorded.
 //
 // Only the ops the text format covers are recorded -- the same subset
 // replay_from understands.  arc/round_rect/arc_to are written as themselves;
 // calls outside the format (round_rect_radii, conic gradients, image
-// smoothing, Path2D fill/stroke/clip, the filter list (set_filter_none /
-// add_filter_*), reset, resize) are not recorded, so a session that uses them
-// does not round-trip through the text format.
+// smoothing, the filter list (set_filter_none / add_filter_*), reset, resize)
+// are not recorded, so a session that uses them does not round-trip through
+// the text format.
 bool canvas_record_to(canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh

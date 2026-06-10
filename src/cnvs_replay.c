@@ -9,7 +9,8 @@
 #include "cnvs_replay.h"
 
 #include "canvas.h"
-#include "cnvs_record.h"  // the shared image-id caps (CNVS_REC_IMAGES_MAX, ...)
+#include "cnvs_path2d.h"  // canvas_path2d's command count (OOM-drop detection)
+#include "cnvs_record.h"  // the shared numbered-object caps (CNVS_REC_*_MAX)
 #include "cnvs_text.h"
 #include "cnvs_zlib.h"
 
@@ -28,6 +29,10 @@
 #define REPLAY_FILE_MAX (64u << 20)  // 64 MiB file cap
 #define REPLAY_DASH_MAX 64           // max dash segments from one line
 #define REPLAY_RUNS_MAX 1024         // run lines one shape block may declare
+#define REPLAY_PATH_CMDS_MAX (1 << 20)  // command lines one path block may
+                                        // declare (a sanity cap: the storage
+                                        // grows per arriving line, so memory
+                                        // tracks the file's actual size)
 #define REPLAY_BITMAP_DIM_MAX 512    // capture dims cap: bounds a bitmap
                                      // block's decoded allocation at 1 MiB
                                      // (the recorder writes CNVS_CAPTURE_EM =
@@ -319,6 +324,17 @@ struct replay_blocks {
     int bm_w, bm_h;
     float bm_ink[4];  // capture-px ink box x0 y0 x1 y1
     struct replay_image img[CNVS_REC_IMAGES_MAX];  // declared `image` blocks
+    // Path2D blocks: file-local numbered paths, rebuilt through the public
+    // builders and owned by the parser for the duration of replay (the path
+    // ops replay a path's commands immediately and retain nothing, so unlike
+    // images they don't outlive replay).  pend_path is the block under
+    // construction: its command lines must follow directly, pend_left of them
+    // still expected.
+    canvas_path2d *__single paths[CNVS_REC_PATHS_MAX];
+    canvas_path2d *__single pend_path;
+    int pend_id;
+    int pend_cmds;  // the block's declared command count
+    int pend_left;  // command lines still expected
 };
 
 // Free the cross-line state (the pending shape, if its run lines never
@@ -348,6 +364,21 @@ static void bitmap_drop(struct replay_blocks *__single b) {
     b->bm_gid = 0;
     b->bm_w = 0;
     b->bm_h = 0;
+}
+
+// Free the parser's Path2D state: the pending block (if its command lines
+// never finished) and every installed path -- the parser owns them all; the
+// path ops borrow one only for the duration of the call.
+static void paths_drop(struct replay_blocks *__single b) {
+    canvas_path2d_destroy(b->pend_path);
+    b->pend_path = NULL;
+    b->pend_id = 0;
+    b->pend_cmds = 0;
+    b->pend_left = 0;
+    for (int i = 0; i < CNVS_REC_PATHS_MAX; i++) {
+        canvas_path2d_destroy(b->paths[i]);
+        b->paths[i] = NULL;
+    }
 }
 
 // The pending shape's last run line landed: hand it to the cache, which takes
@@ -604,6 +635,98 @@ static bool replay_image(struct replay_blocks *__single b,
     b->bm_gid = 0;
     b->bm_w = (int)w;
     b->bm_h = (int)h;
+    return true;
+}
+
+// path <id> <ncmds> -- begin one numbered Path2D; exactly ncmds command lines
+// (one verb each: m/l/q/c with their points, a/e with a trailing winding
+// bool, t/r/rr, z) must follow directly.  The path is rebuilt through the
+// public canvas_path2d_* builders into a parser-owned object that
+// fill_path/stroke_path/clip_path then reference by id.  Strict: an unused id
+// (ids declare once), ncmds within the sanity cap.  An empty path (ncmds 0)
+// installs immediately.
+static bool replay_path(struct replay_blocks *__single b,
+                        char const *__counted_by(le) data, size_t le, size_t j) {
+    long id = 0, n = 0;
+    if (!read_uint(data, le, &j, CNVS_REC_PATHS_MAX - 1, &id) || b->paths[id]) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, REPLAY_PATH_CMDS_MAX, &n)) {
+        return false;
+    }
+    if (!at_eol(data, le, j)) {
+        return false;
+    }
+    canvas_path2d *__single p = canvas_path2d_create();
+    if (!p) {
+        return false;  // OOM while rebuilding: stop replay
+    }
+    if (n == 0) {
+        b->paths[id] = p;  // an empty path: nothing more to wait for
+        return true;
+    }
+    b->pend_path = p;
+    b->pend_id = (int)id;
+    b->pend_cmds = (int)n;
+    b->pend_left = (int)n;
+    return true;
+}
+
+// One command line of the pending path block.  The builders never fail loudly
+// (an OOM drops the command, the public best-effort posture), so the install
+// step verifies the rebuilt path holds exactly the declared command count --
+// a silent drop becomes a parse failure, not a silently-different path.
+static bool replay_path_cmd(struct replay_blocks *__single b,
+                            char const *__counted_by(le) data, size_t le,
+                            size_t cs, size_t cl, size_t j) {
+    canvas_path2d *__single p = b->pend_path;
+    float f[7];
+    bool w;
+    if (tok_eq(data, le, cs, cl, "m")) {
+        if (!read_floats(data, le, &j, f, 2)) return false;
+        canvas_path2d_move_to(p, f[0], f[1]);
+    } else if (tok_eq(data, le, cs, cl, "l")) {
+        if (!read_floats(data, le, &j, f, 2)) return false;
+        canvas_path2d_line_to(p, f[0], f[1]);
+    } else if (tok_eq(data, le, cs, cl, "q")) {
+        if (!read_floats(data, le, &j, f, 4)) return false;
+        canvas_path2d_quadratic_curve_to(p, f[0], f[1], f[2], f[3]);
+    } else if (tok_eq(data, le, cs, cl, "c")) {
+        if (!read_floats(data, le, &j, f, 6)) return false;
+        canvas_path2d_bezier_curve_to(p, f[0], f[1], f[2], f[3], f[4], f[5]);
+    } else if (tok_eq(data, le, cs, cl, "a")) {
+        if (!read_floats(data, le, &j, f, 5) || !read_bool(data, le, &j, &w)) return false;
+        canvas_path2d_arc(p, f[0], f[1], f[2], f[3], f[4], w);
+    } else if (tok_eq(data, le, cs, cl, "e")) {
+        if (!read_floats(data, le, &j, f, 7) || !read_bool(data, le, &j, &w)) return false;
+        canvas_path2d_ellipse(p, f[0], f[1], f[2], f[3], f[4], f[5], f[6], w);
+    } else if (tok_eq(data, le, cs, cl, "t")) {
+        if (!read_floats(data, le, &j, f, 5)) return false;
+        canvas_path2d_arc_to(p, f[0], f[1], f[2], f[3], f[4]);
+    } else if (tok_eq(data, le, cs, cl, "r")) {
+        if (!read_floats(data, le, &j, f, 4)) return false;
+        canvas_path2d_rect(p, f[0], f[1], f[2], f[3]);
+    } else if (tok_eq(data, le, cs, cl, "rr")) {
+        if (!read_floats(data, le, &j, f, 5)) return false;
+        canvas_path2d_round_rect(p, f[0], f[1], f[2], f[3], f[4]);
+    } else if (tok_eq(data, le, cs, cl, "z")) {
+        canvas_path2d_close_path(p);
+    } else {
+        return false;  // not a path command
+    }
+    if (!at_eol(data, le, j)) {
+        return false;
+    }
+    b->pend_left -= 1;
+    if (b->pend_left == 0) {
+        if (p->len != b->pend_cmds) {
+            return false;  // a builder dropped a command (OOM): stop replay
+        }
+        b->paths[b->pend_id] = p;
+        b->pend_path = NULL;  // ownership moved to the table
+        b->pend_id = 0;
+        b->pend_cmds = 0;
+    }
     return true;
 }
 
@@ -889,17 +1012,23 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     size_t j = ls;
     size_t cs, cl;
     if (!read_token(data, le, &j, &cs, &cl)) {
-        return blk->s == NULL &&
-               blk->bm_lines == 0;  // blank line (illegal inside a block)
+        return blk->s == NULL && blk->bm_lines == 0 &&
+               blk->pend_path == NULL;  // blank line (illegal inside a block)
     }
     if (data[cs] == '#') {
-        return blk->s == NULL && blk->bm_lines == 0;  // comment line (ditto)
+        return blk->s == NULL && blk->bm_lines == 0 &&
+               blk->pend_path == NULL;  // comment line (ditto)
     }
     if (blk->s && !tok_eq(data, le, cs, cl, "run")) {
         return false;  // a shape block's run lines must follow it directly
     }
     if (blk->bm_lines > 0 && !tok_eq(data, le, cs, cl, "bits")) {
-        return false;  // a bitmap block's bits lines must follow it directly
+        return false;  // a bitmap/image block's bits lines must follow directly
+    }
+    if (blk->pend_path) {
+        // A path block's command lines must follow it directly; anything that
+        // is not a command rejects there.
+        return replay_path_cmd(blk, data, le, cs, cl, j);
     }
 
     float f[8];
@@ -1045,6 +1174,29 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
 
     // --- image blocks + the ops that reference them by id ---
     else if (tok_eq(data, le, cs, cl, "image"))  { return replay_image(blk, data, le, j); }
+
+    // --- path blocks + the Path2D ops that reference them by id ---
+    else if (tok_eq(data, le, cs, cl, "path"))   { return replay_path(blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "fill_path") ||
+             tok_eq(data, le, cs, cl, "clip_path")) {
+        bool fill = data[cs] == 'f';
+        long id = 0;
+        size_t ts, tl;
+        if (!read_uint(data, le, &j, CNVS_REC_PATHS_MAX - 1, &id) ||
+            !blk->paths[id] || !read_token(data, le, &j, &ts, &tl)) return false;
+        canvas_fill_rule rule;
+        if (tok_eq(data, le, ts, tl, "nonzero"))      rule = CANVAS_NONZERO;
+        else if (tok_eq(data, le, ts, tl, "evenodd")) rule = CANVAS_EVENODD;
+        else return false;
+        if (fill) canvas_fill_path(cv, blk->paths[id], rule);
+        else      canvas_clip_path(cv, blk->paths[id], rule);
+    }
+    else if (tok_eq(data, le, cs, cl, "stroke_path")) {
+        long id = 0;
+        if (!read_uint(data, le, &j, CNVS_REC_PATHS_MAX - 1, &id) ||
+            !blk->paths[id]) return false;
+        canvas_stroke_path(cv, blk->paths[id]);
+    }
     else if (tok_eq(data, le, cs, cl, "draw_image")) {
         int id;
         if (!read_image_id(blk, data, le, &j, &id) ||
@@ -1143,7 +1295,9 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
                                .bm_lines = 0, .bm_fid = -1, .bm_img = -1,
                                .bm_gid = 0,
                                .bm_w = 0, .bm_h = 0, .bm_ink = { 0 },
-                               .img = { { .px = NULL, .len = 0, .w = 0, .h = 0 } } };
+                               .img = { { .px = NULL, .len = 0, .w = 0, .h = 0 } },
+                               .paths = { NULL }, .pend_path = NULL,
+                               .pend_id = 0, .pend_cmds = 0, .pend_left = 0 };
     for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {
         b.map[k] = -1;
         b.seen[k] = false;
@@ -1157,11 +1311,12 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
              && replay_line(cv, &b, data, i, le);
         i = le + 1;  // past the '\n' (or past end)
     }
-    if (b.s || b.bm_lines > 0) {
-        ok = false;  // truncated shape or bitmap block: its run/bits lines
-    }                // never arrived
+    if (b.s || b.bm_lines > 0 || b.pend_path) {
+        ok = false;  // truncated shape/bitmap/path block: its run/bits/command
+    }                // lines never arrived
     blocks_drop(&b);
     bitmap_drop(&b);
+    paths_drop(&b);
     return ok;
 }
 

@@ -10,6 +10,7 @@
 #include "cnvs_math.h"
 #include "cnvs_mem.h"
 #include "cnvs_path.h"
+#include "cnvs_path2d.h"
 #include "cnvs_png.h"
 #include "cnvs_record.h"
 #include "cnvs_replay.h"
@@ -2696,24 +2697,8 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // A Path2D records its commands in user space and replays them through the
 // canvas's path methods (reusing all the curve/arc/rounding logic) into a fresh
 // device-space path at draw time, so it honours the current transform without
-// disturbing the canvas's own current path.
-
-typedef enum {
-    P2D_MOVE, P2D_LINE, P2D_QUAD, P2D_CUBIC, P2D_ARC, P2D_ELLIPSE,
-    P2D_ARC_TO, P2D_RECT, P2D_ROUND_RECT, P2D_CLOSE
-} p2d_op;
-
-typedef struct {
-    p2d_op op;
-    float a[8];  // op arguments (ellipse uses the most: x,y,rx,ry,rotation,sa,ea)
-    bool ccw;    // arc / ellipse winding direction
-} p2d_cmd;
-
-struct canvas_path2d {
-    p2d_cmd *__counted_by(cap) cmds;
-    int len;
-    int cap;
-};
+// disturbing the canvas's own current path.  The command-list storage lives in
+// cnvs_path2d.h so the recorder can serialize a path as a `path` block.
 
 canvas_path2d *__single canvas_path2d_create(void) {
     return calloc(1, sizeof(canvas_path2d));  // cmds=NULL, len=cap=0 (consistent)
@@ -2826,6 +2811,14 @@ static void p2d_replay(canvas *__single cv, canvas_path2d const *__single p) {
 
 void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
                       canvas_fill_rule rule) {
+    // Record `fill_path <id> <rule>` against the path's numbered block, then
+    // swallow the public path methods p2d_replay drives -- the file keeps the
+    // op the caller issued, not the path's expansion into the current path.
+    if (cv->rec) {
+        int const id = cnvs_rec_path(cv->rec, p);
+        if (id >= 0) { cnvs_rec_path_rule(cv->rec, "fill_path", id, rule); }
+    }
+    cnvs_rec_enter(cv->rec);
     // Replay into a fresh device-space path without touching the current path:
     // copy the current path aside, build, fill, free, restore.
     cnvs_path saved = cv->path;
@@ -2837,9 +2830,15 @@ void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
     cnvs_path_free(&cv->path);
     cv->path = saved;
     cv->cur_user = saved_user;
+    cnvs_rec_leave(cv->rec);
 }
 
 void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
+    if (cv->rec) {
+        int const id = cnvs_rec_path(cv->rec, p);
+        if (id >= 0) { cnvs_rec_path_op(cv->rec, "stroke_path", id); }
+    }
+    cnvs_rec_enter(cv->rec);
     cnvs_path saved = cv->path;
     cnvs_vec2 saved_user = cv->cur_user;
     cnvs_path_init(&cv->path);
@@ -2848,10 +2847,17 @@ void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
     cnvs_path_free(&cv->path);
     cv->path = saved;
     cv->cur_user = saved_user;
+    cnvs_rec_leave(cv->rec);
 }
 
 void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
                       canvas_fill_rule rule) {
+    if (cv->rec) {
+        int const id = cnvs_rec_path(cv->rec, p);
+        if (id >= 0) { cnvs_rec_path_rule(cv->rec, "clip_path", id, rule); }
+    }
+    // Swallow both p2d_replay's path methods and the nested canvas_clip.
+    cnvs_rec_enter(cv->rec);
     cnvs_path saved = cv->path;
     cnvs_vec2 saved_user = cv->cur_user;
     cnvs_fill_rule saved_rule = cv->cur.fill_rule;
@@ -2859,15 +2865,12 @@ void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
     p2d_replay(cv, p);
     // canvas_clip reads the current fill rule; honour the explicit one here.
     cv->cur.fill_rule = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
-    // clip_path is not part of the text format; suppress the nested canvas_clip
-    // so an active recording doesn't emit a bogus `clip` for it.
-    cnvs_rec_enter(cv->rec);
     canvas_clip(cv);
-    cnvs_rec_leave(cv->rec);
     cv->cur.fill_rule = saved_rule;
     cnvs_path_free(&cv->path);
     cv->path = saved;
     cv->cur_user = saved_user;
+    cnvs_rec_leave(cv->rec);
 }
 
 bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__single p,
@@ -2875,6 +2878,7 @@ bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__singl
     if (!isfinite(x) || !isfinite(y)) {
         return false;
     }
+    cnvs_rec_enter(cv->rec);  // a query: p2d_replay's path methods record nothing
     cnvs_path saved = cv->path;
     cnvs_vec2 saved_user = cv->cur_user;
     cnvs_path_init(&cv->path);
@@ -2884,6 +2888,7 @@ bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__singl
     cnvs_path_free(&cv->path);
     cv->path = saved;
     cv->cur_user = saved_user;
+    cnvs_rec_leave(cv->rec);
     return inside;
 }
 
@@ -2893,6 +2898,7 @@ bool canvas_is_point_in_stroke_path(canvas *__single cv,
     if (!isfinite(x) || !isfinite(y)) {
         return false;
     }
+    cnvs_rec_enter(cv->rec);  // a query: p2d_replay's path methods record nothing
     cnvs_path saved = cv->path;
     cnvs_vec2 saved_user = cv->cur_user;
     cnvs_path_init(&cv->path);
@@ -2902,5 +2908,6 @@ bool canvas_is_point_in_stroke_path(canvas *__single cv,
     cnvs_path_free(&cv->path);
     cv->path = saved;
     cv->cur_user = saved_user;
+    cnvs_rec_leave(cv->rec);
     return inside;
 }
