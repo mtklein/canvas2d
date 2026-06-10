@@ -1,7 +1,7 @@
 #include "cnvs_filter.h"
+#include "cnvs_planar.h"
 
 #include <math.h>
-#include <string.h>
 
 // Rec.709 luminance weights, full precision (the Filter Effects spec's
 // grayscale() constants; its saturate()/hueRotate() tables print the same
@@ -135,66 +135,52 @@ cnvs_filter cnvs_filter_drop_shadow(int dx, int dy, int radius,
     return f;
 }
 
-// One pixel's four channels as a vector -- a cnvs_premul is four contiguous
-// _Float16, so it loads straight into an h4 -- and two pixels as one 8-lane
-// vector, the colour pipeline's wide unit (docs/decisions/color-axis.md).
-typedef _Float16 h4 __attribute__((ext_vector_type(4)));
-typedef _Float16 h8 __attribute__((ext_vector_type(8)));
-
-// One pixel's matrix-multiply-add + premul clamp, in _Float16: q is the
-// column fold cr*r + cg*g + cb*b + ca*a, where ca carries the offsets and ka
-// so lane 3 lands ka*a; the clamp pins rgb into [0, clamp01(ka*a)] (the
-// spec's per-function unpremultiplied [0,1] clamp, premultiplied) and lane 3
-// to clamp01(ka*a) itself.
-static h4 filter_px(h4 p, h4 cr, h4 cg, h4 cb, h4 ca) {
-    h4 q = cr * p[0] + cg * p[1] + cb * p[2] + ca * p[3];
-    q = __builtin_elementwise_max(q, (h4)(_Float16)0.0f);
-    h4 lim = __builtin_elementwise_min((h4)q[3], (h4)(_Float16)1.0f);
-    return __builtin_elementwise_min(q, lim);
+// One planar block's matrix-multiply-add + premul clamp, in _Float16: each
+// output plane is the row fold m_c0*r + m_c1*g + m_c2*b + off_c*a (the
+// offsets ride the alpha column since a premultiplied constant term scales by
+// alpha) and the alpha plane is ka*a; the clamp pins rgb into
+// [0, clamp01(ka*a)] (the spec's per-function unpremultiplied [0,1] clamp,
+// premultiplied) and alpha to clamp01(ka*a) itself.  Planar needs no
+// per-channel splat shuffles: a coefficient is a scalar broadcast and a
+// channel is a whole plane (cnvs_planar.h).
+static cnvs_px8 filter_block(cnvs_px8 p, cnvs_filter const *__single fn) {
+    cnvs_px8 q;
+    q.r = (_Float16)fn->m[0] * p.r + (_Float16)fn->m[1] * p.g
+        + (_Float16)fn->m[2] * p.b + (_Float16)fn->off[0] * p.a;
+    q.g = (_Float16)fn->m[3] * p.r + (_Float16)fn->m[4] * p.g
+        + (_Float16)fn->m[5] * p.b + (_Float16)fn->off[1] * p.a;
+    q.b = (_Float16)fn->m[6] * p.r + (_Float16)fn->m[7] * p.g
+        + (_Float16)fn->m[8] * p.b + (_Float16)fn->off[2] * p.a;
+    q.a = (_Float16)fn->ka * p.a;
+    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
+    q.r = __builtin_elementwise_max(q.r, zero);
+    q.g = __builtin_elementwise_max(q.g, zero);
+    q.b = __builtin_elementwise_max(q.b, zero);
+    q.a = __builtin_elementwise_max(q.a, zero);
+    cnvs_h8 lim = __builtin_elementwise_min(q.a, (cnvs_h8)(_Float16)1.0f);
+    q.r = __builtin_elementwise_min(q.r, lim);
+    q.g = __builtin_elementwise_min(q.g, lim);
+    q.b = __builtin_elementwise_min(q.b, lim);
+    q.a = __builtin_elementwise_min(q.a, lim);
+    return q;
 }
 
 void cnvs_filter_apply(cnvs_filter const *__counted_by(count) list, int count,
                        cnvs_premul *__counted_by(n) px, int n) {
-    // Functions outermost: each entry's matrix is narrowed to _Float16 column
-    // vectors once (one checked access per function, not per pixel), and the
-    // per-pixel body runs two pixels (8 lanes) per step -- a bounds-checked
-    // vector load, the matrix fold, the premul clamp, and a vector store, all
-    // in f16 arithmetic with no widen/narrow converts.  An odd tail pixel
-    // runs the same fold at 4 lanes.
+    // Functions outermost; the per-pixel body runs eight pixels per step as
+    // channel planes -- ld4, the matrix fold, the premul clamp, st4, all in
+    // f16 arithmetic with no widen/narrow converts.  The n%8 tail runs the
+    // same fold over a gathered, zero-filled block.
     for (int f = 0; f < count; f++) {
         cnvs_filter const fn = list[f];
-        h4 const cr = { (_Float16)fn.m[0], (_Float16)fn.m[3], (_Float16)fn.m[6],
-                        (_Float16)0.0f };
-        h4 const cg = { (_Float16)fn.m[1], (_Float16)fn.m[4], (_Float16)fn.m[7],
-                        (_Float16)0.0f };
-        h4 const cb = { (_Float16)fn.m[2], (_Float16)fn.m[5], (_Float16)fn.m[8],
-                        (_Float16)0.0f };
-        h4 const ca = { (_Float16)fn.off[0], (_Float16)fn.off[1],
-                        (_Float16)fn.off[2], (_Float16)fn.ka };
-        h8 const cr2 = __builtin_shufflevector(cr, cr, 0, 1, 2, 3, 0, 1, 2, 3);
-        h8 const cg2 = __builtin_shufflevector(cg, cg, 0, 1, 2, 3, 0, 1, 2, 3);
-        h8 const cb2 = __builtin_shufflevector(cb, cb, 0, 1, 2, 3, 0, 1, 2, 3);
-        h8 const ca2 = __builtin_shufflevector(ca, ca, 0, 1, 2, 3, 0, 1, 2, 3);
         int i = 0;
-        for (; i + 2 <= n; i += 2) {
-            h8 p;
-            memcpy(&p, &px[i], sizeof p);  // one bounds check, two pixels
-            h8 q = cr2 * __builtin_shufflevector(p, p, 0, 0, 0, 0, 4, 4, 4, 4)
-                 + cg2 * __builtin_shufflevector(p, p, 1, 1, 1, 1, 5, 5, 5, 5)
-                 + cb2 * __builtin_shufflevector(p, p, 2, 2, 2, 2, 6, 6, 6, 6)
-                 + ca2 * __builtin_shufflevector(p, p, 3, 3, 3, 3, 7, 7, 7, 7);
-            q = __builtin_elementwise_max(q, (h8)(_Float16)0.0f);
-            h8 lim = __builtin_elementwise_min(
-                __builtin_shufflevector(q, q, 3, 3, 3, 3, 7, 7, 7, 7),
-                (h8)(_Float16)1.0f);
-            q = __builtin_elementwise_min(q, lim);
-            memcpy(&px[i], &q, sizeof q);  // bounds-checked vector store
+        for (; i + 8 <= n; i += 8) {
+            cnvs_px8_store(px + i, filter_block(cnvs_px8_load(px + i), &fn));
         }
-        for (; i < n; i++) {
-            h4 p;
-            memcpy(&p, &px[i], sizeof p);
-            h4 q = filter_px(p, cr, cg, cb, ca);
-            memcpy(&px[i], &q, sizeof q);
+        if (i < n) {
+            int k = n - i;
+            cnvs_px8_store_k(px + i, k,
+                             filter_block(cnvs_px8_load_k(px + i, k), &fn));
         }
     }
 }
