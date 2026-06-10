@@ -1,4 +1,5 @@
 #include "cnvs_gradient.h"
+#include "cnvs_planar.h"
 
 #include <math.h>
 #include <string.h>
@@ -239,5 +240,108 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
         float t;
         cnvs_vec2 p = { .x = (float)x0 + (float)i + 0.5f, .y = y };
         t_out[i] = cnvs_gradient_param(gr, p, &t) ? t : -1.0f;
+    }
+}
+
+// Bit-exact f32 lane select, the 32-bit twin of cnvs_h8_sel: a where the mask
+// lane is set (-1, from a vector comparison), else b.  Bitwise, not arithmetic
+// like vsel above, because the unselected lane here holds the inf/NaN of the
+// guarded span divide and must be discarded exactly (cnvs_planar.h).
+static gradf8 vsel_bits(gradi8 m, gradf8 a, gradf8 b) {
+    return (gradf8)(((gradi8)a & m) | ((gradi8)b & ~m));
+}
+
+// Eight unpremultiplied pixels as four channel planes -- the planar shape of
+// cnvs_px8 (cnvs_planar.h), kept a distinct type for the same reason
+// cnvs_unpremul is distinct from cnvs_premul.
+typedef struct {
+    cnvs_h8 r, g, b, a;
+} gradpx8;
+
+static gradpx8 gradpx8_sel(cnvs_m8 m, gradpx8 x, gradpx8 y) {
+    return (gradpx8){ cnvs_h8_sel(m, x.r, y.r), cnvs_h8_sel(m, x.g, y.g),
+                      cnvs_h8_sel(m, x.b, y.b), cnvs_h8_sel(m, x.a, y.a) };
+}
+
+// The planar->AoS seam for unpremultiplied colours, mirroring cnvs_px8_store:
+// the __counted_by(8) parameter makes the implicit conversion at the call site
+// the bounds check, one per 8-pixel block.
+static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
+    float16x8x4_t v = { { (float16x8_t)px.r, (float16x8_t)px.g,
+                          (float16x8_t)px.b, (float16x8_t)px.a } };
+    vst4q_f16((float16_t *)p, v);
+}
+
+// Colour for a row of solved parameters, eight pixels per step: each lane finds
+// its surrounding stop pair by a compare+select scan over the (sorted) stops --
+// every lane visits every stop, no gathers -- then runs the scalar lerp's exact
+// arithmetic eight wide (u in f32 with the same true divide and span guard,
+// narrowed once to _Float16 for the colour lerp).  Lane for lane bit-identical
+// to cnvs_gradient_color_at, which stays the semantic reference
+// (test_gradient_solve pins the equivalence at tolerance zero); t < 0 -- the
+// row solver's "outside" sentinel -- paints transparent black.
+void cnvs_gradient_color_row(cnvs_gradient const *gr,
+                             float const *__counted_by(n) t, int n,
+                             cnvs_unpremul *__counted_by(n) out) {
+    int const sc = gr->stop_count;
+    int i = 0;
+    if (sc > 0) {
+        // Per-stop lane constants, splatted once per row: offsets in f32 (they
+        // are geometry, like the parameter), channels in _Float16 (the colour
+        // compute type, docs/decisions/color-axis.md).
+        gradf8 off[CNVS_MAX_STOPS];
+        gradpx8 col[CNVS_MAX_STOPS];
+        for (int s = 0; s < sc; s++) {
+            cnvs_stop st = gr->stops[s];
+            off[s] = (gradf8)st.offset;
+            col[s] = (gradpx8){ (cnvs_h8)st.color.r, (cnvs_h8)st.color.g,
+                                (cnvs_h8)st.color.b, (cnvs_h8)st.color.a };
+        }
+        int const last = sc - 1;
+        cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
+        for (; i + 8 <= n; i += 8) {
+            gradf8 tv;
+            memcpy(&tv, t + i, sizeof tv);  // bounds-checked vector load
+            // Stop search: lo starts at stop 0 and advances to the last stop
+            // whose offset is strictly below t, hi to the stop after it --
+            // strict, so a lane between coincident offsets resolves to the
+            // same pair as the scalar scan.
+            gradf8 lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
+            gradpx8 lo = col[0], hi = col[last > 0 ? 1 : 0];
+            for (int s = 1; s + 1 < sc; s++) {
+                gradi8 m = tv > off[s];
+                cnvs_m8 mh = __builtin_convertvector(m, cnvs_m8);
+                lo_off = vsel_bits(m, off[s], lo_off);
+                hi_off = vsel_bits(m, off[s + 1], hi_off);
+                lo = gradpx8_sel(mh, col[s], lo);
+                hi = gradpx8_sel(mh, col[s + 1], hi);
+            }
+            // The scalar lerp, eight lanes wide.  Lanes the edge selects below
+            // overwrite may divide by a zero span; the bitwise selects discard
+            // the resulting inf/NaN exactly.
+            gradf8 span = hi_off - lo_off;
+            gradf8 u32 = vsel_bits(span > 1e-9f, (tv - lo_off) / span,
+                                   (gradf8)0.0f);
+            cnvs_h8 u = __builtin_convertvector(u32, cnvs_h8);
+            gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,
+                          lo.b + (hi.b - lo.b) * u, lo.a + (hi.a - lo.a) * u };
+            // Edge and sentinel lanes, in the scalar path's precedence: t at or
+            // past the last stop takes the last colour, t at or before the
+            // first takes the first (applied second, so it wins ties exactly
+            // like the scalar's early-out order), and t < 0 is transparent.
+            cnvs_m8 mlast = __builtin_convertvector(tv >= off[last], cnvs_m8);
+            cnvs_m8 mfirst = __builtin_convertvector(tv <= off[0], cnvs_m8);
+            cnvs_m8 mout = __builtin_convertvector(tv < (gradf8)0.0f, cnvs_m8);
+            c = gradpx8_sel(mlast, col[last], c);
+            c = gradpx8_sel(mfirst, col[0], c);
+            c = gradpx8_sel(mout, (gradpx8){ zero, zero, zero, zero }, c);
+            gradpx8_store(out + i, c);
+        }
+    }
+    // Tail: the scalar evaluator for the n % 8 remainder (and, with no stops,
+    // the whole row -- color_at is the transparent-black constant then).
+    for (; i < n; i++) {
+        out[i] = t[i] >= 0.0f ? cnvs_gradient_color_at(gr, t[i])
+                              : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
 }

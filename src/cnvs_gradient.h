@@ -48,6 +48,19 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
 void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out);
 
+// Vectorized colour evaluation for a row of solved parameters (the other half
+// of the fill path; t is cnvs_gradient_param_row's output).  out[i] is
+// bit-identical to cnvs_gradient_color_at(gr, t[i]) -- the exact piecewise-
+// linear stop colour, not a quantized ramp sample -- except that t[i] < 0 (the
+// row solver's "outside" sentinel) paints transparent black.  Eight pixels per
+// step: the stop search runs as compares + lane selects across the pixels
+// (docs/decisions/gradient-eval.md), so per-pixel cost is flat in practice for
+// the 2-5 stops gradients actually have, and there is no per-fill ramp build
+// or table to size.
+void cnvs_gradient_color_row(cnvs_gradient const *gr,
+                             float const *__counted_by(n) t, int n,
+                             cnvs_unpremul *__counted_by(n) out);
+
 // Unpremultiplied colour to paint at a device-space point, with `alpha` (global
 // alpha) folded into the result's alpha.
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);

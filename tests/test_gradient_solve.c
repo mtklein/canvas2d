@@ -11,6 +11,7 @@
 #include "cnvs_math.h"
 
 #include <math.h>
+#include <string.h>
 
 static bool fnear(float a, float b, float tol) {
     return fabsf(a - b) <= tol;
@@ -19,6 +20,86 @@ static bool fnear(float a, float b, float tol) {
 static bool col_near(cnvs_unpremul a, cnvs_unpremul b, float tol) {
     return fnear((float)a.r, (float)b.r, tol) && fnear((float)a.g, (float)b.g, tol) &&
            fnear((float)a.b, (float)b.b, tol) && fnear((float)a.a, (float)b.a, tol);
+}
+
+// Exact piecewise-linear colour in double over the f16 stop colours -- the
+// reference the evaluators may deviate from only by the f16 lerp's rounding.
+// Mirrors cnvs_gradient_color_at's segment selection; the lerp is exact.
+static void ref_color_at(cnvs_gradient const *gr, double t,
+                         double *__counted_by(4) out) {
+    int n = gr->stop_count;
+    if (n == 0) {
+        out[0] = out[1] = out[2] = out[3] = 0.0;
+        return;
+    }
+    cnvs_unpremul c = gr->stops[0].color;
+    if (t > (double)gr->stops[0].offset) {
+        c = gr->stops[n - 1].color;
+        if (t < (double)gr->stops[n - 1].offset) {
+            for (int i = 0; i + 1 < n; i++) {
+                double lo = (double)gr->stops[i].offset;
+                double hi = (double)gr->stops[i + 1].offset;
+                if (t <= hi) {
+                    double u = hi > lo ? (t - lo) / (hi - lo) : 0.0;
+                    cnvs_unpremul a = gr->stops[i].color, b = gr->stops[i + 1].color;
+                    out[0] = (double)a.r + ((double)b.r - (double)a.r) * u;
+                    out[1] = (double)a.g + ((double)b.g - (double)a.g) * u;
+                    out[2] = (double)a.b + ((double)b.b - (double)a.b) * u;
+                    out[3] = (double)a.a + ((double)b.a - (double)a.a) * u;
+                    return;
+                }
+            }
+        }
+    }
+    out[0] = (double)c.r;
+    out[1] = (double)c.g;
+    out[2] = (double)c.b;
+    out[3] = (double)c.a;
+}
+
+// The f16 stop lerp's rounding budget against the double reference: measured
+// 0.156/255 worst-case across ~11M-sample sweeps of the gallery's gradients
+// (docs/decisions/gradient-eval.md); 0.25/255 leaves margin for stop sets not
+// sampled and still sits below the 8-bit rounding step.
+#define GRAD_ERR_TOL (0.25 / 255.0)
+
+// The vectorized colour row's two invariants: bit-identical to the scalar
+// evaluator for every t >= 0 (tolerance zero -- the row kernel IS
+// cnvs_gradient_color_at, eight lanes at a time), transparent black for the
+// t < 0 "outside" sentinel, and within GRAD_ERR_TOL of the exact double
+// reference.  The sweep brackets [0,1] densely plus every stop offset and its
+// f32 neighbours; N % 8 == 5 so the 8-wide body and the scalar tail both run.
+static void check_color_row(cnvs_gradient const *gr) {
+    enum { N = 1029 };
+    static float t[N];
+    static cnvs_unpremul row[N];
+    int n = 0;
+    t[n++] = -1.0f;  // the row solver's "outside" sentinel
+    for (int s = 0; s < gr->stop_count && n + 3 <= N; s++) {
+        float o = gr->stops[s].offset;
+        t[n++] = nextafterf(o, 0.0f);
+        t[n++] = o;
+        t[n++] = nextafterf(o, 1.0f);
+    }
+    int base = n;
+    for (; n < N; n++) {
+        t[n] = (float)(n - base) / (float)(N - 1 - base);  // dense [0,1]
+    }
+    cnvs_gradient_color_row(gr, t, N, row);
+    for (int i = 0; i < N; i++) {
+        cnvs_unpremul want = t[i] >= 0.0f
+            ? cnvs_gradient_color_at(gr, t[i])
+            : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+        CHECK(memcmp(&row[i], &want, sizeof want) == 0);
+        if (t[i] >= 0.0f) {
+            double ref[4];
+            ref_color_at(gr, (double)t[i], ref);
+            CHECK(fabs((double)row[i].r - ref[0]) <= GRAD_ERR_TOL &&
+                  fabs((double)row[i].g - ref[1]) <= GRAD_ERR_TOL &&
+                  fabs((double)row[i].b - ref[2]) <= GRAD_ERR_TOL &&
+                  fabs((double)row[i].a - ref[3]) <= GRAD_ERR_TOL);
+        }
+    }
 }
 
 // Compare the scalar param against the vectorized row, pixel by pixel: equal t
@@ -107,6 +188,49 @@ int main(void) {
         CHECK(fnear((float)empty.a, 0.0f, 0.0f));
         cnvs_gradient_add_stop(&g, 0.5f, cnvs_unpremul_of(0.2f, 0.4f, 0.6f, 1.0f));
         CHECK(col_near(cnvs_gradient_color_at(&g, 0.0f), cnvs_gradient_color_at(&g, 1.0f), 0.0f));
+    }
+
+    // 6. The vectorized colour row (check_color_row above), across the stop
+    //    search's edge cases: two stops (no interior search), a multi-stop
+    //    ramp, coincident "hard" stops, every stop coincident (the tie
+    //    precedence), a single stop, no stops, and a full CNVS_MAX_STOPS set.
+    {
+        check_color_row(&lin);
+
+        cnvs_gradient multi = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        cnvs_gradient_add_stop(&multi, 0.00f, cnvs_unpremul_of(0.90f, 0.20f, 0.25f, 1.0f));
+        cnvs_gradient_add_stop(&multi, 0.33f, cnvs_unpremul_of(0.95f, 0.80f, 0.25f, 1.0f));
+        cnvs_gradient_add_stop(&multi, 0.66f, cnvs_unpremul_of(0.30f, 0.80f, 0.45f, 0.5f));
+        cnvs_gradient_add_stop(&multi, 1.00f, cnvs_unpremul_of(0.30f, 0.45f, 0.95f, 0.0f));
+        check_color_row(&multi);
+
+        cnvs_gradient hard = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        cnvs_gradient_add_stop(&hard, 0.0f, cnvs_unpremul_of(0.97f, 0.78f, 0.24f, 1.0f));
+        cnvs_gradient_add_stop(&hard, 0.4f, cnvs_unpremul_of(0.97f, 0.78f, 0.24f, 1.0f));
+        cnvs_gradient_add_stop(&hard, 0.4f, cnvs_unpremul_of(0.20f, 0.78f, 0.70f, 1.0f));
+        cnvs_gradient_add_stop(&hard, 1.0f, cnvs_unpremul_of(0.20f, 0.78f, 0.70f, 1.0f));
+        check_color_row(&hard);
+
+        cnvs_gradient ties = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        cnvs_gradient_add_stop(&ties, 0.5f, cnvs_unpremul_of(1.0f, 0.0f, 0.0f, 1.0f));
+        cnvs_gradient_add_stop(&ties, 0.5f, cnvs_unpremul_of(0.0f, 1.0f, 0.0f, 1.0f));
+        cnvs_gradient_add_stop(&ties, 0.5f, cnvs_unpremul_of(0.0f, 0.0f, 1.0f, 1.0f));
+        check_color_row(&ties);
+
+        cnvs_gradient one = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        cnvs_gradient_add_stop(&one, 0.5f, cnvs_unpremul_of(0.2f, 0.4f, 0.6f, 0.8f));
+        check_color_row(&one);
+
+        cnvs_gradient none = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        check_color_row(&none);
+
+        cnvs_gradient full = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        for (int k = 0; k < CNVS_MAX_STOPS; k++) {
+            float o = (float)k / (float)(CNVS_MAX_STOPS - 1);
+            cnvs_gradient_add_stop(&full, o,
+                cnvs_unpremul_of(o, 1.0f - o, 0.5f + 0.4f * sinf(20.0f * o), 1.0f));
+        }
+        check_color_row(&full);
     }
 
     return TEST_REPORT();
