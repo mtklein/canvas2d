@@ -435,6 +435,17 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | `bench_pngenc` — PNG encode of a gallery scene (Up filter + LZ77 deflate + HW CRC32) | 42 ms | 31 ms | **1.32×** |
 | `bench_png` — PNG encode, synthetic run-heavy 256×256 (long-match stress) | 13 ms | 9.4 ms | **1.43×** |
 
+That table holds the flag fixed (`-Os` both sides) to isolate the checks. The project's
+motivating question — what does *choosing* bounds safety cost a project? — gives the unsafe
+side its own best flag, and an opt-level sweep
+([docs/decisions/opt-level.md](docs/decisions/opt-level.md)) measured that fork: against
+unsafe at `-O2` (its tuned optimum) the geomean tax reads **1.14×** rather than 1.10×, the
+flagship render ~1.18×, and the deflate matcher 1.63× — while the checked `-Os` binary stays
+**30 % smaller** than the tuned adversary's. Higher opt levels *amplify* the matched-flag
+ratios rather than shrinking them (`-O2` transforms the unchecked loops more than the
+check-pinned ones), so the table above is the favorable framing — quoted because `-Os` is the
+shipping flag, with the tuned-vs-tuned numbers in the memo for the project-choice question.
+
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
 overhead tracks how much it indexes vs how much it computes — **and the same
 vectorization that speeds a tight loop up amortizes its checks away too.** The 2D

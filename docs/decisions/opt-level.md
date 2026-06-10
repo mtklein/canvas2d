@@ -110,6 +110,44 @@ with block-level checks keeps the tax low *and* keeps it stable across opt level
 leans on the autovectorizer instead would feel `-fbounds-safety` more at exactly the opt level
 people reach for to go fast.
 
+### Tuned vs tuned: what does *choosing* bounds safety cost?
+
+Everything above holds the flag fixed to isolate the checks — the right comparison for "what do
+the checks cost this code". But the project's motivating question is one notch up: **what does
+choosing `-fbounds-safety` cost a project?** A project that rejected the flag wouldn't stay at
+`-Os` out of deference to our baseline; it would tune its own flag, and §1 says its tuned flag is
+`-O2`. So the fair fight is each posture at its own optimum: checked at `-Os` (its flagship/size
+pick) vs unsafe at `-O2`. Same medians as §1, cross-divided:
+
+| bench | checked `-Os` / unsafe `-O2` |
+|---|---|
+| `bench_gradient` | **0.92** |
+| `bench_blit` | **0.98** |
+| `bench_gradient_fill` | 1.00 |
+| `bench_stroke` | 1.11 |
+| `bench_blur_h` | 1.11 |
+| `bench_blur_v` | 1.13 |
+| `bench_pngdec` | 1.13 |
+| `bench_flatten` | 1.13 |
+| `bench_fill` | 1.14 |
+| `bench` (e2e) | 1.15 |
+| **`bench_render`** | 1.17 |
+| **`bench_render_large`** | 1.19 |
+| `bench_pngenc` | 1.37 |
+| `bench_png` | 1.63 |
+| **geomean** | **1.14** |
+
+The choosing-cost is **1.14× geomean / ~1.18× flagship / 1.63× worst** — against the matched-flag
+1.10× / 1.14× / 1.40×. Letting the adversary tune *per bench* (rather than one global `-O2`)
+moves the geomean only to ~1.15: `-O2` is already nearly its optimum everywhere. Three rows
+survive even the tuned adversary: `gradient` (0.92) and `blit` (0.98), where `-O2` hurts the
+unsafe build more than the checks hurt ours, and `gradient_fill` at parity. And the comparison
+isn't one-dimensional: the tuned adversary's binary is 143 KB of text to our 110 KB — it pays
++30 % code for its speed, so the two postures sit at *different points of the speed/size
+frontier*, not the same point minus a tax. Both framings are true; which one to quote depends on
+whether the question is about this codebase (matched flags) or about the decision to adopt the
+flag at all (this table).
+
 ## 3. Code size
 
 `__text` section (code, exact bytes via `size -m`) of the e2e `bench` binary — it links the whole
