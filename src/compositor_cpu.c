@@ -4,34 +4,38 @@
 
 #include "compositor.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-// W3C composite + blend math, premultiplied throughout.  Blend modes:
+// W3C composite + blend math, premultiplied throughout, in _Float16 arithmetic
+// end to end (docs/decisions/color-axis.md: f16 is the compute type, not just
+// the storage type -- no widen/narrow converts anywhere).  Blend modes:
 // co = s*(1-da) + d*(1-sa) + T, ao = sa + da*(1-sa), with premultiplied term
 // T = sa*da*B(Cb,Cs); the polynomial modes have divide-free T, the non-linear ones
 // (dodge/burn/soft-light, HSL) un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.
 // Switches run over (int)mode to avoid -Wswitch-enum.
 
-// Clamp a channel to [0, hi] and store it as a half (round to nearest-even).
-static _Float16 clamp16(float v, float hi) {
-    if (v < 0.0f) { v = 0.0f; }
-    if (v > hi) { v = hi; }
-    return (_Float16)v;
-}
+static _Float16 minh(_Float16 a, _Float16 b) { return a < b ? a : b; }
+static _Float16 maxh(_Float16 a, _Float16 b) { return a > b ? a : b; }
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
-static float blend_sep(compositor_blend_mode mode, float cb, float cs) {
+static _Float16 blend_sep(compositor_blend_mode mode, _Float16 cb, _Float16 cs) {
     switch ((int)mode) {
         case COMPOSITOR_COLOR_DODGE:
-            return cb <= 0.0f ? 0.0f : cs >= 1.0f ? 1.0f : fminf(1.0f, cb / (1.0f - cs));
+            return cb <= (_Float16)0.0f ? (_Float16)0.0f
+                 : cs >= (_Float16)1.0f ? (_Float16)1.0f
+                 : minh((_Float16)1.0f, cb / ((_Float16)1.0f - cs));
         case COMPOSITOR_COLOR_BURN:
-            return cb >= 1.0f ? 1.0f : cs <= 0.0f ? 0.0f : 1.0f - fminf(1.0f, (1.0f - cb) / cs);
+            return cb >= (_Float16)1.0f ? (_Float16)1.0f
+                 : cs <= (_Float16)0.0f ? (_Float16)0.0f
+                 : (_Float16)1.0f - minh((_Float16)1.0f, ((_Float16)1.0f - cb) / cs);
         case COMPOSITOR_SOFT_LIGHT: {
-            float dd = cb <= 0.25f ? ((16.0f * cb - 12.0f) * cb + 4.0f) * cb : sqrtf(cb);
-            return cs <= 0.5f ? cb - (1.0f - 2.0f * cs) * cb * (1.0f - cb)
-                              : cb + (2.0f * cs - 1.0f) * (dd - cb);
+            _Float16 dd = cb <= (_Float16)0.25f
+                ? (((_Float16)16.0f * cb - (_Float16)12.0f) * cb + (_Float16)4.0f) * cb
+                : __builtin_sqrtf16(cb);
+            return cs <= (_Float16)0.5f
+                ? cb - ((_Float16)1.0f - (_Float16)2.0f * cs) * cb * ((_Float16)1.0f - cb)
+                : cb + ((_Float16)2.0f * cs - (_Float16)1.0f) * (dd - cb);
         }
         default:
             return cs;
@@ -39,22 +43,24 @@ static float blend_sep(compositor_blend_mode mode, float cb, float cs) {
 }
 
 // Premultiplied separable term T = sa*da*B for one channel (s, d premultiplied).
-static float blend_term(compositor_blend_mode mode,
-                        float s, float d, float sa, float da) {
+static _Float16 blend_term(compositor_blend_mode mode,
+                           _Float16 s, _Float16 d, _Float16 sa, _Float16 da) {
     switch ((int)mode) {
         case COMPOSITOR_MULTIPLY:   return s * d;
         case COMPOSITOR_SCREEN:     return sa * d + da * s - s * d;
-        case COMPOSITOR_OVERLAY:    return 2.0f * d <= da ? 2.0f * s * d
-                                         : sa * da - 2.0f * (da - d) * (sa - s);
-        case COMPOSITOR_DARKEN:     return fminf(s * da, d * sa);
-        case COMPOSITOR_LIGHTEN:    return fmaxf(s * da, d * sa);
-        case COMPOSITOR_HARD_LIGHT: return 2.0f * s <= sa ? 2.0f * s * d
-                                         : sa * da - 2.0f * (da - d) * (sa - s);
-        case COMPOSITOR_DIFFERENCE: return fabsf(s * da - d * sa);
-        case COMPOSITOR_EXCLUSION:  return sa * d + da * s - 2.0f * s * d;
+        case COMPOSITOR_OVERLAY:    return (_Float16)2.0f * d <= da
+                                         ? (_Float16)2.0f * s * d
+                                         : sa * da - (_Float16)2.0f * (da - d) * (sa - s);
+        case COMPOSITOR_DARKEN:     return minh(s * da, d * sa);
+        case COMPOSITOR_LIGHTEN:    return maxh(s * da, d * sa);
+        case COMPOSITOR_HARD_LIGHT: return (_Float16)2.0f * s <= sa
+                                         ? (_Float16)2.0f * s * d
+                                         : sa * da - (_Float16)2.0f * (da - d) * (sa - s);
+        case COMPOSITOR_DIFFERENCE: return __builtin_fabsf16(s * da - d * sa);
+        case COMPOSITOR_EXCLUSION:  return sa * d + da * s - (_Float16)2.0f * s * d;
         default: {  // color-dodge / color-burn / soft-light
-            float cs = sa > 0.0f ? s / sa : 0.0f;
-            float cb = da > 0.0f ? d / da : 0.0f;
+            _Float16 cs = sa > (_Float16)0.0f ? s / sa : (_Float16)0.0f;
+            _Float16 cb = da > (_Float16)0.0f ? d / da : (_Float16)0.0f;
             return sa * da * blend_sep(mode, cb, cs);
         }
     }
@@ -62,32 +68,31 @@ static float blend_term(compositor_blend_mode mode,
 
 // One premultiplied pixel as a vector: cnvs_premul is four contiguous _Float16.
 typedef _Float16 blendh4 __attribute__((ext_vector_type(4)));
-typedef float blendf4 __attribute__((ext_vector_type(4)));
 // Two premultiplied pixels as one 8-lane _Float16 vector -- a full 128-bit
 // NEON register of native fp16 arithmetic, the colour pipeline's wide unit
 // (docs/decisions/color-axis.md).
 typedef _Float16 blendh8 __attribute__((ext_vector_type(8)));
 
 typedef struct {
-    float r, g, b;
+    _Float16 r, g, b;
 } rgb;
 
-static float lum(rgb c) {
-    return 0.3f * c.r + 0.59f * c.g + 0.11f * c.b;
+static _Float16 lum(rgb c) {
+    return (_Float16)0.3f * c.r + (_Float16)0.59f * c.g + (_Float16)0.11f * c.b;
 }
 
 static rgb clip_color(rgb c) {
-    float l = lum(c);
-    float n = fminf(c.r, fminf(c.g, c.b));
-    float x = fmaxf(c.r, fmaxf(c.g, c.b));
-    if (n < 0.0f) {
-        float k = l / (l - n);
+    _Float16 l = lum(c);
+    _Float16 n = minh(c.r, minh(c.g, c.b));
+    _Float16 x = maxh(c.r, maxh(c.g, c.b));
+    if (n < (_Float16)0.0f) {
+        _Float16 k = l / (l - n);
         c.r = l + (c.r - l) * k;
         c.g = l + (c.g - l) * k;
         c.b = l + (c.b - l) * k;
     }
-    if (x > 1.0f) {
-        float k = (1.0f - l) / (x - l);
+    if (x > (_Float16)1.0f) {
+        _Float16 k = ((_Float16)1.0f - l) / (x - l);
         c.r = l + (c.r - l) * k;
         c.g = l + (c.g - l) * k;
         c.b = l + (c.b - l) * k;
@@ -95,26 +100,26 @@ static rgb clip_color(rgb c) {
     return c;
 }
 
-static rgb set_lum(rgb c, float l) {
-    float dl = l - lum(c);
+static rgb set_lum(rgb c, _Float16 l) {
+    _Float16 dl = l - lum(c);
     c.r += dl;
     c.g += dl;
     c.b += dl;
     return clip_color(c);
 }
 
-static float sat(rgb c) {
-    return fmaxf(c.r, fmaxf(c.g, c.b)) - fminf(c.r, fminf(c.g, c.b));
+static _Float16 sat(rgb c) {
+    return maxh(c.r, maxh(c.g, c.b)) - minh(c.r, minh(c.g, c.b));
 }
 
 // Set saturation: max channel -> s, min -> 0, mid proportional.
-static rgb set_sat(rgb c, float s) {
-    float mn = fminf(c.r, fminf(c.g, c.b));
-    float mx = fmaxf(c.r, fmaxf(c.g, c.b));
+static rgb set_sat(rgb c, _Float16 s) {
+    _Float16 mn = minh(c.r, minh(c.g, c.b));
+    _Float16 mx = maxh(c.r, maxh(c.g, c.b));
     if (mx <= mn) {
-        return (rgb){ .r = 0.0f, .g = 0.0f, .b = 0.0f };
+        return (rgb){ .r = 0, .g = 0, .b = 0 };
     }
-    float k = s / (mx - mn);
+    _Float16 k = s / (mx - mn);
     return (rgb){ .r = (c.r - mn) * k, .g = (c.g - mn) * k, .b = (c.b - mn) * k };
 }
 
@@ -127,62 +132,59 @@ static rgb blend_nonsep(compositor_blend_mode mode, rgb cb, rgb cs) {
     }
 }
 
-// `src` is the premultiplied source pixel, already clip-attenuated and kept in
-// float32 -- never rounded back to half on the way in (clip attenuation stays in
-// float through the blend; see compositor_blend).
-static cnvs_premul blend(blendf4 src, cnvs_premul dst, compositor_blend_mode mode) {
-    float sa = src[3], da = (float)dst.a;
-    float sr = src[0], sg = src[1], sb = src[2];
-    float dr = (float)dst.r, dg = (float)dst.g, db = (float)dst.b;
-    float cor, cog, cob, ao;
+// `s` is the premultiplied source pixel, already clip-attenuated, as a 4-lane
+// _Float16 vector; the whole kernel below stays in f16 arithmetic.  The
+// composite fold runs over all four channels at once: in the Porter-Duff arm
+// lane 3 of Fa*s + Fb*d is Fa*sa + Fb*da = ao, and in the blend arm lane 3 of
+// s*(1-da) + d*(1-sa) + T is sa + da*(1-sa) = ao because T's alpha lane is
+// pinned to sa*da.
+static cnvs_premul blend(blendh4 s, cnvs_premul dst, compositor_blend_mode mode) {
+    blendh4 d = { dst.r, dst.g, dst.b, dst.a };
+    _Float16 sa = s[3], da = d[3];
+    blendh4 co;
 
     if ((int)mode <= COMPOSITOR_COPY) {
         // Porter-Duff: co = Fa*s + Fb*d, ao = Fa*sa + Fb*da.
-        float fa, fb;
+        _Float16 fa, fb;
+        _Float16 const one = (_Float16)1.0f, zero = (_Float16)0.0f;
         switch ((int)mode) {
-            case COMPOSITOR_SRC_IN:   fa = da;        fb = 0.0f;       break;
-            case COMPOSITOR_SRC_OUT:  fa = 1.0f - da; fb = 0.0f;       break;
-            case COMPOSITOR_SRC_ATOP: fa = da;        fb = 1.0f - sa;  break;
-            case COMPOSITOR_DST_OVER: fa = 1.0f - da; fb = 1.0f;       break;
-            case COMPOSITOR_DST_IN:   fa = 0.0f;      fb = sa;         break;
-            case COMPOSITOR_DST_OUT:  fa = 0.0f;      fb = 1.0f - sa;  break;
-            case COMPOSITOR_DST_ATOP: fa = 1.0f - da; fb = sa;         break;
-            case COMPOSITOR_XOR:      fa = 1.0f - da; fb = 1.0f - sa;  break;
-            case COMPOSITOR_LIGHTER:  fa = 1.0f;      fb = 1.0f;       break;
-            case COMPOSITOR_COPY:     fa = 1.0f;      fb = 0.0f;       break;
-            default:                  fa = 1.0f;      fb = 1.0f - sa;  break;  // source-over
+            case COMPOSITOR_SRC_IN:   fa = da;       fb = zero;      break;
+            case COMPOSITOR_SRC_OUT:  fa = one - da; fb = zero;      break;
+            case COMPOSITOR_SRC_ATOP: fa = da;       fb = one - sa;  break;
+            case COMPOSITOR_DST_OVER: fa = one - da; fb = one;       break;
+            case COMPOSITOR_DST_IN:   fa = zero;     fb = sa;        break;
+            case COMPOSITOR_DST_OUT:  fa = zero;     fb = one - sa;  break;
+            case COMPOSITOR_DST_ATOP: fa = one - da; fb = sa;        break;
+            case COMPOSITOR_XOR:      fa = one - da; fb = one - sa;  break;
+            case COMPOSITOR_LIGHTER:  fa = one;      fb = one;       break;
+            case COMPOSITOR_COPY:     fa = one;      fb = zero;      break;
+            default:                  fa = one;      fb = one - sa;  break;  // source-over
         }
-        cor = fa * sr + fb * dr;
-        cog = fa * sg + fb * dg;
-        cob = fa * sb + fb * db;
-        ao  = fa * sa + fb * da;
+        co = fa * s + fb * d;
     } else {
-        float tr, tg, tb;
+        blendh4 t;
         if ((int)mode >= COMPOSITOR_HUE) {
-            rgb cs = { .r = sa > 0.0f ? sr / sa : 0.0f,
-                       .g = sa > 0.0f ? sg / sa : 0.0f,
-                       .b = sa > 0.0f ? sb / sa : 0.0f };
-            rgb cb = { .r = da > 0.0f ? dr / da : 0.0f,
-                       .g = da > 0.0f ? dg / da : 0.0f,
-                       .b = da > 0.0f ? db / da : 0.0f };
+            rgb cs = { .r = sa > (_Float16)0.0f ? s[0] / sa : (_Float16)0.0f,
+                       .g = sa > (_Float16)0.0f ? s[1] / sa : (_Float16)0.0f,
+                       .b = sa > (_Float16)0.0f ? s[2] / sa : (_Float16)0.0f };
+            rgb cb = { .r = da > (_Float16)0.0f ? d[0] / da : (_Float16)0.0f,
+                       .g = da > (_Float16)0.0f ? d[1] / da : (_Float16)0.0f,
+                       .b = da > (_Float16)0.0f ? d[2] / da : (_Float16)0.0f };
             rgb bl = blend_nonsep(mode, cb, cs);
-            tr = sa * da * bl.r;
-            tg = sa * da * bl.g;
-            tb = sa * da * bl.b;
+            t = sa * da * (blendh4){ bl.r, bl.g, bl.b, (_Float16)1.0f };
         } else {
-            tr = blend_term(mode, sr, dr, sa, da);
-            tg = blend_term(mode, sg, dg, sa, da);
-            tb = blend_term(mode, sb, db, sa, da);
+            t[0] = blend_term(mode, s[0], d[0], sa, da);
+            t[1] = blend_term(mode, s[1], d[1], sa, da);
+            t[2] = blend_term(mode, s[2], d[2], sa, da);
+            t[3] = sa * da;
         }
-        cor = sr * (1.0f - da) + dr * (1.0f - sa) + tr;
-        cog = sg * (1.0f - da) + dg * (1.0f - sa) + tg;
-        cob = sb * (1.0f - da) + db * (1.0f - sa) + tb;
-        ao  = sa + da * (1.0f - sa);
+        co = s * ((_Float16)1.0f - da) + d * ((_Float16)1.0f - sa) + t;
     }
 
-    float aoc = fminf(ao, 1.0f);  // additive 'lighter' can exceed 1
-    return (cnvs_premul){ .r = clamp16(cor, aoc), .g = clamp16(cog, aoc),
-                          .b = clamp16(cob, aoc), .a = (_Float16)aoc };
+    _Float16 aoc = minh(co[3], (_Float16)1.0f);  // additive 'lighter' can exceed 1
+    co = __builtin_elementwise_max((blendh4)(_Float16)0.0f,
+                                   __builtin_elementwise_min((blendh4)aoc, co));
+    return (cnvs_premul){ .r = co[0], .g = co[1], .b = co[2], .a = co[3] };
 }
 
 struct compositor {
@@ -311,15 +313,14 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         }
         return;
     }
+    _Float16 const k255 = (_Float16)(1.0f / 255.0f);
     for (int row = 0; row < h; row++) {
         for (int col = 0; col < w; col++) {
             int di = (y + row) * c->width + (x + col);
-            blendh4 sh;
-            memcpy(&sh, &tile[row * w + col], sizeof sh);
-            blendf4 s = __builtin_convertvector(sh, blendf4);
-            if (c->clip) {  // attenuate premultiplied source by clip coverage, in float
-                float k = (float)c->clip[di] / 255.0f;
-                s = s * k;
+            blendh4 s;
+            memcpy(&s, &tile[row * w + col], sizeof s);
+            if (c->clip) {  // attenuate premultiplied source by clip coverage
+                s = s * ((_Float16)c->clip[di] * k255);
             }
             c->target[di] = blend(s, c->target[di], mode);
         }
