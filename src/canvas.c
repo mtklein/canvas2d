@@ -608,23 +608,27 @@ void canvas_set_global_composite_operation(canvas *__single cv,
 
 void canvas_set_shadow_color_rgba(canvas *__single cv,
                                   float r, float g, float b, float a) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.shadow_color =
         cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
 }
 
 void canvas_set_shadow_blur(canvas *__single cv, float blur) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_blur", (float[]){ blur }, 1); }
     if (isfinite(blur) && blur >= 0.0f) {  // spec: ignore negative / non-finite
         cv->cur.shadow_blur = blur;
     }
 }
 
 void canvas_set_shadow_offset_x(canvas *__single cv, float offset) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_x", (float[]){ offset }, 1); }
     if (isfinite(offset)) {
         cv->cur.shadow_offset_x = offset;
     }
 }
 
 void canvas_set_shadow_offset_y(canvas *__single cv, float offset) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_y", (float[]){ offset }, 1); }
     if (isfinite(offset)) {
         cv->cur.shadow_offset_y = offset;
     }

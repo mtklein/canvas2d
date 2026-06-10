@@ -214,6 +214,21 @@ def main():
         "textmetrics", "winding",
     ]
     gallery_pngs = [f"gallery/{name}.png" for name in gallery_scenes]
+    # The seven TEXT scenes also record a self-contained .canvas program
+    # alongside their PNG (examples/gallery.c's record_scene): the serialized
+    # font/glyph/bitmap/shape blocks let the program replay on a FONTLESS
+    # machine.  Committed build artifacts exactly like the PNGs, and listed
+    # STATICALLY for the same reason (a glob of the run_gallery edge's own
+    # outputs reintroduces the clean-then-empty-edge circularity ed65b4d
+    # killed).  tests/test_replay_gallery.c replays each and byte-compares to
+    # its PNG -- the cross-machine determinism gate; the CI runner has no Libian
+    # TC, so a replay that reproduced the PNG used the embedded blocks, not host
+    # fonts.  Keep this list in sync with the record_scene calls in gallery.c.
+    gallery_text_scenes = [
+        "emoji", "emojiscale", "shaping", "text", "textgrid", "textmaxwidth",
+        "textmetrics",
+    ]
+    gallery_canvases = [f"gallery/{name}.canvas" for name in gallery_text_scenes]
     # Committed fuzz regression corpus (distinct from the gitignored fuzz/seeds/
     # scratch).  `ninja` replays every input under the debug sanitizers, so a
     # crasher -- once reduced and dropped in here -- stays a permanent regression.
@@ -443,9 +458,13 @@ def main():
     # moves a pixel.  `ninja images` is the same edge on its own.  (gallery_pngs
     # is a static list now, so this edge is always well-formed even if the PNGs
     # are absent on disk -- the empty-glob failure that needed a guard is gone.)
-    w(f"build {' '.join(gallery_pngs)}: run_gallery build/release/gallery")
+    # The .canvas programs are outputs of the same edge as the PNGs: one gallery
+    # run emits both, so a renderer change re-emits the programs in lockstep with
+    # the pixels (and the run_gallery `generator = 1` exempts them from
+    # `ninja -t clean` just like the PNGs).
+    w(f"build {' '.join(gallery_pngs + gallery_canvases)}: run_gallery build/release/gallery")
     w("  bin = ./build/release/gallery")
-    w(f"build images: phony {' '.join(gallery_pngs)}")
+    w(f"build images: phony {' '.join(gallery_pngs + gallery_canvases)}")
     # `fuzzcorpus`: replay the committed fuzz corpus through the API harness under
     # the debug sanitizers (ASan/UBSan), turning every seed and reduced crasher into
     # a permanent, libFuzzer-free regression.  fuzz_api.c builds like a boundary file

@@ -700,12 +700,72 @@ static void check_new_ops(void) {
     canvas_destroy(cv);
 }
 
+// The shadow setters round-trip: a drop-shadowed fill_text (the gallery's emoji
+// scene uses exactly this on its first emoji) reproduces byte for byte and
+// boundary-free.  Without recording the shadow state, the replay would draw the
+// glyph with no shadow and diverge -- so this is the proof the four setters
+// (color_rgba, blur, offset_x, offset_y) are captured.
+static void check_shadow_ops(void) {
+    char const *__null_terminated path = "build/test_record_text_s.canvas";
+
+    uint8_t recorded_px[NPX];
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_record_to(cv, path));
+        canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.95f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 0.0f, 0.55f);
+        canvas_set_shadow_blur(cv, 6.0f);
+        canvas_set_shadow_offset_x(cv, 3.0f);
+        canvas_set_shadow_offset_y(cv, 4.0f);
+        canvas_set_fill_rgba(cv, 0.1f, 0.2f, 0.6f, 1.0f);
+        canvas_set_font_size(cv, 28.0f);
+        canvas_fill_text(cv, "shadow", 6.0f, 50.0f);
+        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_destroy(cv);
+    }
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_replay_from(cv, path));
+        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        CHECK(c->shape_misses == 0);
+        CHECK(c->glyph_misses == 0);
+        uint8_t replayed_px[NPX];
+        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
+        canvas_destroy(cv);
+    }
+
+    // Strict parse of the shadow op lines.
+    canvas *__single cv = canvas_create(32, 32);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    CHECK(REPLAY(cv, "set_shadow_color_rgba 0 0 0 0.5\n"));
+    CHECK(REPLAY(cv, "set_shadow_blur 4\n"));
+    CHECK(REPLAY(cv, "set_shadow_offset_x 3\nset_shadow_offset_y -2\n"));
+    CHECK(!REPLAY(cv, "set_shadow_color_rgba 0 0 0\n"));    // too few floats
+    CHECK(!REPLAY(cv, "set_shadow_blur\n"));                // missing float
+    CHECK(!REPLAY(cv, "set_shadow_offset_x 3 4\n"));        // trailing junk
+    canvas_destroy(cv);
+}
+
 int main(void) {
     check_round_trip();
     check_dedup();
     check_size();
     check_strict();
     check_new_ops();
+    check_shadow_ops();
     check_float_round_trip();
     return TEST_REPORT();
 }

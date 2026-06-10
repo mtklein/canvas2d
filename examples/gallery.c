@@ -31,6 +31,21 @@ static void save(canvas *__single cv, char const *__null_terminated path) {
     canvas_destroy(cv);
 }
 
+// Begin recording a text scene to its committed gallery/<scene>.canvas program,
+// emitted alongside the PNG.  Called at the TOP of a text scene, before any
+// draws, so the file captures the whole scene; recording finalizes when the
+// scene's canvas is destroyed in save().  Like the PNG, only the final rep
+// writes (GALLERY_REPS profiling reruns skip it), so a bare `ninja images` run
+// emits each text scene's program exactly once.  The program embeds the
+// font/glyph/bitmap/shape blocks the scene's text needs, so it replays on a
+// machine without the fonts -- the cross-machine determinism gate
+// (tests/test_replay_gallery.c) replays each one and byte-compares to the PNG.
+static void record_scene(canvas *__single cv, char const *__null_terminated path) {
+    if (!g_skip_save && !canvas_record_to(cv, path)) {
+        (void)fprintf(stderr, "gallery: record failed: %s\n", path);
+    }
+}
+
 static void star(canvas *__single cv, float cx, float cy, float r) {
     canvas_begin_path(cv);
     for (int i = 0; i < 5; i++) {
@@ -638,6 +653,7 @@ static void textgrid(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/textgrid.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 256.0f);
 
@@ -716,6 +732,7 @@ static void textmetrics(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/textmetrics.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 560.0f, 250.0f);
 
@@ -809,6 +826,7 @@ static void textmaxwidth(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/textmaxwidth.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 188.0f);
 
@@ -1600,6 +1618,7 @@ static void text(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/text.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 420.0f, 170.0f);
 
@@ -1741,6 +1760,7 @@ static void emoji(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/emoji.canvas");
     canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);  // light ground (shows shadows)
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 250.0f);
 
@@ -1807,6 +1827,7 @@ static void emojiscale(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/emojiscale.canvas");
     canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 600.0f);
 
@@ -1855,6 +1876,7 @@ static void shaping(void) {
     if (!c) {
         return;
     }
+    record_scene(c, "gallery/shaping.canvas");
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 348.0f);
 
