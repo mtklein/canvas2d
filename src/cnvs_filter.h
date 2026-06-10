@@ -19,11 +19,17 @@
 #include <ptrcheck.h>
 
 // One compiled filter function (see above).  m is row-major: row i of rgb' is
-// m[3i]*r + m[3i+1]*g + m[3i+2]*b + off[i]*a.
+// m[3i]*r + m[3i+1]*g + m[3i+2]*b + off[i]*a.  blur() does not fit the matrix
+// form -- it is a spatial kernel, not a per-pixel one -- so an entry carries a
+// kind tag: blur > 0 marks a blur() entry of that box radius, which the canvas
+// pipeline runs as separable box passes over the whole tile (cnvs_filter_apply
+// handles only colour entries; a blur entry's matrix is identity so a
+// mishandled one degrades to a no-op rather than blacking the tile out).
 typedef struct {
     float m[9];    // 3x3 rgb matrix
     float off[3];  // offset column, scaled by the pixel's (incoming) alpha
     float ka;      // alpha scale: 1 for everything but opacity()
+    int blur;      // 0 = colour entry; > 0 = blur() with this box radius
 } cnvs_filter;
 
 // Compile one filter function.  Amounts arrive already validated and clamped by
@@ -39,8 +45,14 @@ cnvs_filter cnvs_filter_opacity(float amount);
 cnvs_filter cnvs_filter_saturate(float amount);
 cnvs_filter cnvs_filter_sepia(float amount);
 
-// Apply `count` filter functions, in list order, to the n premultiplied pixels
-// in place.  After each function the alpha is clamped to [0,1] and the rgb
+// A blur() entry with box radius `radius` (> 0; the canvas API maps the CSS
+// stdDev to a radius and skips zero-radius blurs).  Its matrix part is the
+// identity -- see the struct comment.
+cnvs_filter cnvs_filter_blur(int radius);
+
+// Apply `count` *colour* filter functions, in list order, to the n
+// premultiplied pixels in place (the caller splits the list around blur()
+// entries).  After each function the alpha is clamped to [0,1] and the rgb
 // lanes to [0, a] -- the premultiplied image of the spec's per-function [0,1]
 // unpremultiplied clamp.
 void cnvs_filter_apply(cnvs_filter const *__counted_by(count) list, int count,

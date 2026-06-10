@@ -140,3 +140,165 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
         }
     }
 }
+
+// --- RGBA16F (premultiplied tile) passes -------------------------------------
+//
+// One pixel's four channels already form a vector lane group, so the natural
+// widths differ from the u8 passes: the scalar unit is a 4-lane f32 vector (one
+// pixel), and the wide unit is a 16-lane f32 vector (four pixels) -- the u8
+// idiom with a pixel, not a byte, as the lane.  Out-of-tile samples are
+// transparent black, which is *simpler* than the u8 clamp: the running sum
+// adds/subtracts nothing outside, and every output still divides by the full
+// window (the missing samples really are zeros, not replicated edge pixels).
+
+typedef _Float16 blrh4 __attribute__((ext_vector_type(4)));
+typedef float blrf4 __attribute__((ext_vector_type(4)));
+typedef _Float16 blrh16 __attribute__((ext_vector_type(16)));
+typedef float blrf16 __attribute__((ext_vector_type(16)));
+
+// Load/store one premultiplied pixel (four contiguous _Float16) widened to f32:
+// the memcpy is one bounds check for all four channels (the cnvs_filter idiom).
+static inline blrf4 load4f(cnvs_premul const *__counted_by(1) p) {
+    blrh4 v;
+    memcpy(&v, p, sizeof v);
+    return __builtin_convertvector(v, blrf4);
+}
+
+static inline void store4f(cnvs_premul *__counted_by(1) p, blrf4 v) {
+    blrh4 q = __builtin_convertvector(v, blrh4);
+    memcpy(p, &q, sizeof q);
+}
+
+// Four adjacent pixels (16 lanes) at once; one bounds check covers all four.
+static inline blrf16 load16f(cnvs_premul const *__counted_by(4) p) {
+    blrh16 v;
+    memcpy(&v, p, sizeof v);
+    return __builtin_convertvector(v, blrf16);
+}
+
+static inline void store16f(cnvs_premul *__counted_by(4) p, blrf16 v) {
+    blrh16 q = __builtin_convertvector(v, blrh16);
+    memcpy(p, &q, sizeof q);
+}
+
+// Exclusive prefix sum over the four pixel groups of a 16-lane block (group g =
+// sum of groups 0..g-1): excl_prefix8 with a pixel's four lanes as the unit --
+// shift in a zero group, then the two Hillis-Steele shift-add steps.
+static inline blrf16 excl_prefix4px(blrf16 v) {
+    blrf16 z = (blrf16)0.0f;
+    v = __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
+                                4, 5, 6, 7, 8, 9, 10, 11);   // shift in the zero group
+    v += __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
+                                 4, 5, 6, 7, 8, 9, 10, 11);  // += group-1
+    v += __builtin_shufflevector(v, z, 16, 17, 18, 19, 16, 17, 18, 19,
+                                 0, 1, 2, 3, 4, 5, 6, 7);    // += group-2
+    return v;
+}
+
+// One pixel repeated across the four groups, and the last group extracted.
+static inline blrf16 splat4px(blrf4 p) {
+    return __builtin_shufflevector(p, p, 0, 1, 2, 3, 0, 1, 2, 3,
+                                   0, 1, 2, 3, 0, 1, 2, 3);
+}
+
+static inline blrf4 group3(blrf16 v) {
+    return __builtin_shufflevector(v, v, 12, 13, 14, 15);
+}
+
+void blur_box_h_f16(cnvs_premul *__counted_by(w * h) dst,
+                    cnvs_premul const *__counted_by(w * h) src,
+                    int w, int h, int r) {
+    if (w <= 0 || h <= 0 || r < 0) {
+        return;
+    }
+    float recip = 1.0f / (float)(2 * r + 1);
+    for (int y = 0; y < h; y++) {
+        int base = y * w;
+        // Window centred at x = 0: only src[0..r] exist; outside is transparent.
+        blrf4 sum = (blrf4)0.0f;
+        int top = r < w - 1 ? r : w - 1;
+        for (int k = 0; k <= top; k++) {
+            sum += load4f(src + base + k);
+        }
+        int x = 0;
+        // Left edge: the leaving sample x-r is still outside the tile (nothing
+        // to subtract); the entering one may be too (nothing to add).
+        for (; x < w && x < r; x++) {
+            store4f(dst + base + x, sum * recip);
+            if (x + r + 1 < w) {
+                sum += load4f(src + base + x + r + 1);
+            }
+        }
+        // Interior: both window ends in range, four pixels per step.  The
+        // entering and leaving pixels load contiguously (one bounds check for
+        // four pixels each), and the exclusive prefix sum of e-l over pixel
+        // groups turns the serial running sum into four window sums at once;
+        // the carry to the next block is lane math.
+        for (; x >= r && x + r + 4 < w; x += 4) {
+            blrf16 e = load16f(src + base + x + r + 1);
+            blrf16 l = load16f(src + base + x - r);
+            blrf16 d = e - l;
+            blrf16 ws = splat4px(sum) + excl_prefix4px(d);
+            store16f(dst + base + x, ws * recip);
+            sum = group3(ws) + group3(d);
+        }
+        // Right edge (and the tail): the entering sample leaves the tile.
+        for (; x < w; x++) {
+            store4f(dst + base + x, sum * recip);
+            if (x + r + 1 < w) {
+                sum += load4f(src + base + x + r + 1);
+            }
+            if (x - r >= 0) {
+                sum -= load4f(src + base + x - r);
+            }
+        }
+    }
+}
+
+void blur_box_v_f16(cnvs_premul *__counted_by(w * h) dst,
+                    cnvs_premul const *__counted_by(w * h) src,
+                    int w, int h, int r) {
+    if (w <= 0 || h <= 0 || r < 0) {
+        return;
+    }
+    float recip = 1.0f / (float)(2 * r + 1);
+    int top = r < h - 1 ? r : h - 1;
+    int x = 0;
+    // Four adjacent pixels (16 lanes) per step: columns are independent, so
+    // each lane carries its own running sum -- no prefix sum, as in the u8
+    // pass.  The entering and leaving pixels for all four load contiguously
+    // from one row, and the in-range tests are shared by every lane (they test
+    // y, not x), so even the edge rows run vectorized; an out-of-tile row is
+    // transparent and simply adds nothing.
+    for (; x + 4 <= w; x += 4) {
+        blrf16 sum = (blrf16)0.0f;
+        for (int k = 0; k <= top; k++) {
+            sum += load16f(src + k * w + x);
+        }
+        for (int y = 0; y < h; y++) {
+            store16f(dst + y * w + x, sum * recip);
+            if (y + r + 1 < h) {
+                sum += load16f(src + (y + r + 1) * w + x);  // entering below
+            }
+            if (y - r >= 0) {
+                sum -= load16f(src + (y - r) * w + x);      // leaving above
+            }
+        }
+    }
+    // The w%4 tail columns, one pixel's four lanes at a time.
+    for (; x < w; x++) {
+        blrf4 sum = (blrf4)0.0f;
+        for (int k = 0; k <= top; k++) {
+            sum += load4f(src + k * w + x);
+        }
+        for (int y = 0; y < h; y++) {
+            store4f(dst + y * w + x, sum * recip);
+            if (y + r + 1 < h) {
+                sum += load4f(src + (y + r + 1) * w + x);
+            }
+            if (y - r >= 0) {
+                sum -= load4f(src + (y - r) * w + x);
+            }
+        }
+    }
+}

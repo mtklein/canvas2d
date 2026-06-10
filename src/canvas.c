@@ -139,10 +139,17 @@ struct canvas {
     int shadow_src_cap;
     uint8_t *__counted_by(shadow_dst_cap) shadow_dst;
     int shadow_dst_cap;
+    // filter blur() scratch: the second buffer of the separable passes' src/dst
+    // ping-pong over the op's tile (h pass tile -> scratch, v pass scratch ->
+    // tile), sized like the tile.  A peer of the shadow masks above, but
+    // RGBA16F -- blur() filters the painted pixels, not a coverage silhouette.
+    cnvs_premul *__counted_by(blur_tmp_cap) blur_tmp;
+    int blur_tmp_cap;
 };
 
 static cnvs_vec2 xf(canvas *__single cv, float x, float y);
 static bool ensure_tile(canvas *__single cv, int npix);
+static int sigma_box_radius(float sigma);
 
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
 // be paired with a positive count under -fbounds-safety.  An empty pattern stays
@@ -250,6 +257,7 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->trow);
     free(cv->shadow_src);
     free(cv->shadow_dst);
+    free(cv->blur_tmp);
     free(cv);
 }
 
@@ -627,6 +635,18 @@ static float clamp_lo(float v) {
     return v < 0.0f ? 0.0f : v;
 }
 
+void canvas_add_filter_blur(canvas *__single cv, float px) {
+    if (!isfinite(px) || px < 0.0f) {
+        return;  // spec: ignore an unparseable (or negative) length
+    }
+    // filter blur(px) IS the Gaussian's stdDev (where shadowBlur is twice it);
+    // px == 0 maps to radius 0 -- an identity blur, so nothing is appended.
+    int r = sigma_box_radius(px);
+    if (r > 0) {
+        filter_append(cv, cnvs_filter_blur(r));
+    }
+}
+
 void canvas_add_filter_brightness(canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         filter_append(cv, cnvs_filter_brightness(clamp_lo(amount)));
@@ -679,13 +699,16 @@ static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
     return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
 }
 
-// Integer device-space bounding box of a point set, clamped to the canvas.
+// Integer device-space bounding box of a point set, padded by `margin` device
+// pixels on every side, clamped to the canvas.  The margin is applied *before*
+// the canvas clamp so a shape just off-canvas still gets a box for the part of
+// its margin (e.g. a blur's soft skirt) that reaches on-canvas.
 typedef struct {
     int x, y, w, h;
 } cbbox;
 
 static cbbox points_bbox(canvas *__single cv,
-                         cnvs_vec2 const *__counted_by(n) pts, int n) {
+                         cnvs_vec2 const *__counted_by(n) pts, int n, int margin) {
     if (n <= 0) {
         return (cbbox){ .x = 0, .y = 0, .w = 0, .h = 0 };
     }
@@ -697,8 +720,9 @@ static cbbox points_bbox(canvas *__single cv,
         miny = p.y < miny ? p.y : miny;
         maxy = p.y > maxy ? p.y : maxy;
     }
-    float fx0 = floorf(minx), fy0 = floorf(miny);
-    float fx1 = ceilf(maxx), fy1 = ceilf(maxy);
+    float m = (float)margin;
+    float fx0 = floorf(minx) - m, fy0 = floorf(miny) - m;
+    float fx1 = ceilf(maxx) + m, fy1 = ceilf(maxy) + m;
     int x0 = cnvs_f2i(fx0), y0 = cnvs_f2i(fy0), x1 = cnvs_f2i(fx1), y1 = cnvs_f2i(fy1);
     if (x0 < 0) { x0 = 0; }
     if (y0 < 0) { y0 = 0; }
@@ -743,15 +767,70 @@ static bool ensure_trow(canvas *__single cv, int w) {
     return true;
 }
 
-// Run the state's filter list (if any) over the freshly painted npix-pixel tile
-// in place, just before it composites.  Colour filters are 1:1 per pixel, so
-// the op's bbox never changes.  Spec order is filter-then-shadow; our shadow is
-// already cast from the op's coverage silhouette, not its pixels (emit_shadow),
-// so it is unaffected by the colour filters -- the same approximation it makes
-// for semi-transparent paint.
-static void apply_filters(canvas *__single cv, int npix) {
-    if (cv->cur.filter_count > 0) {
-        cnvs_filter_apply(cv->cur.filters, cv->cur.filter_count, cv->tile, npix);
+// Grow the filter-blur scratch tile to at least npix pixels.
+static bool ensure_blur_tmp(canvas *__single cv, int npix) {
+    if (npix > cv->blur_tmp_cap) {
+        cnvs_premul *nt = realloc(cv->blur_tmp, (size_t)npix * sizeof *nt);
+        if (!nt) {
+            return false;
+        }
+        cv->blur_tmp = nt;
+        cv->blur_tmp_cap = npix;
+    }
+    return true;
+}
+
+// Total spread of the state's filter chain, in device pixels: each blur()
+// entry's three box passes reach 3*r beyond the shape (emit_shadow's margin
+// reasoning), and successive blurs each add their own spread.  Every paint
+// site widens its bbox by this *before* rasterizing coverage, so the soft
+// edge has tile to land on; colour entries are 1:1 per pixel and add nothing.
+// Capped at a canvas dimension's worth -- a wider spread can't paint anything
+// the clamp to the canvas wouldn't cut anyway.
+static int filter_margin(canvas const *__single cv) {
+    int m = 0;
+    for (int i = 0; i < cv->cur.filter_count; i++) {
+        m += 3 * cv->cur.filters[i].blur;
+        if (m > CANVAS_MAX_DIM) {
+            return CANVAS_MAX_DIM;
+        }
+    }
+    return m;
+}
+
+// Run the state's filter list (if any) over the freshly painted w*h tile in
+// place, just before it composites.  Colour entries are 1:1 per pixel (maximal
+// runs of them go through cnvs_filter_apply together); a blur() entry runs the
+// separable box passes over the whole tile, whose bbox the paint site already
+// widened by filter_margin.  If the blur scratch can't be grown the blur entry
+// is skipped -- the op paints unblurred, inset in its widened (transparent)
+// tile, like the other best-effort OOM paths.  Spec order is filter-then-
+// shadow; our shadow is already cast from the op's coverage silhouette, not
+// its pixels (emit_shadow), so neither the colour functions nor blur() reach
+// it -- the shadow keeps the shape's sharp silhouette, the same approximation
+// it makes for semi-transparent paint.
+static void apply_filters(canvas *__single cv, int w, int h) {
+    int const count = cv->cur.filter_count;
+    int const npix = w * h;
+    int i = 0;
+    while (i < count) {
+        int r = cv->cur.filters[i].blur;
+        if (r > 0) {
+            if (ensure_blur_tmp(cv, npix)) {
+                for (int pass = 0; pass < 3; pass++) {
+                    blur_box_h_f16(cv->blur_tmp, cv->tile, w, h, r);
+                    blur_box_v_f16(cv->tile, cv->blur_tmp, w, h, r);
+                }
+            }
+            i += 1;
+        } else {
+            int j = i + 1;
+            while (j < count && cv->cur.filters[j].blur == 0) {
+                j += 1;
+            }
+            cnvs_filter_apply(cv->cur.filters + i, j - i, cv->tile, npix);
+            i = j;
+        }
     }
 }
 
@@ -829,7 +908,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                 .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
         }
     }
-    apply_filters(cv, b.w * b.h);
+    apply_filters(cv, b.w, b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
@@ -904,7 +983,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
             cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
         }
     }
-    apply_filters(cv, b.w * b.h);
+    apply_filters(cv, b.w, b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 
@@ -937,15 +1016,24 @@ static bool shadow_active(canvas const *__single cv) {
             cv->cur.shadow_offset_y != 0.0f);
 }
 
-// Box-blur radius approximating the spec's Gaussian (stdDev = blur/2): three box
-// passes have variance r^2 + r, so r ~= stdDev.  Clamped so a huge blur stays
-// bounded; <=0 means no blur (a sharp, offset shadow).
-static int shadow_radius(float blur) {
-    if (!(blur > 0.0f)) {
+// Box radius approximating a Gaussian of standard deviation `sigma` (device
+// px): three box passes of radius r have variance r^2 + r, so r ~= sigma.
+// Any positive sigma blurs at least radius 1; clamped above so a huge blur
+// stays bounded; <= 0 means no blur.  Shared by the two Gaussian-ish blurs,
+// whose parameters map differently: shadowBlur is *twice* the stdDev
+// (shadow_radius), while filter blur(px) *is* the stdDev
+// (canvas_add_filter_blur).
+static int sigma_box_radius(float sigma) {
+    if (!(sigma > 0.0f)) {
         return 0;
     }
-    int r = (int)(blur * 0.5f + 0.5f);
+    int r = (int)(sigma + 0.5f);
     return r < 1 ? 1 : (r > 1024 ? 1024 : r);
+}
+
+// The spec's shadow Gaussian has stdDev = shadowBlur / 2.
+static int shadow_radius(float blur) {
+    return sigma_box_radius(blur * 0.5f);
 }
 
 // Round a shadow offset to an integer device pixel, clamped to a sane range (a
@@ -1042,7 +1130,7 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
     if (cv->rec) { cnvs_rec_floats(cv->rec, "clear_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
-    cbbox b = points_bbox(cv, q, 4);
+    cbbox b = points_bbox(cv, q, 4, 0);  // clear_rect bypasses filters: no margin
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h)) {
         return;
     }
@@ -1059,7 +1147,7 @@ void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "fill_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
-    cbbox b = points_bbox(cv, q, 4);
+    cbbox b = points_bbox(cv, q, 4, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -1345,7 +1433,7 @@ void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
 // over its clamped bbox.
 static void fill_device_path(canvas *__single cv, cnvs_path const *p,
                              cnvs_fill_rule rule) {
-    cbbox b = points_bbox(cv, p->pts, p->pt_len);
+    cbbox b = points_bbox(cv, p->pts, p->pt_len, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -1414,7 +1502,7 @@ void canvas_clip(canvas *__single cv) {
         return;
     }
     // Rasterize the path's coverage into cv->cov over its (clamped) bbox.
-    cbbox b = points_bbox(cv, cv->path.pts, cv->path.pt_len);
+    cbbox b = points_bbox(cv, cv->path.pts, cv->path.pt_len, 0);  // the clip is unfiltered
     if (b.w > 0 && b.h > 0 && ensure_tile(cv, b.w * b.h) &&
         cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         cover_path_edges(cv, b, &cv->path);
@@ -1549,7 +1637,8 @@ static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
     if (!build_stroke_verts(cv, p) || cv->scratch_verts.len < 3) {
         return;
     }
-    cbbox b = points_bbox(cv, cv->scratch_verts.data, cv->scratch_verts.len);
+    cbbox b = points_bbox(cv, cv->scratch_verts.data, cv->scratch_verts.len,
+                           filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -1993,7 +2082,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
     // The dest rect transforms to a (possibly rotated) device-space quad.
     cnvs_vec2 q[4] = { xf(cv, dx, dy), xf(cv, dx + dw, dy),
                        xf(cv, dx + dw, dy + dh), xf(cv, dx, dy + dh) };
-    cbbox b = points_bbox(cv, q, 4);
+    cbbox b = points_bbox(cv, q, 4, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -2037,7 +2126,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
             cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
         }
     }
-    apply_filters(cv, b.w * b.h);
+    apply_filters(cv, b.w, b.h);
     compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, cv->cur.composite);
 }
 

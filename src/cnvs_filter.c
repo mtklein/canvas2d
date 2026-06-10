@@ -110,6 +110,15 @@ cnvs_filter cnvs_filter_hue_rotate(float radians) {
     };
 }
 
+// blur() carries only its box radius; the matrix part is the identity so the
+// entry is inert if it ever reaches the colour loop below (it shouldn't -- the
+// canvas pipeline dispatches blur entries to the separable passes instead).
+cnvs_filter cnvs_filter_blur(int radius) {
+    cnvs_filter f = scale_offset(1.0f, 0.0f);
+    f.blur = radius;
+    return f;
+}
+
 // One pixel's four channels as a vector: a cnvs_premul is four contiguous
 // _Float16, so it loads straight into an h4 (the read_unpremul idiom).
 typedef _Float16 h4 __attribute__((ext_vector_type(4)));

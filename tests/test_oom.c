@@ -121,12 +121,14 @@ static void scene_savestack(canvas *__single cv) {
 }
 
 // CSS filter list: the per-state dynamic array (append, save's deep copy,
-// restore/set_filter_none's frees) plus the per-tile apply.
+// restore/set_filter_none's frees), the per-tile apply, and blur()'s scratch
+// tile (whose failed allocation must skip the blur, not the op).
 static void scene_filter(canvas *__single cv) {
     canvas_add_filter_grayscale(cv, 1.0f);
     canvas_add_filter_brightness(cv, 1.2f);
     canvas_save(cv);
     canvas_add_filter_invert(cv, 0.5f);
+    canvas_add_filter_blur(cv, 2.0f);
     canvas_set_fill_rgba(cv, 0.9f, 0.4f, 0.2f, 0.8f);
     canvas_fill_rect(cv, 4.0f, 4.0f, 24.0f, 24.0f);
     canvas_restore(cv);
