@@ -234,13 +234,13 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 | phase | overhead |
 |---|---|
 | 2D RGBA8 blit | 1.00× |
-| box blur, vertical pass | 1.00× |
 | PNG encode | 1.01× |
 | gradient eval / gradient fill | 1.01–1.02× |
 | cubic-Bézier flattening | 1.02× |
 | stroke expansion | 1.03× |
 | analytic coverage fill | 1.07× |
 | end-to-end | 1.07× |
+| box blur, vertical pass | 1.09× |
 | box blur, horizontal pass | **1.10×** |
 
 The isolation matters. The end-to-end ~1.07× is a blend that hides a wide spread
@@ -270,8 +270,12 @@ the spread shows:
   check per load. The unchecked build barely moved (~4%) — the restructuring's
   entire value was the checks, the sharpest demonstration yet that the flag
   shifts the optimization landscape. Its strided twin — the vertical pass,
-  identical math a row apart — is memory-bound, so its checks were always free.
-  The pair is dissected in [stencil-blur.md](stencil-blur.md).
+  identical math a row apart — looked like the opposite case: its scalar column
+  walk had so much slack the checks rode free (1.00×). Then the same recipe
+  (eight adjacent columns per step, a running sum per lane — no prefix sum
+  needed) made it ~5.8× faster *and resurfaced the checks at 1.09×*: free
+  checks are a property of an unoptimized loop, not of an axis. The pair is
+  dissected in [stencil-blur.md](stencil-blur.md).
 - **Flattening is nearly free (~1%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.

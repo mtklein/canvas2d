@@ -393,7 +393,6 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 8.6 ms | 8.6 ms | **1.00×** |
-| `bench_blur_v` — box blur, vertical pass (stride `w`; memory-bound) | 88 ms | 88 ms | **1.00×** |
 | `bench_png` — PNG encode (SIMD adler32 + HW CRC32) | 7.0 ms | 6.9 ms | **1.01×** |
 | `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 13.0 ms | 12.8 ms | **1.01×** |
 | `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 75 ms | 74 ms | **1.02×** |
@@ -401,6 +400,7 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | `bench_stroke` — stroke expansion (joins/caps) | 50 ms | 49 ms | **1.03×** |
 | `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 32 ms | 30 ms | **1.07×** |
 | `bench` — end-to-end | 42 ms | 39 ms | **1.07×** |
+| `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.09×** |
 | `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 31 ms | **1.10×** |
 
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
@@ -427,9 +427,14 @@ sum: contiguous loads never stall, so its checks sat squarely on the critical pa
 at **1.55×** — until the same recipe landed there too (eight windows per step via
 an in-register prefix sum of the entering-minus-leaving samples), taking it to
 **1.10×** and making the *checked* build 32% faster while the unchecked build
-barely moved: the entire restructuring win was amortizing the checks. The full
-anatomy — including why its strided twin `bench_blur_v` was always free, and a
-prefetch experiment — is [docs/stencil-blur.md](docs/stencil-blur.md). Real canvas
+barely moved: the entire restructuring win was amortizing the checks. Its strided
+twin `bench_blur_v` then got the same recipe, simpler still (columns are
+independent, so eight adjacent columns per step with a running sum per lane — no
+prefix sum) — **~5.8× faster**, and its checks went from free (1.00×, hidden in
+the scalar walk's slack) to **1.09×**: a loop where the checks cost nothing is a
+loop with headroom left. The full anatomy — both fixes, the scheduling story, and
+a since-retired prefetch experiment — is
+[docs/stencil-blur.md](docs/stencil-blur.md). Real canvas
 rendering is GPU-bound, so the end-to-end cost of safety is smaller still;
 these are the honest prices on the hottest pure-C kernels, two commands to
 re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase

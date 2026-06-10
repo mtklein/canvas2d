@@ -11,9 +11,10 @@ contiguous; vertical strides a full row at a time).
 [../src/blur.c](../src/blur.c) is a running-sum box blur of an 8-bit mask, radius `r`,
 edges clamped: each pass adds the entering sample and subtracts the leaving one, so
 it is O(1) per pixel regardless of `r`. `blur_box_h` walks each row (stride 1);
-`blur_box_v` walks each column (stride `w`); `blur_box_v_pf` adds `__builtin_prefetch`
-to the strided reads. [../tests/test_blur.c](../tests/test_blur.c) checks correctness
-and that prefetch never changes the output.
+`blur_box_v` walks each column (stride `w`); a third variant, `blur_box_v_pf`, added
+`__builtin_prefetch` to the strided reads (since retired — see below).
+[../tests/test_blur.c](../tests/test_blur.c) holds both passes to a brute-force
+reference, bit for bit.
 
 ## Reading a window backward is checked and free to express
 
@@ -37,8 +38,9 @@ centered/backward stencil windows are not where the flag bites.
 ## Where it bites is the opposite of where you'd guess
 
 512×512, `r = 4`, `-Os`, release (`-fbounds-safety`) vs unsafe, `A`-vs-`A` 1.01×
-(the horizontal pass as originally written — scalar; since fixed, see
-[the fix](#the-fix-eight-windows-per-step) below):
+(both passes as originally written — scalar; each since fixed, see
+[the fix](#the-fix-eight-windows-per-step) and
+[its sequel](#the-fix-squared-eight-columns-per-step) below):
 
 | pass | memory pattern | bounds-safe | unsafe | cost of checks |
 |---|---|---|---|---|
@@ -83,6 +85,12 @@ pure overhead. Prefetch is a reflex worth resisting until the access pattern is
 actually irregular (a gather, a pointer chase) — and when it is warranted, the flag
 won't stand in the way.
 
+*(Epilogue: when the vertical pass was later vectorized — see
+[the fix, squared](#the-fix-squared-eight-columns-per-step) — the probe was re-run
+against the 8-column loop, one `prfm` per eight-pixel step: still a wash, within
+noise both checked and unsafe. Both questions answered and stable, the variant was
+retired; the finding stands without the code.)*
+
 ## The fix: eight windows per step
 
 The diagnosis says the contiguous pass pays because it has no stalls to hide the
@@ -118,3 +126,51 @@ restructuring that pays is not always the one that pays without it — the check
 shift the optimization landscape, and a transformation that looks pointless
 unchecked (the unsafe delta here is ~4%) can be the difference between 1.55× and
 1.10× checked.
+
+## The fix, squared: eight columns per step
+
+The same recipe then went to the vertical pass, and it is *simpler* there: columns
+are independent, so there is no recurrence to break — eight adjacent columns run
+in lanes, each lane carrying its own column's running sum, no prefix sum at all.
+Per step down the image:
+
+- the entering and leaving samples for all eight columns load contiguously from
+  one row (`load8_widen` — one whole-vector bounds check each);
+- the row-index clamps are *shared by every lane* (they clamp `y`, not `x`), so
+  even the edge rows run vectorized — the only scalar work left is the `w%8` tail
+  columns and the same degenerate `r >= 32768` window;
+- the quantize is the same exact 8-wide `quant8`, so the output is bit-identical,
+  held by a brute-force reference test of its own.
+
+Same machine and conditions, same day as the measurement above:
+
+| vertical pass | bounds-safe | unsafe | cost of checks |
+|---|---|---|---|
+| scalar (before) | 88.9 ms | 90.9 ms | **~1.0× (free)** |
+| 8-wide (after) | 15.3 ms | 14.1 ms | **1.09×** |
+
+Two corrections to this doc's earlier conclusions, both worth owning:
+
+- **The "memory-bound" axis sped up ~6×, unsafe included** — it was never pinned
+  by DRAM at this size. The blocked walk reuses each 128-byte line across sixteen
+  adjacent column blocks, and the full-height stripe of lines it cycles through
+  (512 rows × 128 B = 64 KB) sits in L1 — which the scalar walk's lines did too.
+  What the scalar loop was actually spending was per-sample work and latency,
+  with enough slack in the shadow of it for the checks to ride free.
+- **The checks resurfaced: ~1.0× → 1.09×.** The scheduling corollary cuts both
+  ways. Slack hides checks; remove the slack and the bill comes due — though now
+  amortized to one whole-vector check per load, so it lands at 1.09×, not the
+  scalar horizontal's 1.55×.
+
+And the once-slow axis is now the *faster* one: 15.3 ms vertical vs 34.0 ms
+horizontal. Vectorized, the vertical recurrence is cheaper — no prefix sum, no
+lane extract on the carry path (the carry between steps is one vector add), and
+no scalar edge loops at all.
+
+So the study's neat ending needs an amendment. "The strided passes are exactly
+the parts where bounds-safety is already free" was true of the *loops as
+written*, not of the axes: checks being free is a property of a loop with slack,
+and slack is itself a sign the loop has headroom left. The passes where
+`-fbounds-safety` costs nothing are the passes you haven't optimized yet — and
+the recipe that recovers the cost where it does bite (one whole-vector check
+covering eight accesses) is the same one that makes the loop fast.
