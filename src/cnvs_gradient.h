@@ -53,9 +53,11 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);
 
 // Number of entries in a precomputed colour ramp.  1024 keeps the max deviation
-// from the exact piecewise-linear ramp under ~0.4/255 (below the 8-bit step), so a
-// nearest-entry lookup is visually identical to evaluating cnvs_gradient_color_at
-// per pixel, but skips the per-pixel stop search.
+// from the exact piecewise-linear ramp under ~0.4/255 of nearest-entry
+// quantization, plus <~0.2/255 now that the stop lerp itself runs in _Float16
+// (docs/decisions/color-axis.md) -- together still at the 8-bit rounding step,
+// so a nearest-entry lookup is visually identical to evaluating
+// cnvs_gradient_color_at per pixel, but skips the per-pixel stop search.
 //
 // Why nearest-entry and not interpolated: measured max error vs the exact ramp,
 // for these stops, in 1/255 units --

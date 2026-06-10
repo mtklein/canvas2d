@@ -29,6 +29,10 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color
     gr->stop_count += 1;
 }
 
+// One stop colour as a 4-lane _Float16 vector, the colour pipeline's compute
+// type (docs/decisions/color-axis.md).
+typedef _Float16 gradh4 __attribute__((ext_vector_type(4)));
+
 cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     int n = gr->stop_count;
     if (n == 0) {
@@ -45,14 +49,15 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         cnvs_stop lo = gr->stops[i];
         cnvs_stop hi = gr->stops[i + 1];
         if (t <= hi.offset) {
+            // The parameter and stop offsets are geometry and stay f32; the
+            // colour lerp itself runs in _Float16, one 4-lane vector op per
+            // term (adds <~0.2/255 of rounding -- see CNVS_GRAD_RAMP_N).
             float span = hi.offset - lo.offset;
             float u = span > 1e-9f ? (t - lo.offset) / span : 0.0f;
-            // Interpolate in float, then narrow once via cnvs_unpremul_of.
-            return cnvs_unpremul_of(
-                (float)lo.color.r + ((float)hi.color.r - (float)lo.color.r) * u,
-                (float)lo.color.g + ((float)hi.color.g - (float)lo.color.g) * u,
-                (float)lo.color.b + ((float)hi.color.b - (float)lo.color.b) * u,
-                (float)lo.color.a + ((float)hi.color.a - (float)lo.color.a) * u);
+            gradh4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
+            gradh4 hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
+            gradh4 c = lov + (hiv - lov) * (_Float16)u;
+            return (cnvs_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
         }
     }
     return gr->stops[n - 1].color;  // unreachable: t < last offset handled above
@@ -67,9 +72,14 @@ void cnvs_gradient_build_ramp(cnvs_gradient const *gr,
         ramp[0] = cnvs_gradient_color_at(gr, 0.0f);
         return;
     }
-    float inv = 1.0f / (float)(n - 1);
+    // A true divide per entry, not i * (1/(n-1)): the documented identity
+    // ramp[i] == color_at(i/(n-1)) must hold at tolerance zero by
+    // construction.  The reciprocal form differed from the test's quotient by
+    // one f32 ulp in t, which only held while f32 compute narrowed late
+    // enough to absorb it -- with the lerp in _Float16 the identity has to be
+    // exact in t, not rescued by rounding (test_gradient_solve).
     for (int i = 0; i < n; i++) {
-        ramp[i] = cnvs_gradient_color_at(gr, (float)i * inv);
+        ramp[i] = cnvs_gradient_color_at(gr, (float)i / (float)(n - 1));
     }
 }
 
