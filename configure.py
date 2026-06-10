@@ -281,12 +281,10 @@ def main():
     w("rule profile_scene")
     w("  command = $cmd")
     w("  pool = console")
-    w("  description = sample(1): self-time across the whole gallery (real scenes)")
     w("")
     w("rule throughput")
     w("  command = $cmd")
     w("  pool = console")
-    w("  description = size-normalised render throughput (Mpx/s, ns/px)")
     w("")
     w("rule run_gallery")
     w("  command = $bin")
@@ -303,7 +301,6 @@ def main():
     w("")
     w("rule analyze")
     w(f"  command = clang {ANALYZE} $cstd $cinc $in && touch $out")
-    w("  description = ANALYZE $in")
     w("")
     # `leakcheck` runs the non-ASan release build under the macOS `leaks` tool
     # (LeakSanitizer is broken on Apple-Silicon macOS).  `leaks` exits non-zero if
@@ -341,7 +338,6 @@ def main():
       'tests/ examples/ -- no exemptions):" >&2 ; '
       'echo "$$hits" >&2 ; exit 1 ; '
       "else touch $out ; fi")
-    w("  description = FORGECHECK src include tests examples")
     w("")
 
     # Bench stems, e2e "bench" sorted last; variants that build benches.
