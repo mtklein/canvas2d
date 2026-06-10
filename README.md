@@ -576,6 +576,7 @@ gallery/                 committed showcase PNGs
 docs/bounds-safety.md    the write-up
 docs/decisions/          decision records (retired Metal backend + differential, security review)
 docs/roadmap.md          Canvas 2D gap inventory (missing + partial + what's next)
+docs/rasterization.md    the living rasterization survey: profile, option space, ranked experiments
 docs/coverage.md         checked-in coverage report (ninja coverage regenerates)
 docs/*.md                the probe field notes: pixel pipelines, stencil blur,
                          gather LUT, range folding, tag pointers, sparse coverage,
