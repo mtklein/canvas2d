@@ -79,6 +79,12 @@ int main(void) {
         canvas_set_font_size(cv, 12.0f + (float)i);
         (void)canvas_measure_text(cv, "Ag");
 
+        // Emoji: the canonical capture and its lazily-built mip pyramid are
+        // cache-owned heap buffers, freed with the canvas -- draw twice so the
+        // hit path (no second allocation) runs under the leak gate too.
+        canvas_fill_text(cv, "\xF0\x9F\x99\x82", 4.0f, 40.0f);  // 🙂
+        canvas_fill_text(cv, "\xF0\x9F\x99\x82", 20.0f, 40.0f);
+
         canvas_destroy(cv);
     }
     return TEST_REPORT();
