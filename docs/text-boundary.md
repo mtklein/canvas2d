@@ -451,3 +451,55 @@ every draw, and the serialized form is the cache entry, losslessly deflated. The
 boundary-per-draw path in text is gone — a warm canvas renders emoji, and a
 replayed program renders *and measures* them, without Core Text existing at
 all.
+
+## The capstone: proving it on a machine without the fonts
+
+Every claim above — canonical curves cross the boundary, a cache sits in front
+of it, the program format embeds the derived data — `test_record_text` already
+pins *locally*, where the fonts exist: it records a text scene, replays it, and
+asserts byte-identical pixels with **zero** shape/glyph boundary misses. But the
+real claim is cross-machine: a program recorded on a machine with Libian TC and
+AppleColorEmoji must replay byte-for-byte on a machine that has neither. The CI
+runner is exactly that machine — Libian TC is download-on-demand, so it isn't
+there — which is why the byte-for-byte gate (`gate.yml`) only covers the ten
+text-free scenes. The fontless proof had to come from inside the suite, which
+the runner runs via bare `ninja`.
+
+It now does. The seven text gallery scenes (`text`, `textgrid`, `textmetrics`,
+`textmaxwidth`, `emoji`, `emojiscale`, `shaping`) each record a self-contained
+`gallery/<scene>.canvas` program alongside their committed PNG
+([../examples/gallery.c](../examples/gallery.c)'s `record_scene`), and
+[../tests/test_replay_gallery.c](../tests/test_replay_gallery.c) replays each
+one onto a fresh canvas and proves **both directions**:
+
+- **The byte compare.** The replayed `read_rgba` must equal the committed PNG
+  (decoded by the in-house loader) byte for byte. A divergence means the
+  program didn't reconstruct the render — a stale `.canvas`, a missing op, or,
+  on the fontless runner, a glyph the embedded blocks failed to carry and the
+  fallback drew wrong or blank.
+- **The zero-miss assertion.** The replay must take **zero** shape/glyph
+  boundary cache-misses (emoji captures bump `glyph_misses` on a boundary fetch,
+  so the one counter covers outlines and color glyphs alike). A single miss is a
+  Core Text fallback — precisely what a fontless machine *cannot* do — so the
+  assertion catches a font-fallback even where the byte compare might
+  coincidentally match (and on the fontless runner the fallback would also move
+  pixels, so the two checks reinforce each other). Stripping a program of its
+  blocks and leaving only the op lines trips this with `shape_miss`/`glyph_miss`
+  in the dozens; emptying a program diverges on the byte compare.
+
+Closing the format for the seven scenes took two ops the recorder didn't yet
+cover — `textmetrics`'s `stroke_rect` and `textmaxwidth`'s `fill_text_max` (the
+latter a slice-only variant, `canvas_fill_text_max_n`, so the parser stays in
+the counted world; `max_width` rides the op line, since the shaped line keys on
+size+text alone) — plus the four shadow setters the `emoji` scene's drop shadow
+needs, all serialized as plain floats and parsed strictly. With them, all seven
+replay byte-identically with zero boundary calls — emoji captures included,
+under the gallery's transforms, shadows, and global alpha.
+
+That is the arc's end state: glyph outlines and emoji captures cross the Core
+Text boundary as canonical, keyed, size-independent bytes; a cache serves every
+warm draw without re-crossing; the program format embeds those bytes so a
+recorded program is self-contained; and a recorded text program reproduces its
+committed render **byte-for-byte on a machine that has none of the fonts** —
+gated, in lockstep with the renderer, by a test that runs everywhere `ninja`
+does.

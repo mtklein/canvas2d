@@ -116,7 +116,15 @@ Internals (not API features) considered and deferred:
   it replays byte-identically — pixels and measureText — with *no text boundary
   at all*, fonts installed or not, emoji included (`test_record_text`). The mip
   pyramid each emoji draw samples is derived checked-C data, deliberately not
-  serialized.
+  serialized. The cross-machine claim is now *gated*: the seven text gallery
+  scenes each commit a self-contained `.canvas` program next to their PNG, and
+  `test_replay_gallery` replays each one and proves it reproduces the committed
+  PNG byte-for-byte with zero shape/glyph boundary misses — so on the fontless
+  CI runner (no Libian TC; it's download-on-demand, which is why `gate.yml`'s
+  byte gate covers only the text-free scenes) a replay that matched the PNG used
+  the embedded blocks, not host fonts. That gate also drove the last format
+  coverage in: `stroke_rect`, `fill_text_max`, and the four shadow setters are
+  now recordable (the only ops those scenes still missed).
 - **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
   coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
   [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in
