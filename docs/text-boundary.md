@@ -416,17 +416,27 @@ Everything derived from the capture is checked C:
   `CTFontRef` is needed to draw: a capture from the cache (or a replayed
   block) renders fontlessly, and the per-draw boundary render survives only as
   the degraded path when the cache cannot serve and a live handle exists.
-- **Serialization.** The capture is the recorded form: a `bitmap` block
-  (`bitmap <font-id> <gid> <w> <h> <ink box> <nlines>`) followed by exactly
-  `nlines` base64 `bits` lines. The chunking is forced by arithmetic: 160x160x4
-  = 102,400 raw bytes is ~137 KB encoded, against the parser's 64 KiB line cap
-  — so the recorder emits 12,288-byte (16,384-char) lines, divisible by 3 so
-  only the final line pads. The strict parser extends to chunked binary:
-  declared-before-use ids, capped dimensions (bounding the allocation), exact
-  chunk counts, padding legal only in the final group of the final line, and
-  the decoded total required to equal `w*h*4` exactly. Premul sanity of the
-  *bytes* is deliberately not validated — bytes are bytes, and a hostile
-  capture can only mis-render its own quad.
+- **Serialization.** The capture is the recorded form, deflated: a `bitmap`
+  block (`bitmap <font-id> <gid> <w> <h> <ink box> <zlen> <nlines>`) followed
+  by exactly `nlines` base64 `bits` lines carrying a `zlen`-byte zlib stream
+  (the in-house `cnvs_zlib`, the same compressor under the PNG encoder) that
+  must inflate back to exactly `w*h*4` bytes. The chunking is forced by
+  arithmetic — 160x160x4 = 102,400 raw bytes would be ~137 KB encoded, against
+  the parser's 64 KiB line cap — so the recorder emits 12,288-byte
+  (16,384-char) lines, divisible by 3 so only the final line pads; the deflate
+  is what pays for file size. Captures compress to between a third and a half
+  (anti-aliased gradient art is noisy input for the greedy fixed-Huffman
+  matcher): a one-emoji program that measured ~137 KB raw records at ~57 KB
+  (🍕), with the spectrum spanning roughly 40–70 KB. The strict parser extends
+  through the new layer: declared-before-use ids, capped dimensions (bounding
+  the decoded allocation at 1 MiB), `zlen` capped by `cnvs_zlib_bound(w*h*4)`
+  and `nlines` by `ceil(zlen/3)` — both checked *before* either buffer is
+  allocated — exact chunk counts, padding legal only in the final group of the
+  final line, the decoded total required to equal `zlen` exactly, and the
+  already-strict inflate (header, Huffman structure, adler, trailing garbage,
+  overflow) required to fill `w*h*4` exactly. Premul sanity of the *pixels* is
+  deliberately not validated — bytes are bytes, and a hostile capture can only
+  mis-render its own quad.
 
 The `-fbounds-safety` story here is the pyramid: byte-level image math over
 related buffer sizes, all checked, with the one real friction being that a
@@ -437,7 +447,7 @@ grouped-assignment idiom the rest of the cache uses.
 
 With this, the bitmap boundary matches the outline boundary's shape exactly:
 **canonical, keyed, size-independent bytes cross once**, the cache serves
-every draw, and the serialized form is the cache entry verbatim. The last
+every draw, and the serialized form is the cache entry, losslessly deflated. The last
 boundary-per-draw path in text is gone — a warm canvas renders emoji, and a
 replayed program renders *and measures* them, without Core Text existing at
 all.

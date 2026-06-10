@@ -458,7 +458,7 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // replay): the recorder writes, ahead of each text op that first needs them,
 //     font <id> <ascent> <descent> <name...>
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
-//     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <nlines>
+//     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
 //     shape <size_px> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
@@ -469,9 +469,11 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // every size and transform.  bitmap + its immediately-following bits lines
 // carry one color (emoji) glyph's canonical capture: w x h premultiplied RGBA8
 // rendered once at a fixed 160 px to the em, with its ink box in capture px --
-// likewise one block per glyph serving every size and transform -- chunked
-// into base64 lines because the raw capture (160x160x4 bytes, ~137 KB encoded)
-// cannot fit one line.  shape + its immediately-following run lines carry one
+// likewise one block per glyph serving every size and transform -- DEFLATED
+// (an in-house zlib stream of exactly zlen bytes that inflates back to exactly
+// w*h*4) and base64-chunked, because the raw capture (160x160x4 bytes, ~137 KB
+// encoded) cannot fit one line and the compressed stream is a third to half
+// the bytes.  shape + its immediately-following run lines carry one
 // shaped line (the text is exactly byte-len raw bytes after one space).
 // Replaying the blocks pre-populates the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,
@@ -482,9 +484,10 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // a malformed block (an undeclared font id, a bad verb token, a cluster index
 // past the text length, a non-finite number where the recorder writes finite
 // ones, a bitmap whose bits lines are miscounted, mis-padded, or decode to
-// anything but exactly w*h*4 bytes) stops replay and returns false (commands
-// before the faulty line have already been applied; the canvas remains valid
-// and drawable).  Numbers are
+// anything but exactly zlen bytes, or whose declared stream is no zlib at all
+// or inflates to anything but exactly w*h*4 bytes) stops replay and returns
+// false (commands before the faulty line have already been applied; the canvas
+// remains valid and drawable).  Numbers are
 // written with %.9g and reparse to the identical float32.  The query and image
 // ops (measure_text, read_rgba, write_png, get/put_image_data, draw_image) are
 // not part of the text format.
@@ -504,7 +507,8 @@ bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path)
 // for the derived data the op uses -- the shaped runs, each glyph's canonical
 // font-unit curves and ink bounds, and each color (emoji) glyph's canonical
 // capture (one fixed-size RGBA8 render per glyph, fetched at record time if
-// the draw hasn't already) -- deduplicated within the file, so a recorded
+// the draw hasn't already, deflated on the way out so a one-emoji program
+// runs tens of KB rather than ~137) -- deduplicated within the file, so a recorded
 // program replays byte-identically (pixels and measureText alike) on a
 // machine without the recording machine's fonts, with no platform text call
 // at all, emoji included.
