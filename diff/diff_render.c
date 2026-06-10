@@ -120,9 +120,10 @@ static canvas *__single scene_image(void) {
 }
 
 // Clipping: a circular clip mask, then translucent fills under it.  Exercises the
-// compositor's clip attenuation -- a path where the CPU and Metal backends apply
-// coverage differently (CPU rounds the attenuated source to _Float16, Metal keeps
-// it in float), so it stresses a distinct source of divergence.
+// compositor's clip attenuation, historically a real divergence source: the CPU
+// once rounded the attenuated source to _Float16 where Metal keeps it in float.
+// Translucent fills never tripped that seam at 8 bits -- scene_clipstripes below
+// is the shape that did.
 static canvas *__single scene_clip(void) {
     int w = 128, h = 128;
     canvas *__single c = canvas_create(w, h);
@@ -143,11 +144,60 @@ static canvas *__single scene_clip(void) {
     return c;
 }
 
+// Flood a box with opaque rainbow stripes that overlap by one pixel, so later
+// stripes overdraw earlier ones (mirrors the gallery's clip_stripes).
+static void stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
+    int const n = 16;
+    float bw = (x1 - x0) / (float)n;
+    for (int i = 0; i < n; i++) {
+        float t = (float)i / (float)(n - 1);
+        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+        canvas_fill_rect(c, x0 + (float)i * bw, y0, bw + 1.0f, y1 - y0);
+    }
+}
+
+// Opaque overdrawn fills under partial clip coverage: antialiased clip edges
+// (a disc, and a two-arc lens intersection) over an opaque backdrop, flooded
+// with overlapping opaque stripes.  scene_clip's translucent fills never tripped
+// the clip-attenuation rounding seam between the backends; opaque overdraw under
+// fractional coverage does (this scene reproduced the gallery clip.png
+// divergence the gate used to miss).
+static canvas *__single scene_clipstripes(void) {
+    int w = 128, h = 128;
+    canvas *__single c = canvas_create(w, h);
+    if (!c) {
+        return NULL;
+    }
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)w, (float)h);
+
+    canvas_save(c);
+    canvas_begin_path(c);
+    canvas_arc(c, 40.0f, 64.0f, 34.0f, 0.0f, TAU, false);
+    canvas_clip(c);
+    stripes(c, 6.0f, 30.0f, 74.0f, 98.0f);
+    canvas_restore(c);
+
+    canvas_save(c);
+    canvas_begin_path(c);
+    canvas_arc(c, 88.0f, 64.0f, 32.0f, 0.0f, TAU, false);
+    canvas_clip(c);
+    canvas_begin_path(c);
+    canvas_arc(c, 114.0f, 64.0f, 32.0f, 0.0f, TAU, false);
+    canvas_clip(c);  // intersect: only the lens overlap survives
+    stripes(c, 56.0f, 30.0f, 128.0f, 98.0f);
+    canvas_restore(c);
+    return c;
+}
+
 int main(int argc, char **argv) {
     char const *dir = argc > 1 ? argv[1] : ".";
     dump(scene_modes(), dir, "modes", COLS * CELL, ROWS * CELL);
     dump(scene_gradient(), dir, "gradient", 128, 128);
     dump(scene_image(), dir, "image", 128, 128);
     dump(scene_clip(), dir, "clip", 128, 128);
+    dump(scene_clipstripes(), dir, "clipstripes", 128, 128);
     return 0;
 }
