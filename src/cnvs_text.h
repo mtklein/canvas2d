@@ -118,15 +118,17 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 //     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
 //     repeated labels hot, and a 64-entry linear scan is cheaper than any
 //     structure clever enough to beat it.
-//   - glyph curves, keyed by (font name, glyph id) -> the canonical font-unit
-//     verbs/points + units_per_em from cnvs_glyph_curves.  Canonical bytes are
-//     size- and transform-independent, so one entry serves every draw.  Font
+//   - glyph data, keyed by (font name, glyph id) -> the glyph's canonical
+//     form: font-unit verbs/points + units_per_em from cnvs_glyph_curves for
+//     an outline glyph, or the fixed-size premultiplied capture from one
+//     cnvs_glyph_draw for a color (emoji) glyph.  Canonical bytes are size-
+//     and transform-independent, so one entry serves every draw.  Font
 //     identity is the interned font NAME (stable across processes -- what the
-//     upcoming serialized form of this lookup needs), not the CTFontRef
-//     pointer.  Open-addressed, fixed CNVS_GLYPH_TABLE_N slots; inserts simply
-//     stop at CNVS_GLYPH_CACHE_N entries (no eviction: a glyph's curves never
-//     go stale, and a scene with >1k distinct glyphs just degrades the rest
-//     to boundary calls).  Blank glyphs cache as empty entries, so a space
+//     serialized form of this lookup needs), not the CTFontRef pointer.
+//     Open-addressed, fixed CNVS_GLYPH_TABLE_N slots; inserts simply stop at
+//     CNVS_GLYPH_CACHE_N entries (no eviction: canonical bytes never go
+//     stale, and a scene with >1k distinct glyphs just degrades the rest to
+//     boundary calls).  Blank glyphs cache as empty entries, so a space
 //     costs one boundary call ever.
 //
 // The cache is transparent: a hit and a miss render identically, and any
