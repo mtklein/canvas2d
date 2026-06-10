@@ -16,6 +16,7 @@ static float const TAU = 6.2831853f;
 // round-trip the whole register through the stack at every access.
 typedef float cnvs_f4 __attribute__((ext_vector_type(4)));
 typedef float cnvs_f8 __attribute__((ext_vector_type(8)));
+typedef int cnvs_i4 __attribute__((ext_vector_type(4)));  // f32 compare mask
 
 // Unit direction and length of p0->p1; false if degenerate.
 static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
@@ -258,6 +259,70 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             memcpy(pp0, &q0, sizeof pp0);
             memcpy(pp1, &q1, sizeof pp1);
 
+            // Wedge joins, four at once.  Lane i joins lane i-1's direction to
+            // lane i's; lane 0's incoming direction is the carry from the
+            // previous block.  Valid only when no lane is degenerate (a skipped
+            // segment would break that adjacency) and the join isn't ROUND (the
+            // disc path is trig, not wedge math) -- otherwise the scalar
+            // join_at below handles it.  Every expression mirrors stage_wedge
+            // term for term, so the lanes are bit-identical to the scalar
+            // wedges; degenerate-adjacent garbage lanes (e.g. a first block's
+            // lane 0 with no carry yet) are computed and discarded.  Like the
+            // quads, the wedges transpose to vertex order in-register; only
+            // the two decision masks spill.
+            cnvs_i4 degen = len < (cnvs_f4)1e-6f;
+            bool vjoin = join != CNVS_JOIN_ROUND && !__builtin_reduce_or(degen);
+            cnvs_vec2 wedges[24];  // 4 joins x (pa, v, pb, pa, tip, pb)
+            int col4[4], ok4[4];
+            if (vjoin) {
+                cnvs_f4 p0x = __builtin_shufflevector(q0, q0, 0, 2, 4, 6);
+                cnvs_f4 p0y = __builtin_shufflevector(q0, q0, 1, 3, 5, 7);
+                cnvs_f4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
+                cnvs_f4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
+                d0x[0] = prev_dir.x;  // constant-index insert: stays in-register
+                d0y[0] = prev_dir.y;
+                cnvs_f4 crs = d0x * diry - d0y * dirx;
+                cnvs_i4 col = (crs > (cnvs_f4)-1e-6f) & (crs < (cnvs_f4)1e-6f);
+                cnvs_i4 pos = crs > (cnvs_f4)0.0f;
+                // Outer side is opposite the turn (bit-exact +/-1 select).
+                cnvs_f4 sgn = (cnvs_f4)((pos & (cnvs_i4)(cnvs_f4)-1.0f) |
+                                        (~pos & (cnvs_i4)(cnvs_f4)1.0f));
+                cnvs_f4 pax = p0x + sgn * -d0y * hw;
+                cnvs_f4 pay = p0y + sgn * d0x * hw;
+                cnvs_f4 pbx = p0x + sgn * -diry * hw;
+                cnvs_f4 pby = p0y + sgn * dirx * hw;
+                // Miter tip = intersection of the outer edges (pa,d0),(pb,d1).
+                cnvs_f4 sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
+                cnvs_f4 tipx = pax + d0x * sm;
+                cnvs_f4 tipy = pay + d0y * sm;
+                cnvs_f4 mx = tipx - p0x;
+                cnvs_f4 my = tipy - p0y;
+                float mlim = miter_limit * hw;
+                cnvs_i4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
+                cnvs_f8 zpa = __builtin_shufflevector(pax, pay, 0, 4, 1, 5, 2, 6, 3, 7);
+                cnvs_f8 zpb = __builtin_shufflevector(pbx, pby, 0, 4, 1, 5, 2, 6, 3, 7);
+                cnvs_f8 ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
+#define CNVS_PUT_WEDGE(i)                                                         \
+    do {                                                                          \
+        cnvs_f4 t0 = __builtin_shufflevector(zpa, q0, 2 * (i), 2 * (i) + 1,       \
+                                             8 + 2 * (i), 9 + 2 * (i));           \
+        cnvs_f4 t1 = __builtin_shufflevector(zpb, zpa, 2 * (i), 2 * (i) + 1,      \
+                                             8 + 2 * (i), 9 + 2 * (i));           \
+        cnvs_f4 t2 = __builtin_shufflevector(ztip, zpb, 2 * (i), 2 * (i) + 1,     \
+                                             8 + 2 * (i), 9 + 2 * (i));           \
+        memcpy(wedges + 6 * (i), &t0, sizeof t0);                                 \
+        memcpy(wedges + 6 * (i) + 2, &t1, sizeof t1);                             \
+        memcpy(wedges + 6 * (i) + 4, &t2, sizeof t2);                             \
+    } while (0)
+                CNVS_PUT_WEDGE(0);
+                CNVS_PUT_WEDGE(1);
+                CNVS_PUT_WEDGE(2);
+                CNVS_PUT_WEDGE(3);
+#undef CNVS_PUT_WEDGE
+                memcpy(col4, &col, sizeof col4);
+                memcpy(ok4, &ok, sizeof ok4);
+            }
+
             cnvs_vec2 stage[48];  // 4 segments x (6 quad verts + 6 join verts)
             int k = 0;
             for (int i = 0; i < 4; i++) {
@@ -268,10 +333,22 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
                 k += 6;
                 cnvs_vec2 dir = { .x = dx4[i], .y = dy4[i] };
                 if (have_prev) {
-                    k = join_at(out, stage, k, pp0[i], prev_dir, dir, hw, join,
-                                miter_limit);
-                    if (k < 0) {
-                        return false;
+                    if (vjoin) {
+                        if (!col4[i]) {  // collinear: no gap to fill
+                            if (join == CNVS_JOIN_MITER && ok4[i]) {
+                                memcpy(stage + k, wedges + 6 * i, 6 * sizeof *stage);
+                                k += 6;  // bevel wedge + miter tip
+                            } else {
+                                memcpy(stage + k, wedges + 6 * i, 3 * sizeof *stage);
+                                k += 3;  // bevel wedge only
+                            }
+                        }
+                    } else {
+                        k = join_at(out, stage, k, pp0[i], prev_dir, dir, hw,
+                                    join, miter_limit);
+                        if (k < 0) {
+                            return false;
+                        }
                     }
                 }
                 if (!have_first) {
