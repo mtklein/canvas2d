@@ -6,7 +6,48 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The colour pipeline's load-bearing exactness claim (docs/decisions/
+// color-axis.md, experiment 1), pinned end to end: EVERY 8-bit (colour, alpha)
+// pair with alpha > 0 -- all 256*255 = 65,280 of them -- survives putImageData
+// (premultiply, store) followed by getImageData (un-premultiply, quantize)
+// byte-identical.  This is the property that picked _Float16 over u8 storage,
+// and it must keep holding now that the premultiply, divide, and 255-quantize
+// all run in _Float16 arithmetic too.  Alpha 0 is excluded by definition: the
+// colour is unrecoverable (premultiplies to zero), per spec.
+static void roundtrip_exhaustive(void) {
+    enum { RW = 256, RH = 255 };  // x: colour 0..255; y: alpha y+1 (1..255)
+    int const rlen = RW * RH * 4;
+    uint8_t *__counted_by(rlen) in = malloc((size_t)rlen);
+    uint8_t *__counted_by(rlen) out = malloc((size_t)rlen);
+    canvas *__single cv = canvas_create(RW, RH);
+    CHECK(in != NULL && out != NULL && cv != NULL);
+    if (in && out && cv) {
+        for (int y = 0; y < RH; y++) {
+            for (int x = 0; x < RW; x++) {
+                int i = (y * RW + x) * 4;
+                in[i] = in[i + 1] = in[i + 2] = (uint8_t)x;
+                in[i + 3] = (uint8_t)(y + 1);
+            }
+        }
+        canvas_put_image_data(cv, in, rlen, RW, RH, 0, 0);
+        canvas_get_image_data(cv, 0, 0, RW, RH, out, rlen);
+        int mismatched = 0;
+        for (int i = 0; i < rlen; i++) {
+            if (in[i] != out[i]) {
+                mismatched += 1;
+            }
+        }
+        CHECK(mismatched == 0);
+    }
+    if (cv) {
+        canvas_destroy(cv);
+    }
+    free(in);
+    free(out);
+}
+
 int main(void) {
+    roundtrip_exhaustive();
     // cnvs_blit_rgba: plain copy of a 2x2 sub-rect.
     int const sw = 4;
     int const sh = 4;

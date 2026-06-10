@@ -3,6 +3,7 @@
 #include "test_util.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 // Premultiplied blend tile from an unpremultiplied colour (channels in [0,1]).
 static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
@@ -46,6 +47,68 @@ static void clear_all(compositor *__single c, int w, int h) {
         compositor_blend(c, 0, 0, w, h, t, COMPOSITOR_DST_OUT);
         free(t);
     }
+}
+
+// The colour pipeline's accuracy gate (docs/decisions/color-axis.md,
+// experiment 2): source-over through the real kernel -- premultiply, store,
+// blend, un-premultiply, 8-bit quantize -- must land within 1/255 of the
+// correctly rounded double-precision reference.  Swept over (src colour x
+// src alpha x dst colour) triples onto an opaque destination: a 256x256
+// target where x is the source colour and y the destination colour, with the
+// source alpha stepped over [0, 255] hitting both endpoints (52 alphas x 64K
+// colour pairs = 3.4M triples; the exhaustive 16.7M sweep lives in the memo).
+// An aggregate check so a regression reports once, not millions of times.
+static void source_over_vs_double(void) {
+    enum { N = 256, ASTEP = 5 };
+    int const n = N * N;
+    cnvs_premul *__counted_by(n) dst = malloc((size_t)n * sizeof *dst);
+    cnvs_premul *__counted_by(n) src = malloc((size_t)n * sizeof *src);
+    cnvs_premul *__counted_by(n) out = malloc((size_t)n * sizeof *out);
+    compositor *__single c = compositor_create(N, N);
+    CHECK(dst != NULL && src != NULL && out != NULL && c != NULL);
+    if (dst && src && out && c) {
+        for (int y = 0; y < N; y++) {
+            float dc = (float)y / 255.0f;
+            cnvs_premul p = cnvs_premultiply(cnvs_unpremul_of(dc, dc, dc, 1.0f));
+            for (int x = 0; x < N; x++) {
+                dst[y * N + x] = p;
+            }
+        }
+        int max_delta = 0;
+        for (int ai = 0; ai <= 255; ai += ASTEP) {
+            float sa = (float)ai / 255.0f;
+            for (int x = 0; x < N; x++) {  // one row of sources, replicated
+                float sc = (float)x / 255.0f;
+                src[x] = cnvs_premultiply(cnvs_unpremul_of(sc, sc, sc, sa));
+            }
+            for (int y = 1; y < N; y++) {
+                memcpy(src + y * N, src, (size_t)N * sizeof *src);
+            }
+            compositor_blend(c, 0, 0, N, N, dst, COMPOSITOR_COPY);
+            compositor_blend(c, 0, 0, N, N, src, COMPOSITOR_SRC_OVER);
+            compositor_read(c, out, n);
+            for (int y = 0; y < N; y++) {
+                for (int x = 0; x < N; x++) {
+                    // co = s + (1-sa)*d onto opaque d: ao == 1, so the
+                    // unpremultiplied result is co itself.
+                    double s = ((double)x / 255.0) * ((double)ai / 255.0);
+                    double co = s + (1.0 - (double)ai / 255.0) * ((double)y / 255.0);
+                    int want = (int)(co * 255.0 + 0.5);
+                    cnvs_unpremul u = cnvs_unpremultiply(out[y * N + x]);
+                    int got = (int)((float)u.r * 255.0f + 0.5f);
+                    int da = abs(got - want);
+                    int aa = abs((int)((float)u.a * 255.0f + 0.5f) - 255);
+                    if (da > max_delta) { max_delta = da; }
+                    if (aa > max_delta) { max_delta = aa; }
+                }
+            }
+        }
+        CHECK(max_delta <= 1);
+    }
+    compositor_destroy(c);
+    free(dst);
+    free(src);
+    free(out);
 }
 
 int main(void) {
@@ -137,5 +200,7 @@ int main(void) {
 
     compositor_destroy(c);
     free(px);
+
+    source_over_vs_double();
     return TEST_REPORT();
 }
