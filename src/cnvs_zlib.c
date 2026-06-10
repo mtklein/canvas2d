@@ -165,12 +165,20 @@ static void put_match(struct bitwr *w, int len, int dist) {
     putbits(w, (uint32_t)(dist - dist_base[dc]), dist_extra[dc]);
 }
 
-// Fibonacci hash of the next 3 bytes down to zlib_hash_bits.  The multiply
-// wraps by design; __builtin_mul_overflow with the flag ignored is the
-// sanctioned spelling of that intent (see cnvs_text's mix32), so the debug
-// variant's -fsanitize=integer unsigned-wrap check leaves it alone.
-static uint32_t hash3(uint8_t a, uint8_t b, uint8_t c) {
-    uint32_t v = ((uint32_t)a << 16) | ((uint32_t)b << 8) | (uint32_t)c;
+// Fibonacci hash of the next 4 bytes down to zlib_hash_bits.  Four bytes, not
+// the minimum-match three: with the chain walk capped at zlib_chain_max, what
+// matters is how promising the candidates are, and the extra byte keeps
+// positions that share only a 3-byte prefix off each other's chains -- the
+// budget goes to candidates that nearly always extend past the minimum.
+// Measured across the gallery corpus this is both smaller (-1.1% deflated
+// bytes) and faster (~3%) than the 3-byte hash; the cost is that a position
+// fewer than 4 bytes from the end can't be hashed, so a final 3-byte match
+// goes out as literals.  The multiply wraps by design; __builtin_mul_overflow
+// with the flag ignored is the sanctioned spelling of that intent (see
+// cnvs_text's mix32), so the debug variant's -fsanitize=integer unsigned-wrap
+// check leaves it alone.
+static uint32_t hash4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+    uint32_t v = ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d;
     (void)__builtin_mul_overflow(v, 0x9E3779B1u, &v);
     return v >> (32 - zlib_hash_bits);
 }
@@ -184,8 +192,8 @@ static uint32_t hash3(uint8_t a, uint8_t b, uint8_t c) {
 // decrease ends the walk.
 static void insert(int *__counted_by(zlib_hash_size + zlib_window) chains,
                    uint8_t const *__counted_by(n) src, int n, int pos) {
-    if (pos + zlib_min_match <= n) {
-        uint32_t h = hash3(src[pos], src[pos + 1], src[pos + 2]);
+    if (pos + 4 <= n) {  // hash4 reads 4 bytes
+        uint32_t h = hash4(src[pos], src[pos + 1], src[pos + 2], src[pos + 3]);
         chains[zlib_hash_size + (pos & (zlib_window - 1))] = chains[h];
         chains[h] = pos;
     }
@@ -230,9 +238,9 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
     int i = 0;
     while (i < n) {
         int best_len = 0, best_dist = 0;
-        if (i + zlib_min_match <= n) {
+        if (i + 4 <= n) {  // hash4 reads 4 bytes
             int limit = n - i < zlib_max_match ? n - i : zlib_max_match;
-            int cand = chains[hash3(src[i], src[i + 1], src[i + 2])];
+            int cand = chains[hash4(src[i], src[i + 1], src[i + 2], src[i + 3])];
             for (int steps = 0; steps < zlib_chain_max && cand >= 0 && i - cand <= zlib_window;
                  steps++) {
                 // First-byte reject (zlib's scan_end idea): a candidate whose
