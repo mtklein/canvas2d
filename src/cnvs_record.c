@@ -6,6 +6,8 @@
 
 #include "cnvs_record.h"
 
+#include "cnvs_zlib.h"
+
 #include <ptrcheck.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -131,13 +133,13 @@ static int run_fid(cnvs_text_cache *__single c, cnvs_glyph_run const *__single r
     return cnvs_text_cache_font(c, run->font);
 }
 
-// Capture bytes per `bits` line: divisible by 3, so every line but the last
-// encodes to base64 without padding; the 16384-char line stays well inside
-// the parser's 64 KiB line cap.  A 160x160 capture (102400 bytes) takes nine
-// lines.
+// Deflated-capture bytes per `bits` line: divisible by 3, so every line but
+// the last encodes to base64 without padding; the 16384-char line stays well
+// inside the parser's 64 KiB line cap.  A 160x160 capture deflates to between
+// a third and a half of its 102400 bytes -- a handful of lines.
 enum { CNVS_REC_BITS_PER_LINE = 12288 };
 
-// One `bits` line: `n` capture bytes as standard base64 (padding only when n
+// One `bits` line: `n` deflated bytes as standard base64 (padding only when n
 // is not a multiple of 3 -- the block's final line).
 static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
                           int n) {
@@ -225,13 +227,21 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
     // Bitmap blocks: one per color (emoji) glyph not yet in this recording --
     // the canonical capture, fetched here if the draw hasn't yet (the same
     // lookup, so it still costs one boundary rasterization per glyph ever),
-    // chunked into base64 `bits` lines because the raw capture (160x160x4 =
-    // 102400 bytes, ~137 KB base64) cannot fit the one-line-per-block pattern
-    // under the parser's line cap.  A blank color glyph (no ink) has no
-    // capture and serializes nothing -- replay draws it as the blank advance
-    // it is.  The derived mip pyramid is deliberately NOT serialized: the
-    // capture alone is canonical, and replay re-derives the levels in checked
-    // C at no format cost.
+    // deflated (cnvs_zlib) and the COMPRESSED stream chunked into base64
+    // `bits` lines.  The chunking is forced by the parser's 64 KiB line cap
+    // (the raw capture, 160x160x4 = 102400 bytes, would be ~137 KB of base64);
+    // the deflate is what pays for file size -- captures compress to between
+    // a third and a half, gradient-heavy emoji art being noisy input for the
+    // greedy fixed-Huffman compressor.  The header carries the deflated byte
+    // count;
+    // the decoded size stays w*h*4, derivable from the dims, and replay
+    // validates both.  A blank color glyph (no ink) has no capture and
+    // serializes nothing -- replay draws it as the blank advance it is.  A
+    // failed deflate (its scratch allocation) skips the block un-emitted: the
+    // recording stays well-formed and the glyph degrades to a blank advance on
+    // replay, the cache's usual best-effort posture.  The derived mip pyramid
+    // is deliberately NOT serialized: the capture alone is canonical, and
+    // replay re-derives the levels in checked C at no format cost.
     for (int ri = 0; ri < s->nruns; ri++) {
         cnvs_glyph_run const *__single run = &s->run[ri];
         int fid = run_fid(c, run);
@@ -244,18 +254,29 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
             if (!g || g->emitted || g->cap_w <= 0) {
                 continue;
             }
+            int const zcap = cnvs_zlib_bound(g->cap_len);
+            uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
+            if (!z) {
+                continue;  // OOM: skip the block, leave the glyph un-emitted
+            }
+            int const zn = cnvs_zlib_deflate(z, zcap, g->capture, g->cap_len);
+            if (zn < 0) {
+                free(z);
+                continue;  // deflate's own scratch allocation failed: ditto
+            }
             int const nlines =
-                (g->cap_len + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
-            fprintf(r->f, "bitmap %d %u %d %d %.9g %.9g %.9g %.9g %d\n", fid,
-                    (unsigned)run->glyph[i], g->cap_w, g->cap_h,
+                (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
+            fprintf(r->f, "bitmap %d %u %d %d %.9g %.9g %.9g %.9g %d %d\n",
+                    fid, (unsigned)run->glyph[i], g->cap_w, g->cap_h,
                     (double)g->ink_x0, (double)g->ink_y0, (double)g->ink_x1,
-                    (double)g->ink_y1, nlines);
-            for (int off = 0; off < g->cap_len; off += CNVS_REC_BITS_PER_LINE) {
-                int const rem = g->cap_len - off;
-                put_bits_line(r->f, g->capture + off,
+                    (double)g->ink_y1, zn, nlines);
+            for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
+                int const rem = zn - off;
+                put_bits_line(r->f, z + off,
                               rem < CNVS_REC_BITS_PER_LINE ? rem
                                                            : CNVS_REC_BITS_PER_LINE);
             }
+            free(z);
             g->emitted = true;
         }
     }

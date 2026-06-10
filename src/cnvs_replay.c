@@ -10,6 +10,7 @@
 
 #include "canvas.h"
 #include "cnvs_text.h"
+#include "cnvs_zlib.h"
 
 #include <math.h>
 #include <ptrcheck.h>
@@ -26,8 +27,12 @@
 #define REPLAY_DASH_MAX 64           // max dash segments from one line
 #define REPLAY_RUNS_MAX 1024         // run lines one shape block may declare
 #define REPLAY_BITMAP_DIM_MAX 512    // capture dims cap: bounds a bitmap
-                                     // block's allocation at 1 MiB (the
-                                     // recorder writes CNVS_CAPTURE_EM = 160)
+                                     // block's decoded allocation at 1 MiB
+                                     // (the recorder writes CNVS_CAPTURE_EM =
+                                     // 160); the deflated stream is further
+                                     // capped at cnvs_zlib_bound of that, so
+                                     // both of the block's buffers are bounded
+                                     // before either is allocated
 
 static bool is_ws(char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
@@ -235,13 +240,18 @@ struct replay_blocks {
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
     int text_len;
     // The bitmap block under construction (owned until its last `bits` line
-    // hands it to the cache).  bm stays NULL when the block's font id maps to
-    // a degraded intern (-1): the bits still parse and validate, they just
-    // have nowhere to land -- the glyph-block posture.
+    // inflates and hands the pixels to the cache).  bm accumulates the
+    // DEFLATED stream the `bits` lines carry (bm_zlen declared bytes); the
+    // decoded w*h*4 pixel buffer is allocated only once the stream has landed
+    // completely and must inflate to exactly bm_total bytes.  The stream is
+    // decoded and inflate-validated even when the block's font id maps to a
+    // degraded intern (bm_fid -1): the bits still parse and validate, they
+    // just have nowhere to land -- the glyph-block posture.
     uint8_t *__counted_by(bm_len) bm;
-    int bm_len;     // the buffer's byte size (bm_total when allocated)
-    int bm_total;   // expected decoded bytes: w*h*4
-    int bm_fill;    // decoded so far
+    int bm_len;     // the buffer's byte size (bm_zlen when allocated)
+    int bm_zlen;    // declared deflated byte count
+    int bm_total;   // expected inflated bytes: w*h*4
+    int bm_fill;    // deflated bytes decoded so far
     int bm_lines;   // `bits` lines still expected; > 0 = a block is pending
     int bm_fid;     // interned cache id for the insert, or -1
     long bm_gid;
@@ -262,11 +272,12 @@ static void blocks_drop(struct replay_blocks *__single b) {
 }
 
 // Free the pending bitmap state (a block whose `bits` lines never finished,
-// or one just handed to the cache -- the caller NULLs bm first in that case).
+// or one whose inflated pixels were just handed to the cache).
 static void bitmap_drop(struct replay_blocks *__single b) {
     free(b->bm);
     b->bm_len = 0;
     b->bm = NULL;
+    b->bm_zlen = 0;
     b->bm_total = 0;
     b->bm_fill = 0;
     b->bm_lines = 0;
@@ -416,17 +427,21 @@ static bool replay_glyph(canvas *__single cv, struct replay_blocks *__single b,
     return true;
 }
 
-// bitmap <font-id> <gid> <w> <h> <ink x0 y0 x1 y1> <nlines> -- begin one color
-// glyph's canonical capture: w x h premultiplied RGBA8 at CNVS_CAPTURE_EM px
-// to the em, whose w*h*4 bytes arrive base64-chunked in exactly <nlines>
-// `bits` lines immediately following.  The ink box is in capture px (y up,
-// baseline-relative; the buffer's bottom-left corner sits at (x0, y0)).
-// Strict: declared font id, gid <= 0xFFFF, dims in [1, REPLAY_BITMAP_DIM_MAX],
-// finite non-empty ink (the recorder never captures empty ink), and nlines in
-// [1, ceil(w*h*4 / 3)] (each line must contribute at least one decoded byte).
+// bitmap <font-id> <gid> <w> <h> <ink x0 y0 x1 y1> <zlen> <nlines> -- begin
+// one color glyph's canonical capture: w x h premultiplied RGBA8 at
+// CNVS_CAPTURE_EM px to the em, deflated (cnvs_zlib) to exactly <zlen> bytes
+// that arrive base64-chunked in exactly <nlines> `bits` lines immediately
+// following and must inflate back to exactly w*h*4 bytes.  The ink box is in
+// capture px (y up, baseline-relative; the buffer's bottom-left corner sits
+// at (x0, y0)).  Strict: declared font id, gid <= 0xFFFF, dims in
+// [1, REPLAY_BITMAP_DIM_MAX], finite non-empty ink (the recorder never
+// captures empty ink), zlen in [1, cnvs_zlib_bound(w*h*4)] (no stream our
+// deflate writes is longer, so a larger claim is a lie -- and the cap bounds
+// the stream buffer, checked before it is allocated), and nlines in
+// [1, ceil(zlen / 3)] (each line must contribute at least one decoded byte).
 static bool replay_bitmap(struct replay_blocks *__single b,
                           char const *__counted_by(le) data, size_t le, size_t j) {
-    long id = 0, gid = 0, w = 0, h = 0, nlines = 0;
+    long id = 0, gid = 0, w = 0, h = 0, zlen = 0, nlines = 0;
     float ink[4];
     if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || !b->seen[id]) {
         return false;
@@ -450,21 +465,24 @@ static bool replay_bitmap(struct replay_blocks *__single b,
         return false;  // empty ink never records a capture
     }
     long const total = w * h * 4;  // <= 1 MiB by the dims cap
-    if (!read_uint(data, le, &j, (total + 2) / 3, &nlines) || nlines < 1) {
+    if (!read_uint(data, le, &j, cnvs_zlib_bound((int)total), &zlen) ||
+        zlen < 1) {
+        return false;  // deflated length: declared, sane, before any malloc
+    }
+    if (!read_uint(data, le, &j, (zlen + 2) / 3, &nlines) || nlines < 1) {
         return false;
     }
     if (!at_eol(data, le, j)) {
         return false;
     }
-    b->bm_fid = b->map[id];  // -1 = interning degraded: validate, don't land
-    if (b->bm_fid >= 0) {
-        uint8_t *px = malloc((size_t)total);
-        if (!px) {
-            return false;  // OOM while rebuilding: stop replay
-        }
-        b->bm = px;
-        b->bm_len = (int)total;
+    uint8_t *zs = malloc((size_t)zlen);
+    if (!zs) {
+        return false;  // OOM while rebuilding: stop replay
     }
+    b->bm = zs;
+    b->bm_len = (int)zlen;
+    b->bm_zlen = (int)zlen;
+    b->bm_fid = b->map[id];  // -1 = interning degraded: validate, don't land
     b->bm_total = (int)total;
     b->bm_fill = 0;
     b->bm_lines = (int)nlines;
@@ -488,13 +506,17 @@ static int b64v(char ch) {
     return -1;
 }
 
-// bits <base64> -- one chunk of the pending bitmap block's capture bytes.
+// bits <base64> -- one chunk of the pending bitmap block's deflated stream.
 // Strict: only legal while a bitmap block is pending, one token of 4-char
 // base64 groups, '=' padding only in the final group of the block's final
-// line, the decoded bytes never exceeding w*h*4 -- and the block's last line
-// must land the total exactly, at which point the capture is handed to the
-// cache (which takes ownership; an existing entry wins, the usual best-effort
-// posture).
+// line, the decoded bytes never exceeding the declared zlen -- and the
+// block's last line must land zlen exactly, at which point the stream must
+// inflate (cnvs_zlib_inflate, itself strict: header, Huffman structure,
+// adler, trailing garbage, overflow all reject) to exactly w*h*4 bytes.  Any
+// lie -- a truncated stream padded back to length, a valid stream of the
+// wrong decoded size -- fails the parse here.  The inflated capture is handed
+// to the cache (which takes ownership; an existing entry wins, the usual
+// best-effort posture).
 static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
                         char const *__counted_by(le) data, size_t le, size_t j) {
     if (b->bm_lines <= 0) {
@@ -535,7 +557,7 @@ static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
         } else if (v2 < 0 || v3 < 0) {
             return false;  // a bad character, or '=' anywhere but the tail
         }
-        if (fill + nbytes > b->bm_total) {
+        if (fill + nbytes > b->bm_zlen) {
             return false;  // more bytes than the header declared
         }
         uint32_t const v = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12) |
@@ -543,26 +565,35 @@ static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
         uint8_t const by[3] = { (uint8_t)(v >> 16), (uint8_t)((v >> 8) & 0xFFu),
                                 (uint8_t)(v & 0xFFu) };
         for (int k = 0; k < nbytes; k++) {
-            if (b->bm) {
-                b->bm[fill + k] = by[k];
-            }
+            b->bm[fill + k] = by[k];
         }
         fill += nbytes;
     }
     b->bm_fill = fill;
     b->bm_lines -= 1;
     if (b->bm_lines == 0) {
-        if (fill != b->bm_total) {
-            return false;  // short block: fewer bytes than declared
+        if (fill != b->bm_zlen) {
+            return false;  // short block: fewer deflated bytes than declared
         }
-        if (b->bm) {
+        // The whole declared stream landed: now (and only now) allocate the
+        // pixels and require the inflate to fill them exactly.
+        uint8_t *px = malloc((size_t)b->bm_total);
+        if (!px) {
+            return false;  // OOM while rebuilding: stop replay
+        }
+        if (cnvs_zlib_inflate(px, b->bm_total, b->bm, b->bm_zlen) !=
+            b->bm_total) {
+            free(px);
+            return false;  // malformed zlib, or a valid stream of the wrong size
+        }
+        if (b->bm_fid >= 0) {
             cnvs_text_cache_put_capture(cnvs_canvas_text_cache(cv), b->bm_fid,
-                                        (uint16_t)b->bm_gid, b->bm, b->bm_total,
+                                        (uint16_t)b->bm_gid, px, b->bm_total,
                                         b->bm_w, b->bm_h, b->bm_ink[0],
                                         b->bm_ink[1], b->bm_ink[2],
                                         b->bm_ink[3]);
-            b->bm_len = 0;  // ownership went to the cache
-            b->bm = NULL;
+        } else {
+            free(px);  // fully validated; a degraded intern has nowhere to land
         }
         bitmap_drop(b);
     }
@@ -887,7 +918,8 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
 bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, size_t len) {
     struct replay_blocks b = { .s = NULL, .runs_done = 0, .size_px = 0.0f,
                                .text_len = 0, .text = NULL, .bm = NULL,
-                               .bm_len = 0, .bm_total = 0, .bm_fill = 0,
+                               .bm_len = 0, .bm_zlen = 0, .bm_total = 0,
+                               .bm_fill = 0,
                                .bm_lines = 0, .bm_fid = -1, .bm_gid = 0,
                                .bm_w = 0, .bm_h = 0, .bm_ink = { 0 } };
     for (int k = 0; k < CNVS_FONT_INTERN_N; k++) {

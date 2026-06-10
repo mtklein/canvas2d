@@ -1,7 +1,6 @@
 font 0 1 0.25 AppleColorEmoji
-bitmap 0 64 2 2 0 -0.5 2 1.5 2
-bits AAAAAAAAAAAAAAAA
-bits /////w==
+bitmap 0 64 2 2 0 -0.5 2 1.5 13 1
+bits eAFjQAL/gQAACgYD/Q==
 shape 32 2 1 4 🙂
 run 0 0 1 1 64 32 0
 set_font_size 32

@@ -9,10 +9,14 @@
 //   - measureText / measureTextFull after replay match the recording canvas
 //     bit for bit (the serialized ink bounds + vmetrics earning their keep);
 //   - dedup: a repeated string emits its blocks once per recording, the
-//     ~137 KB emoji bitmap block very much included;
+//     emoji bitmap block very much included;
+//   - size: the bitmap block rides DEFLATED under its base64 (cnvs_zlib), so
+//     a one-emoji program -- ~137 KB when the capture was raw base64 -- now
+//     records at roughly half that;
 //   - strict parsing: truncated/malformed blocks (bitmap chunk miscounts,
-//     bad/mis-padded base64, wrong decoded size among them) stop replay false
-//     and leave the canvas drawable;
+//     bad/mis-padded base64, deflated-length lies, streams that are not zlib
+//     or inflate to the wrong size among them) stop replay false and leave
+//     the canvas drawable;
 //   - the float round-trip property: every %.9g-printed float32 (denormals,
 //     -0, extremes included) reparses to the identical float32.
 // See docs/text-boundary.md and canvas.h's record_to/replay_from contracts.
@@ -22,9 +26,11 @@
 #include "canvas.h"
 #include "cnvs_replay.h"
 #include "cnvs_text.h"
+#include "cnvs_zlib.h"
 
 #include <math.h>
 #include <ptrcheck.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -241,7 +247,7 @@ static void check_dedup(void) {
         canvas_destroy(cv);
     }
 
-    // The buffers are static: a bitmap block alone is ~137 KB of base64.
+    // Static buffers: roomy enough even if a capture ever compressed badly.
     static char a[1 << 19];
     static char b[1 << 19];
     int na = slurp(once, a, (int)sizeof a);
@@ -259,12 +265,94 @@ static void check_dedup(void) {
     CHECK(count_lines(a, na, "shape ") == 2);
     CHECK(count_lines(b, nb, "shape ") == 2);
     // ...and the blocks really exist (three distinct outline glyphs, one
-    // capture: 160x160x4 bytes at 12288 per bits line = 9 lines).
+    // capture whose deflated stream takes at least one bits line -- the exact
+    // count is the compressor's business, not the format's).
     CHECK(count_lines(b, nb, "glyph ") >= 3);  // e, c, h, o -> >= 3 distinct
     CHECK(count_lines(b, nb, "bitmap ") == 1);
-    CHECK(count_lines(b, nb, "bits ") == 9);
+    CHECK(count_lines(b, nb, "bits ") >= 1);
     CHECK(count_lines(b, nb, "run ") == 2);
     CHECK(count_lines(b, nb, "fill_text ") == 4);
+}
+
+// Size: the capture rides deflated under the base64, so a one-emoji program
+// -- ~137 KB when the 102400 capture bytes were raw base64 (nine 16 KiB
+// lines) -- now records at roughly half that (the 🍕 measures ~57 KB; emoji
+// across the art spectrum land 40-70 KB, anti-aliased gradients being noisy
+// input for the greedy fixed-Huffman deflate).  The ceiling is deliberately
+// loose -- emoji art and the compressor may both drift -- the point pinned is
+// that the compression is real and the whole program stays well under the
+// raw capture alone (102400), let alone its base64.
+static void check_size(void) {
+    char const *__null_terminated path = "build/test_record_text_z.canvas";
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_record_to(cv, path));
+        canvas_set_font_size(cv, 32.0f);
+        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
+        canvas_destroy(cv);
+    }
+    static char buf[1 << 19];
+    int n = slurp(path, buf, (int)sizeof buf);
+    CHECK(n > 0);
+    CHECK(n < 80 * 1024);
+    CHECK(count_lines(buf, n > 0 ? n : 0, "bitmap ") == 1);  // the block IS there
+}
+
+// Base64-encode `n` bytes into out (standard alphabet, '=' padding only in
+// the final group), NUL-terminated -- mirrors the recorder's emission so the
+// strict tests can wrap real deflate streams.  Returns the encoded length, or
+// -1 if cap is too small.
+static int b64enc(char *__counted_by(cap) out, int cap,
+                  uint8_t const *__counted_by(n) src, int n) {
+    static char const k[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                              "abcdefghijklmnopqrstuvwxyz0123456789+/";
+    int at = 0;
+    for (int i = 0; i < n; i += 3) {
+        if (at + 5 > cap) {
+            return -1;
+        }
+        int const m = n - i;
+        uint32_t v = (uint32_t)src[i] << 16;
+        if (m > 1) { v |= (uint32_t)src[i + 1] << 8; }
+        if (m > 2) { v |= (uint32_t)src[i + 2]; }
+        out[at++] = k[(v >> 18) & 63u];
+        out[at++] = k[(v >> 12) & 63u];
+        out[at++] = m > 1 ? k[(v >> 6) & 63u] : '=';
+        out[at++] = m > 2 ? k[v & 63u] : '=';
+    }
+    if (at >= cap) {
+        return -1;
+    }
+    out[at] = '\0';
+    return at;
+}
+
+// Format one program into an in-memory FILE (fprintf, the same libc formatter
+// the recorder writes with; snprintf's -fbounds-safety macro form trips
+// -Wgnu-statement-expression) and replay it, returning the parse verdict.
+__attribute__((format(printf, 2, 3)))
+static bool replay_fmt(canvas *__single cv, char const *__null_terminated fmt,
+                       ...) {
+    static char prog[1024];
+    FILE *__single f = fmemopen(prog, sizeof prog, "w");
+    if (!f) {
+        return false;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int r = vfprintf(f, fmt, ap);
+    va_end(ap);
+    bool ok = r > 0 && fflush(f) == 0;
+    long n = ftell(f);
+    (void)fclose(f);
+    if (!ok || n <= 0 || (size_t)n >= sizeof prog) {
+        return false;
+    }
+    return cnvs_replay_text(cv, prog, (size_t)n);
 }
 
 // Strict parsing: malformed blocks stop replay (false) without corrupting the
@@ -315,37 +403,99 @@ static void check_strict(void) {
         "shape 12 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
-    // Bitmap blocks: a well-formed capture parses (2x2, two bits lines, the
-    // second padded)...
-    CHECK(REPLAY(cv,
-        "font 0 1 0.25 AppleColorEmoji\n"
-        "bitmap 0 64 2 2 0 -0.5 2 1.5 2\n"
-        "bits AAAAAAAAAAAAAAAA\n"
-        "bits /////w==\n"));
-
-    // ...and malformed ones are rejected, the canvas drawable throughout.
-    CHECK(!REPLAY(cv, "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAAAA==\n"));  // undeclared font
+    // Bitmap blocks carry the capture DEFLATED under the base64, so the
+    // well-formed cases wrap real cnvs_zlib_deflate streams.  A 2x2 premul
+    // RGBA capture (16 bytes: three transparent pixels, one opaque white)...
+    uint8_t raw16[16];
+    for (int i = 0; i < 16; i++) {
+        raw16[i] = i < 12 ? 0 : 0xFF;
+    }
+    uint8_t z16[64];
+    int const zn16 = cnvs_zlib_deflate(z16, (int)sizeof z16, raw16, 16);
+    CHECK(zn16 > 3);  // header + adler alone are 6 bytes; > 3 lets us chunk
+    char zb16[128] = { 0 };
+    CHECK(b64enc(zb16, (int)sizeof zb16, z16, zn16 > 0 ? zn16 : 0) > 0);
     #define BM_FONT "font 0 1 0.25 AppleColorEmoji\n"
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 70000 1 1 0 0 1 1 1\nbits AAAAAA==\n"));  // gid > 0xFFFF
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 0 1 0 0 1 1 1\nbits AAAAAA==\n"));     // zero width
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 513 1 0 0 1 1 1\nbits AAAAAA==\n"));   // width > cap
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 1e999 0 1 1 1\nbits AAAAAA==\n")); // inf ink
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 1 0 1 1 1\nbits AAAAAA==\n"));     // empty ink (x1 <= x0)
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 0\nbits AAAAAA==\n"));     // zero lines
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 3\n"));                    // nlines > ceil(bytes/3)
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1 junk\nbits AAAAAA==\n"));// trailing junk
-    CHECK(!REPLAY(cv, "bits AAAAAA==\n"));                                        // bits with no bitmap
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AA!AAA==\n"));     // bad base64 char
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAAA\n"));        // length % 4 != 0
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits =AAAAAAA\n"));     // '=' up front
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AA==AAAA\n"));     // padding mid-line
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 2 2 0 0 1 1 2\nbits AA==\nbits AAAAAAAAAAAAAAAAAAAA==\n"));  // padding before the final line
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAA\n"));         // short: 3 of 4 bytes
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nbits AAAAAAAA\n"));     // long: 6 of 4 bytes
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\n"));                    // truncated: no bits line
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nfill_rect 0 0 4 4\n")); // non-bits inside
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\n# comment\nbits AAAAAA==\n"));  // ditto
-    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 1\nshape 12 1 0 1 A\n"));  // shape inside
+
+    // ...parses as one bits line...
+    CHECK(replay_fmt(cv, BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
+                     zn16, zb16));
+
+    // ...and chunked across two (the first carrying three decoded bytes).
+    CHECK(replay_fmt(cv,
+                     BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 2\n"
+                             "bits %.4s\nbits %s\n",
+                     zn16, zb16, zb16 + 4));
+
+    // Lies about the deflated stream are rejected: each case below keeps the
+    // base64 structurally valid so the failure isolates the named check.
+    {
+        // Declared deflated length one longer than what the lines land...
+        CHECK(!replay_fmt(cv,
+                          BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
+                          zn16 + 1, zb16));
+        // ...and one shorter: the line decodes past the declaration.
+        CHECK(!replay_fmt(cv,
+                          BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
+                          zn16 - 1, zb16));
+        // Truncated stream, length re-declared to match: base64 and count
+        // agree, but the zlib stream lost its tail -- inflate rejects.
+        char ztrunc[128] = { 0 };
+        CHECK(b64enc(ztrunc, (int)sizeof ztrunc, z16, zn16 - 3) > 0);
+        CHECK(!replay_fmt(cv,
+                          BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
+                          zn16 - 3, ztrunc));
+        // A perfectly valid zlib stream of the WRONG decoded size, both ways:
+        // 12 bytes against the header's 2x2 (16)...
+        uint8_t zwrong[64];
+        char zwb[128] = { 0 };
+        int wn = cnvs_zlib_deflate(zwrong, (int)sizeof zwrong, raw16, 12);
+        CHECK(wn > 0);
+        CHECK(b64enc(zwb, (int)sizeof zwb, zwrong, wn > 0 ? wn : 0) > 0);
+        CHECK(!replay_fmt(cv,
+                          BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
+                          wn, zwb));
+        // ...and 20 bytes against it (inflate overflows the w*h*4 buffer).
+        uint8_t raw20[20];
+        for (int i = 0; i < 20; i++) {
+            raw20[i] = (uint8_t)(i * 7);
+        }
+        wn = cnvs_zlib_deflate(zwrong, (int)sizeof zwrong, raw20, 20);
+        CHECK(wn > 0);
+        CHECK(b64enc(zwb, (int)sizeof zwb, zwrong, wn > 0 ? wn : 0) > 0);
+        CHECK(!replay_fmt(cv,
+                          BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
+                          wn, zwb));
+    }
+
+    // Bytes that are not a zlib stream at all (four zero bytes: bad header).
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AAAAAA==\n"));
+
+    // Header and base64 structure stay as strict as ever (zlen is 4 -- the
+    // structural failure fires before any inflate could).
+    CHECK(!REPLAY(cv, "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AAAAAA==\n"));  // undeclared font
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 70000 1 1 0 0 1 1 4 1\nbits AAAAAA==\n"));  // gid > 0xFFFF
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 0 1 0 0 1 1 4 1\nbits AAAAAA==\n"));     // zero width
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 513 1 0 0 1 1 4 1\nbits AAAAAA==\n"));   // width > cap
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 1e999 0 1 1 4 1\nbits AAAAAA==\n")); // inf ink
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 1 0 1 1 4 1\nbits AAAAAA==\n"));     // empty ink (x1 <= x0)
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 0 1\nbits AAAAAA==\n"));     // zero deflated length
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 21 1\nbits AAAAAA==\n"));    // zlen > zlib_bound(4) = 20
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 0\nbits AAAAAA==\n"));     // zero lines
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 3\n"));                    // nlines > ceil(zlen/3)
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1 junk\nbits AAAAAA==\n"));// trailing junk
+    CHECK(!REPLAY(cv, "bits AAAAAA==\n"));                                          // bits with no bitmap
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AA!AAA==\n"));     // bad base64 char
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AAAAA\n"));        // length % 4 != 0
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits =AAAAAAA\n"));     // '=' up front
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AA==AAAA\n"));     // padding mid-line
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 2 2 0 0 1 1 6 2\nbits AA==\nbits AAAAAAAA\n"));  // padding before the final line
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AAAA\n"));         // short: 3 of 4 bytes
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nbits AAAAAAAA\n"));     // long: 6 of 4 bytes
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\n"));                    // truncated: no bits line
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nfill_rect 0 0 4 4\n")); // non-bits inside
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\n# comment\nbits AAAAAA==\n"));  // ditto
+    CHECK(!REPLAY(cv, BM_FONT "bitmap 0 64 1 1 0 0 1 1 4 1\nshape 12 1 0 1 A\n"));  // shape inside
     #undef BM_FONT
 
     // Not corrupted: the canvas still draws.
@@ -469,6 +619,7 @@ static void check_float_round_trip(void) {
 int main(void) {
     check_round_trip();
     check_dedup();
+    check_size();
     check_strict();
     check_float_round_trip();
     return TEST_REPORT();
