@@ -1095,6 +1095,19 @@ static cnvs_px8 shade8(cnvs_h8 r, cnvs_h8 g, cnvs_h8 b, foldf8 alpha) {
         (cnvs_px8){ r, g, b, __builtin_convertvector(alpha, cnvs_h8) });
 }
 
+// cnvs_mat_apply for eight pixel centres along one row: only x varies and the
+// affine map is elementwise, so the scalar expression runs per lane bit for
+// bit -- this replaces an out-of-line cnvs_mat_apply call per pixel in the
+// sampling loops (it was 4.4% of the post-planar profile).
+typedef struct {
+    foldf8 x, y;
+} foldv8;
+
+static foldv8 mat_apply8(cnvs_mat m, foldf8 x, float y) {
+    return (foldv8){ .x = m.a * x + m.c * y + m.e,
+                     .y = m.b * x + m.d * y + m.f };
+}
+
 // Build an RGBA16F tile from the coverage in cv->cov and the given paint, then
 // composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage.
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
@@ -1237,21 +1250,24 @@ static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
 static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const *p) {
     float const ga = cv->cur.global_alpha;
     bool const smooth = cv->cur.image_smoothing_enabled;
+    foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const dy = (float)b.y + (float)py + 0.5f;
         for (int px = 0; px < b.w; px += 8) {
             int const i = py * b.w + px;
             int const k = b.w - px < 8 ? b.w - px : 8;
+            // Pixel-centre x per lane: integer-exact f32 sums, so the grouping
+            // can't differ from the scalar (float)b.x + (float)(px+l) + 0.5f.
+            foldf8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
+            foldv8 const uv = mat_apply8(p->to_pattern, xs, dy);
             foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
                    sa = (foldf8)0.0f;
             for (int l = 0; l < k; l++) {
                 if (cv->cov[i + l] == 0) {  // the scalar covf <= 0.0f early-out
                     continue;
                 }
-                cnvs_vec2 d = { .x = (float)b.x + (float)(px + l) + 0.5f, .y = dy };
-                cnvs_vec2 uv = cnvs_mat_apply(p->to_pattern, d);
                 float s[4];
-                pattern_sample(p, uv.x, uv.y, smooth, s);
+                pattern_sample(p, uv.x[l], uv.y[l], smooth, s);
                 sr[l] = s[0];
                 sg[l] = s[1];
                 sb[l] = s[2];
@@ -2601,28 +2617,32 @@ static void draw_image_quad(canvas *__single cv,
     cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float const ga = cv->cur.global_alpha;
     bool const smooth = cv->cur.image_smoothing_enabled;
+    foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const devy = (float)b.y + (float)py + 0.5f;
         for (int px = 0; px < b.w; px += 8) {
             int const i = py * b.w + px;
             int const k = b.w - px < 8 ? b.w - px : 8;
+            // Device pixel centre -> user space -> dest-rect uv -> source
+            // coords, eight lanes at once (elementwise; the scalar expression
+            // per lane, bit for bit).  The pixel-centre x sums are
+            // integer-exact f32, so the grouping can't differ from the
+            // scalar (float)b.x + (float)(px+l) + 0.5f.
+            foldf8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
+            foldv8 const u = mat_apply8(inv, xs, devy);
+            foldf8 const fsx = sx + ((u.x - dx) / dw) * sww;
+            foldf8 const fsy = sy + ((u.y - dy) / dh) * shh;
             foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
                    sa = (foldf8)0.0f;
             for (int l = 0; l < k; l++) {
                 if (cv->cov[i + l] == 0) {  // the scalar covf <= 0.0f early-out
                     continue;
                 }
-                // Device pixel centre -> user space -> dest-rect uv -> source.
-                cnvs_vec2 u = cnvs_mat_apply(
-                    inv, (cnvs_vec2){ .x = (float)b.x + (float)(px + l) + 0.5f,
-                                      .y = devy });
-                float fsx = sx + ((u.x - dx) / dw) * sww;
-                float fsy = sy + ((u.y - dy) / dh) * shh;
                 float s[4];
                 if (smooth) {
-                    sample_src(src, slen, sw, sh, fsx, fsy, s);
+                    sample_src(src, slen, sw, sh, fsx[l], fsy[l], s);
                 } else {
-                    sample_src_nearest(src, slen, sw, sh, fsx, fsy, s);
+                    sample_src_nearest(src, slen, sw, sh, fsx[l], fsy[l], s);
                 }
                 sr[l] = s[0];
                 sg[l] = s[1];
