@@ -220,3 +220,44 @@ checked.** The thesis the whole exploration kept hitting lands hardest here: put
 indexed data in a `(pointer, count)` form once at the boundary, and even the most
 intricate downstream logic — bidi — is ordinary bounds-checked C. The unsafe surface
 of real text never grew past shape + outline + draw.
+
+## The outline boundary, re-cut: canonical curves in font units
+
+The positioned-outline design above had the boundary emit a *finished* outline:
+`cnvs_glyph_outline` took the pen origin, the device transform, and a flatness
+tolerance, and the `CGPathApply` walk wrote already-transformed, already-flattened
+line segments straight into the `cnvs_path`. Correct, but the boundary's output was
+device- and call-specific — the bytes that crossed were useless for any other pen,
+size, or transform.
+
+The boundary now speaks canonical data. `cnvs_glyph_curves` hands across one glyph's
+outline as verb + point arrays (move/line/quad/cubic/close) in **font units** — the
+font's design grid, `units_per_em` units to the em, y up, baseline-relative — plus
+that `units_per_em` as the only metadata. Core Text's `CGPathApply` reports points at
+the font's *point size*, so the shim multiplies by `units_per_em / size` on the way
+out, and nothing call-specific survives the crossing: the same bytes describe the
+glyph at every size, pen, and transform.
+
+Everything that used to run in the shim moved to the checked side
+(`cnvs_glyph_outline`, now in [../src/cnvs_text.c](../src/cnvs_text.c)): scale by
+`size_px / units_per_em` (the shaped line records the size it was shaped at), flip y
+into canvas's y-down user space, place at the pen, map through the CTM, and flatten
+quads/cubics with the same adaptive flattener every other path in the system takes,
+at the same device-space tolerance as before. The flattening maths didn't change —
+only which TU runs it, and now every index in it is bounds-checked.
+
+The hand-off reuses the `cnvs_glyph_draw` pattern, twice over: the checked caller
+owns the verb and point buffers and passes `(ptr, cap)` pairs; the boundary fills
+within the caps and reports the *true* counts, which may exceed them — the caller
+grows and fetches again (stack buffers cover the typical glyph, so the retry is
+rare). No forge, as ever. And the curve stream itself is untrusted boundary data, so
+the core walks it defensively: a byte that isn't a verb, or a verb whose points would
+run past the count, stops the walk instead of being trusted as an index — the same
+posture as the cluster-map range check.
+
+Why re-cut a boundary that rendered correctly? Because canonical curves are the
+prerequisite for what comes next: a lookup from call parameters to derived glyph
+data, checked before Core Text is ever called, and a self-contained serialization of
+glyph geometry into the canvas-program format. Both need the boundary's output to be
+*reusable* — keyed by font + glyph id, valid at any transform — which is exactly what
+device-space flattened points can never be.
