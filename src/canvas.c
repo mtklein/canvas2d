@@ -103,6 +103,8 @@ struct canvas_state {
     float font_size;  // text size in user px (Canvas default 10px)
     canvas_text_align text_align;
     canvas_text_baseline text_baseline;
+    canvas_direction direction;  // paragraph direction: resolves start/end and
+                                 // is the base direction text shapes under
     bool image_smoothing_enabled;
     canvas_image_smoothing_quality image_smoothing_quality;
     cnvs_unpremul shadow_color;  // shadow off when its alpha is 0
@@ -216,6 +218,7 @@ static void state_defaults(struct canvas_state *s) {
     s->font_size = 10.0f;
     s->text_align = CANVAS_ALIGN_START;
     s->text_baseline = CANVAS_BASELINE_ALPHABETIC;
+    s->direction = CANVAS_DIRECTION_LTR;
     s->image_smoothing_enabled = true;
     s->image_smoothing_quality = CANVAS_SMOOTHING_LOW;
     s->shadow_color = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);  // transparent: off
@@ -2021,6 +2024,16 @@ void canvas_set_text_align(canvas *__single cv, canvas_text_align align) {
     }
 }
 
+void canvas_set_direction(canvas *__single cv, canvas_direction dir) {
+    switch (dir) {
+        case CANVAS_DIRECTION_LTR:
+        case CANVAS_DIRECTION_RTL:
+            if (cv->rec) { cnvs_rec_direction(cv->rec, dir); }
+            cv->cur.direction = dir;
+            break;
+    }
+}
+
 void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline) {
     switch (baseline) {
         case CANVAS_BASELINE_ALPHABETIC:
@@ -2036,13 +2049,16 @@ void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline
 }
 
 // Fraction of the advance the textAlign anchor sits from the text's left edge:
-// left/start 0, center 0.5, right/end 1 (LTR, so start == left, end == right).
-static float text_align_frac(canvas_text_align a) {
+// left 0, center 0.5, right 1.  start/end resolve through the direction
+// attribute -- start is the edge the text flows from (left under ltr, right
+// under rtl), end the edge it flows toward.
+static float text_align_frac(canvas_text_align a, canvas_direction dir) {
+    bool const rtl = dir == CANVAS_DIRECTION_RTL;
     switch (a) {
-        case CANVAS_ALIGN_START:
+        case CANVAS_ALIGN_START:  return rtl ? 1.0f : 0.0f;
+        case CANVAS_ALIGN_END:    return rtl ? 0.0f : 1.0f;
         case CANVAS_ALIGN_LEFT:   return 0.0f;
         case CANVAS_ALIGN_CENTER: return 0.5f;
-        case CANVAS_ALIGN_END:
         case CANVAS_ALIGN_RIGHT:  return 1.0f;
     }
     return 0.0f;  // unreachable for a valid enum
@@ -2234,7 +2250,8 @@ static void do_text(canvas *__single cv, char const *__counted_by(len) text, int
     if (isfinite(max_width) && max_width > 0.0f && advance > max_width) {
         sx = max_width / advance;  // condense in x to fit
     }
-    float ox = x - text_align_frac(cv->cur.text_align) * advance * sx;
+    float ox = x - text_align_frac(cv->cur.text_align, cv->cur.direction)
+                       * advance * sx;
     float oy = y + text_baseline_offset(cv);
     cnvs_mat td = cv->cur.ctm;
     if (sx != 1.0f) {

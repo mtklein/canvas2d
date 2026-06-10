@@ -661,6 +661,15 @@ void cnvs_rec_text_baseline(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
+void cnvs_rec_direction(cnvs_recorder *__single r, canvas_direction dir) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs("set_direction ", r->f);
+    fputs(dir == CANVAS_DIRECTION_RTL ? "rtl" : "ltr", r->f);
+    fputc('\n', r->f);
+}
+
 // Composite-op names in canvas_composite_op order (matches cnvs_replay.c).
 static char const *const k_composite[] = {
     "source-over", "source-in", "source-out", "source-atop", "destination-over",

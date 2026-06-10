@@ -1204,6 +1204,13 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         else if (tok_eq(data, le, ts, tl, "bottom"))      canvas_set_text_baseline(cv, CANVAS_BASELINE_BOTTOM);
         else return false;
     }
+    else if (tok_eq(data, le, cs, cl, "set_direction")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "ltr"))      canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
+        else if (tok_eq(data, le, ts, tl, "rtl")) canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+        else return false;
+    }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;
         if (!read_token(data, le, &j, &ts, &tl)) return false;

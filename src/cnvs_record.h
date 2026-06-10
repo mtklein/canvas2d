@@ -140,3 +140,4 @@ void cnvs_rec_composite(cnvs_recorder *__single r, canvas_composite_op op);
 void cnvs_rec_text_align(cnvs_recorder *__single r, canvas_text_align align);
 void cnvs_rec_text_baseline(cnvs_recorder *__single r,
                             canvas_text_baseline baseline);
+void cnvs_rec_direction(cnvs_recorder *__single r, canvas_direction dir);

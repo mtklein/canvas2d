@@ -16,11 +16,15 @@ typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
 typedef enum { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL } canvas_line_join;
 typedef enum { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE } canvas_line_cap;
 
-// textAlign / textBaseline.  Direction is LTR, so start == left and end == right.
+// textAlign / textBaseline.  start/end resolve against the direction attribute:
+// start == left and end == right under ltr, the opposite under rtl.
 typedef enum {
     CANVAS_ALIGN_START, CANVAS_ALIGN_END,
     CANVAS_ALIGN_LEFT, CANVAS_ALIGN_RIGHT, CANVAS_ALIGN_CENTER,
 } canvas_text_align;
+// direction: the paragraph direction for text.  Headless, so no "inherit"; the
+// default is ltr, matching what inherit resolves to in an undirected document.
+typedef enum { CANVAS_DIRECTION_LTR, CANVAS_DIRECTION_RTL } canvas_direction;
 typedef enum {
     CANVAS_BASELINE_ALPHABETIC, CANVAS_BASELINE_TOP, CANVAS_BASELINE_HANGING,
     CANVAS_BASELINE_MIDDLE, CANVAS_BASELINE_IDEOGRAPHIC, CANVAS_BASELINE_BOTTOM,
@@ -349,9 +353,18 @@ void canvas_draw_image_subrect(canvas *__single cv,
 // and global alpha all apply.  measure_text returns the advance width in user px.
 void canvas_set_font_size(canvas *__single cv, float px);
 // textAlign: horizontal placement of the text relative to the (x, y) passed to
-// fill_text/stroke_text, by the advance width.  start/left (default) puts x at
-// the left edge, end/right at the right edge, center centres it.
+// fill_text/stroke_text, by the advance width.  left puts x at the left edge,
+// right at the right edge, center centres it; start (default) and end resolve
+// through the direction attribute (start == left under ltr, == right under rtl;
+// end the opposite).
 void canvas_set_text_align(canvas *__single cv, canvas_text_align align);
+// direction: the paragraph direction (default ltr).  It resolves textAlign
+// start/end, and it is the base direction text is shaped under -- a
+// mixed-direction string lays its runs out in the visual order that base
+// implies, and neutrals (spaces, punctuation) resolve against it -- so the same
+// string can draw differently under ltr and rtl.  Part of the drawing state:
+// save/restore brackets it, reset/resize restore the default.
+void canvas_set_direction(canvas *__single cv, canvas_direction dir);
 // textBaseline: vertical placement of the baseline relative to (x, y).
 // alphabetic (default) draws the baseline at y; top/hanging/middle/ideographic/
 // bottom shift it by the font's ascent/descent.
@@ -447,7 +460,7 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 //     set_global_composite_operation multiply
 //     fill_text 12 30 Hello
 // Enums (set_global_composite_operation / set_line_join / set_line_cap /
-// set_fill_rule / set_text_align / set_text_baseline /
+// set_fill_rule / set_text_align / set_text_baseline / set_direction /
 // set_image_smoothing_quality / the pattern repeat modes) are written by
 // name; bool args (arc/ellipse winding, set_image_smoothing_enabled) are 0/1
 // or false/true; set_line_dash takes a variable number of lengths; the text

@@ -1,0 +1,227 @@
+// The direction attribute (canvas_set_direction): defaults ltr, resolves
+// textAlign start/end (start == left under ltr, == right under rtl; end the
+// opposite), participates in save/restore and reset like textAlign, and
+// round-trips through record/replay as a `set_direction` op line.  Alignment
+// is pinned by byte-comparing whole renders: a start-aligned draw under one
+// direction must equal the explicitly left- or right-aligned draw it resolves
+// to -- the same anchor math, so the pixels are identical, not merely close.
+
+#include "canvas.h"
+#include "cnvs_replay.h"
+#include "test_util.h"
+
+#include <stdint.h>
+#include <string.h>
+
+#define W 160
+#define H 60
+#define LEN (W * H * 4)
+
+// sizeof-1 keeps the literal an array (bounds known), avoiding the
+// __null_terminated->__counted_by seam at the call.
+#define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
+
+// Render `text` with the given direction/align into px: white ground, black
+// ink, one fill_text anchored mid-canvas.
+static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated text,
+                   canvas_direction dir, canvas_text_align align) {
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_font_size(cv, 24.0f);
+    canvas_set_direction(cv, dir);
+    canvas_set_text_align(cv, align);
+    canvas_fill_text(cv, text, (float)W * 0.5f, 40.0f);
+    canvas_read_rgba(cv, px, LEN);
+    canvas_destroy(cv);
+}
+
+// start/end resolve against direction; left/right/center ignore it.
+static void check_resolution(void) {
+    static uint8_t a[LEN], b[LEN];
+    char const *__null_terminated t = "abc";
+
+    render(a, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START);
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_LEFT);
+    CHECK(memcmp(a, b, LEN) == 0);  // ltr: start == left
+
+    render(a, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_END);
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_RIGHT);
+    CHECK(memcmp(a, b, LEN) == 0);  // ltr: end == right
+
+    render(a, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_RIGHT);
+    CHECK(memcmp(a, b, LEN) == 0);  // rtl: start == right
+
+    render(a, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_END);
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_LEFT);
+    CHECK(memcmp(a, b, LEN) == 0);  // rtl: end == left
+
+    render(a, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_LEFT);
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_LEFT);
+    CHECK(memcmp(a, b, LEN) == 0);  // physical left ignores direction
+
+    render(a, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_CENTER);
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_CENTER);
+    CHECK(memcmp(a, b, LEN) == 0);  // center too
+
+    // start under the two directions genuinely differ (the checks above
+    // can't all be vacuously-equal blank renders).
+    render(a, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START);
+    render(b, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
+    CHECK(memcmp(a, b, LEN) != 0);
+}
+
+// Default ltr; save/restore brackets a direction change; reset restores it.
+static void check_state(void) {
+    static uint8_t a[LEN], b[LEN];
+    char const *__null_terminated t = "abc";
+
+    // Default: never touched == explicitly ltr.
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_font_size(cv, 24.0f);
+        canvas_set_text_align(cv, CANVAS_ALIGN_START);
+        canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
+        canvas_read_rgba(cv, a, LEN);
+        canvas_destroy(cv);
+    }
+    render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START);
+    CHECK(memcmp(a, b, LEN) == 0);
+
+    // save/restore: the inner ltr is undone, the outer rtl comes back.
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_font_size(cv, 24.0f);
+        canvas_set_text_align(cv, CANVAS_ALIGN_START);
+        canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+        canvas_save(cv);
+        canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
+        canvas_restore(cv);
+        canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
+        canvas_read_rgba(cv, a, LEN);
+
+        // reset: back to the ltr default.
+        canvas_reset(cv);
+        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_font_size(cv, 24.0f);
+        canvas_set_text_align(cv, CANVAS_ALIGN_START);
+        canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
+        canvas_read_rgba(cv, b, LEN);
+        canvas_destroy(cv);
+    }
+    static uint8_t r[LEN];
+    render(r, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
+    CHECK(memcmp(a, r, LEN) == 0);   // restored to rtl
+    render(r, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START);
+    CHECK(memcmp(b, r, LEN) == 0);   // reset to ltr
+}
+
+// The set_direction op line: a replayed program reproduces a direct draw, and
+// malformed lines reject without corrupting the canvas.
+static void check_replay(void) {
+    static uint8_t a[LEN], b[LEN];
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(REPLAY(cv,
+            "set_fill_rgba 1 1 1 1\n"
+            "fill_rect 0 0 160 60\n"
+            "set_fill_rgba 0 0 0 1\n"
+            "set_font_size 24\n"
+            "set_direction rtl\n"
+            "set_text_align start\n"
+            "fill_text 80 40 abc\n"));
+        canvas_read_rgba(cv, a, LEN);
+        canvas_destroy(cv);
+    }
+    render(b, "abc", CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
+    CHECK(memcmp(a, b, LEN) == 0);
+
+    // Strict parsing.
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    CHECK(REPLAY(cv, "set_direction ltr\n"));
+    CHECK(REPLAY(cv, "set_direction rtl\n"));
+    CHECK(!REPLAY(cv, "set_direction\n"));          // missing argument
+    CHECK(!REPLAY(cv, "set_direction up\n"));       // not a direction
+    CHECK(!REPLAY(cv, "set_direction rtl junk\n")); // trailing junk
+    CHECK(!REPLAY(cv, "set_direction RTL\n"));      // exact spelling only
+
+    // Not corrupted: the canvas still draws.
+    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    uint8_t px[LEN];
+    canvas_read_rgba(cv, px, LEN);
+    CHECK(px[0] == 255);
+    canvas_destroy(cv);
+}
+
+// Recording writes the op line: a recorded rtl draw replays to identical bytes.
+static void check_record(void) {
+    char const *__null_terminated path = "build/test_rtl_rec.canvas";
+    static uint8_t a[LEN], b[LEN];
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_record_to(cv, path));
+        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_font_size(cv, 24.0f);
+        canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
+        canvas_set_text_align(cv, CANVAS_ALIGN_START);
+        canvas_fill_text(cv, "abc", (float)W * 0.5f, 40.0f);
+        canvas_read_rgba(cv, a, LEN);
+        canvas_destroy(cv);
+    }
+    {
+        canvas *__single cv = canvas_create(W, H);
+        CHECK(cv != NULL);
+        if (!cv) {
+            return;
+        }
+        CHECK(canvas_replay_from(cv, path));
+        canvas_read_rgba(cv, b, LEN);
+        canvas_destroy(cv);
+    }
+    CHECK(memcmp(a, b, LEN) == 0);
+}
+
+int main(void) {
+    check_resolution();
+    check_state();
+    check_replay();
+    check_record();
+    return TEST_REPORT();
+}
