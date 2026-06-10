@@ -1224,24 +1224,50 @@ static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
 // Paint the resolved coverage (cv->cov over b) with an image pattern: each device
 // pixel maps through the pattern's device->image transform, samples (bilinear or
 // nearest per image smoothing), and folds in global alpha and coverage.
+//
+// Blocks of eight pixels: the SAMPLING stays scalar per lane -- each sample is
+// data-dependent addressing (up to four taps at arbitrary source coords), with
+// no batch shape -- but everything around it is planar.  A zero-coverage lane
+// skips its sample and stays transparent black, exactly the scalar early-out
+// (covf <= 0 iff the coverage byte is 0; the all-zero lanes fold to the same
+// {0,0,0,0} bits the early-out stored).  The samples land in f32 planes
+// because the scalar fold is f32: alpha = (s[3] * ga) * covf lane for lane,
+// each channel narrowed once to _Float16 (the cnvs_unpremul_of casts), then
+// the planar premultiply.
 static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const *p) {
-    float ga = cv->cur.global_alpha;
-    bool smooth = cv->cur.image_smoothing_enabled;
+    float const ga = cv->cur.global_alpha;
+    bool const smooth = cv->cur.image_smoothing_enabled;
     for (int py = 0; py < b.h; py++) {
-        for (int px = 0; px < b.w; px++) {
-            int i = py * b.w + px;
-            float covf = (float)cv->cov[i] / 255.0f;
-            if (covf <= 0.0f) {
-                cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = 0 };
-                continue;
+        float const dy = (float)b.y + (float)py + 0.5f;
+        for (int px = 0; px < b.w; px += 8) {
+            int const i = py * b.w + px;
+            int const k = b.w - px < 8 ? b.w - px : 8;
+            foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
+                   sa = (foldf8)0.0f;
+            for (int l = 0; l < k; l++) {
+                if (cv->cov[i + l] == 0) {  // the scalar covf <= 0.0f early-out
+                    continue;
+                }
+                cnvs_vec2 d = { .x = (float)b.x + (float)(px + l) + 0.5f, .y = dy };
+                cnvs_vec2 uv = cnvs_mat_apply(p->to_pattern, d);
+                float s[4];
+                pattern_sample(p, uv.x, uv.y, smooth, s);
+                sr[l] = s[0];
+                sg[l] = s[1];
+                sb[l] = s[2];
+                sa[l] = s[3];
             }
-            cnvs_vec2 d = { .x = (float)b.x + (float)px + 0.5f,
-                            .y = (float)b.y + (float)py + 0.5f };
-            cnvs_vec2 uv = cnvs_mat_apply(p->to_pattern, d);
-            float s[4];
-            pattern_sample(p, uv.x, uv.y, smooth, s);
-            float alpha = s[3] * ga * covf;
-            cv->tile[i] = cnvs_premultiply(cnvs_unpremul_of(s[0], s[1], s[2], alpha));
+            foldf8 const covf = k < 8 ? cover8_k(cv->cov + i, k)
+                                      : cover8(cv->cov + i);
+            cnvs_px8 const out = shade8(__builtin_convertvector(sr, cnvs_h8),
+                                        __builtin_convertvector(sg, cnvs_h8),
+                                        __builtin_convertvector(sb, cnvs_h8),
+                                        sa * ga * covf);
+            if (k < 8) {
+                cnvs_px8_store_k(cv->tile + i, k, out);
+            } else {
+                cnvs_px8_store(cv->tile + i, out);
+            }
         }
     }
     apply_filters(cv, b.w, b.h);
