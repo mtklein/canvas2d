@@ -419,16 +419,13 @@ void canvas_reset(canvas *__single cv) {
     // resize(), which resets, starts its new canvas cold like create() does).
     cnvs_text_cache_clear(&cv->text_cache);
     // Open the clip, then clear the whole bitmap to transparent black: a
-    // destination-out of a unit-alpha tile leaves dst*(1 - 1) = 0 everywhere.
+    // destination-out of a unit-alpha splat leaves dst*(1 - 1) = 0 everywhere
+    // (no tile, so a reset can't fail on allocation).
     compositor_set_clip(cv->comp, NULL, 0);
-    int npix = cv->width * cv->height;
-    if (ensure_tile(cv, npix)) {
-        for (int i = 0; i < npix; i++) {
-            cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = (_Float16)1.0f };
-        }
-        compositor_blend(cv->comp, 0, 0, cv->width, cv->height, cv->tile,
-                         NULL, COMPOSITOR_DST_OUT);
-    }
+    compositor_blend_solid(cv->comp, 0, 0, cv->width, cv->height,
+                           (cnvs_premul){ .r = 0, .g = 0, .b = 0,
+                                          .a = (_Float16)1.0f },
+                           NULL, COMPOSITOR_DST_OUT);
 }
 
 bool canvas_resize(canvas *__single cv, int width, int height) {
@@ -1152,15 +1149,16 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         } else {
             // Full-strength source: every pixel is the same premultiplied
             // colour (at full coverage the folded form's base * 1.0 is base
-            // exactly, so interiors agree bit for bit).
-            cnvs_px8 const px = shade8(cr, cg, cb, base);
-            int i = 0;
-            for (; i + 8 <= npix; i += 8) {
-                cnvs_px8_store(cv->tile + i, px);
-            }
-            if (i < npix) {
-                cnvs_px8_store_k(cv->tile + i, npix - i, px);
-            }
+            // exactly, so interiors agree bit for bit).  No tile at all --
+            // the compositor takes the colour as a splat and the op's
+            // coverage plane drives its lerp.  (!fold implies no filters:
+            // shade_folds_coverage forces the fold whenever filters are
+            // active, so skipping apply_filters here drops only a no-op.)
+            cnvs_premul px;
+            cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
+            compositor_blend_solid(cv->comp, b.x, b.y, b.w, b.h, px, cv->cov,
+                                   cv->cur.composite);
+            return;
         }
     } else if (ensure_grad_rows(cv, b.w)) {
         // Evaluate the gradient a row at a time, all three stages vectorized:
@@ -1464,17 +1462,16 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
             cnvs_px8_store_k(cv->tile + i, k, shade8(cr, cg, cb, alpha));
         }
     } else {
-        cnvs_px8 const px = shade8(cr, cg, cb, (foldf8)(sa * ga));
-        int i = 0;
-        for (; i + 8 <= n; i += 8) {
-            cnvs_px8_store(cv->tile + i, px);
-        }
-        if (i < n) {
-            cnvs_px8_store_k(cv->tile + i, n - i, px);
-        }
+        // Full-strength tint: one splat colour, the blurred mask as the
+        // compositor's coverage plane -- no tile.
+        cnvs_premul px;
+        cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, (foldf8)(sa * ga)));
+        compositor_blend_solid(cv->comp, sx0, sy0, sw, sh, px,
+                               cv->shadow_src, cv->cur.composite);
+        return;
     }
-    compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile,
-                     fold ? NULL : cv->shadow_src, cv->cur.composite);
+    compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile, NULL,
+                     cv->cur.composite);
 }
 
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
@@ -1505,17 +1502,16 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
     cbbox b = points_bbox(cv, q, 4, 0);  // clear_rect bypasses filters: no margin
-    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h)) {
+    if (b.w <= 0 || b.h <= 0) {
         return;
     }
-    // Erase = destination-out of a unit-alpha tile: out = dst*(1 - alpha), and the
-    // clip attenuates alpha to the coverage, so a clip leaves dst*(1 - clip).
-    int npix = b.w * b.h;
-    for (int i = 0; i < npix; i++) {
-        cv->tile[i] = (cnvs_premul){ .r = 0, .g = 0, .b = 0, .a = (_Float16)1.0f };
-    }
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile, NULL,
-                     COMPOSITOR_DST_OUT);
+    // Erase = destination-out of a unit-alpha solid: out = dst*(1 - alpha), and
+    // the clip attenuates alpha to the coverage, so a clip leaves dst*(1 - clip).
+    // The unit-alpha source is one splat colour -- no tile (and no allocation).
+    compositor_blend_solid(cv->comp, b.x, b.y, b.w, b.h,
+                           (cnvs_premul){ .r = 0, .g = 0, .b = 0,
+                                          .a = (_Float16)1.0f },
+                           NULL, COMPOSITOR_DST_OUT);
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {

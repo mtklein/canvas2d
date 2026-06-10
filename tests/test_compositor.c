@@ -111,6 +111,69 @@ static void source_over_vs_double(void) {
     free(out);
 }
 
+// compositor_blend_solid must be byte-identical to compositor_blend of a tile
+// whose every pixel is the colour -- the splat IS the constant tile, minus
+// the round trip.  Sweep every mode under all four coverage shapes (none,
+// op plane, clip, both), over a gradient destination wide enough to exercise
+// full blocks and a 5-pixel tail, and compare the premultiplied targets
+// bit for bit.
+static void solid_vs_tile(void) {
+    enum { W = 61, H = 4 };  // 7 full blocks + a 5-pixel tail per row
+    int const n = W * H;
+    cnvs_premul *__counted_by(n) dst = malloc((size_t)n * sizeof *dst);
+    cnvs_premul *__counted_by(n) tile = malloc((size_t)n * sizeof *tile);
+    cnvs_premul *__counted_by(n) got = malloc((size_t)n * sizeof *got);
+    cnvs_premul *__counted_by(n) want = malloc((size_t)n * sizeof *want);
+    uint8_t *__counted_by(n) covp = malloc((size_t)n);
+    uint8_t *__counted_by(n) mask = malloc((size_t)n);
+    compositor *__single c = compositor_create(W, H);
+    CHECK(dst && tile && got && want && covp && mask && c);
+    if (dst && tile && got && want && covp && mask && c) {
+        cnvs_premul const color =
+            cnvs_premultiply(cnvs_unpremul_of(0.8f, 0.35f, 0.1f, 0.6f));
+        for (int i = 0; i < n; i++) {
+            float t = (float)i / (float)(n - 1);
+            dst[i] = cnvs_premultiply(cnvs_unpremul_of(t, 1.0f - t, 0.4f, t));
+            tile[i] = color;
+            covp[i] = (uint8_t)(i * 7);   // every byte value over the sweep
+            mask[i] = (uint8_t)(255 - i % 256);
+        }
+        for (int mode = 0; mode < COMPOSITOR_MODE_COUNT; mode++) {
+            for (int shape = 0; shape < 4; shape++) {
+                uint8_t const *cv = (shape & 1) ? covp : NULL;
+                bool const clipped = (shape & 2) != 0;
+
+                // Reset the target with the clip OPEN (a clipped COPY is a
+                // lerp toward the current target, not a reset), then close it
+                // for the blend under test.
+                compositor_set_clip(c, NULL, 0);
+                compositor_blend(c, 0, 0, W, H, dst, NULL, COMPOSITOR_COPY);
+                compositor_set_clip(c, clipped ? mask : NULL, clipped ? n : 0);
+                compositor_blend(c, 0, 0, W, H, tile, cv,
+                                 (compositor_blend_mode)mode);
+                compositor_set_clip(c, NULL, 0);
+                compositor_read(c, want, n);
+
+                compositor_blend(c, 0, 0, W, H, dst, NULL, COMPOSITOR_COPY);
+                compositor_set_clip(c, clipped ? mask : NULL, clipped ? n : 0);
+                compositor_blend_solid(c, 0, 0, W, H, color, cv,
+                                       (compositor_blend_mode)mode);
+                compositor_set_clip(c, NULL, 0);
+                compositor_read(c, got, n);
+
+                CHECK(memcmp(got, want, (size_t)n * sizeof *got) == 0);
+            }
+        }
+    }
+    compositor_destroy(c);
+    free(dst);
+    free(tile);
+    free(got);
+    free(want);
+    free(covp);
+    free(mask);
+}
+
 int main(void) {
     int const w = 16, h = 16, len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
@@ -202,5 +265,6 @@ int main(void) {
     free(px);
 
     source_over_vs_double();
+    solid_vs_tile();
     return TEST_REPORT();
 }

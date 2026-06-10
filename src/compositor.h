@@ -98,6 +98,18 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       uint8_t const *__counted_by_or_null(w * h) cov,
                       compositor_blend_mode mode);
 
+// compositor_blend of a tile whose every pixel is `color`, without the tile:
+// the caller passes the one premultiplied colour and the compositor splats it
+// across the lanes -- byte-identical output to materializing the constant
+// tile, minus the ~16 B/px write-then-read round trip.  This is the shape of
+// every solid paint whose coverage rides as a plane (the lerp-family modes),
+// of clearRect/reset's unit-alpha erase, and of the full-strength shadow
+// tint.  `cov` and the clip apply exactly as in compositor_blend.
+void compositor_blend_solid(compositor *__single c, int x, int y, int w, int h,
+                            cnvs_premul color,
+                            uint8_t const *__counted_by_or_null(w * h) cov,
+                            compositor_blend_mode mode);
+
 // Read the premultiplied target back, row-major top-first; len must be
 // width*height (pixels).  Conversion to unpremultiplied RGBA8 is the caller's job.
 void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out, int len);

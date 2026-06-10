@@ -172,6 +172,14 @@ static rgb8 blend_nonsep8(compositor_blend_mode mode, rgb8 cb, rgb8 cs) {
 // alpha plane of s*(1-da) + d*(1-sa) + T is sa + da*(1-sa) = ao because T's
 // alpha plane is pinned to sa*da.
 static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
+    if (mode == COMPOSITOR_SRC_OVER) {
+        // Delegate to the fast path's kernel: the Porter-Duff arm below would
+        // spell source-over as fa*s + fb*d with fa = 1, and the contraction
+        // shape differs -- fa*s rounds fb*d's product separately where
+        // src_over8's s + fb*d fuses it -- so the explicit kernel keeps every
+        // source-over bit-identical no matter which loop reached it.
+        return src_over8(s, d);
+    }
     cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
     cnvs_h8 sa = s.a, da = d.a;
     cnvs_px8 co;
@@ -302,6 +310,91 @@ void compositor_set_clip(compositor *__single c,
     memcpy(c->clip, mask, (size_t)n);
 }
 
+// The generic modes, shared by the tile and solid-colour entry points: the
+// same planar block walk as the source-over fast path, with the 26-mode
+// kernel in place of the source-over fold.  `tile` may be NULL, in which case
+// every block's source is `splat` -- one solid colour broadcast across the
+// lanes, standing in for the constant tile the canvas used to write out and
+// this loop used to read back (a ~16 B/px round trip carrying no
+// information).  Effective coverage is the op plane x the clip mask (each
+// absent factor is 1); the over-family folds it into the source exactly as
+// the fast path does, every other mode blends at full strength and lerps
+// toward the destination (cov_lerp8) -- the §3.8 ruling.
+static void blend_region(compositor *__single c, int x, int y, int w, int h,
+                         cnvs_premul const *__counted_by_or_null(w * h) tile,
+                         cnvs_px8 splat,
+                         uint8_t const *__counted_by_or_null(w * h) cov,
+                         compositor_blend_mode mode) {
+    bool const folds = compositor_coverage_folds(mode);
+    bool const atten = cov || c->clip;  // any coverage to apply?
+    _Float16 const k255 = (_Float16)(1.0f / 255.0f);
+    cnvs_h8 const one = (cnvs_h8)(_Float16)1.0f;
+    for (int row = 0; row < h; row++) {
+        int col = 0;
+        for (; col + 8 <= w; col += 8) {
+            int ti = row * w + col;
+            int di = (y + row) * c->width + (x + col);
+            cnvs_px8 s = tile ? cnvs_px8_load(tile + ti) : splat;
+            cnvs_px8 d = cnvs_px8_load(c->target + di);
+            cnvs_px8 o;
+            if (!atten) {
+                o = blend8(s, d, mode);
+            } else if (folds) {
+                // Fold: attenuate the source by each factor in turn -- the
+                // source-over fast path's exact arithmetic (scale by cov,
+                // then scale by clip; combining the factors first would
+                // re-round).
+                if (cov) {
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
+                }
+                if (c->clip) {
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
+                }
+                o = blend8(s, d, mode);
+            } else {
+                cnvs_h8 k = one;  // 1*x is exact: a lone factor passes through
+                if (cov) {
+                    k = k * (cnvs_h8_from_u8(cov + ti) * k255);
+                }
+                if (c->clip) {
+                    k = k * (cnvs_h8_from_u8(c->clip + di) * k255);
+                }
+                o = cov_lerp8(d, blend8(s, d, mode), k);
+            }
+            cnvs_px8_store(c->target + di, o);
+        }
+        if (col < w) {  // tail: k < 8 pixels through the same planar block
+            int n = w - col;
+            int ti = row * w + col;
+            int di = (y + row) * c->width + (x + col);
+            cnvs_px8 s = tile ? cnvs_px8_load_k(tile + ti, n) : splat;
+            cnvs_px8 d = cnvs_px8_load_k(c->target + di, n);
+            cnvs_px8 o;
+            if (!atten) {
+                o = blend8(s, d, mode);
+            } else if (folds) {
+                if (cov) {
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(cov + ti, n) * k255);
+                }
+                if (c->clip) {
+                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(c->clip + di, n) * k255);
+                }
+                o = blend8(s, d, mode);
+            } else {
+                cnvs_h8 k = one;
+                if (cov) {
+                    k = k * (cnvs_h8_from_u8_k(cov + ti, n) * k255);
+                }
+                if (c->clip) {
+                    k = k * (cnvs_h8_from_u8_k(c->clip + di, n) * k255);
+                }
+                o = cov_lerp8(d, blend8(s, d, mode), k);
+            }
+            cnvs_px8_store_k(c->target + di, n, o);
+        }
+    }
+}
+
 void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                       cnvs_premul const *__counted_by(w * h) tile,
                       uint8_t const *__counted_by_or_null(w * h) cov,
@@ -358,62 +451,33 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         }
         return;
     }
-    // The generic modes: the same planar block walk as source-over, with the
-    // 26-mode kernel in place of the source-over fold.  Effective coverage is
-    // the op plane x the clip mask (each absent factor is 1); the over-family
-    // folds it into the source exactly as the fast path does, every other
-    // mode blends at full strength and lerps toward the destination
-    // (cov_lerp8) -- the §3.8 ruling.
-    bool const folds = compositor_coverage_folds(mode);
-    bool const atten = cov || c->clip;  // any coverage to apply?
-    _Float16 const k255 = (_Float16)(1.0f / 255.0f);
-    cnvs_h8 const one = (cnvs_h8)(_Float16)1.0f;
-    for (int row = 0; row < h; row++) {
-        int col = 0;
-        for (; col + 8 <= w; col += 8) {
-            int ti = row * w + col;
-            int di = (y + row) * c->width + (x + col);
-            cnvs_px8 s = cnvs_px8_load(tile + ti);
-            cnvs_px8 d = cnvs_px8_load(c->target + di);
-            cnvs_px8 o;
-            if (atten) {
-                cnvs_h8 k = one;  // 1*x is exact: a lone factor passes through
-                if (cov) {
-                    k = k * (cnvs_h8_from_u8(cov + ti) * k255);
-                }
-                if (c->clip) {
-                    k = k * (cnvs_h8_from_u8(c->clip + di) * k255);
-                }
-                o = folds ? blend8(cnvs_px8_scale(s, k), d, mode)
-                          : cov_lerp8(d, blend8(s, d, mode), k);
-            } else {
-                o = blend8(s, d, mode);
-            }
-            cnvs_px8_store(c->target + di, o);
-        }
-        if (col < w) {  // tail: k < 8 pixels through the same planar block
-            int n = w - col;
-            int ti = row * w + col;
-            int di = (y + row) * c->width + (x + col);
-            cnvs_px8 s = cnvs_px8_load_k(tile + ti, n);
-            cnvs_px8 d = cnvs_px8_load_k(c->target + di, n);
-            cnvs_px8 o;
-            if (atten) {
-                cnvs_h8 k = one;
-                if (cov) {
-                    k = k * (cnvs_h8_from_u8_k(cov + ti, n) * k255);
-                }
-                if (c->clip) {
-                    k = k * (cnvs_h8_from_u8_k(c->clip + di, n) * k255);
-                }
-                o = folds ? blend8(cnvs_px8_scale(s, k), d, mode)
-                          : cov_lerp8(d, blend8(s, d, mode), k);
-            } else {
-                o = blend8(s, d, mode);
-            }
-            cnvs_px8_store_k(c->target + di, n, o);
-        }
+    // The generic modes: the shared region walk (splat unused, tile present).
+    cnvs_px8 const zero = { (cnvs_h8)(_Float16)0.0f, (cnvs_h8)(_Float16)0.0f,
+                            (cnvs_h8)(_Float16)0.0f, (cnvs_h8)(_Float16)0.0f };
+    blend_region(c, x, y, w, h, tile, zero, cov, mode);
+}
+
+void compositor_blend_solid(compositor *__single c, int x, int y, int w, int h,
+                            cnvs_premul color,
+                            uint8_t const *__counted_by_or_null(w * h) cov,
+                            compositor_blend_mode mode) {
+    if (!c || w <= 0 || h <= 0) {
+        return;
     }
+    if (x < 0 || y < 0 || x + w > c->width || y + h > c->height) {
+        return;
+    }
+    // Broadcast the colour across the lanes once; the region walk's source is
+    // this block for every step, bit-for-bit the tile of identical pixels the
+    // caller used to materialize (a splat lane equals the stored-and-reloaded
+    // f16 exactly).  SRC_OVER takes the region walk here, not the fast path,
+    // and still lands the same bytes: blend8 delegates source-over to
+    // src_over8 and the walk's fold arm applies cov/clip as the same two
+    // successive scales (test_compositor's solid_vs_tile sweep pins all 26
+    // modes x coverage shapes byte-for-byte).
+    cnvs_px8 const splat = { (cnvs_h8)color.r, (cnvs_h8)color.g,
+                             (cnvs_h8)color.b, (cnvs_h8)color.a };
+    blend_region(c, x, y, w, h, NULL, splat, cov, mode);
 }
 
 void compositor_read(compositor *__single c, cnvs_premul *__counted_by(len) out, int len) {
