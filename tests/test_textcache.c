@@ -95,6 +95,13 @@ static void check_keys(void) {
 // Eviction: one entry past the bound pushes out the least-recently-used line.
 // The evicted string re-shapes (a miss) to the same metrics, the freshest one
 // still hits, and a post-churn draw matches a cold canvas pixel for pixel.
+// The churn keys are runtime-built bytes, so they go through the cache's own
+// counted seam (the same lookup canvas_measure_text lands on, same stats, same
+// LRU stamping) -- the __null_terminated public entry would demand an unsafe
+// indexable->NUL bridge for a buffer the type system can't see terminated.
+static char const k_family[] = "Libian TC";  // the canvas's pinned family;
+                                             // joins the boundary call, not the key
+
 static void check_eviction(void) {
     canvas *__single churn = canvas_create(W, H);
     canvas *__single fresh = canvas_create(W, H);
@@ -108,14 +115,13 @@ static void check_eviction(void) {
     canvas_set_font_size(churn, 16.0f);
 
     float w0 = canvas_measure_text(churn, "s0");
-    char last[4] = { 0 };
+    char last[3] = { 0 };
     for (int i = 1; i <= CNVS_SHAPE_CACHE_N; i++) {  // fill every slot, plus one
         last[0] = 's';                               // distinct two-letter keys
         last[1] = (char)('a' + i / 26);
         last[2] = (char)('a' + i % 26);
-        last[3] = '\0';
-        (void)canvas_measure_text(churn,
-                                  __unsafe_null_terminated_from_indexable(last));
+        (void)cnvs_text_cache_shape(c, k_family, (int)sizeof k_family - 1,
+                                    16.0f, last, (int)sizeof last);
     }
     CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 1);
 
@@ -124,9 +130,9 @@ static void check_eviction(void) {
     CHECK(fabsf(canvas_measure_text(churn, "s0") - w0) <= 0.0f);
     CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 2);
     CHECK(c->shape_hits == hits);
-    (void)canvas_measure_text(churn,                 // the newest entry survived
-                              __unsafe_null_terminated_from_indexable(last));
-    CHECK(c->shape_hits == hits + 1);
+    (void)cnvs_text_cache_shape(c, k_family, (int)sizeof k_family - 1,
+                                16.0f, last, (int)sizeof last);
+    CHECK(c->shape_hits == hits + 1);  // the newest entry survived
 
     canvas_set_fill_rgba(churn, 0.2f, 0.2f, 0.7f, 1.0f);
     canvas_fill_text(churn, "s0", 4.0f, 30.0f);

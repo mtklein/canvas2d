@@ -96,38 +96,83 @@ static void scene_emoji(void) {
 
 // Every committed gallery PNG loads with sane dimensions: the decoder accepts
 // the entire corpus the encoder ships.
+//
+// canvas_load_png takes a __null_terminated path, and -fbounds-safety has no
+// safe conversion from a runtime-built byte buffer to __null_terminated -- a
+// path assembled from dirent names could only cross via an unsafe bridge.  So
+// the corpus is this explicit list of literal paths (string literals are
+// __null_terminated already), and the directory walk below only COUNTS the
+// committed .png entries to prove the list is complete: adding a gallery scene
+// without listing it here fails the count check loudly.
+static char const *__null_terminated const k_gallery[] = {
+    "gallery/affine.png",
+    "gallery/batch.png",
+    "gallery/blend.png",
+    "gallery/clip.png",
+    "gallery/conic.png",
+    "gallery/dashes.png",
+    "gallery/dirtyrect.png",
+    "gallery/drawimage.png",
+    "gallery/emoji.png",
+    "gallery/emojiscale.png",
+    "gallery/filters.png",
+    "gallery/gradients.png",
+    "gallery/hittest.png",
+    "gallery/imagedata.png",
+    "gallery/joins.png",
+    "gallery/miterdash.png",
+    "gallery/path2d.png",
+    "gallery/paths.png",
+    "gallery/pattern.png",
+    "gallery/porterduff.png",
+    "gallery/roundrect.png",
+    "gallery/shadows.png",
+    "gallery/shapes.png",
+    "gallery/shaping.png",
+    "gallery/smoothing.png",
+    "gallery/strokerect.png",
+    "gallery/subrect.png",
+    "gallery/text.png",
+    "gallery/textgrid.png",
+    "gallery/textmaxwidth.png",
+    "gallery/textmetrics.png",
+    "gallery/winding.png",
+};
+enum { GALLERY_N = (int)(sizeof k_gallery / sizeof k_gallery[0]) };
+
 static void gallery_corpus(void) {
+    // Count the committed .png entries.  d_name is a fixed array from an
+    // un-annotated system header, so its length is found by indexed scan --
+    // every access bounds-checked against the array, no strlen, no NUL trust.
     DIR *d = opendir("gallery");
     CHECK(d != NULL);
     if (!d) {
         return;
     }
-    int loaded = 0;
+    int found = 0;
     for (struct dirent *e = readdir(d); e; e = readdir(d)) {
-        // d_name is a fixed array from an un-annotated system header; measure
-        // it once through the explicit unsafe seam, then work on the indexable
-        // array view and build the path by hand (no snprintf: its header macro
-        // trips -Wgnu-statement-expression).
-        size_t n = strlen(__unsafe_null_terminated_from_indexable(e->d_name));
-        if (n < 4 || n > 64 || memcmp(e->d_name + n - 4, ".png", 4) != 0) {
-            continue;
+        size_t n = 0;
+        while (n < sizeof e->d_name && e->d_name[n] != '\0') {
+            n++;
         }
-        char path[80] = "gallery/";
-        memcpy(path + 8, e->d_name, n);
-        path[8 + n] = '\0';
+        if (n >= 4 && memcmp(e->d_name + n - 4, ".png", 4) == 0) {
+            found += 1;
+        }
+    }
+    (void)closedir(d);
+    CHECK(found == GALLERY_N);  // the list covers all of gallery/, and the
+                                // directory isn't accidentally empty
+
+    for (int i = 0; i < GALLERY_N; i++) {
         int w = 0, h = 0, len = 0;
-        uint8_t *px = canvas_load_png(__unsafe_null_terminated_from_indexable(path),
-                                      &w, &h, &len);
+        uint8_t *px = canvas_load_png(k_gallery[i], &w, &h, &len);
         CHECK(px != NULL);
         CHECK(w > 0 && h > 0 && len == w * h * 4);
         if (!px) {
-            (void)fprintf(stderr, "  failed: %s\n", path);
+            (void)fprintf(stderr, "  failed: %s\n", k_gallery[i]);
         }
         free(px);
-        loaded += 1;
     }
-    (void)closedir(d);
-    CHECK(loaded >= 30);  // all of gallery/, not an accidentally empty dir
 }
 
 int main(void) {
