@@ -439,23 +439,34 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 8.6 ms | 8.6 ms | **1.00×** |
-| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 13.0 ms | 12.8 ms | **1.01×** |
-| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 75 ms | 74 ms | **1.02×** |
-| `bench_flatten` — cubic-Bézier flattening | 120 ms | 117 ms | **1.02×** |
-| `bench_stroke` — stroke expansion (joins/caps) | 50 ms | 49 ms | **1.03×** |
-| `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 32 ms | 30 ms | **1.07×** |
-| `bench` — end-to-end (renders + PNG-encodes each frame; rasterizer-bound again) | 44 ms | 41 ms | **1.08×** |
-| `bench_pngdec` — PNG decode of a committed gallery scene (strict inflate + un-Up) | 17 ms | 15 ms | **1.09×** |
-| `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.09×** |
-| `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 31 ms | **1.10×** |
-| `bench_pngenc` — PNG encode of a gallery scene (Up filter + LZ77 deflate + HW CRC32) | 42 ms | 31 ms | **1.32×** |
-| `bench_png` — PNG encode, synthetic run-heavy 256×256 (long-match stress) | 13 ms | 9.4 ms | **1.43×** |
+| `bench_gradient_fill` — gradient fill: 8-wide radial solve + precomputed-ramp index | 12.0 ms | 11.8 ms | **1.01×** |
+| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 73 ms | 72 ms | **1.01×** |
+| `bench_flatten` — cubic-Bézier flattening | 116 ms | 114 ms | **1.02×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.0 ms | 8.8 ms | **1.02×** |
+| `bench_stroke` — stroke expansion (joins/caps) | 48 ms | 47 ms | **1.03×** |
+| `bench` — end-to-end (renders + PNG-encodes each frame; codec-bound) | 45 ms | 42 ms | **1.08×** |
+| `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.10×** |
+| `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 30 ms | **1.11×** |
+| `bench_pngdec` — PNG decode of a committed gallery scene (strict inflate + un-Up) | 17 ms | 16 ms | **1.11×** |
+| `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 30 ms | 26 ms | **1.14×** |
+| `bench_render_large` — the flagship: a full gallery-scale scene, planar f16 compositing | 179 ms | 147 ms | **1.22×** |
+| `bench_render` — the flagship at default size | 18 ms | 15 ms | **1.23×** |
+| `bench_pngenc` — PNG encode of a gallery scene (Up filter + LZ77 deflate + HW CRC32) | 43 ms | 33 ms | **1.33×** |
+| `bench_png` — PNG encode, synthetic run-heavy 256×256 (long-match stress) | 14 ms | 9.6 ms | **1.40×** |
+
+A note on the flagship rows, because their ratio *rose* as the renderer got faster: the
+f16-compute and planar-layout work cut the checked render's absolute time by ~a third
+(see [docs/decisions/color-axis.md](docs/decisions/color-axis.md)), and the unsafe build
+banked the same kernel wins — so the checks' roughly constant ~3 ms share became a larger
+fraction of a smaller number (1.14× before, 1.22–1.23× now). Optimizing compute shrinks
+the *pie*, not the checks' *slice*: an honest Amdahl effect worth keeping visible rather
+than averaging away.
 
 That table holds the flag fixed (`-Os` both sides) to isolate the checks. The project's
 motivating question — what does *choosing* bounds safety cost a project? — gives the unsafe
 side its own best flag, and an opt-level sweep
-([docs/decisions/opt-level.md](docs/decisions/opt-level.md)) measured that fork: against
+([docs/decisions/opt-level.md](docs/decisions/opt-level.md), measured on the pre-f16/planar
+kernels; the per-row ratios above have since moved) measured that fork: against
 unsafe at `-O2` (its tuned optimum) the geomean tax reads **1.14×** rather than 1.10×, the
 flagship render ~1.18×, and the deflate matcher 1.63× — while the checked `-Os` binary stays
 **30 % smaller** than the tuned adversary's. Higher opt levels *amplify* the matched-flag
