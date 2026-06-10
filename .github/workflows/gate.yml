@@ -27,9 +27,11 @@ jobs:
       - run: python3 configure.py
       - run: ninja
       - name: Text-free gallery scenes must re-render byte-identical
-        # Text-bearing scenes take their glyph outlines from the host's Core
-        # Text, which moves with the OS: the first gate run (macOS 26.4 runner
-        # vs a 26.5 local) re-rendered 19 of 30 scenes differently -- exactly
+        # Text-bearing scenes depend on the host's font library: Libian TC is
+        # an Apple download-on-demand font (it lives in the AssetsV2 asset
+        # store once fetched, not /System/Library/Fonts), so a fresh runner VM
+        # doesn't have it and Core Text silently substitutes a fallback face --
+        # the first gate run re-rendered 19 of 30 scenes differently, exactly
         # the text-drawing ones.  This step gates codegen reproducibility, so
         # it checks the scenes whose every byte is ours.  Keep the list in
         # sync: a new text-free gallery scene belongs here.
