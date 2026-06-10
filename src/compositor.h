@@ -54,9 +54,13 @@ typedef enum {
 // shape doesn't cover keeps its destination.  Folding coverage into source
 // alpha instead (src *= cov, premultiplied) is identical math only where the
 // Porter-Duff form co = Fa*s + Fb*d has Fa free of sa and Fb affine in sa
-// with Fb(0) = 1: the over-family below.  Those modes fold (cheaper, and
-// bit-compatible with the established source-over pipeline); every other mode
-// takes the lerp in compositor_blend.
+// with Fb(0) = 1, AND the result never trips the output clamp: the modes
+// below.  Those fold (cheaper, and bit-compatible with the established
+// source-over pipeline); every other mode takes the lerp in compositor_blend.
+// 'lighter' passes the Fa/Fb criterion (Fa = Fb = 1) but its co = s + d
+// exceeds 1 exactly where it saturates, and clamp(c*s + d) != lerp(d,
+// clamp(s + d), c) there -- the supersampled truth clamps per subsample, so
+// lighter lerps (test_coverage_lerp measures the difference).
 static inline bool compositor_coverage_folds(compositor_blend_mode m) {
     switch ((int)m) {
         case COMPOSITOR_SRC_OVER:   // Fa = 1,      Fb = 1 - sa
@@ -64,9 +68,8 @@ static inline bool compositor_coverage_folds(compositor_blend_mode m) {
         case COMPOSITOR_DST_OVER:   // Fa = 1 - da, Fb = 1
         case COMPOSITOR_DST_OUT:    // Fa = 0,      Fb = 1 - sa
         case COMPOSITOR_XOR:        // Fa = 1 - da, Fb = 1 - sa
-        case COMPOSITOR_LIGHTER:    // Fa = 1,      Fb = 1
             return true;
-        default:                    // copy, the in/out family, dst-atop, blends
+        default:  // copy, the in/out family, dst-atop, lighter, blends
             return false;
     }
 }
