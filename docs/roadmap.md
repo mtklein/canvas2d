@@ -16,23 +16,24 @@ say, over features that are mostly plumbing or string parsing.
 Chosen because their kernels are exactly the kind of dense, per-pixel,
 indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
 
-1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes). On the Metal
-   backend it runs as source-over on fixed-function blend plus a framebuffer-fetch
-   shader for the rest; the same math lives in checked C as the software backend's
-   blend kernel (item 2).
-2. ~~**A software compositor backend**~~ — **done**.
-   [compositor_cpu.c](../src/compositor_cpu.c) implements the same `compositor.h`
-   ABI in ~350 lines of checked C; its file-local per-pixel `blend(src, dst, mode)`
+1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes), as the software
+   compositor's checked-C blend kernel (item 2). (A since-removed Metal backend ran
+   the same math as fixed-function source-over plus a framebuffer-fetch shader; see
+   [decisions/metal-backend.md](decisions/metal-backend.md).)
+2. ~~**A software compositor backend**~~ — **done**, and now the *only* backend.
+   [compositor_cpu.c](../src/compositor_cpu.c) implements the `compositor.h`
+   ABI in ~300 lines of checked C; its file-local per-pixel `blend(src, dst, mode)`
    kernel is all 26 composite/blend modes, premultiplied, over `__counted_by`
-   tiles. Chosen instead of Metal at build time
-   (the `-cpu` variants), it links no GPU frameworks and cross-validates the Metal
-   backend — every pixel test runs against both, and they agree bit-for-bit
-   (the software blend rounds half stores toward zero to match Metal's
-   RGBA16Float store; see [backend-differential.md](backend-differential.md)).
+   tiles. It was originally chosen against a Metal GPU backend at build time and held
+   bit-for-bit identical to it by a tolerance-0 differential; once measurements showed
+   the CPU path winning the flagship workload, Metal was removed and the GPU-parity
+   rounding it required was dropped (see
+   [decisions/backend-differential.md](decisions/backend-differential.md) and
+   [decisions/metal-backend.md](decisions/metal-backend.md)).
 3. ~~**Shadows**~~ — **done** (fills/strokes/text). The op's coverage mask is
    blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
-   shape — all in checked C, so the backends stay bit-identical. `filter`
+   shape — all in checked C. `filter`
    `blur()` (item 5) shares the same three-pass structure.
 4. ~~**`filter`, the colour functions**~~ — **done** (`brightness`, `contrast`,
    `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`), behind
@@ -110,7 +111,7 @@ the default in [sparse-coverage.md](sparse-coverage.md).
 - **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
   coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
   [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in
-  checked C so the two backends stay bit-identical. The blur approximates the
+  checked C. The blur approximates the
   spec's Gaussian; the offset is rounded to whole device pixels; and the shadow's
   silhouette is the op's coverage (exact for opaque paint/images, an
   approximation for semi-transparent gradient/pattern alpha or a sprite's own

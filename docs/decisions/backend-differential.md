@@ -1,22 +1,33 @@
 # Two backends, one bit pattern: the Metal ↔ software differential
 
-canvas2d composites through a narrow ABI ([../src/compositor.h](../src/compositor.h)):
+> **Retired experiment (D1, 2026-06-10).** This records a *completed* experiment:
+> the two-backend differential that made a Metal GPU shim and the software
+> compositor bit-for-bit identical, and its clip-seam sequel. The Metal backend
+> (`src/compositor_metal.m`, `shaders/compositor.metal`) and the `diff/` harness
+> have since been **removed** — canvas2d is CPU-only (see
+> [metal-backend.md](metal-backend.md)). The findings below are kept as history;
+> references to those deleted files are historical. The one piece that outlived the
+> deletion is the clip fix's float32 attenuation, a backend-independent correctness
+> improvement that stayed in [`compositor_cpu.c`](../../src/compositor_cpu.c); the
+> GPU-parity rounding it was paired with (truncating half stores, the FMA
+> contraction shapes) was dropped with the backend it matched.
+
+canvas2d composites through a narrow ABI ([`compositor.h`](../../src/compositor.h)):
 the canvas hands the compositor *finished premultiplied RGBA16F tiles*, and the
 compositor blends them onto the target under a `globalCompositeOperation` and a clip
-mask. Two backends implement that ABI — the Metal GPU shim
-([../src/compositor_metal.m](../src/compositor_metal.m) +
-[../shaders/compositor.metal](../shaders/compositor.metal)) and a software
-compositor ([../src/compositor_cpu.c](../src/compositor_cpu.c)) — and the project
-leans on them being interchangeable. This is the story of checking *how*
+mask. Two backends implemented that ABI — the Metal GPU shim
+(`src/compositor_metal.m` + `shaders/compositor.metal`) and a software
+compositor ([`compositor_cpu.c`](../../src/compositor_cpu.c)) — and the project
+leaned on them being interchangeable. This is the story of checking *how*
 interchangeable, and of making them **bit-for-bit identical**.
 
 ## The tool
 
-`ninja`'s `backenddiff` gate renders a fixed set of scenes through the public API
-on both backends and compares the `getImageData` bytes per channel
-([../diff/diff_render.c](../diff/diff_render.c) renders + dumps raw RGBA8,
-[../diff/diff_compare.c](../diff/diff_compare.c) diffs them and fails past a
-tolerance). The scenes are chosen to stress compositing: all 26 composite
+`ninja`'s `backenddiff` gate rendered a fixed set of scenes through the public API
+on both backends and compared the `getImageData` bytes per channel
+(`diff/diff_render.c` rendered + dumped raw RGBA8, `diff/diff_compare.c` diffed them
+and failed past a tolerance). The scenes were chosen to stress compositing: all 26
+composite
 operations in a grid, gradients, image sampling, and two clip scenes —
 translucent fills under a mask, and opaque overdrawn fills under partial
 coverage (the second exists because the first missed a real divergence; see
@@ -87,9 +98,9 @@ toward zero**.
 
 ## Matching it
 
-So matching Metal is one rule, not 26 hand-tuned cases: **truncate every half
-store** in the software blend ([../src/compositor_cpu.c](../src/compositor_cpu.c),
-`to_half_rtz`):
+So matching Metal was one rule, not 26 hand-tuned cases: **truncate every half
+store** in the software blend ([`compositor_cpu.c`](../../src/compositor_cpu.c)'s
+then-`to_half_rtz`, since reverted to nearest-even):
 
 ```c
 static _Float16 to_half_rtz(float v) {   // v >= 0 here, so toward-zero == floor
@@ -165,11 +176,12 @@ how each side fuses multiplies into adds:
 | blend-mode epilogue `co = s·(1−da) + d·(1−sa) + T` | right-nested chain: `fma(s, 1−da, fma(d, 1−sa, T))` |
 | blend-mode `ao = sa + da·(1−sa)` | `fma(da, 1−sa, sa)` |
 
-[../src/compositor_cpu.c](../src/compositor_cpu.c) writes the ROP and epilogue
-shapes explicitly (`__builtin_elementwise_fma` / `fmaf`); the rest matches
-because the C kernel mirrors the shader expression for expression and both
-compilers are LLVM contracting the same trees the same way — an invariant the
-gate enforces.
+[`compositor_cpu.c`](../../src/compositor_cpu.c) wrote the ROP and epilogue
+shapes explicitly (`__builtin_elementwise_fma` / `fmaf`); the rest matched
+because the C kernel mirrored the shader expression for expression and both
+compilers were LLVM contracting the same trees the same way — an invariant the
+gate enforced. (All of that explicit-contraction code was dropped with the Metal
+backend; the blend math is now written in its natural form.)
 
 ## The floor: division
 
@@ -199,16 +211,17 @@ So "bit-for-bit identical" means, precisely:
   the divide-using modes carry the GPU divider's last half-ULP at ~10⁻⁴. None of
   this has ever surfaced through the gate's 8-bit readback.
 
-## Using it
+## Using it (historical)
 
-`ninja` runs `backenddiff` as part of the default build (silent on success). To see
-the per-scene divergence report by hand:
+While both backends existed, `ninja` ran `backenddiff` as part of the default build
+(silent on success), and the per-scene divergence report could be seen by hand:
 
 ```sh
 ninja backenddiff
 ./build/diff/diff_compare build/release/diffdump build/release-cpu/diffdump 0
 ```
 
-A non-zero exit means the backends drew different bytes — read the report for the
+A non-zero exit meant the backends drew different bytes — the report named the
 offending scene and worst pixel. For the `modes` montage a worst pixel at `(x, y)`
-lives in grid cell `(x/56, y/56)` → operation `row·6 + col`.
+lived in grid cell `(x/56, y/56)` → operation `row·6 + col`. The Metal backend and
+this gate have since been removed (D1); the command is kept for the record.

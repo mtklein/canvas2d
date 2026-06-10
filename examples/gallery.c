@@ -1523,8 +1523,8 @@ static void gradients(void) {
     save(c, "gallery/gradients.png");
 }
 
-// Batching: a dense field of translucent discs, each its own canvas_fill, batched
-// into one GPU command buffer flushed at write_png.
+// A dense field of translucent discs, each its own canvas_fill, composited in
+// order onto the shared target (the alpha overlap shows ordering is preserved).
 static uint32_t batch_rng = 0x1234567u;
 
 static float batch_rand(void) {
@@ -1632,8 +1632,8 @@ static void text(void) {
 
 // globalCompositeOperation: all fifteen blend modes -- the eleven separable plus
 // the four non-separable -- each compositing two overlapping discs over the same
-// diagonal gradient backdrop (the W3C composite+blend formula, in a
-// framebuffer-fetch shader on Metal / the checked-C blend kernel on the CPU).
+// diagonal gradient backdrop (the W3C composite+blend formula, the checked-C blend
+// kernel).
 static void blend(void) {
     struct { canvas_composite_op op; char const *name; } const cell[15] = {
         { CANVAS_OP_MULTIPLY, "multiply" },       { CANVAS_OP_SCREEN, "screen" },

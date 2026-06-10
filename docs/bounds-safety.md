@@ -237,10 +237,10 @@ entirely in bounds-checked C.** Coverage is computed analytically on the CPU
 it leaves to its right into a per-pixel accumulation buffer, and a per-row prefix
 sum turns that into winding-weighted coverage the fill rule folds to `[0,1]` —
 exact in *both* axes. Clipping is a per-pixel coverage mask, gradients are
-evaluated per pixel, and the result is a finished tile the GPU only composites
-([compositor_metal.m](../src/compositor_metal.m)).
+evaluated per pixel, and the result is a finished tile the compositor only blends
+([compositor_cpu.c](../src/compositor_cpu.c)).
 
-The alternative — MSAA on the GPU — can't match it for a CPU-fed renderer: MSAA
+The alternative — MSAA on a GPU — can't match it for a CPU-fed renderer: MSAA
 only antialiases the geometry it's actually handed, and a scan-converted fill is a
 stack of 1px-tall rectangles, so its top and bottom step in whole pixels no matter
 the sample count. Doing coverage analytically sidesteps that, and puts the hot
@@ -248,7 +248,7 @@ loop squarely in `-fbounds-safety`'s wheelhouse: dense indexed-buffer work
 (`acc[base + col] += ...` per edge per row, every index guarded against the
 `__counted_by(cap)` buffer; the prefix-sum resolve; clip-mask intersection;
 per-pixel tile assembly). All of it compiles and runs with zero annotation
-friction, and the GPU does no rasterization, masking, or antialiasing at all.
+friction; nothing rasterizes, masks, or antialiases outside checked C.
 
 ## What it costs
 
@@ -315,10 +315,11 @@ the spread shows:
 - **Flattening is nearly free (~1%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.
-- Real canvas rendering is **GPU-bound**, so the end-to-end cost of safety is
-  smaller still — but these are the honest prices on the hottest pure-C kernels.
-  The compiler elides checks it can prove redundant; what's left is the cost of the
-  ones it can't, and that cost is very workload-dependent.
+- Real canvas rendering is **CPU-bound** — the whole pipeline (rasterize, bake,
+  premultiply, blend, readback) runs in checked C — so these per-kernel prices *are*
+  the end-to-end cost of safety, not a fraction of it. The compiler elides checks it
+  can prove redundant; what's left is the cost of the ones it can't, and that cost is
+  very workload-dependent.
 
 ## How close is this to Rust, really?
 
@@ -367,21 +368,28 @@ guarantees for the spatial and value-conversion classes — but Rust's are **def
 non-forgettable, partly compile-time, and extend to temporal safety**, which is
 where the analogy stops.
 
-## ABI and the C ↔ Objective-C boundary
+## ABI and the C ↔ Objective-C boundary (historical)
+
+> The Metal backend this section studied was **removed** (D1; see
+> [decisions/metal-backend.md](decisions/metal-backend.md)). The findings below are
+> kept because they're a real result about `-fbounds-safety`'s reach across an
+> Objective-C boundary — they just no longer describe a live translation unit. The
+> surviving system-framework boundary is the Core Text shim (next section), to which
+> the same ABI-sharing argument applies.
 
 The most important practical property: because `__counted_by`/`__single` have
-plain-pointer ABI, the C core and the Objective-C Metal shim share `compositor.h`
-verbatim. The shim is (currently) compiled without `-fbounds-safety`, so the
-annotations there expand to nothing — and that's *sound*, not a fudge, precisely
-because the representations match. `compositor_blend(compositor*, int x, int y,
-int w, int h, _Float16 const *__counted_by(w*h*4) tile)` is a checked call on the C
-side and an ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
+plain-pointer ABI, the C core and the Objective-C Metal shim shared `compositor.h`
+verbatim. The shim was compiled without `-fbounds-safety`, so the annotations there
+expanded to nothing — and that was *sound*, not a fudge, precisely because the
+representations match. `compositor_blend(compositor*, int x, int y, int w, int h,
+_Float16 const *__counted_by(w*h*4) tile)` was a checked call on the C side and an
+ordinary pointer-and-length on the ObjC side. No shims, no marshalling.
 
-### Can the boundary itself be bounds-safe? No — and that's fine
+### Can the boundary itself be bounds-safe? No — and that was fine
 
 We tried. Two findings, both verified:
 
-1. **`-fbounds-safety` is C-only.** Adding it to the `.m` shim fails outright:
+1. **`-fbounds-safety` is C-only.** Adding it to the `.m` shim failed outright:
    `error: -fbounds-safety is supported only for C language`. There is no way to
    put an Objective-C translation unit under the flag.
 
@@ -391,23 +399,24 @@ We tried. Two findings, both verified:
    `id`/`SEL`/`Class`, and bounds-safety refuses to implicitly narrow them. The
    only way to build is to declare the **entire TU** `__unsafe_indexable`
    (`__ptrcheck_abi_assume_unsafe_indexable()`). A spike doing exactly this — a
-   clear-to-red and pixel readback in pure C — compiles and runs, but the TU is
-   then *entirely* unchecked, loses ARC (manual `retain`/`release`), and is
+   clear-to-red and pixel readback in pure C — compiled and ran, but the TU was
+   then *entirely* unchecked, lost ARC (manual `retain`/`release`), and was
    fragile FFI (hardcoded selector strings, enum constants, hand-mirrored struct
    layouts).
 
-So "blanket `-fbounds-safety`" is reachable only in the hollow sense that every
-TU compiles with the flag; the GPU TU would check nothing. And there is nothing
-to check there: the compositor forwards already-rendered RGBA16F tiles directly to
-Metal as `void*`; all the geometry, coverage, gradient, and clip logic lives in
-the C core, which is already fully covered.
+So "blanket `-fbounds-safety`" was reachable only in the hollow sense that every
+TU compiles with the flag; the GPU TU would have checked nothing. And there was
+nothing to check there: the compositor forwarded already-rendered RGBA16F tiles
+directly to Metal as `void*`; all the geometry, coverage, gradient, and clip logic
+lived in the C core, which is already fully covered.
 
-The principled conclusion — and the design we keep — is a 100% bounds-safe C
-core with a small, explicit, **isolated** Objective-C boundary (one `.m` file
-that does nothing but blend tiles). That isolation is not a limitation to
-apologise for; it's where the unsafe platform edge belongs, named and contained.
-`-fbounds-safety`'s value is in the code that actually manipulates memory, and
-that is all in C.
+The principled conclusion — and the design that outlived the experiment — was a
+100% bounds-safe C core with a small, explicit, **isolated** boundary (then one
+`.m` file that did nothing but blend tiles; now the boundary is Core Text alone, and
+even the tile blend is checked C). That isolation is not a limitation to apologise
+for; it's where the unsafe platform edge belongs, named and contained.
+`-fbounds-safety`'s value is in the code that actually manipulates memory, and that
+is all in C.
 
 ## Binding a *C* system library (Core Text): the adoption asymmetry
 
@@ -461,14 +470,14 @@ buys **no real safety**, because the only buffer that grows (the output
 is `CGPathElement.points`, whose length is encoded in a sibling enum
 (`type` → 0–3 points) that `__counted_by` can't even name.
 
-**The design we chose** mirrors the Metal boundary: an unchecked C shim
+**The design we chose** — and the one that mirrored the (now removed) Metal
+boundary — is an unchecked C shim
 ([cnvs_text_ct.c](../src/cnvs_text_ct.c)) behind a bounds-safe ABI
 ([cnvs_text.h](../src/cnvs_text.h)). With the flag off, the FFI is natural C — no
 forges, no pragma, no fight — and the glyphs flow back as ordinary device-space
-`cnvs_path`s the existing coverage rasterizer fills. One refinement over the `.m`:
-a C shim still takes the debug sanitizers, so that unbounded `points[i]` read is
-**ASan-instrumented in debug** — the boundary is unchecked at compile time but not
-at run time. The forges-in-checked-code alternative was viable and is arguably the
+`cnvs_path`s the existing coverage rasterizer fills. A C shim still takes the debug
+sanitizers, so that unbounded `points[i]` read is **ASan-instrumented in debug** —
+the boundary is unchecked at compile time but not at run time. The forges-in-checked-code alternative was viable and is arguably the
 tighter "C matches Rust" story (the forges *are* C's `unsafe { ffi() }`); we went
 with the shim for boundary consistency and because, here, it cedes essentially
 nothing.
@@ -607,8 +616,9 @@ guarantees `leave` always balances `enter` (no `__attribute__((cleanup))`, which
 5. Annotate handles to incomplete types as `__single` (the compiler will remind
    you).
 6. `#include <ptrcheck.h>` in every header that uses the macros.
-7. The unsafe boundary should be small, named, and obvious — here, two shims (a
-   Metal `.m`, a Core Text `.c`), each behind a bounds-safe C ABI.
+7. The unsafe boundary should be small, named, and obvious — here, one shim (the
+   Core Text `.c`) behind a bounds-safe C ABI. (A Metal `.m` shim was a second such
+   boundary until the GPU backend was removed; the same discipline applied.)
 8. Generic callback APIs (`qsort`, `bsearch`) lose the bounds at the callback —
    forge inside, or hand-roll the small hot ones to stay checked end to end.
 9. Binding an un-adopted system header from checked code fights the strict

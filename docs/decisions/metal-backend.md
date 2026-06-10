@@ -1,4 +1,14 @@
-All reading and measurement done — README, both docs, configure.py, gate.yml, both compositors, the shader, the diff harness, the bench sources, commit history, plus fresh runs of `rendercmp`, the throughput/gputime probes, a gallery A/B, and a forced re-run of `backenddiff` (all in the worktree's scratch space; nothing committed, tree clean). Two premises in the tasking needed verification and **both turned out to be wrong in ways that matter** — one is a live bug I've flagged as a separate chip. Here is the memo.
+> **Ruling (Mike, 2026-06-10): D1 — deleted without the oracle prerequisite; kept
+> the clip fix's float32 attenuation, dropped its GPU-parity rounding; scrappy-phase
+> trust in incremental testing.** The memo below recommended D2 (build the
+> double-precision replacement oracle first). Between the memo and this ruling the
+> clip fix (commit 7b20533) landed and re-converged the backends, so the "claim is
+> false" deletion argument was repaired rather than standing. The ruling deletes
+> Metal anyway: this stays a headless CPU library, the float32 clip attenuation is a
+> real correctness win worth keeping on its own merits, and the GPU-parity rounding
+> (truncating half stores, the explicit FMA contraction shapes, the contract pragma)
+> had nothing left to match. No replacement oracle was built first — the scrappy
+> phase trusts the existing test/metamorphic/golden stack and incremental review.
 
 ---
 

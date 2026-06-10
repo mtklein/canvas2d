@@ -3,7 +3,7 @@
 [![gate](https://github.com/mtklein/canvas2d/actions/workflows/gate.yml/badge.svg)](https://github.com/mtklein/canvas2d/actions/workflows/gate.yml)
 
 A C23 implementation of (a growing subset of) the HTML **Canvas 2D API**,
-antialiased in C and composited on the GPU via **Metal**, built with **ninja**.
+antialiased and composited in checked C, built with **ninja**.
 
 The point of the project is twofold:
 
@@ -12,9 +12,9 @@ The point of the project is twofold:
 2. **Show that C can play with the modern big boys (Rust).** The whole codebase
    compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only six
    warnings disabled (each documented), and the interesting work — path math,
-   curve flattening, analytic-coverage antialiasing, stroking, gradients, a
-   from-scratch zlib and PNG codec — lives in bounds-checked C. Metal is just a
-   tile compositor.
+   curve flattening, analytic-coverage antialiasing, stroking, gradients, the
+   software compositor, a from-scratch zlib and PNG codec — lives in bounds-checked
+   C.
 
 If you want the reflective version — what worked, what fought back, what we'd do
 differently — read **[docs/bounds-safety.md](docs/bounds-safety.md)**.
@@ -26,7 +26,7 @@ memory-access patterns (a separable blur, x vs y, and prefetch), see
 
 ## Gallery
 
-Every image below is rendered by the C core, composited on the GPU, and written by the in-tree
+Every image below is rendered and composited by the C core, and written by the in-tree
 PNG encoder ([examples/gallery.c](examples/gallery.c)); regenerate with `ninja images`.
 
 Transforms, `save`/`restore`, global alpha, filled Béziers and arcs, strokes:
@@ -106,8 +106,8 @@ same pattern used as a fill paint for a headline (glyph coverage samples it too)
 
 ![pattern](gallery/pattern.png)
 
-Batching — 320 translucent discs, each its own `fill()`, all submitted in a
-single compositor command buffer (the alpha overlap shows ordering is preserved):
+Batching — 320 translucent discs, each its own `fill()`, all composited in order
+(the alpha overlap shows ordering is preserved):
 
 ![batch](gallery/batch.png)
 
@@ -170,9 +170,8 @@ transparency checkerboard:
 
 `globalCompositeOperation`, the blend modes — all fifteen (eleven separable plus
 the four non-separable), each compositing the same two discs over a gradient via
-the W3C composite+blend formula (a framebuffer-fetch shader on Metal, the
-checked-C blend kernel on the CPU). With the eleven Porter-Duff operators above,
-that's all 26 modes:
+the W3C composite+blend formula (the checked-C blend kernel). With the eleven
+Porter-Duff operators above, that's all 26 modes:
 
 ![blend](gallery/blend.png)
 
@@ -184,7 +183,7 @@ points within a thick ring's stroke band hit):
 
 Shadows — a sharp drop shadow, a soft blurred shadow, and a text shadow; each is
 the op's coverage blurred by the in-tree separable box blur (≈ Gaussian), tinted,
-offset, and composited under the shape — all in checked C, so both backends match:
+offset, and composited under the shape — all in checked C:
 
 ![shadows](gallery/shadows.png)
 
@@ -239,8 +238,6 @@ ninja fuzz               # build the libFuzzer harnesses (needs brew llvm; fuzz/
 ninja benchcmp           # hyperfine: release vs unsafe (cost of -fbounds-safety)
 ninja profile            # sample(1): per-kernel self-time within each bench
 ninja profile-scene      # sample(1): self-time across the whole gallery (real scenes)
-ninja rendercmp          # hyperfine: real-pipeline render, metal vs cpu compositor
-ninja gputime            # Metal GPU execution time (ns total, us/dispatch)
 ninja throughput         # size-normalised render throughput (Mpx/s, ns/px)
 ninja coverage           # refresh docs/coverage.md (llvm-cov over src/, all tests)
 ```
@@ -248,29 +245,27 @@ ninja coverage           # refresh docs/coverage.md (llvm-cov over src/, all tes
 The coverage report is checked in at **[docs/coverage.md](docs/coverage.md)** so it
 browses on GitHub; `ninja coverage` regenerates it, so a `git diff` shows what moved.
 
-Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety`,
-`#embed`, and a Metal device), and ninja. `ninja benchcmp` also needs
-[hyperfine](https://github.com/sharkdp/hyperfine). No offline Metal toolchain
-component is needed — the shader is embedded with `#embed` and compiled at runtime.
+Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety` and
+`#embed`), and ninja. `ninja benchcmp` also needs
+[hyperfine](https://github.com/sharkdp/hyperfine). Core Text supplies glyph
+outlines; everything else is in-tree.
 
-Variants are produced from one source tree, crossing the optimisation/safety
-flags with the compositor backend (`-cpu` links the software compositor and no GPU
-frameworks):
+Variants are produced from one source tree, differing only in the optimisation/safety
+flags:
 
 | Variant | Flags | Story |
 |---|---|---|
 | `release` | `-Os -fbounds-safety` | the shipping build; bounds checks still trap |
 | `debug` | `-O0 -g -fbounds-safety -fsanitize=address,integer,undefined -fno-sanitize-recover=all` | any sanitizer finding is fatal |
 | `unsafe` | `-Os` | identical to release minus `-fbounds-safety`; the benchmark baseline |
-| `release-cpu` / `debug-cpu` | as above, software compositor | GPU-free; cross-validates the Metal backend |
 
-The default build runs every test binary in all four checked variants (so each
-pixel test runs against *both* backends); `ninja test` is the same set on its own.
-It also re-renders the gallery straight into the committed `gallery/*.png`: those
-PNGs are build outputs gated on the gallery binary, so a rendering change relinks
-it, re-renders them, and shows up as a `git diff` in lockstep — review and commit
-the new PNGs alongside the code. Tests are silent on success, so a green `ninja`
-shows only its progress line; a failing test prints the offending `CHECK` to stderr.
+The default build runs every test binary in both checked variants (`release` and
+`debug`); `ninja test` is the same set on its own. It also re-renders the gallery
+straight into the committed `gallery/*.png`: those PNGs are build outputs gated on
+the gallery binary, so a rendering change relinks it, re-renders them, and shows up
+as a `git diff` in lockstep — review and commit the new PNGs alongside the code.
+Tests are silent on success, so a green `ninja` shows only its progress line; a
+failing test prints the offending `CHECK` to stderr.
 
 ## Architecture
 
@@ -293,37 +288,17 @@ shows only its progress line; a failing test prints the offending `CHECK` to std
       │  ├── cnvs_replay   text canvas-program → draw calls (the read side)
       │  │
       │  ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
-      │  cnvs_text_ct.c  ── unsafe boundary #2: Core Text shaping + glyphs (C, no ARC)
+      │  cnvs_text_ct.c  ── unsafe boundary #1: Core Text shaping + glyphs (C, no ARC)
       │
       ▼   compositor.h  (C ABI: set clip · composite a premultiplied tile · read)
-   compositor_metal.m  ── unsafe boundary #1: composites premultiplied tiles onto
-                          a single-sample target under a blend mode, masked by a
-                          clip coverage texture, batched + read back  (ObjC + ARC)
-   compositor_cpu.c   ── OR the software backend: the same ABI, one checked-C
-                          blend kernel over __counted_by tiles (no GPU, no frameworks)
+   compositor_cpu.c   ── the software compositor: one checked-C blend kernel over
+                          __counted_by tiles (still pure C23 under -fbounds-safety)
 ```
 
-Everything above the two ABI lines is pure C23 under `-fbounds-safety`. There are
-exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
+Everything above the `cnvs_text.h` ABI line is pure C23 under `-fbounds-safety` —
+and so is the software compositor below `compositor.h`. There is exactly **one**
+boundary to a system framework, behind a bounds-safe C ABI:
 
-- The [Metal compositor](src/compositor_metal.m) is *just* a compositor — all
-  geometry, **analytic antialiasing**, gradient evaluation, and clipping happen on
-  the CPU in checked C and bake into finished `_Float16` RGBA16F tiles (the
-  narrowest storage type that round-trips the spec's 8-bit edges exactly — every
-  colour×alpha pair survives the premultiplied store unchanged — at half f32's
-  footprint; see [docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md)),
-  so the GPU never rasterizes or masks. Nothing in the ABI is GPU-specific:
-  the [software compositor](src/compositor_cpu.c) implements `compositor.h`
-  identically in ~350 lines of checked C (its file-local per-pixel `blend()` kernel
-  is the same premultiplied math the Metal shader runs), selected instead of Metal
-  at build time. The two agree **bit-for-bit on every gated rendering** — the
-  software blend reproduces Metal's rounding (truncating half stores, the
-  blender's fused multiply-adds, clip attenuation kept in float), and the
-  `backenddiff` gate holds the match at tolerance 0; beneath the gate's 8-bit
-  readback the one residue is the GPU's not-correctly-rounded divider, a last
-  half-ULP in the seven divide-using blend modes under fractional clip
-  (see [docs/backend-differential.md](docs/backend-differential.md)) — and the
-  `-cpu` build links no GPU frameworks at all.
 - The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with font
   fallback) and hands each glyph across once in canonical form: font-unit outline
   curves — which the *same* coverage rasterizer fills/strokes at every size and
@@ -331,15 +306,28 @@ exactly two boundaries to system frameworks, each behind a bounds-safe C ABI:
   color glyph (emoji), one fixed-size RGBA8 capture that every draw samples
   through a checked-C mip pyramid.
 
-> These two `.c`/`.m` files are the only translation units *not* under
-> `-fbounds-safety`. The Metal one *can't* be — the flag is C-only and rejects
-> Objective-C. The font one *could* be, but the Core Text headers predate the flag
-> and carry no bounds attributes, so binding them from checked code means forging
-> every opaque handle and a scoped cast for `CGPathApply`'s callback; isolating
-> that in one unchecked C TU (still ASan/UBSan-instrumented in debug) keeps the
-> rest of the core uniformly checked. It's sound because `__counted_by`/`__single`
-> pointers share the plain-C-pointer ABI, so each interface header is identical on
-> both sides. See [docs/bounds-safety.md](docs/bounds-safety.md) for the full why.
+The [compositor](src/compositor_cpu.c) is no longer a boundary at all: all geometry,
+**analytic antialiasing**, gradient evaluation, and clipping happen in checked C and
+bake into finished `_Float16` RGBA16F tiles (the narrowest storage type that
+round-trips the spec's 8-bit edges exactly — every colour×alpha pair survives the
+premultiplied store unchanged — at half f32's footprint; see
+[docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md)), and a
+file-local per-pixel `blend()` kernel composites them in ~300 lines of checked C over
+`__counted_by` tiles, with no frameworks. (A Metal GPU backend implemented the same
+`compositor.h` ABI and was held bit-for-bit identical to this one by a tolerance-0
+differential; it was removed once the measurements showed the CPU path winning the
+flagship workload — see
+[docs/decisions/metal-backend.md](docs/decisions/metal-backend.md) and
+[docs/decisions/backend-differential.md](docs/decisions/backend-differential.md).)
+
+> [cnvs_text_ct.c](src/cnvs_text_ct.c) is the only translation unit *not* under
+> `-fbounds-safety`. It *could* be, but the Core Text headers predate the flag and
+> carry no bounds attributes, so binding them from checked code means forging every
+> opaque handle and a scoped cast for `CGPathApply`'s callback; isolating that in one
+> unchecked C TU (still ASan/UBSan-instrumented in debug) keeps the rest of the core
+> uniformly checked. It's sound because `__counted_by`/`__single` pointers share the
+> plain-C-pointer ABI, so the interface header is identical on both sides. See
+> [docs/bounds-safety.md](docs/bounds-safety.md) for the full why.
 
 ## Public API (subset of Canvas 2D, snake_case)
 
@@ -400,7 +388,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `Path2D` — build, `addPath`, fill/stroke/clip/isPointIn* overloads | ✅ no SVG path-data string |
 | Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}`, under fills/strokes/text/images | ✅ CPU box-blur (≈ Gaussian), coverage silhouette |
 | `filter` — the eight colour functions (brightness/contrast/grayscale/hue-rotate/invert/opacity/saturate/sepia) + `blur()` + `drop-shadow()` (3-pass box ≈ Gaussian, painted region grows by the spread), per painted op, in list order | ✅ typed API, no CSS string form |
-| Batched compositor submission | ✅ consecutive ops share one command buffer |
+| Many independent fills in one frame | ✅ composited in order onto a shared target |
 
 ## Warning policy
 
@@ -493,8 +481,9 @@ the scalar walk's slack) to **1.09×**: a loop where the checks cost nothing is 
 loop with headroom left. The full anatomy — both fixes, the scheduling story, and
 a since-retired prefetch experiment — is
 [docs/stencil-blur.md](docs/stencil-blur.md). Real canvas
-rendering is GPU-bound, so the end-to-end cost of safety is smaller still;
-these are the honest prices on the hottest pure-C kernels, two commands to
+rendering is CPU-bound — the whole pipeline (tile bake, premultiply, coverage,
+blend, readback) runs in checked C — so these per-kernel prices *are* the
+end-to-end cost of safety, not a fraction of it; two commands to
 re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase
 spends its time).
 
@@ -520,30 +509,26 @@ all done:
 
 What we deliberately **won't** do:
 
-- **Force `-fbounds-safety` onto the two system-framework shims.** The Metal one
-  *can't* take the flag (it's C-only, and ARC/Objective-C is required to drive
-  Metal). The Core Text one *could*, but its headers carry no bounds attributes, so
-  checked binding means forging every opaque handle plus a scoped cast for
-  `CGPathApply` — net zero real safety, since the output buffers are checked-owned
-  regardless. Both stay isolated boundary shims behind a bounds-safe C ABI. See
-  [docs/bounds-safety.md](docs/bounds-safety.md).
+- **Force `-fbounds-safety` onto the Core Text shim.** It *could* take the flag, but
+  its headers carry no bounds attributes, so checked binding means forging every
+  opaque handle plus a scoped cast for `CGPathApply` — net zero real safety, since
+  the output buffers are checked-owned regardless. It stays an isolated boundary shim
+  behind a bounds-safe C ABI. See [docs/bounds-safety.md](docs/bounds-safety.md).
 
 ## Layout
 
 ```
 configure.py             generates build.ninja (all variants + gates; self-regenerates)
 include/canvas.h         public API
-src/                     C core; compositor backends (Metal .m / software .c); Core Text shim
-shaders/compositor.metal tile vertex+fragment shaders (embedded via #embed)
+src/                     C core; the software compositor (compositor_cpu.c); Core Text shim
 tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep
 bench/                   isolated kernel benches + end-to-end (ninja benchcmp / profile / throughput)
-diff/                    backend differential: render on both backends, diff (ninja backenddiff)
 fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzz)
 examples/gallery.c       renders the gallery PNGs (ninja images)
 gallery/                 committed showcase PNGs
 secreview/               point-in-time security review + proof-of-concept
 docs/bounds-safety.md    the write-up
-docs/backend-differential.md  making the Metal + software backends bit-identical
+docs/decisions/          decision records (the retired Metal backend + its differential live here)
 docs/roadmap.md          Canvas 2D gap inventory (missing + partial + what's next)
 docs/coverage.md         checked-in coverage report (ninja coverage regenerates)
 docs/*.md                the probe field notes: pixel pipelines, stencil blur,
