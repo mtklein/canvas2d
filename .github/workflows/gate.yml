@@ -1,0 +1,27 @@
+# The full gate: a bare `ninja` builds every variant and runs the whole suite --
+# tests in four checked variants against both compositor backends, the gallery
+# re-render, static analysis, leakcheck, backenddiff (bit-for-bit, tolerance 0),
+# the OOM fault-injection sweep, and the fuzz corpus replay.  No brew installs
+# needed: ninja is preinstalled on macos-26 and the corpus gate uses Apple clang.
+#
+# Deliberately workflow_dispatch until metal-probe.yml has passed once on the
+# runner fleet (the paravirtual GPU's RGBA16Float store rounding is the one
+# empirically unverified assumption); flip `on:` to push/pull_request after.
+#
+# DEVELOPER_DIR pins Xcode 26.5 = Apple clang 21 (clang-2100.1.1.101), matching
+# the toolchain the committed gallery PNGs were rendered with -- the trailing
+# git-diff step fails if CI's codegen draws even one different pixel.
+name: gate
+on: workflow_dispatch
+jobs:
+  gate:
+    runs-on: macos-26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.5.app
+    steps:
+      - uses: actions/checkout@v4
+      - run: clang --version && ninja --version
+      - run: python3 configure.py
+      - run: ninja
+      - name: Committed gallery PNGs must re-render byte-identical
+        run: git diff --exit-code -- gallery
