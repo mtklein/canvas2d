@@ -1857,7 +1857,8 @@ static char const k_font_family[] = "Libian TC";
 static cnvs_font *__single ensure_font(canvas *__single cv) {
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
         cnvs_font_destroy(cv->font);
-        cv->font = cnvs_font_create("Libian TC", cv->cur.font_size);
+        cv->font = cnvs_font_create(k_font_family, (int)sizeof k_font_family - 1,
+                                    cv->cur.font_size);
         cv->font_built_size = cv->cur.font_size;
     }
     return cv->font;
@@ -1977,8 +1978,9 @@ static float text_baseline_offset(canvas *__single cv) {
 static cnvs_shaped const *__single shape_text(canvas *__single cv,
                                               char const *__counted_by(len) text,
                                               int len) {
-    return cnvs_text_cache_shape(&cv->text_cache, "Libian TC", cv->cur.font_size,
-                                 text, len);
+    return cnvs_text_cache_shape(&cv->text_cache, k_font_family,
+                                 (int)sizeof k_font_family - 1,
+                                 cv->cur.font_size, text, len);
 }
 
 // Render one color (emoji) glyph from its canonical capture: pick the mip

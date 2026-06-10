@@ -190,7 +190,7 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c) {
 }
 
 cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
-        char const *__null_terminated name, float size_px,
+        char const *__counted_by(name_len) name, int name_len, float size_px,
         char const *__counted_by(len) text, int len) {
     uint32_t size_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
@@ -204,19 +204,19 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         }
     }
     c->shape_misses++;
-    // Miss.  One allocation serves twice: the NUL-terminated copy cnvs_shape
-    // wants now, and the stored key bytes once shaping succeeds.  If it fails,
-    // the op degrades exactly as the uncached copy used to (nothing to draw).
-    char *tz = malloc((size_t)len + 1);
-    if (!tz) {
+    // Miss.  Copy the key bytes the slot will own (+1 so a zero-length key
+    // still has an allocation to own), then shape through the counted
+    // boundary: (text, len) crosses as-is, so no NUL-terminated copy -- and
+    // no unsafe bridge -- exists anywhere on this path.  Either failure
+    // degrades exactly as the uncached copy used to (nothing to draw).
+    char *copy = malloc((size_t)len + 1);
+    if (!copy) {
         return NULL;
     }
-    memcpy(tz, text, (size_t)len);
-    tz[len] = '\0';
-    cnvs_shaped *__single s = cnvs_shape(name, size_px,
-                                         __unsafe_null_terminated_from_indexable(tz));
+    memcpy(copy, text, (size_t)len);
+    cnvs_shaped *__single s = cnvs_shape(name, name_len, size_px, text, len);
     if (!s) {
-        free(tz);
+        free(copy);
         return NULL;  // boundary failure: nothing to cache, nothing to draw
     }
     // Insert into an empty slot, else evict the least-recently-used one.  This
@@ -236,7 +236,7 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         cnvs_shaped_free(victim->s);
         free(victim->text);
     }
-    victim->text = tz;
+    victim->text = copy;
     victim->len = len;
     victim->size_bits = size_bits;
     victim->stamp = ++c->tick;
@@ -714,8 +714,8 @@ void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
         cnvs_shaped_free(s);  // can't key it: the usual best-effort degradation
         return;
     }
-    memcpy(copy, text, (size_t)len);
-    copy[len] = '\0';
+    memcpy(copy, text, (size_t)len);  // key bytes only: the slot's text is
+                                      // __counted_by(len), no NUL contract
     // Replace an existing entry for the key (a re-recorded shape block after
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.

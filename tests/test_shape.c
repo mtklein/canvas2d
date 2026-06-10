@@ -4,12 +4,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+// The shaping seam is counted -- cnvs_shape takes (bytes, len) pairs, never a NUL
+// contract -- and a string literal carries its byte length at compile time, so
+// S(lit) expands to exactly the pair the seam wants: no strlen, no bridge.
+#define S(lit) ("" lit), ((int)sizeof lit - 1)
+
 // Shaping output is font/OS-dependent, so assert structural invariants, not exact
 // metrics: runs exist, every cluster index is within the source string, the width is
 // positive, and hit-tests round-trip to valid source indices.  expect_rtl requires
 // at least one run to report right-to-left.
-static void check_shape(char const *text, bool expect_rtl) {
-    cnvs_shaped *s = cnvs_shape("Helvetica", 20.0f, text);
+static void check_shape(char const *__counted_by(len) text, int len, bool expect_rtl) {
+    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, text, len);
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -47,7 +52,7 @@ static void check_shape(char const *text, bool expect_rtl) {
 // Font fallback: a mixed Latin+emoji string must use >= 2 distinct fonts across its
 // runs, and the boundary must fill the name buffer within the caller's cap.
 static void check_fallback(void) {
-    cnvs_shaped *s = cnvs_shape("Helvetica", 20.0f, "A\xF0\x9F\x98\x80Z");  // A 😀 Z
+    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, S("A\xF0\x9F\x98\x80Z"));  // A 😀 Z
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -81,7 +86,7 @@ static void check_fallback(void) {
 // Latin text produces geometry; a color-emoji glyph has an advance but NO outline
 // path -- the gap that the bitmap boundary will fill.
 static void check_outline(void) {
-    cnvs_shaped *s = cnvs_shape("Helvetica", 40.0f, "ffi");
+    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 40.0f, S("ffi"));
     CHECK(s != NULL);
     if (s) {
         cnvs_path p;
@@ -94,7 +99,7 @@ static void check_outline(void) {
         cnvs_shaped_free(s);
     }
 
-    cnvs_shaped *e = cnvs_shape("Helvetica", 40.0f, "\xF0\x9F\x98\x80");  // lone emoji
+    cnvs_shaped *e = cnvs_shape(S("Helvetica"), 40.0f, S("\xF0\x9F\x98\x80"));  // lone emoji
     CHECK(e != NULL);
     if (e) {
         cnvs_path p;
@@ -111,7 +116,7 @@ static void check_outline(void) {
 // Color emoji: no outline, so it must be drawn into a pixel buffer.  The checked
 // core owns the __counted_by(w*h*4) buffer; the boundary fills it via CGBitmapContext.
 static void check_emoji_draw(void) {
-    cnvs_shaped *s = cnvs_shape("Helvetica", 40.0f, "\xF0\x9F\x98\x80");  // 😀
+    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 40.0f, S("\xF0\x9F\x98\x80"));  // 😀
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -146,7 +151,7 @@ static void check_emoji_draw(void) {
 }
 
 static void check_bidi(void) {
-    cnvs_shaped *s = cnvs_shape("Helvetica", 20.0f, "Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!");
+    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, S("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -179,10 +184,10 @@ static void check_bidi(void) {
 }
 
 int main(void) {
-    check_shape("ffi waffle", false);             // Latin with ligatures (cluster gaps)
-    check_shape("a\xF0\x9F\x98\x80""b", false);   // a + U+1F600 emoji + b (multi-run)
-    check_shape("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D", true);  // Hebrew "shalom" (RTL)
-    check_shape("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!", true);  // mixed bidi
+    check_shape(S("ffi waffle"), false);             // Latin with ligatures (cluster gaps)
+    check_shape(S("a\xF0\x9F\x98\x80""b"), false);   // a + U+1F600 emoji + b (multi-run)
+    check_shape(S("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D"), true);  // Hebrew "shalom" (RTL)
+    check_shape(S("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"), true);  // mixed bidi
     check_fallback();
     check_outline();
     check_emoji_draw();

@@ -50,9 +50,15 @@ typedef struct {
 } cnvs_shaped;
 
 // Shape UTF-8 `text` with font `name` at `size_px`.  Runs come back in visual order.
-// NULL on failure.  Implemented in the unsafe boundary TU.
-cnvs_shaped *__single cnvs_shape(char const *__null_terminated name, float size_px,
-                                 char const *__null_terminated text);
+// NULL on failure.  Implemented in the unsafe boundary TU.  Both strings cross the
+// boundary as counted (bytes, len) slices -- CFStringCreateWithBytes takes exactly
+// that -- so checked callers hand over the (ptr, len) pairs they already hold: no
+// NUL-terminated copy exists anywhere internal, and the shim cannot over-read a
+// non-terminated buffer.  (The public canvas.h API keeps its __null_terminated
+// ergonomics; the strlen happens once at that entry point, in-rules.)
+cnvs_shaped *__single cnvs_shape(char const *__counted_by(name_len) name, int name_len,
+                                 float size_px,
+                                 char const *__counted_by(text_len) text, int text_len);
 void cnvs_shaped_free(cnvs_shaped *__single s);
 
 // Checked-core consumers.
@@ -235,7 +241,7 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c);  // free entries -> emp
 // key: the project pins one family ("Libian TC"); a font-family feature must
 // add it to the key.  `c` must be non-NULL (ownership needs somewhere to live).
 cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
-        char const *__null_terminated name, float size_px,
+        char const *__counted_by(name_len) name, int name_len, float size_px,
         char const *__counted_by(len) text, int len);
 
 // Intern `font`'s name (one boundary name fetch per run, not per glyph) and
@@ -405,9 +411,11 @@ void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
 
 // A primary font handle: a system typeface at a size, for the cheap font-wide
 // metrics (ascent/descent) and as the reference font for measureText's font-wide
-// box and baselines.  NULL on failure.
+// box and baselines.  NULL on failure.  Like cnvs_shape, the name crosses the
+// boundary counted -- (bytes, len), no NUL contract.
 typedef struct cnvs_font cnvs_font;
-cnvs_font *__single cnvs_font_create(char const *__null_terminated name, float size_px);
+cnvs_font *__single cnvs_font_create(char const *__counted_by(name_len) name,
+                                     int name_len, float size_px);
 void cnvs_font_destroy(cnvs_font *__single f);
 
 // Font vertical metrics in user px: ascent and descent, both positive magnitudes

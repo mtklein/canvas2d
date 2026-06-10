@@ -12,6 +12,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+// UTF-8 bytes -> CFString.  The checked side hands every string across this
+// boundary as a counted (bytes, len) slice -- never a NUL contract -- and
+// CFStringCreateWithBytes takes exactly that, so the shim reads len bytes and
+// not one more.  NULL on invalid UTF-8, like CFStringCreateWithCString was.
+static CFStringRef str_from_bytes(char const *bytes, int len) {
+    if (!bytes || len < 0) {
+        return NULL;
+    }
+    return CFStringCreateWithBytes(NULL, (UInt8 const *)bytes, (CFIndex)len,
+                                   kCFStringEncodingUTF8, false);
+}
+
 // Copy a run's font name into the checked core's buffer.  The opaque CTFontRef goes
 // in; CFStringGetCString fills `buf` within `cap` (so the boundary respects the
 // caller's bound -- the inverse of the glyph-run hand-off).
@@ -223,9 +235,10 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
     *x1 = (float)CGRectGetMaxX(r); *y1 = (float)CGRectGetMaxY(r);
 }
 
-cnvs_shaped *cnvs_shape(char const *name, float size_px, char const *text) {
-    CFStringRef cfname = CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
-    CFStringRef str = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);
+cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px,
+                        char const *text, int text_len) {
+    CFStringRef cfname = str_from_bytes(name, name_len);
+    CFStringRef str = str_from_bytes(text, text_len);
     CTFontRef font = cfname ? CTFontCreateWithName(cfname, size_px, NULL) : NULL;
     if (cfname) {
         CFRelease(cfname);
@@ -277,9 +290,8 @@ struct cnvs_font {
     CTFontRef font;
 };
 
-cnvs_font *cnvs_font_create(char const *name, float size_px) {
-    CFStringRef cfname =
-        CFStringCreateWithCString(NULL, name, kCFStringEncodingUTF8);
+cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px) {
+    CFStringRef cfname = str_from_bytes(name, name_len);
     if (!cfname) {
         return NULL;
     }
