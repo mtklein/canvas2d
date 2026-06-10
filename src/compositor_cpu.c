@@ -334,10 +334,34 @@ static void blend_region(compositor *__single c, int x, int y, int w, int h,
         for (; col + 8 <= w; col += 8) {
             int ti = row * w + col;
             int di = (y + row) * c->width + (x + col);
+            // The §3.8 model's `if (cov == 0) return`, eight lanes at a time:
+            // an all-zero coverage block leaves the destination bit-identical
+            // (the lerp's k = 0 arm reproduces dst exactly; the fold's s*0
+            // source blends to d exactly -- that IS the fold criterion), so
+            // skip it before touching the tile or the target.  An all-255
+            // block with no other factor is full coverage: k = 1 reproduces
+            // the full-strength blend bit-exactly (cov_lerp8's two-product
+            // form; the fold's scale by exactly 1.0), so take blend8 direct.
+            bool full = !atten;
+            if (cov) {
+                uint64_t cb;
+                memcpy(&cb, cov + ti, sizeof cb);  // eight coverage bytes
+                if (cb == 0) {
+                    continue;
+                }
+                full = cb == UINT64_MAX && !c->clip;
+            } else if (c->clip) {
+                uint64_t mb;
+                memcpy(&mb, c->clip + di, sizeof mb);
+                if (mb == 0) {
+                    continue;
+                }
+                full = mb == UINT64_MAX;
+            }
             cnvs_px8 s = tile ? cnvs_px8_load(tile + ti) : splat;
             cnvs_px8 d = cnvs_px8_load(c->target + di);
             cnvs_px8 o;
-            if (!atten) {
+            if (full) {
                 o = blend8(s, d, mode);
             } else if (folds) {
                 // Fold: attenuate the source by each factor in turn -- the
@@ -424,7 +448,25 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
             for (; col + 8 <= w; col += 8) {
                 int ti = row * w + col;
                 int di = (y + row) * c->width + (x + col);
+                if (c->clip) {  // an all-closed clip block keeps d: skip it
+                    uint64_t mb;
+                    memcpy(&mb, c->clip + di, sizeof mb);
+                    if (mb == 0) {
+                        continue;
+                    }
+                }
                 cnvs_px8 s = cnvs_px8_load(tile + ti);
+                {
+                    // Transparent-black blocks -- the folded-coverage zeros
+                    // the shade stage wrote across the uncovered part of the
+                    // bbox -- add nothing (co = s + (1-sa)*d = d exactly):
+                    // skip the dst round trip and the blend.
+                    cnvs_m8 nz = (cnvs_m8)s.r | (cnvs_m8)s.g |
+                                 (cnvs_m8)s.b | (cnvs_m8)s.a;
+                    if (!__builtin_reduce_or(nz)) {
+                        continue;
+                    }
+                }
                 if (cov) {      // fold op coverage into the source (exact here)
                     s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
                 }
