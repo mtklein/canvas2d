@@ -397,6 +397,19 @@ the entry survives only as the threading vehicle.
 
 ### 3.5 Multicore
 
+**Ruled out for now (Mike, 2026-06-10):** "Threading is kind of the last thing
+I want to turn to — our callers could be doing the threading almost as well as
+we could at this point (separate canvases for small cached tiles is the classic
+design). Only if we find a spot that's not simple embarrassing parallelism, but
+a spot where our specific knowledge of data and control flow makes us being the
+ones to do the threading essential." Row-band threading is exactly the
+embarrassing kind — a caller with N canvases gets the same parallelism today,
+with better scheduling control and no thread policy imposed by a library. The
+analysis below stays as the map of HOW we'd thread if a library-essential spot
+ever appears (a decomposition only visible from inside — something the
+N-canvases design structurally cannot reach); the bar is essentiality, not
+speedup.
+
 The constraint first: the byte-gate demands the same target bytes at any thread
 count. That rules out nothing important — it just dictates the decomposition.
 Pixel-partitioned schemes are bit-exact by construction (each cell's float-add
@@ -512,17 +525,14 @@ from our benches:
 zero bytes moved; outcome recorded in §3.1. The list below is the post-landing
 re-rank against §1's new, flatter pie.)
 
-1. **Row-band threading within large ops** (§3.5a, behind an area threshold).
-   *Why first now:* it's the only entry that buys a *multiple* rather than a
-   percentage, the decomposition is bit-exact by construction (byte-diff must
-   come back zero — it's a correctness gate, not a re-baseline), and the
-   Amdahl share got *better*: shade+coverage+composite+clip ≈ 90 % of the new
-   pie is band-parallel. *Expected:* ~2.5–3.5× on `bench_render_large` at 4–8
-   workers; `bench_render` ~flat (threshold keeps small ops serial).
-   *Kill:* < 1.5× at 4 workers (fork/join overhead at our op sizes), or any
-   nonzero byte-diff (decomposition bug — fix or abandon, never re-baseline
-   around nondeterminism).
-2. **Vectorize the sampling interior of `draw_image_quad`** (the new 25 %
+(Row-band threading briefly held the #1 slot after the shade landing — the only
+entry that buys a multiple, ~2.5–3.5× on `bench_render_large`, bit-exact by
+construction. **Ruled out 2026-06-10**: it's exactly the embarrassing
+parallelism a caller already has via N canvases over cached tiles; §3.5 carries
+the ruling and the essentiality bar a future threading proposal must clear. The
+how-to-thread analysis stays parked there.)
+
+1. **Vectorize the sampling interior of `draw_image_quad`** (the new 25 %
    pole). The taps stay scalar — there is no NEON gather — but per block the
    four tap colours can land in f32 planes and the bilinear weight/lerp
    arithmetic (`tx`/`ty`, two lerps × four channels, the /255) plus the index
@@ -532,11 +542,11 @@ re-rank against §1's new, flatter pie.)
    *Expected:* a real slice of 25 % on the gallery, more on emoji/drawimage
    scenes — the probe. *Kill:* the gather/insert shuffling eats the arithmetic
    win (the taps are ~16 byte-loads per pixel either way).
-3. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
+2. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
    still a half-day). 8-wide integer `old * pc / 255` with the planar seams,
    bbox-limited. The /255 must stay exact (it's integer today; keep it
    integer). No memo ceremony needed; the byte-gate is the whole gate.
-4. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
+3. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
    no threads). *Re-priced after #1 landed:* the solid-tile fast path now skips
    much cheaper shade work, so the 5–15 % guess shrinks; coverage (22 %) is the
    bigger target now. *Kill:* < 5 % flagship, or a measurable regression on
