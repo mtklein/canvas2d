@@ -87,9 +87,17 @@ for the OOB-write classes.
   2/3/4-byte sequences, astral, and malformed/truncated bytes. (141k execs: clean.)
 - **`fuzz_png.c`** — the PNG encoder (`cnvs_png_write`) on fuzzed dimensions +
   pixel content, encoding to `/dev/null`. Exercises the size arithmetic
-  (`rawlen`/`nseg`/`zlib_len`/`total`), the pre-sized write cursor, and the SIMD
-  `adler32`/CRC32 paths. With `-fbounds-safety` off here, ASan independently
-  witnesses the cursor never overruns. (83k execs: clean.)
+  (`rawlen`/`zcap`/`total`), the Up-filter row kernel, the deflate it feeds,
+  the pre-sized write cursor, and the CRC32 paths. With `-fbounds-safety` off
+  here, ASan independently witnesses the cursor never overruns. (83k execs
+  against the stored-block encoder: clean.)
+- **`fuzz_pngdec.c`** — the strict PNG **decoder** (`cnvs_png_decode`) on
+  adversarial bytes: chunk framing, per-chunk CRC verification, the IHDR
+  dimension gate, IDAT-run sequencing, and the None/Up defilter. On a
+  successful decode, the pixels re-encode and re-decode and must match
+  byte-for-byte (round-trip oracle). Seeds in `fuzz/seeds_pngdec/` (a 1x1 and
+  an 8x8 written by our own encoder):
+  `./build/fuzz/fuzz_pngdec -max_len=4096 /tmp/pngdec_corpus fuzz/seeds_pngdec`.
 - **`fuzz_replay.c`** — the text canvas-program parser ([cnvs_replay.c](../src/cnvs_replay.c))
   on adversarial raw bytes (need not be UTF-8 or NUL-terminated): tokenizing,
   number parsing, line handling, and the `__null_terminated` seam — a classic C
@@ -106,18 +114,20 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 ## Files
 
 - `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
-- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c`, `fuzz_replay.c` — the
-  harnesses (`LLVMFuzzerTestOneInput` + a file-replay `main` behind
-  `#ifndef FUZZ_NO_MAIN`).
+- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c`, `fuzz_pngdec.c`,
+  `fuzz_replay.c` — the harnesses (`LLVMFuzzerTestOneInput` + a file-replay
+  `main` behind `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`, including
   an inline font/glyph/shape block program.
+- `seeds_pngdec/` — committed PNG seeds for `fuzz_pngdec`, written by our own
+  encoder.
 - `shim/ptrcheck.h` — no-op bounds-safety macros for the non-Apple-clang build.
 
 There's no build script here: `ninja fuzz` builds every harness (Homebrew clang +
 libFuzzer) straight from the main ninja graph — see configure.py's `fuzz` target.
 
-Not yet done: adding `fuzz_state`/`fuzz_text`/`fuzz_png`/`fuzz_replay`
-to the committed-corpus replay gate (coordinate with `fuzzcorpus`, which currently
-replays `fuzz_api` only).
+Not yet done: adding `fuzz_state`/`fuzz_text`/`fuzz_png`/`fuzz_pngdec`/
+`fuzz_replay` to the committed-corpus replay gate (coordinate with `fuzzcorpus`,
+which currently replays `fuzz_api` only).

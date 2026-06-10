@@ -5,8 +5,9 @@
 // "parser/encoder-shaped input" gap and gives ASan an independent take: in this
 // build -fbounds-safety is off (stub ptrcheck.h), so the encoder's own bounds
 // checks vanish and ASan alone must witness that the size arithmetic (rawlen /
-// nseg / zlib_len / total), the cursor writes, and the SIMD adler32 / CRC32 paths
-// never run off their buffers, across fuzzed dimensions and pixel content.
+// zcap / total), the Up-filter row kernel, the deflate it feeds, the cursor
+// writes, and the CRC32 paths never run off their buffers, across fuzzed
+// dimensions and pixel content.  (The decode side is fuzz_pngdec.)
 
 #include "cnvs_png.h"
 
