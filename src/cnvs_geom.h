@@ -13,6 +13,11 @@ typedef struct {
     int cap;
 } cnvs_verts;
 
-bool cnvs_verts_tri(cnvs_verts *v, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c);
+// Append k vertices as one block: one capacity reserve and one bounds-checked
+// copy, however many triangles the block holds.  Callers stage triangles in
+// small local arrays and land them here, so the per-vertex cost is a plain
+// store -- the memcpy through the __counted_by(cap) data pointer is the
+// block's single bounds check.
+bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int k);
 void cnvs_verts_reset(cnvs_verts *v);
 void cnvs_verts_free(cnvs_verts *v);

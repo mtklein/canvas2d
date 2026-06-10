@@ -3,6 +3,7 @@
 #include "cnvs_mem.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 static bool verts_reserve(cnvs_verts *v, int need) {
     if (need <= v->cap) {
@@ -18,14 +19,15 @@ static bool verts_reserve(cnvs_verts *v, int need) {
     return true;
 }
 
-bool cnvs_verts_tri(cnvs_verts *v, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
-    if (!verts_reserve(v, v->len + 3)) {
+bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int k) {
+    if (k <= 0) {
+        return true;
+    }
+    if (!verts_reserve(v, v->len + k)) {
         return false;
     }
-    v->data[v->len] = a;
-    v->data[v->len + 1] = b;
-    v->data[v->len + 2] = c;
-    v->len += 3;
+    memcpy(v->data + v->len, src, (size_t)k * sizeof *src);
+    v->len += k;
     return true;
 }
 

@@ -17,13 +17,26 @@ static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
     return true;
 }
 
+// The quad's two triangles, staged: (a0,b0,b1) (a0,b1,a1).
+static void stage_quad(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 a0, cnvs_vec2 b0,
+                       cnvs_vec2 a1, cnvs_vec2 b1) {
+    stage[0] = a0;
+    stage[1] = b0;
+    stage[2] = b1;
+    stage[3] = a0;
+    stage[4] = b1;
+    stage[5] = a1;
+}
+
 // Rectangle from p0 to p1 offset by +/-nrm, as two triangles.
 static bool emit_quad(cnvs_verts *out, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 nrm) {
     cnvs_vec2 a0 = { .x = p0.x + nrm.x, .y = p0.y + nrm.y };
     cnvs_vec2 b0 = { .x = p0.x - nrm.x, .y = p0.y - nrm.y };
     cnvs_vec2 a1 = { .x = p1.x + nrm.x, .y = p1.y + nrm.y };
     cnvs_vec2 b1 = { .x = p1.x - nrm.x, .y = p1.y - nrm.y };
-    return cnvs_verts_tri(out, a0, b0, b1) && cnvs_verts_tri(out, a0, b1, a1);
+    cnvs_vec2 stage[6];
+    stage_quad(stage, a0, b0, a1, b1);
+    return cnvs_verts_append(out, stage, 6);
 }
 
 static int disc_segs(float r) {
@@ -44,19 +57,53 @@ static int disc_segs(float r) {
 }
 
 // A filled disc as a triangle fan -- serves round joins and round caps (the
-// extra coverage over a half-disc lands on already-stroked geometry).
+// extra coverage over a half-disc lands on already-stroked geometry).  The
+// whole fan (at most 64 triangles) is staged and lands as one block.
 static bool emit_disc(cnvs_verts *out, cnvs_vec2 c, float r) {
     int segs = disc_segs(r);
+    cnvs_vec2 stage[3 * 64];
     cnvs_vec2 prev = { .x = c.x + r, .y = c.y };
+    int k = 0;
     for (int i = 1; i <= segs; i++) {
         float a = TAU * (float)i / (float)segs;
         cnvs_vec2 cur = { .x = c.x + r * cosf(a), .y = c.y + r * sinf(a) };
-        if (!cnvs_verts_tri(out, c, prev, cur)) {
-            return false;
-        }
+        cnvs_vec2 *__counted_by(3) tri = stage + k;
+        tri[0] = c;
+        tri[1] = prev;
+        tri[2] = cur;
+        k += 3;
         prev = cur;
     }
-    return true;
+    return cnvs_verts_append(out, stage, k);
+}
+
+// Stage the bevel wedge (and the miter tip when within the limit) at vertex v
+// between incoming dir d0 and outgoing dir d1; `cross` is d0 x d1, nonzero.
+// Returns the vertex count staged: 3 or 6.
+static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 d0,
+                       cnvs_vec2 d1, float cross, float hw, cnvs_line_join join,
+                       float miter_limit) {
+    // Outer side is opposite the turn.
+    float sgn = cross > 0.0f ? -1.0f : 1.0f;
+    cnvs_vec2 pa = { .x = v.x + sgn * -d0.y * hw, .y = v.y + sgn * d0.x * hw };
+    cnvs_vec2 pb = { .x = v.x + sgn * -d1.y * hw, .y = v.y + sgn * d1.x * hw };
+    stage[0] = pa;  // bevel wedge
+    stage[1] = v;
+    stage[2] = pb;
+    if (join == CNVS_JOIN_MITER) {
+        // Miter tip = intersection of the two outer edges (pa,d0) and (pb,d1).
+        float s = ((pb.x - pa.x) * d1.y - (pb.y - pa.y) * d1.x) / cross;
+        cnvs_vec2 tip = { .x = pa.x + d0.x * s, .y = pa.y + d0.y * s };
+        float mx = tip.x - v.x;
+        float my = tip.y - v.y;
+        if (sqrtf(mx * mx + my * my) <= miter_limit * hw) {
+            stage[3] = pa;
+            stage[4] = tip;
+            stage[5] = pb;
+            return 6;
+        }
+    }
+    return 3;
 }
 
 // Fill the join at vertex v between incoming dir d0 and outgoing dir d1.
@@ -69,26 +116,9 @@ static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
     if (join == CNVS_JOIN_ROUND) {
         return emit_disc(out, v, hw);
     }
-    // Outer side is opposite the turn.
-    float sgn = cross > 0.0f ? -1.0f : 1.0f;
-    cnvs_vec2 pa = { .x = v.x + sgn * -d0.y * hw, .y = v.y + sgn * d0.x * hw };
-    cnvs_vec2 pb = { .x = v.x + sgn * -d1.y * hw, .y = v.y + sgn * d1.x * hw };
-    if (!cnvs_verts_tri(out, pa, v, pb)) {  // bevel wedge
-        return false;
-    }
-    if (join == CNVS_JOIN_MITER) {
-        // Miter tip = intersection of the two outer edges (pa,d0) and (pb,d1).
-        float s = ((pb.x - pa.x) * d1.y - (pb.y - pa.y) * d1.x) / cross;
-        cnvs_vec2 tip = { .x = pa.x + d0.x * s, .y = pa.y + d0.y * s };
-        float mx = tip.x - v.x;
-        float my = tip.y - v.y;
-        if (sqrtf(mx * mx + my * my) <= miter_limit * hw) {
-            if (!cnvs_verts_tri(out, pa, tip, pb)) {
-                return false;
-            }
-        }
-    }
-    return true;
+    cnvs_vec2 stage[6];
+    int k = stage_wedge(stage, v, d0, d1, cross, hw, join, miter_limit);
+    return cnvs_verts_append(out, stage, k);
 }
 
 // Cap at open end `e`, with `capdir` pointing outward along the line.
