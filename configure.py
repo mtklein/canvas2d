@@ -183,7 +183,26 @@ def main():
     # rendering change surfaces as a git diff in lockstep -- review and commit the
     # new PNGs alongside the code.  Declaring them as outputs (input = the binary)
     # makes ninja re-render exactly when the renderer changes, no more.
-    gallery_pngs = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "gallery", "*.png")))
+    #
+    # This is a STATIC list, deliberately not a glob of gallery/*.png: these files
+    # are the run_gallery edge's own outputs, so globbing them made the build's
+    # description depend on its outputs existing -- `ninja -t clean` removed them
+    # and the next configure emitted an empty `build : run_gallery ...` (invalid).
+    # A static list is also the gate's posture (gate.yml names its scenes).  The
+    # list must match what examples/gallery.c emits: a name here that gallery.c
+    # never writes makes `ninja images` fail (output not produced); a scene
+    # gallery.c writes but omitted here lands as an untracked file `git diff`
+    # catches -- so a forgotten update fails loudly either way.  One name per
+    # gallery scene, sorted.
+    gallery_scenes = [
+        "affine", "batch", "blend", "clip", "conic", "dashes", "dirtyrect",
+        "drawimage", "emoji", "emojiscale", "filters", "gradients", "hittest",
+        "imagedata", "joins", "miterdash", "path2d", "paths", "pattern",
+        "porterduff", "roundrect", "shadows", "shapes", "shaping", "smoothing",
+        "strokerect", "subrect", "text", "textgrid", "textmaxwidth",
+        "textmetrics", "winding",
+    ]
+    gallery_pngs = [f"gallery/{name}.png" for name in gallery_scenes]
     # Committed fuzz regression corpus (distinct from the gitignored fuzz/seeds/
     # scratch).  `ninja` replays every input under the debug sanitizers, so a
     # crasher -- once reduced and dropped in here -- stays a permanent regression.
@@ -288,12 +307,10 @@ def main():
     w("")
     w("rule run_gallery")
     w("  command = $bin")
-    # generator: the gallery PNGs are committed build outputs, and configure.py
-    # discovers them by globbing gallery/*.png (below).  Marking this rule a
-    # generator keeps `ninja -t clean` from deleting them -- the same exemption
-    # build.ninja itself gets -- so the glob is never left empty (a plain clean
-    # used to nuke the committed PNGs, then the next configure emitted
-    # `build : run_gallery ...` with no outputs and ninja refused to load).  They
+    # generator: the gallery PNGs are committed build outputs; this keeps
+    # `ninja -t clean` from deleting them -- the same exemption build.ninja
+    # itself gets.  (The static gallery_pngs list already keeps configure valid
+    # if they go missing; this just spares the working tree the churn.)  They
     # still re-render whenever the gallery binary input changes; only the
     # rebuild-on-command-change and clean-by-default behaviours are dropped, both
     # irrelevant here.  (`ninja -t clean -g` still removes them if you mean it.)
@@ -409,14 +426,9 @@ def main():
     # `images` renders straight into the committed gallery/*.png.  The PNGs are
     # outputs gated on the gallery binary, so a bare `ninja` keeps them in
     # lockstep with the renderer -- and dirties the tree the moment a code change
-    # moves a pixel.  `ninja images` is the same edge on its own.
-    if not gallery_pngs:
-        # The output list is globbed from the committed PNGs (run_gallery is a
-        # generator rule so clean leaves them in place).  Empty means they were
-        # removed out-of-band; emitting `build : run_gallery ...` would be invalid
-        # ninja.  Fail clearly with the fix instead.
-        raise SystemExit("configure.py: gallery/*.png missing -- run "
-                         "`git restore gallery/` (committed build outputs)")
+    # moves a pixel.  `ninja images` is the same edge on its own.  (gallery_pngs
+    # is a static list now, so this edge is always well-formed even if the PNGs
+    # are absent on disk -- the empty-glob failure that needed a guard is gone.)
     w(f"build {' '.join(gallery_pngs)}: run_gallery build/release/gallery")
     w("  bin = ./build/release/gallery")
     w(f"build images: phony {' '.join(gallery_pngs)}")
