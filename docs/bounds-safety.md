@@ -241,7 +241,7 @@ over each CPU-only kernel **in isolation** plus an end-to-end run. A recent run:
 | stroke expansion | 1.03× |
 | analytic coverage fill | 1.07× |
 | end-to-end | 1.07× |
-| box blur, horizontal pass | **1.55×** |
+| box blur, horizontal pass | **1.10×** |
 
 The isolation matters. The end-to-end ~1.07× is a blend that hides a wide spread
 between phases — and a regression in a fast phase could disappear into it. What
@@ -263,11 +263,15 @@ the spread shows:
   the same constant area — into a contiguous add, also one whole-vector check per
   block. The only writes still scattered (`acc[base + col] += …`) are the partial
   columns at each span's ends, one or two per row segment.
-- **The horizontal blur pass (~1.55×) is the standing worst case**: a contiguous
-  sliding-window sum with almost no arithmetic to hide three checked loads and a
-  checked store per pixel. Its strided twin — the vertical pass, identical math a
-  row apart — is memory-bound, so its checks are free. The pair is dissected in
-  [stencil-blur.md](stencil-blur.md).
+- **The horizontal blur pass was the worst case (~1.55×) until the same recipe
+  landed there too (~1.10×)**: as a scalar sliding-window sum its contiguous loads
+  never stalled, so the checks sat on the critical path; producing eight windows
+  per step from an in-register prefix sum amortizes them to one whole-vector
+  check per load. The unchecked build barely moved (~4%) — the restructuring's
+  entire value was the checks, the sharpest demonstration yet that the flag
+  shifts the optimization landscape. Its strided twin — the vertical pass,
+  identical math a row apart — is memory-bound, so its checks were always free.
+  The pair is dissected in [stencil-blur.md](stencil-blur.md).
 - **Flattening is nearly free (~1%)**: lots of float arithmetic (de Casteljau
   midpoints, the flatness test) between a handful of indexed pushes, so the checks
   are noise next to the FLOPs.

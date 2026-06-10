@@ -36,7 +36,9 @@ centered/backward stencil windows are not where the flag bites.
 
 ## Where it bites is the opposite of where you'd guess
 
-512×512, `r = 4`, `-Os`, release (`-fbounds-safety`) vs unsafe, `A`-vs-`A` 1.01×:
+512×512, `r = 4`, `-Os`, release (`-fbounds-safety`) vs unsafe, `A`-vs-`A` 1.01×
+(the horizontal pass as originally written — scalar; since fixed, see
+[the fix](#the-fix-eight-windows-per-step) below):
 
 | pass | memory pattern | bounds-safe | unsafe | cost of checks |
 |---|---|---|---|---|
@@ -80,3 +82,39 @@ little memory-level parallelism for an explicit prefetch to expose; the `prfm` i
 pure overhead. Prefetch is a reflex worth resisting until the access pattern is
 actually irregular (a gather, a pointer chase) — and when it is warranted, the flag
 won't stand in the way.
+
+## The fix: eight windows per step
+
+The diagnosis says the contiguous pass pays because it has no stalls to hide the
+checks behind — so the cure is the project's standard one (the blit, the gradient
+fill, the coverage fill): restructure until one check covers many accesses. The
+running sum looks irreducibly serial — each window needs the previous one — but
+the recurrence is just a prefix sum of entering-minus-leaving samples, and prefix
+sums vectorize in-register. Per step, for eight outputs at `x..x+7`:
+
+- the entering samples `src[x+r+1 ..]` and leaving samples `src[x-r ..]` load
+  contiguously — **one whole-vector bounds check each**, not sixteen scalar ones;
+- the *exclusive* 8-lane prefix sum of their difference, added to the carried
+  window sum, yields all eight window sums at once (three shift-add steps, the
+  coverage resolve's idiom); the carry to the next block is lane arithmetic;
+- the `(sum + win/2) / win` quantize runs 8-wide as a float reciprocal multiply
+  snapped exact by one remainder comparison — bit-identical to the scalar integer
+  division (NEON has no integer divide), held by a brute-force reference test.
+
+The clamped edge columns keep the scalar loop, as does the degenerate
+`r >= 32768` window, where the float quantize's exactness argument runs out.
+Same machine and conditions as above, re-measured the day of the change:
+
+| horizontal pass | bounds-safe | unsafe | cost of checks |
+|---|---|---|---|
+| scalar (before) | 50.1 ms | 32.4 ms | **1.55×** |
+| 8-wide (after) | 34.0 ms | 31.0 ms | **1.10×** |
+
+The telling detail: the *unsafe* build barely moved (32.4 → 31.0 ms — the scalar
+running sum was already near the dependency chain's floor without checks), so
+nearly the entire 32% win in the checked build came from amortizing the checks.
+That sharpens the lesson this doc keeps circling: under `-fbounds-safety`, the
+restructuring that pays is not always the one that pays without it — the checks
+shift the optimization landscape, and a transformation that looks pointless
+unchecked (the unsafe delta here is ~4%) can be the difference between 1.55× and
+1.10× checked.

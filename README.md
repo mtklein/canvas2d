@@ -401,7 +401,7 @@ can't hide a regression in a faster one, plus an end-to-end run. All are CPU-onl
 | `bench_stroke` — stroke expansion (joins/caps) | 50 ms | 49 ms | **1.03×** |
 | `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 32 ms | 30 ms | **1.07×** |
 | `bench` — end-to-end | 42 ms | 39 ms | **1.07×** |
-| `bench_blur_h` — box blur, horizontal pass (contiguous; compute-visible) | 50 ms | 32 ms | **1.55×** |
+| `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 31 ms | **1.10×** |
 
 The lesson is that *per-element* bounds checks are what cost, so a kernel's
 overhead tracks how much it indexes vs how much it computes — **and the same
@@ -421,14 +421,16 @@ ramp built per fill (turning the per-pixel stop scan into one indexed lookup,
 ≤1/255 of colour error) *and* an 8-wide radial parameter solve — so
 `bench_gradient_fill` (the renderer's actual path) is **~5.8× faster** than the
 naive per-pixel scan (`bench_gradient`), at ~1.01× overhead: the SIMD parameter
-solve stores eight lanes per `memcpy`, one bounds check instead of eight. The
-standing worst case is the **horizontal blur pass (1.55×)**, the shadow pipeline's
-sliding-window sum: contiguous, so the loads aren't hidden by memory latency, and
-almost no arithmetic to hide three checked reads + a checked write per pixel — its
-strided twin `bench_blur_v` is memory-bound and pays nothing. The full anatomy of
-that pair (including a prefetch variant) is
-[docs/stencil-blur.md](docs/stencil-blur.md). Real canvas rendering is GPU-bound,
-so the end-to-end cost of safety is smaller still;
+solve stores eight lanes per `memcpy`, one bounds check instead of eight. The last
+holdout was the **horizontal blur pass**, the shadow pipeline's sliding-window
+sum: contiguous loads never stall, so its checks sat squarely on the critical path
+at **1.55×** — until the same recipe landed there too (eight windows per step via
+an in-register prefix sum of the entering-minus-leaving samples), taking it to
+**1.10×** and making the *checked* build 32% faster while the unchecked build
+barely moved: the entire restructuring win was amortizing the checks. The full
+anatomy — including why its strided twin `bench_blur_v` was always free, and a
+prefetch experiment — is [docs/stencil-blur.md](docs/stencil-blur.md). Real canvas
+rendering is GPU-bound, so the end-to-end cost of safety is smaller still;
 these are the honest prices on the hottest pure-C kernels, two commands to
 re-measure (`ninja benchcmp` for the tax, `ninja profile` to see where a phase
 spends its time).
