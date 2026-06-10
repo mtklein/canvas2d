@@ -64,33 +64,3 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
 // Unpremultiplied colour to paint at a device-space point, with `alpha` (global
 // alpha) folded into the result's alpha.
 cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);
-
-// Number of entries in a precomputed colour ramp.  1024 keeps the max deviation
-// from the exact piecewise-linear ramp under ~0.4/255 of nearest-entry
-// quantization, plus <~0.2/255 now that the stop lerp itself runs in _Float16
-// (docs/decisions/color-axis.md) -- together still at the 8-bit rounding step,
-// so a nearest-entry lookup is visually identical to evaluating
-// cnvs_gradient_color_at per pixel, but skips the per-pixel stop search.
-//
-// Why nearest-entry and not interpolated: measured max error vs the exact ramp,
-// for these stops, in 1/255 units --
-//
-//     entries   nearest   lerp
-//        256      1.49     1.12
-//        512      0.75     0.50
-//       1024      0.37     0.12
-//
-// Lerp buys ~3x precision at a given size (or matches a size at half the entries:
-// lerp@512 ~= nearest@1024).  We don't, because at 8-bit output nearest@1024 is
-// already below the rounding step -- lerp would refine an error you can't see --
-// while costing ~1.4x per lookup (two reads + a 4-channel _Float16 interpolation),
-// and the ramp is only built for fills >= this many pixels, where that per-pixel
-// cost outweighs the cheaper build of a smaller table.  Flip to lerp (and shrink N)
-// if the output ever goes higher than 8-bit, or to halve the ramp's memory.
-#define CNVS_GRAD_RAMP_N 1024
-
-// Fill `ramp` with `n` evenly spaced samples of the gradient's colour ramp:
-// ramp[i] == cnvs_gradient_color_at(gr, i / (n - 1)).  Built once per fill so the
-// per-pixel paint loop can index it instead of rescanning the stops.
-void cnvs_gradient_build_ramp(cnvs_gradient const *gr,
-                              cnvs_unpremul *__counted_by(n) ramp, int n);

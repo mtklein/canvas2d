@@ -1,9 +1,12 @@
-// Unit tests for the scalar gradient solve.  The renderer fills via the
-// vectorized cnvs_gradient_param_row, so the scalar cnvs_gradient_param /
-// cnvs_gradient_sample (used by bench_gradient) go untested by the API-level
-// test_gradient.c -- coverage flagged them at 18% / 0%.  Drive them directly, and
-// pin them to the vector path and the documented ramp identity as metamorphic
-// cross-checks.  Includes the internal header, like test_mem.c.
+// Unit tests for the gradient solve and colour evaluation.  The renderer fills
+// via the vectorized cnvs_gradient_param_row + cnvs_gradient_color_row pair, so
+// the scalar cnvs_gradient_param / cnvs_gradient_sample (used by bench_gradient)
+// go untested by the API-level test_gradient.c -- coverage flagged them at
+// 18% / 0%.  Drive them directly, pin the vector rows to the scalar evaluators
+// (the colour row at tolerance ZERO -- it is bit-identical by design), and gate
+// the colour error against an exact double-precision reference
+// (docs/decisions/gradient-eval.md).  Includes the internal header, like
+// test_mem.c.
 
 #include "test_util.h"
 
@@ -126,15 +129,7 @@ int main(void) {
     cnvs_gradient_add_stop(&lin, 0.0f, cnvs_unpremul_of(1.0f, 0.0f, 0.0f, 1.0f));
     cnvs_gradient_add_stop(&lin, 1.0f, cnvs_unpremul_of(0.0f, 0.0f, 1.0f, 1.0f));
 
-    // 1. build_ramp[i] == color_at(i/(N-1)) exactly (the documented identity).
-    static cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];
-    cnvs_gradient_build_ramp(&lin, ramp, CNVS_GRAD_RAMP_N);
-    for (int i = 0; i < CNVS_GRAD_RAMP_N; i += 17) {
-        cnvs_unpremul c = cnvs_gradient_color_at(&lin, (float)i / (float)(CNVS_GRAD_RAMP_N - 1));
-        CHECK(col_near(ramp[i], c, 0.0f));
-    }
-
-    // 2. scalar cnvs_gradient_param agrees with the vectorized row -- linear,
+    // 1. scalar cnvs_gradient_param agrees with the vectorized row -- linear,
     //    concentric radial, and an eccentric/focal radial (which has "outside"
     //    points, exercising the no-solution branch).
     check_param_matches_row(&lin, 0, 8.0f, 64);
@@ -152,7 +147,7 @@ int main(void) {
     check_param_matches_row(&focal, 0, 10.0f, 64);
     check_param_matches_row(&focal, 0, 32.0f, 64);
 
-    // 3. cnvs_gradient_sample(p, alpha) == color_at(param(p)) with alpha folded in.
+    // 2. cnvs_gradient_sample(p, alpha) == color_at(param(p)) with alpha folded in.
     {
         cnvs_vec2 p = { .x = 18.5f, .y = 8.0f };
         float t = -2.0f;
@@ -165,7 +160,7 @@ int main(void) {
               fnear((float)got.a, (float)want.a * 0.5f, 2e-3f));
     }
 
-    // 4. add_stop: offsets clamp to [0,1], and it's a no-op once full.
+    // 3. add_stop: offsets clamp to [0,1], and it's a no-op once full.
     {
         cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
                             .p1 = { .x = 1.0f, .y = 0.0f } };
@@ -179,7 +174,7 @@ int main(void) {
         CHECK(g.stop_count == CNVS_MAX_STOPS);  // full -> no-op
     }
 
-    // 5. Degenerate color_at: no stops -> transparent black; a single stop is
+    // 4. Degenerate color_at: no stops -> transparent black; a single stop is
     //    constant across the whole parameter range.
     {
         cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
@@ -190,7 +185,7 @@ int main(void) {
         CHECK(col_near(cnvs_gradient_color_at(&g, 0.0f), cnvs_gradient_color_at(&g, 1.0f), 0.0f));
     }
 
-    // 6. The vectorized colour row (check_color_row above), across the stop
+    // 5. The vectorized colour row (check_color_row above), across the stop
     //    search's edge cases: two stops (no interior search), a multi-stop
     //    ramp, coincident "hard" stops, every stop coincident (the tie
     //    precedence), a single stop, no stops, and a full CNVS_MAX_STOPS set.

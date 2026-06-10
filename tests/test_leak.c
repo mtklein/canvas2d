@@ -1,6 +1,6 @@
 // Exercises the allocation-heavy, ownership-transfer paths so leaks/UAF surface:
 // save/restore (deep-copies the clip mask), clip() (allocs+frees masks), the
-// gradient ramp, get/put image data, draw_image, the font cache (create/destroy
+// gradient row buffers, get/put image data, draw_image, the font cache (create/destroy
 // on size change), and many create/destroy cycles.
 //
 // Dual use:
@@ -29,7 +29,8 @@ static void draw_some(canvas *__single cv, int seed) {
     canvas_rect(cv, 4.0f, 4.0f, 40.0f, 30.0f);
     canvas_clip(cv);
 
-    // Gradient fill (builds the colour ramp), then a solid fill and a stroke.
+    // Gradient fill (grows the parameter/colour row buffers), then a solid
+    // fill and a stroke.
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 48.0f, 0.0f);
     canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);

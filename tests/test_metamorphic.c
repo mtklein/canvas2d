@@ -191,9 +191,10 @@ int main(void) {
     canvas_read_rgba(cv, qx, LEN);
     CHECK(memcmp(px, qx, (size_t)LEN) == 0);
 
-    // 8. A gradient whose stops are all one colour is a solid fill of that colour.
-    //    Exercises the ramp build/sample path with a checkable result (tol 1 for the
-    //    ramp quantisation).
+    // 8. A gradient whose stops are all one colour IS a solid fill of that
+    //    colour, byte for byte: the row evaluator lerps the exact stop colours
+    //    (no ramp quantisation, docs/decisions/gradient-eval.md), so equal
+    //    stops collapse to the solid paint exactly.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_rgba(cv, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
@@ -204,11 +205,7 @@ int main(void) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_read_rgba(cv, qx, LEN);
-    for (int p = 0; p < W * H; p++) {
-        struct px4 a = pixel_at(px, LEN, W, p % W, p / W);
-        struct px4 b = pixel_at(qx, LEN, W, p % W, p / W);
-        CHECK(px_near(a, b.r, b.g, b.b, b.a, 1));
-    }
+    CHECK(memcmp(px, qx, (size_t)LEN) == 0);
 
     canvas_destroy(cv);
     free(px);

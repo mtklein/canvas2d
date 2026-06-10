@@ -1,8 +1,8 @@
-// Isolated benchmark: the gradient *fill* path as paint_tile runs it -- build the
-// colour ramp once per fill, solve the parameter a row at a time (vectorized), then
-// index the ramp per pixel.  Mirrors bench_gradient's scene (same kind/size/iters)
-// so the two are directly comparable: the delta is what the ramp + vectorized
-// parameter solve buy over the naive per-pixel scan.
+// Isolated benchmark: the gradient *fill* path as paint_tile runs it -- solve the
+// parameter a row at a time (vectorized), then lerp the stop colours from it
+// (vectorized too; no ramp table).  Mirrors bench_gradient's scene (same
+// kind/size/iters) so the two are directly comparable: the delta is what the two
+// row kernels buy over the naive per-pixel scan.
 #include "bench_reps.h"
 
 #include "cnvs_gradient.h"
@@ -26,20 +26,17 @@ int main(void) {
     cnvs_gradient_add_stop(&gr, 0.70f, cnvs_unpremul_of(0.9f, 0.3f, 0.4f, 1.0f));
     cnvs_gradient_add_stop(&gr, 1.00f, cnvs_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
 
-    static cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];
     static float trow[DIM];
+    static cnvs_unpremul crow[DIM];
     double sink = 0.0;
     int reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
-            cnvs_gradient_build_ramp(&gr, ramp, CNVS_GRAD_RAMP_N);  // once per fill
             for (int y = 0; y < DIM; y++) {
                 cnvs_gradient_param_row(&gr, 0, (float)y + 0.5f, DIM, trow);
+                cnvs_gradient_color_row(&gr, trow, DIM, crow);
                 for (int x = 0; x < DIM; x++) {
-                    float t = trow[x];  // -1 marks outside the gradient
-                    cnvs_unpremul c = t >= 0.0f
-                        ? ramp[(int)(t * (float)(CNVS_GRAD_RAMP_N - 1) + 0.5f)]
-                        : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+                    cnvs_unpremul c = crow[x];  // outside is transparent black
                     sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
                 }
             }

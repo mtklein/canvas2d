@@ -52,7 +52,8 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         if (t <= hi.offset) {
             // The parameter and stop offsets are geometry and stay f32; the
             // colour lerp itself runs in _Float16, one 4-lane vector op per
-            // term (adds <~0.2/255 of rounding -- see CNVS_GRAD_RAMP_N).
+            // term (<=0.25/255 of rounding vs an exact double reference --
+            // measured 0.156/255 worst-case; test_gradient_solve gates it).
             float span = hi.offset - lo.offset;
             float u = span > 1e-9f ? (t - lo.offset) / span : 0.0f;
             gradh4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
@@ -62,26 +63,6 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         }
     }
     return gr->stops[n - 1].color;  // unreachable: t < last offset handled above
-}
-
-void cnvs_gradient_build_ramp(cnvs_gradient const *gr,
-                              cnvs_unpremul *__counted_by(n) ramp, int n) {
-    if (n <= 0) {
-        return;
-    }
-    if (n == 1) {
-        ramp[0] = cnvs_gradient_color_at(gr, 0.0f);
-        return;
-    }
-    // A true divide per entry, not i * (1/(n-1)): the documented identity
-    // ramp[i] == color_at(i/(n-1)) must hold at tolerance zero by
-    // construction.  The reciprocal form differed from the test's quotient by
-    // one f32 ulp in t, which only held while f32 compute narrowed late
-    // enough to absorb it -- with the lerp in _Float16 the identity has to be
-    // exact in t, not rescued by rounding (test_gradient_solve).
-    for (int i = 0; i < n; i++) {
-        ramp[i] = cnvs_gradient_color_at(gr, (float)i / (float)(n - 1));
-    }
 }
 
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t) {

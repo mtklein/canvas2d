@@ -146,9 +146,10 @@ struct canvas {
     int cov_cap;
     cnvs_premul *__counted_by(tile_cap) tile;  // premultiplied tile for the current op's bbox
     int tile_cap;
-    cnvs_unpremul ramp[CNVS_GRAD_RAMP_N];  // gradient colour ramp, rebuilt per gradient fill
     float *__counted_by(trow_cap) trow;    // one row of gradient parameters (vectorized solve)
     int trow_cap;
+    cnvs_unpremul *__counted_by(crow_cap) crow;  // one row of gradient colours (vectorized stop lerp)
+    int crow_cap;
     cnvs_recorder *__single rec;  // NULL unless canvas_record_to is active
     struct cnvs_owned_image *__single owned_images;  // replayed `image` blocks
     // Shadow scratch: a single-channel mask blurred in place (src/dst ping-pong
@@ -287,6 +288,7 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->cov);
     free(cv->tile);
     free(cv->trow);
+    free(cv->crow);
     free(cv->shadow_src);
     free(cv->shadow_dst);
     free(cv->blur_tmp);
@@ -881,8 +883,11 @@ static bool ensure_tile(canvas *__single cv, int npix) {
     return true;
 }
 
-// Row buffer of gradient parameters, one float per column of the current bbox.
-static bool ensure_trow(canvas *__single cv, int w) {
+// Row buffers for the vectorized gradient fill, one entry per column of the
+// current bbox: trow holds the solved parameters, crow the colours evaluated
+// from them.  Two caps so the (pointer, count) pairs update independently
+// under -fbounds-safety, like the shadow scratch pair.
+static bool ensure_grad_rows(canvas *__single cv, int w) {
     if (w > cv->trow_cap) {
         float *nr = realloc(cv->trow, (size_t)w * sizeof *nr);
         if (!nr) {
@@ -890,6 +895,14 @@ static bool ensure_trow(canvas *__single cv, int w) {
         }
         cv->trow = nr;
         cv->trow_cap = w;
+    }
+    if (w > cv->crow_cap) {
+        cnvs_unpremul *nc = realloc(cv->crow, (size_t)w * sizeof *nc);
+        if (!nc) {
+            return false;
+        }
+        cv->crow = nc;
+        cv->crow_cap = w;
     }
     return true;
 }
@@ -1058,44 +1071,32 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
 static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                        cnvs_gradient const *gr, cnvs_unpremul solid) {
     float ga = cv->cur.global_alpha;
-    // A gradient over a large enough area amortizes a precomputed colour ramp: the
-    // ramp costs CNVS_GRAD_RAMP_N stop evaluations to build, so below that many
-    // pixels the per-pixel stop scan (cnvs_gradient_color_at) is cheaper.
-    bool use_ramp = is_grad && (long)b.w * (long)b.h >= CNVS_GRAD_RAMP_N;
-    if (use_ramp) {
-        cnvs_gradient_build_ramp(gr, cv->ramp, CNVS_GRAD_RAMP_N);
-    }
-    // Solve the gradient parameter a row at a time (vectorized); fall back to the
-    // scalar per-pixel solve only if the tiny row buffer can't be grown.
-    bool use_row = is_grad && ensure_trow(cv, b.w);
+    // Evaluate the gradient a row at a time, both halves vectorized: solve the
+    // parameters (cnvs_gradient_param_row), then lerp the stop colours from
+    // them (cnvs_gradient_color_row) -- the exact piecewise-linear colour, no
+    // precomputed ramp (docs/decisions/gradient-eval.md).  Fall back to the
+    // scalar per-pixel pair only if the tiny row buffers can't be grown.
+    bool use_row = is_grad && ensure_grad_rows(cv, b.w);
     for (int py = 0; py < b.h; py++) {
         if (use_row) {
             cnvs_gradient_param_row(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
                                     cv->trow);
+            cnvs_gradient_color_row(gr, cv->trow, b.w, cv->crow);
         }
         for (int px = 0; px < b.w; px++) {
             int i = py * b.w + px;
             float covf = (float)cv->cov[i] / 255.0f;
             cnvs_unpremul col;
             if (is_grad) {
-                float t;
-                bool inside;
                 if (use_row) {
-                    t = cv->trow[px];        // -1 marks "outside the gradient"
-                    inside = t >= 0.0f;
+                    col = cv->crow[px];  // "outside" already transparent black
                 } else {
+                    float t;
                     cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
                                     .y = (float)b.y + (float)py + 0.5f };
-                    inside = cnvs_gradient_param(gr, p, &t);
-                }
-                if (inside) {
-                    // Nearest ramp entry (t is clamped to [0,1], so the index is in
-                    // range); see CNVS_GRAD_RAMP_N for why not interpolated.
-                    col = use_ramp
-                        ? cv->ramp[(int)(t * (float)(CNVS_GRAD_RAMP_N - 1) + 0.5f)]
-                        : cnvs_gradient_color_at(gr, t);
-                } else {
-                    col = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+                    col = cnvs_gradient_param(gr, p, &t)
+                        ? cnvs_gradient_color_at(gr, t)
+                        : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
                 }
             } else {
                 col = solid;
