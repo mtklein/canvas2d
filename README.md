@@ -1,5 +1,7 @@
 # canvas2d
 
+[![gate](https://github.com/mtklein/canvas2d/actions/workflows/gate.yml/badge.svg)](https://github.com/mtklein/canvas2d/actions/workflows/gate.yml)
+
 A C23 implementation of (a growing subset of) the HTML **Canvas 2D API**,
 antialiased in C and composited on the GPU via **Metal**, built with **ninja**.
 
