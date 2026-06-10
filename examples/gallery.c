@@ -2164,8 +2164,15 @@ static void render_all(void) {
 
 int main(void) {
     int reps = gallery_reps();
+    // GALLERY_NO_SAVE suppresses ALL writes: a profiling run (profile_scene.sh)
+    // gets sampled then killed, and the renderer is now fast enough to finish
+    // its reps and reach the file-writing one before the kill lands -- which
+    // once caught a committed .canvas mid-write, truncated.  Under the knob the
+    // process can be killed (or finish) at any moment without touching the
+    // committed gallery.
+    bool const no_save = getenv("GALLERY_NO_SAVE") != NULL;
     for (int rep = 0; rep < reps; rep++) {
-        g_skip_save = rep < reps - 1;  // write PNGs only on the final rep
+        g_skip_save = no_save || rep < reps - 1;  // write files only on the final rep
         render_all();
     }
     return 0;

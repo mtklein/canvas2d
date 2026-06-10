@@ -33,10 +33,14 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-GALLERY_REPS="$REPS" "$BIN" >/dev/null 2>&1 &
+# GALLERY_NO_SAVE: the profiled gallery must NEVER write -- the renderer has
+# gotten fast enough to finish all its reps and reach the file-writing one
+# before the kill below lands, and a kill mid-write once truncated a committed
+# .canvas.  With writes off, killing (or outrunning the sample window) is safe.
+GALLERY_REPS="$REPS" GALLERY_NO_SAVE=1 "$BIN" >/dev/null 2>&1 &
 pid=$!
 sample "$pid" "$SECS" -mayDie -file "$tmp/gallery.txt" >/dev/null 2>&1 || true
-kill "$pid" 2>/dev/null || true   # stop the (still-looping) gallery once sampled
+kill "$pid" 2>/dev/null || true   # stop the (possibly still-looping) gallery once sampled
 wait "$pid" 2>/dev/null || true
 # `sample` profiles every thread, and the system frameworks we link (Core Text /
 # Core Graphics) park a libdispatch worker pool whether or not anyone dispatches
