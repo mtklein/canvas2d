@@ -582,6 +582,53 @@ returns, so its body moved to a single-exit `arc_to_impl` and the public wrapper
 guarantees `leave` always balances `enter` (no `__attribute__((cleanup))`, which
 `-fbounds-safety` rejects anyway).
 
+## The inversion: what used to be scary in C is now efficient in C
+
+The project began by asking what bounds safety *costs* — §What it costs answers
+that, honestly, and the answer is "not nothing." The finding we didn't plan on
+is the converse: the contract doesn't just prevent bugs, it **admits designs
+that idiomatic C could never responsibly ship** — and those designs keep paying
+for their own checks.
+
+- **Caller-supplied memory.** A buffer-plus-length parameter was the classic C
+  CVE shape: the library trusts a count it can't verify. `__counted_by` puts
+  the contract in the signature and the check at every access, so "let the user
+  own the allocation" flips from liability to the *safest and fastest* design —
+  no defensive copy, no internal allocation, no trust required.
+  `canvas_read_rgba(cv, out, len)` is the shape; the resource doctrine ("the
+  library should be excellent at graphics and let the user make the mundane
+  calls — memory, threads") is C-hostile advice without the annotation and
+  free with it.
+- **Reified immutable objects.** `Path2D`, images, recorded programs — and
+  prospectively coverage masks and shaped-text blobs
+  ([rasterization.md](rasterization.md) §3.5): internal create-use-destroy
+  transients promoted to user-managed lifetime, shareable across canvases and
+  threads by bare pointer *because* they're frozen after build and their
+  buffers carry counts. Each promotion also shrinks the library's
+  temporal-safety surface — fewer lifetimes inside, less for the analyzer
+  pass (and the user) to get wrong.
+- **The counted seam.** The NEON `ld4`/`st4` intrinsics take unannotated
+  pointers; wrapping each in a `static inline` helper whose parameter is
+  `__counted_by(8)` makes the implicit conversion at every call site *be* the
+  bounds check — one per 8-pixel block ([cnvs_planar.h](../src/cnvs_planar.h)).
+  The safety annotation and the efficient factoring are the same line of code.
+- **The trap that forced the faster shape.** Appending vertices through
+  `v->data` made the compiler reload and re-check every step (the stores might
+  alias `*v`); the fix the model demanded — hoist to a `__counted_by` local,
+  one check per block — is exactly the code a performance engineer would have
+  written anyway ([cnvs_geom.c](../src/cnvs_geom.c)). The check model pushes
+  *toward* the efficient idiom, not away from it.
+- **Planar vector ABIs.** Pipeline stages passing channel planes in registers
+  have no pointers in flight, hence no bounds at all — the safety surface
+  concentrates at the load/store seams and the middle of the pipeline gets
+  faster for the same structural reason it gets safer.
+
+Stated the way it crystallized in conversation, after the day these patterns
+all landed at once: **"what used to be scary in C is now *efficient* in C — a
+little safety guarantee goes a looong way for performance, elegance,
+efficiency."** The costs table still stands; the discovery is that the
+contract buys back more in admissible design than it spends in branches.
+
 ## Regrets / things we'd reconsider
 
 - **Hand-rolled per-type vectors.** `cnvs_verts` and the `cnvs_cover`/clip-mask
@@ -601,9 +648,17 @@ guarantees `leave` always balances `enter` (no `__attribute__((cleanup))`, which
 
 ## Aspirations
 
-- Richer text — complex shaping (we map code point → glyph 1:1, so no ligatures,
-  contextual forms, or bidi), a glyph cache (outlines are re-fetched per
-  `fill_text`), and text alignment/baselines beyond the default.
+(The original entry here — complex shaping, a glyph cache, alignment beyond the
+default — all landed; see [text-boundary.md](text-boundary.md). The current
+ones:)
+
+- **Zero mallocs per frame at steady state.** Construction allocates; rendering
+  shouldn't. The fault-injecting allocator is already interposed everywhere —
+  it can count as easily as it can fail, so this aspiration is one standing
+  metric away from being a gate.
+- **Reify the remaining create-use-destroy transients** — the coverage mask and
+  the shaped-text blob — per the resource doctrine: user-managed lifetime,
+  immutable after build, counted buffers making the sharing safe.
 
 ## Rules of thumb (the cheat-sheet we wish we'd had)
 
