@@ -410,6 +410,24 @@ ever appears (a decomposition only visible from inside — something the
 N-canvases design structurally cannot reach); the bar is essentiality, not
 speedup.
 
+Two refinements to the ruling, same conversation. **The shape, should we ever
+qualify:** a dependency-injected executor — `void enqueue(void (*fn)(void *ctx),
+void *ctx)` plus `wait()` (or `wait_or_help_work()`) — so threads stay in the
+user's control; the library never creates one ("a library that creates threads
+feels close to a violation"). **The canonical essential spot:** shared coverage.
+N tile-canvas callers each re-rasterize every path that crosses their tile; the
+library could rasterize coverage once and hand each tile its slice — knowledge
+of data flow the N-canvases design structurally cannot express. That is the
+kind of case that would clear the bar, if its redundancy ever shows up hot.
+
+What the ruling does NOT restrict: threads in **testing tools**. A harness that
+draws and stitches 256×256 tiles from worker threads — emulating the threaded
+user — keeps the library honest about thread safety (no hidden global mutable
+state; distinct canvases must be fully independent), and a TSAN build variant
+(separate from ASan/ISan/UBSan — they don't combine) makes that mechanical
+rather than aspirational. Thread-safety-as-tested is a user-facing property we
+want regardless of whether src/ ever threads.
+
 The constraint first: the byte-gate demands the same target bytes at any thread
 count. That rules out nothing important — it just dictates the decomposition.
 Pixel-partitioned schemes are bit-exact by construction (each cell's float-add
