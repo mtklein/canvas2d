@@ -77,12 +77,18 @@ static void scene_clip(canvas *__single cv) {
 }
 
 // Text: glyph outlines from the Core Text shim, built into a path and filled --
-// the font cache + glyph-path allocation path.
+// the font cache + glyph-path allocation path, and the text lookup cache's own
+// allocation sites (the shape-key copy, the glyph table, the per-glyph curve
+// copies, the interned font name).  Each must degrade to a plain boundary call
+// (or a skipped op), never a crash: the repeat exercises the hit path -- and,
+// when an earlier insert was the failed allocation, the miss-then-insert retry.
 static void scene_text(canvas *__single cv) {
     canvas_set_font_size(cv, 14.0f);
     canvas_set_fill_rgba(cv, 0.9f, 0.9f, 0.95f, 1.0f);
     canvas_fill_text(cv, "Ag", 2.0f, 20.0f);
-    (void)canvas_measure_text(cv, "Ag");
+    canvas_fill_text(cv, "Ag", 2.0f, 20.0f);     // warm: shape + glyph hits
+    (void)canvas_measure_text(cv, "Ag");         // measure-then-draw shares the line
+    canvas_fill_text(cv, "g A", 2.0f, 30.0f);    // new key; shared glyphs, a blank
 }
 
 // Image pattern fill (createPattern path): a small tile sampled under the CTM.

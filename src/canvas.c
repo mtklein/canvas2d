@@ -120,6 +120,9 @@ struct canvas {
     cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
     cnvs_font *__single font;  // cached for cur.font_size; rebuilt when it changes
     float font_built_size;
+    cnvs_text_cache text_cache;  // params->derived-data memo of Core Text results:
+                                 // shaped lines + canonical glyph curves, checked
+                                 // before the boundary is called (cnvs_text.h)
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
     cnvs_verts scratch_verts;  // stroke triangle output, fed to the coverage rasterizer
     cnvs_cover cover;
@@ -233,6 +236,7 @@ canvas *__single canvas_create(int width, int height) {
     cnvs_path_init(&cv->text_path);
     cv->font = NULL;
     cv->font_built_size = 0.0f;
+    cnvs_text_cache_init(&cv->text_cache);
     cv->rec = NULL;
     return cv;
 }
@@ -251,6 +255,7 @@ void canvas_destroy(canvas *__single cv) {
     free(cv->cur.filters);
     free(cv->cur.clip_mask);
     cnvs_font_destroy(cv->font);
+    cnvs_text_cache_clear(&cv->text_cache);  // owned shaped lines + glyph curves
     cnvs_path_free(&cv->path);
     cnvs_path_free(&cv->text_path);
     cnvs_verts_free(&cv->scratch_verts);
@@ -355,6 +360,12 @@ void canvas_reset(canvas *__single cv) {
     // Discard the current path.
     cnvs_path_reset(&cv->path);
     cv->cur_user = (cnvs_vec2){ .x = 0.0f, .y = 0.0f };
+    // Drop the text caches too.  Keeping them would also be correct -- the cache
+    // is a pure memo of boundary results, invisible to rendering -- but reset()'s
+    // contract is "as if freshly created", and reset is the natural point for a
+    // long-lived canvas to shed accumulated memory, so warm entries go (and
+    // resize(), which resets, starts its new canvas cold like create() does).
+    cnvs_text_cache_clear(&cv->text_cache);
     // Open the clip, then clear the whole bitmap to transparent black: a
     // destination-out of a unit-alpha tile leaves dst*(1 - 1) = 0 everywhere.
     compositor_set_clip(cv->comp, NULL, 0);
@@ -1903,21 +1914,17 @@ static float text_baseline_offset(canvas *__single cv, cnvs_font *__single f) {
     return 0.0f;  // unreachable for a valid enum
 }
 
-// Shape `text` (UTF-8, `len` bytes) with the current font/size.  NULL on failure;
-// the caller frees the result with cnvs_shaped_free.  cnvs_shape wants a
-// NUL-terminated string, so copy into one (the public API takes a byte slice).
-static cnvs_shaped *__single shape_text(canvas *__single cv,
-                                        char const *__counted_by(len) text, int len) {
-    char *tz = malloc((size_t)len + 1);
-    if (!tz) {
-        return NULL;
-    }
-    memcpy(tz, text, (size_t)len);
-    tz[len] = '\0';
-    cnvs_shaped *__single s = cnvs_shape("Libian TC", cv->cur.font_size,
-                                         __unsafe_null_terminated_from_indexable(tz));
-    free(tz);
-    return s;
+// Shape `text` (UTF-8, `len` bytes) with the current font/size, through the
+// canvas's text cache: a repeated (size, text) pair -- a frame's static labels,
+// or measureText before fillText -- reuses the cached line instead of re-shaping
+// at the boundary.  NULL on failure.  The result is BORROWED from the cache (do
+// not free); it stays valid until the next shape lookup, and every caller is
+// done with it before making another.
+static cnvs_shaped const *__single shape_text(canvas *__single cv,
+                                              char const *__counted_by(len) text,
+                                              int len) {
+    return cnvs_text_cache_shape(&cv->text_cache, "Libian TC", cv->cur.font_size,
+                                 text, len);
 }
 
 // Render one color (emoji) glyph as a bitmap: ask the boundary for its ink box,
@@ -1985,8 +1992,8 @@ static void paint_color_glyph(void *__single ctx, void *__single font,
 static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
                          float ox, float oy, cnvs_mat to_device, bool stroke) {
     cnvs_path_reset(&cv->text_path);
-    cnvs_shaped_outline(s, ox, oy, to_device, CANVAS_FLATTEN_TOL, &cv->text_path,
-                        paint_color_glyph, cv);
+    cnvs_shaped_outline(&cv->text_cache, s, ox, oy, to_device, CANVAS_FLATTEN_TOL,
+                        &cv->text_path, paint_color_glyph, cv);
     if (stroke) {
         stroke_device_path(cv, &cv->text_path);
     } else {
@@ -2003,7 +2010,7 @@ static void do_text(canvas *__single cv, char const *__counted_by(len) text, int
     if (!f) {
         return;
     }
-    cnvs_shaped *__single s = shape_text(cv, text, len);
+    cnvs_shaped const *__single s = shape_text(cv, text, len);
     if (!s) {
         return;
     }
@@ -2022,19 +2029,16 @@ static void do_text(canvas *__single cv, char const *__counted_by(len) text, int
         td = cnvs_mat_mul(cv->cur.ctm, cond);
     }
     paint_shaped(cv, s, ox, oy, td, stroke);
-    cnvs_shaped_free(s);
 }
 
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    cnvs_shaped *__single s = shape_text(cv, t, len);
+    cnvs_shaped const *__single s = shape_text(cv, t, len);
     if (!s) {
         return 0.0f;
     }
-    float w = cnvs_shaped_width(s);
-    cnvs_shaped_free(s);
-    return w;
+    return cnvs_shaped_width(s);
 }
 
 canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
@@ -2044,7 +2048,7 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
     cnvs_font *__single f = ensure_font(cv);
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    cnvs_shaped *__single s = shape_text(cv, t, len);
+    cnvs_shaped const *__single s = shape_text(cv, t, len);
     if (f && s) {
         cnvs_text_metrics tm;
         cnvs_shaped_metrics(s, f, &tm);  // fallback-aware: each glyph in its run's font
@@ -2061,10 +2065,13 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
         m.hanging_baseline = tm.hanging_baseline;
         m.ideographic_baseline = tm.ideographic_baseline;
     }
-    if (s) {
-        cnvs_shaped_free(s);
-    }
     return m;
+}
+
+// The per-canvas text cache, for tests and stats -- declared in cnvs_text.h so
+// it stays off the public canvas.h surface (tests include internal headers).
+cnvs_text_cache *__single cnvs_canvas_text_cache(canvas *__single cv) {
+    return &cv->text_cache;
 }
 
 void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,

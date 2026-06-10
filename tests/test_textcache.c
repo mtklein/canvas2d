@@ -1,0 +1,235 @@
+// The params -> derived-data text lookup (cnvs_text_cache in src/cnvs_text.h):
+// a per-canvas memo of Core Text boundary results, checked before the boundary
+// is called.  Pinned here: transparency (a warm cache renders byte-identical to
+// a cold one), the measure-then-draw hit pattern, key correctness (size bits +
+// text bytes), LRU eviction at the slot bound, the glyph-curve map's one fetch
+// per (font, glyph), font-name interning across fallback, and reset() clearing
+// back to cold.  Stats come via the internal cnvs_canvas_text_cache handle --
+// they are instrumentation, not public API.
+
+#include "canvas.h"
+#include "cnvs_text.h"
+#include "test_util.h"
+
+#include <math.h>
+#include <stdint.h>
+#include <string.h>
+
+enum { W = 96, H = 48, LEN = W * H * 4 };
+
+// A small text scene mixing outline glyphs (with a repeat and a space) and a
+// color-emoji fallback run.
+static void draw_scene(canvas *__single cv) {
+    canvas_set_font_size(cv, 18.0f);
+    canvas_set_fill_rgba(cv, 0.10f, 0.20f, 0.30f, 1.0f);
+    canvas_fill_text(cv, "Waffle fan", 4.0f, 22.0f);
+    canvas_set_fill_rgba(cv, 0.80f, 0.30f, 0.20f, 1.0f);
+    canvas_fill_text(cv, "A\xF0\x9F\x98\x80g", 4.0f, 44.0f);  // A 😀 g
+}
+
+// Transparency: render the scene cold on one canvas and warm (drawn, wiped,
+// drawn again) on another -- the readback bytes must match exactly, and the
+// stats must prove the second draw never went back to the boundary.
+static void check_transparent(void) {
+    canvas *__single cold = canvas_create(W, H);
+    canvas *__single warm = canvas_create(W, H);
+    CHECK(cold != NULL && warm != NULL);
+    if (!cold || !warm) {
+        canvas_destroy(cold);
+        canvas_destroy(warm);
+        return;
+    }
+    draw_scene(cold);
+
+    draw_scene(warm);  // populate the caches
+    canvas_clear_rect(warm, 0.0f, 0.0f, (float)W, (float)H);
+    cnvs_text_cache *__single c = cnvs_canvas_text_cache(warm);
+    int smiss = c->shape_misses, gmiss = c->glyph_misses;
+    draw_scene(warm);  // every lookup must hit
+    CHECK(c->shape_misses == smiss);
+    CHECK(c->glyph_misses == gmiss);
+    CHECK(c->shape_hits >= 2);
+    CHECK(c->glyph_hits > 0);
+
+    uint8_t a[LEN], b[LEN];
+    canvas_get_image_data(cold, 0, 0, W, H, a, LEN);
+    canvas_get_image_data(warm, 0, 0, W, H, b, LEN);
+    CHECK(memcmp(a, b, LEN) == 0);
+
+    canvas_destroy(cold);
+    canvas_destroy(warm);
+}
+
+// The measure-then-draw pattern real callers use, plus key correctness: a
+// different size or different bytes is a different key; the originals stay hot.
+static void check_keys(void) {
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    canvas_set_font_size(cv, 20.0f);
+
+    canvas_fill_text(cv, "kerning", 4.0f, 30.0f);
+    CHECK(c->shape_misses == 1 && c->shape_hits == 0);
+    CHECK(canvas_measure_text(cv, "kerning") > 0.0f);  // measure after draw: hit
+    CHECK(c->shape_misses == 1 && c->shape_hits == 1);
+    (void)canvas_measure_text_full(cv, "kerning");     // the full metrics too
+    CHECK(c->shape_misses == 1 && c->shape_hits == 2);
+
+    canvas_set_font_size(cv, 21.0f);                   // same bytes, other size
+    (void)canvas_measure_text(cv, "kerning");
+    CHECK(c->shape_misses == 2 && c->shape_hits == 2);
+
+    canvas_set_font_size(cv, 20.0f);                   // same size, other bytes
+    (void)canvas_measure_text(cv, "kerninG");
+    CHECK(c->shape_misses == 3 && c->shape_hits == 2);
+
+    (void)canvas_measure_text(cv, "kerning");          // the original is still hot
+    CHECK(c->shape_misses == 3 && c->shape_hits == 3);
+
+    canvas_destroy(cv);
+}
+
+// Eviction: one entry past the bound pushes out the least-recently-used line.
+// The evicted string re-shapes (a miss) to the same metrics, the freshest one
+// still hits, and a post-churn draw matches a cold canvas pixel for pixel.
+static void check_eviction(void) {
+    canvas *__single churn = canvas_create(W, H);
+    canvas *__single fresh = canvas_create(W, H);
+    CHECK(churn != NULL && fresh != NULL);
+    if (!churn || !fresh) {
+        canvas_destroy(churn);
+        canvas_destroy(fresh);
+        return;
+    }
+    cnvs_text_cache *__single c = cnvs_canvas_text_cache(churn);
+    canvas_set_font_size(churn, 16.0f);
+
+    float w0 = canvas_measure_text(churn, "s0");
+    char last[4] = { 0 };
+    for (int i = 1; i <= CNVS_SHAPE_CACHE_N; i++) {  // fill every slot, plus one
+        last[0] = 's';                               // distinct two-letter keys
+        last[1] = (char)('a' + i / 26);
+        last[2] = (char)('a' + i % 26);
+        last[3] = '\0';
+        (void)canvas_measure_text(churn,
+                                  __unsafe_null_terminated_from_indexable(last));
+    }
+    CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 1);
+
+    int hits = c->shape_hits;
+    // Evicted: re-shaped from the boundary, to the bit-identical width.
+    CHECK(fabsf(canvas_measure_text(churn, "s0") - w0) <= 0.0f);
+    CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 2);
+    CHECK(c->shape_hits == hits);
+    (void)canvas_measure_text(churn,                 // the newest entry survived
+                              __unsafe_null_terminated_from_indexable(last));
+    CHECK(c->shape_hits == hits + 1);
+
+    canvas_set_fill_rgba(churn, 0.2f, 0.2f, 0.7f, 1.0f);
+    canvas_fill_text(churn, "s0", 4.0f, 30.0f);
+    canvas_set_font_size(fresh, 16.0f);
+    canvas_set_fill_rgba(fresh, 0.2f, 0.2f, 0.7f, 1.0f);
+    canvas_fill_text(fresh, "s0", 4.0f, 30.0f);
+    uint8_t a[LEN], b[LEN];
+    canvas_get_image_data(churn, 0, 0, W, H, a, LEN);
+    canvas_get_image_data(fresh, 0, 0, W, H, b, LEN);
+    CHECK(memcmp(a, b, LEN) == 0);
+
+    canvas_destroy(churn);
+    canvas_destroy(fresh);
+}
+
+// The glyph-curve map: a repeated glyph is fetched once per (font, glyph), a
+// blank (the space) caches as "no outline", and a warm redraw adds no misses.
+static void check_glyph_once(void) {
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    canvas_set_font_size(cv, 20.0f);
+
+    canvas_fill_text(cv, "AA AA", 2.0f, 30.0f);  // two distinct glyphs: 'A', ' '
+    CHECK(c->glyph_misses == 2);
+    CHECK(c->glyph_hits == 3);
+    CHECK(c->glyph_count == 2);
+    CHECK(c->nfonts == 1);
+
+    canvas_fill_text(cv, "AA AA", 2.0f, 30.0f);  // warm: no new fetches
+    CHECK(c->glyph_misses == 2);
+    CHECK(c->glyph_hits == 8);
+
+    canvas_destroy(cv);
+}
+
+// Fallback interning: Hebrew falls back from the pinned (CJK) face to another
+// outline font, so two names intern and their glyph keys live side by side --
+// a second draw hits every one of them (no key collisions across fonts).
+static void check_fallback_fonts(void) {
+    canvas *__single cv = canvas_create(W, H);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    canvas_set_font_size(cv, 20.0f);
+
+    canvas_fill_text(cv, "A\xD7\x90", 2.0f, 30.0f);  // A + aleph
+    CHECK(c->nfonts >= 2);
+    CHECK(c->glyph_count == c->glyph_misses);  // every miss inserted exactly once
+    int gmiss = c->glyph_misses;
+    canvas_fill_text(cv, "A\xD7\x90", 2.0f, 30.0f);
+    CHECK(c->glyph_misses == gmiss);  // both fonts' glyphs hit on the redraw
+
+    canvas_destroy(cv);
+}
+
+// reset(): the cache goes back to its initial (empty) state -- documented with
+// the reset contract in canvas.c -- and a post-reset draw is cold but correct.
+static void check_reset(void) {
+    canvas *__single cv = canvas_create(W, H);
+    canvas *__single fresh = canvas_create(W, H);
+    CHECK(cv != NULL && fresh != NULL);
+    if (!cv || !fresh) {
+        canvas_destroy(cv);
+        canvas_destroy(fresh);
+        return;
+    }
+    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    canvas_set_font_size(cv, 18.0f);
+    canvas_fill_text(cv, "Reset", 4.0f, 30.0f);
+    CHECK(c->shape_misses > 0 && c->glyph_count > 0 && c->nfonts > 0);
+
+    canvas_reset(cv);
+    CHECK(c->shape_misses == 0 && c->shape_hits == 0);
+    CHECK(c->glyph_misses == 0 && c->glyph_hits == 0);
+    CHECK(c->glyph_count == 0 && c->glyph_cap == 0 && c->nfonts == 0);
+
+    canvas_set_font_size(cv, 18.0f);  // reset dropped the 18px state too
+    canvas_fill_text(cv, "Reset", 4.0f, 30.0f);
+    CHECK(c->shape_misses == 1);      // cold again
+
+    canvas_set_font_size(fresh, 18.0f);
+    canvas_fill_text(fresh, "Reset", 4.0f, 30.0f);
+    uint8_t a[LEN], b[LEN];
+    canvas_get_image_data(cv, 0, 0, W, H, a, LEN);
+    canvas_get_image_data(fresh, 0, 0, W, H, b, LEN);
+    CHECK(memcmp(a, b, LEN) == 0);
+
+    canvas_destroy(cv);
+    canvas_destroy(fresh);
+}
+
+int main(void) {
+    check_transparent();
+    check_keys();
+    check_eviction();
+    check_glyph_once();
+    check_fallback_fonts();
+    check_reset();
+    return TEST_REPORT();
+}

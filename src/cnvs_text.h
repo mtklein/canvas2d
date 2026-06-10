@@ -98,6 +98,106 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
                        int *__single nverbs, int *__single npts,
                        float *__single units_per_em);
 
+// ---------------------------------------------------------------------------
+// The params -> derived-data lookup: a per-canvas memo of boundary results,
+// consulted BEFORE Core Text is called, populated live from what the boundary
+// hands back.  Two maps:
+//
+//   - shaped lines, keyed by (size_px bits, text bytes) -> the cnvs_shaped.
+//     The cache OWNS its entries (each run's retained CTFontRef stays alive
+//     with them); call sites borrow.  Fixed CNVS_SHAPE_CACHE_N slots, evicted
+//     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
+//     repeated labels hot, and a 64-entry linear scan is cheaper than any
+//     structure clever enough to beat it.
+//   - glyph curves, keyed by (font name, glyph id) -> the canonical font-unit
+//     verbs/points + units_per_em from cnvs_glyph_curves.  Canonical bytes are
+//     size- and transform-independent, so one entry serves every draw.  Font
+//     identity is the interned font NAME (stable across processes -- what the
+//     upcoming serialized form of this lookup needs), not the CTFontRef
+//     pointer.  Open-addressed, fixed CNVS_GLYPH_TABLE_N slots; inserts simply
+//     stop at CNVS_GLYPH_CACHE_N entries (no eviction: a glyph's curves never
+//     go stale, and a scene with >1k distinct glyphs just degrades the rest
+//     to boundary calls).  Blank glyphs cache as empty entries, so a space
+//     costs one boundary call ever.
+//
+// The cache is transparent: a hit and a miss render identically, and any
+// cache-side allocation failure degrades that lookup to a plain boundary call
+// rather than failing the op.  See docs/text-boundary.md.
+
+enum {
+    CNVS_SHAPE_CACHE_N = 64,    // shaped-line slots (LRU eviction)
+    CNVS_GLYPH_CACHE_N = 1024,  // max cached glyphs (inserts stop, no eviction)
+    CNVS_GLYPH_TABLE_N = 2048,  // open-addressing slots: 2x entries, power of two
+    CNVS_FONT_INTERN_N = 16,    // distinct font names (primary + fallbacks)
+};
+
+// One cached shaped line.  Empty when s == NULL.
+typedef struct {
+    char *__counted_by(len) text;  // owned key copy of the source bytes
+    int len;
+    uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
+    uint64_t stamp;      // last-use tick, the LRU ordering
+    cnvs_shaped *__single s;  // owned; freed on eviction/clear
+} cnvs_shape_slot;
+
+// One cached glyph outline.  A blank or color glyph caches as upem == 0 with no
+// curves -- "known to have no outline" is itself a boundary result worth keeping.
+typedef struct {
+    cnvs_glyph_verb *__counted_by(nverbs) verb;  // owned canonical curves
+    cnvs_vec2 *__counted_by(npts) pt;
+    int nverbs, npts;
+    float upem;    // units_per_em; 0 for a glyph with no outline
+    uint32_t key;  // font_id << 16 | glyph id
+    bool used;
+} cnvs_glyph_slot;
+
+// An interned font name (the sized model: length + bytes, no NUL games).
+typedef struct {
+    char *__counted_by(len) name;
+    int len;
+} cnvs_font_name;
+
+typedef struct {
+    cnvs_shape_slot shape[CNVS_SHAPE_CACHE_N];
+    uint64_t tick;  // monotone use counter feeding the shape slots' LRU stamps
+    cnvs_glyph_slot *__counted_by(glyph_cap) glyph;  // lazily built on first miss
+    int glyph_cap;                                   // 0 until that build succeeds
+    int glyph_count;
+    cnvs_font_name font[CNVS_FONT_INTERN_N];  // interned names; index = font id
+    int nfonts;
+    // Stats: pure instrumentation (tests + measurement), no behavioural role.
+    int shape_hits, shape_misses;
+    int glyph_hits, glyph_misses;
+} cnvs_text_cache;
+
+void cnvs_text_cache_init(cnvs_text_cache *__single c);   // an empty cache
+void cnvs_text_cache_clear(cnvs_text_cache *__single c);  // free entries -> empty;
+                                                          // also the destructor (the
+                                                          // struct owns no spine)
+
+// The shape lookup: the cached line for (size_px, text), shaping through the
+// boundary and caching on a miss.  The result is BORROWED -- the cache owns it;
+// it stays valid until the next lookup can evict it (call sites do one lookup
+// per op and never nest, so a borrow never crosses an insert).  NULL only when
+// the boundary itself fails or the key copy can't be allocated -- the same
+// degradation as the uncached path.  `name` joins the boundary call but NOT the
+// key: the project pins one family ("Libian TC"); a font-family feature must
+// add it to the key.  `c` must be non-NULL (ownership needs somewhere to live).
+cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
+        char const *__null_terminated name, float size_px,
+        char const *__counted_by(len) text, int len);
+
+// Intern `font`'s name (one boundary name fetch per run, not per glyph) and
+// return its id for glyph keys; -1 when there is no cache, the intern table is
+// full, or any allocation fails -- the glyph walk then takes plain boundary
+// calls.
+int cnvs_text_cache_font(cnvs_text_cache *__single c, void *__single font);
+
+// The per-canvas cache handle, for tests and stats (implemented in canvas.c).
+// Deliberately not in the public canvas.h: tests include internal headers.
+struct canvas;
+cnvs_text_cache *__single cnvs_canvas_text_cache(struct canvas *__single cv);
+
 // Callback for the color (emoji) glyphs cnvs_shaped_outline meets: they have no
 // outline and must be drawn, not traced (see cnvs_glyph_draw), so the walk hands
 // them to the caller at their pen position in user space.  `ctx` is the caller's
@@ -108,11 +208,13 @@ typedef void (*cnvs_color_glyph_fn)(void *__single ctx, void *__single font,
 
 // Outline a shaped line at pen origin (ox,oy) in user space into `out` (device space,
 // mapped by to_device, curves flattened at `tol` px).  Layout -- the pen advance --
-// runs checked in the core; each glyph's canonical curves are fetched from the
-// boundary and transformed + flattened here too.  Returns the advance width.  Color
+// runs checked in the core; each glyph's canonical curves come from `cache` when it
+// holds them and from the boundary otherwise (populating the cache; NULL `cache`
+// means plain boundary calls throughout).  Returns the advance width.  Color
 // (emoji) runs have no outline path: their glyphs go to `color` (or are skipped when
 // it is NULL), and contribute only their advance to the layout.
-float cnvs_shaped_outline(cnvs_shaped const *__single s, float ox, float oy,
+float cnvs_shaped_outline(cnvs_text_cache *__single cache,
+                          cnvs_shaped const *__single s, float ox, float oy,
                           cnvs_mat to_device, float tol, cnvs_path *__single out,
                           cnvs_color_glyph_fn color, void *__single ctx);
 

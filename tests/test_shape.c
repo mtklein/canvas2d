@@ -86,8 +86,8 @@ static void check_outline(void) {
     if (s) {
         cnvs_path p;
         cnvs_path_init(&p);
-        float w = cnvs_shaped_outline(s, 0.0f, 0.0f, cnvs_mat_identity(), 0.25f, &p,
-                                      NULL, NULL);
+        float w = cnvs_shaped_outline(NULL, s, 0.0f, 0.0f, cnvs_mat_identity(),
+                                      0.25f, &p, NULL, NULL);
         CHECK(w > 0.0f);
         CHECK(p.pt_len > 0 && p.sp_len > 0);   // "ffi" produced outline geometry
         cnvs_path_free(&p);
@@ -99,8 +99,8 @@ static void check_outline(void) {
     if (e) {
         cnvs_path p;
         cnvs_path_init(&p);
-        float w = cnvs_shaped_outline(e, 0.0f, 0.0f, cnvs_mat_identity(), 0.25f, &p,
-                                      NULL, NULL);
+        float w = cnvs_shaped_outline(NULL, e, 0.0f, 0.0f, cnvs_mat_identity(),
+                                      0.25f, &p, NULL, NULL);
         CHECK(w > 0.0f);          // it has an advance (occupies space)
         CHECK(p.pt_len == 0);     // but a color glyph has no outline path
         cnvs_path_free(&p);
