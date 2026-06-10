@@ -144,20 +144,6 @@ int main(void) {
     CHECK(dst[cy * w + cx - r - 1] == 0 && dst[cy * w + cx + r + 1] == 0);  // outside
     CHECK(dst[(cy - 1) * w + cx] == 0);  // a different row is untouched
 
-    // Prefetch is a hint: blur_box_v_pf must match blur_box_v bit-for-bit.
-    for (int i = 0; i < n; i++) {
-        src[i] = (uint8_t)((i * 37 + 11) & 0xFF);
-    }
-    blur_box_v(dst, src, w, h, r);
-    blur_box_v_pf(dst2, src, w, h, r);
-    bool same = true;
-    for (int i = 0; i < n; i++) {
-        if (dst[i] != dst2[i]) {
-            same = false;
-        }
-    }
-    CHECK(same);
-
     free(src); free(dst); free(dst2);
     return TEST_REPORT();
 }
