@@ -76,7 +76,7 @@ float cnvs_shaped_x_at_index(cnvs_shaped const *__single s, int index);
 // Selection: visual x-spans covering the logical range [lo,hi).  A bidi range maps to
 // non-contiguous visual positions and so splits into multiple spans; writes up to
 // `max`, returns the count.  Pure index logic: the cluster map drives it and every
-// access is bounds-checked, no forge -- this is where the checked side earns its keep.
+// access is bounds-checked -- this is where the checked side earns its keep.
 int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
                           cnvs_xspan *__counted_by(max) out, int max);
 

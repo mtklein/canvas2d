@@ -2,7 +2,7 @@
 // line format cnvs_replay.c parses, straight to a FILE*; canvas.c calls these from
 // each recordable public op.  Everything here is plain bounds-safe C -- counted
 // float runs, __null_terminated names/text -- so the write side plays by the same
-// -fbounds-safety rules as the (forge-free) read side.
+// -fbounds-safety rules as the read side.
 
 #include "cnvs_record.h"
 

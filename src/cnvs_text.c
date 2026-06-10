@@ -206,8 +206,8 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
     c->shape_misses++;
     // Miss.  Copy the key bytes the slot will own (+1 so a zero-length key
     // still has an allocation to own), then shape through the counted
-    // boundary: (text, len) crosses as-is, so no NUL-terminated copy -- and
-    // no unsafe bridge -- exists anywhere on this path.  Either failure
+    // boundary: (text, len) crosses as-is, so no NUL-terminated copy exists
+    // anywhere on this path.  Either failure
     // degrades exactly as the uncached copy used to (nothing to draw).
     char *copy = malloc((size_t)len + 1);
     if (!copy) {

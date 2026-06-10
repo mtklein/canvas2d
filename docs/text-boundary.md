@@ -14,7 +14,7 @@ emoji, font fallback — what crosses that boundary, and how does the flag shape
 
 ## Today's boundary is narrow and value-typed
 
-`cnvs_font_ct.c` processes text *one codepoint → one glyph* (`CTFontGetGlyphsForCharacters(..., 1)`),
+`cnvs_text_ct.c` processes text *one codepoint → one glyph* (`CTFontGetGlyphsForCharacters(..., 1)`),
 does all the Core Text array work internally with fixed count-1 buffers, and hands the
 checked core only *finished* `cnvs_path` outlines and `float` metrics. **No glyph
 array ever crosses the boundary.** That keeps the checked side forge-free, but it also

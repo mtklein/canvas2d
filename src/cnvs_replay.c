@@ -78,8 +78,8 @@ static double const k_pow10[23] = {
     1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
 };
 
-// Next token parsed as a float, in place by index -- no strtof, no
-// __null_terminated, no forge.  Stricter than strtof: the whole token must be a
+// Next token parsed as a float, in place by index -- no strtof.  Stricter than
+// strtof: the whole token must be a
 // number (sign? digits, optional .fraction, optional e[+-]exp).
 //
 // EXACT for everything the recorder emits: a %.9g-printed float32 has a <=
@@ -901,7 +901,7 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         if (!read_floats(data, le, &j, f, 2)) return false;
         while (j < le && is_ws(data[j])) { j++; }
         // The text is the rest of the line: hand the slice straight to the
-        // length-counted text API -- no copy, no NUL, no forge.
+        // length-counted text API -- no copy, no NUL.
         int n = (int)(le - j);  // le - j <= line cap < INT_MAX
         if (fill) canvas_fill_text_n(cv, data + j, n, f[0], f[1]);
         else      canvas_stroke_text_n(cv, data + j, n, f[0], f[1]);

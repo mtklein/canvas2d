@@ -1,4 +1,4 @@
-// Fuzzes the UNCHECKED Core Text shim (src/cnvs_font_ct.c -- BOUNDARY_C, built
+// Fuzzes the UNCHECKED Core Text shim (src/cnvs_text_ct.c -- BOUNDARY_C, built
 // WITHOUT -fbounds-safety) through the public text API.  This is the highest-risk
 // remaining surface: a bug here is real corruption, not a trap, and ASan is the
 // only memory-safety net in that TU.  The harness drives, on adversarial bytes:
