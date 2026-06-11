@@ -92,7 +92,7 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
     // |p - C(t)| = R(t) gives the quadratic a t^2 + b t + c = 0.
     float cdx = gr->p1.x - gr->p0.x;
     float cdy = gr->p1.y - gr->p0.y;
-    float dr = gr->r1 - gr->r0;
+    float dr  = gr->r1   - gr->r0  ;
     float pdx = p.x - gr->p0.x;
     float pdy = p.y - gr->p0.y;
     float a = cdx * cdx + cdy * cdy - dr * dr;
@@ -186,7 +186,7 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
     } else if (gr->kind == CNVS_GRAD_RADIAL) {
         float cdx = gr->p1.x - gr->p0.x;
         float cdy = gr->p1.y - gr->p0.y;
-        float dr = gr->r1 - gr->r0;
+        float dr  = gr->r1   - gr->r0  ;
         float r0 = gr->r0;
         float a = cdx * cdx + cdy * cdy - dr * dr;
         float pdy = y - gr->p0.y;
@@ -284,14 +284,14 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             // whose offset is strictly below t, hi to the stop after it --
             // strict, so a lane between coincident offsets resolves to the
             // same pair as the scalar scan.
-            gradf8 lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
-            gradpx8 lo = col[0], hi = col[last > 0 ? 1 : 0];
+            gradf8  lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
+            gradpx8 lo     = col[0], hi     = col[last > 0 ? 1 : 0];
             for (int s = 1; s + 1 < sc; s++) {
                 gradi8 m = tv > off[s];
                 cnvs_m8 mh = __builtin_convertvector(m, cnvs_m8);
-                lo_off = vsel_bits(m, off[s], lo_off);
+                lo_off = vsel_bits(m, off[s],     lo_off);
                 hi_off = vsel_bits(m, off[s + 1], hi_off);
-                lo = gradpx8_sel(mh, col[s], lo);
+                lo = gradpx8_sel(mh, col[s],     lo);
                 hi = gradpx8_sel(mh, col[s + 1], hi);
             }
             // The scalar lerp, eight lanes wide.  Lanes the edge selects below
@@ -307,12 +307,12 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             // past the last stop takes the last colour, t at or before the
             // first takes the first (applied second, so it wins ties exactly
             // like the scalar's early-out order), and t < 0 is transparent.
-            cnvs_m8 mlast = __builtin_convertvector(tv >= off[last], cnvs_m8);
-            cnvs_m8 mfirst = __builtin_convertvector(tv <= off[0], cnvs_m8);
-            cnvs_m8 mout = __builtin_convertvector(tv < (gradf8)0.0f, cnvs_m8);
-            c = gradpx8_sel(mlast, col[last], c);
-            c = gradpx8_sel(mfirst, col[0], c);
-            c = gradpx8_sel(mout, (gradpx8){ zero, zero, zero, zero }, c);
+            cnvs_m8 mlast  = __builtin_convertvector(tv >= off[last],    cnvs_m8);
+            cnvs_m8 mfirst = __builtin_convertvector(tv <= off[0],       cnvs_m8);
+            cnvs_m8 mout   = __builtin_convertvector(tv <  (gradf8)0.0f, cnvs_m8);
+            c = gradpx8_sel(mlast,  col[last], c);
+            c = gradpx8_sel(mfirst, col[0],    c);
+            c = gradpx8_sel(mout,   (gradpx8){ zero, zero, zero, zero }, c);
             gradpx8_store(out + i, c);
         }
     }
