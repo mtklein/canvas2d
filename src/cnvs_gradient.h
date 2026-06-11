@@ -9,7 +9,7 @@
 
 #include <ptrcheck.h>
 
-#define CNVS_MAX_STOPS 16
+#define CNVS_STOPS_MAX 16
 
 enum cnvs_grad_kind { CNVS_GRAD_LINEAR, CNVS_GRAD_RADIAL, CNVS_GRAD_CONIC };
 
@@ -25,7 +25,7 @@ struct cnvs_gradient {
     cnvs_vec2 p0, p1;
     float r0, r1;
     float angle;   // conic: start angle (radians), device space; unused otherwise
-    cnvs_stop stops[CNVS_MAX_STOPS];
+    cnvs_stop stops[CNVS_STOPS_MAX];
     int stop_count;
 };
 

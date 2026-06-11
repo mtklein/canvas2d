@@ -168,10 +168,10 @@ int main(void) {
         cnvs_gradient_add_stop(&g, -1.0f, cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f));  // -> 0
         CHECK(g.stop_count == 2);
         CHECK(fnear(g.stops[0].offset, 0.0f, 0.0f) && fnear(g.stops[1].offset, 1.0f, 0.0f));
-        for (int i = 0; i < CNVS_MAX_STOPS + 4; i++) {
+        for (int i = 0; i < CNVS_STOPS_MAX + 4; i++) {
             cnvs_gradient_add_stop(&g, 0.5f, cnvs_unpremul_of(0.5f, 0.5f, 0.5f, 1.0f));
         }
-        CHECK(g.stop_count == CNVS_MAX_STOPS);  // full -> no-op
+        CHECK(g.stop_count == CNVS_STOPS_MAX);  // full -> no-op
     }
 
     // 4. Degenerate color_at: no stops -> transparent black; a single stop is
@@ -188,7 +188,7 @@ int main(void) {
     // 5. The vectorized colour row (check_color_row above), across the stop
     //    search's edge cases: two stops (no interior search), a multi-stop
     //    ramp, coincident "hard" stops, every stop coincident (the tie
-    //    precedence), a single stop, no stops, and a full CNVS_MAX_STOPS set.
+    //    precedence), a single stop, no stops, and a full CNVS_STOPS_MAX set.
     {
         check_color_row(&lin);
 
@@ -220,8 +220,8 @@ int main(void) {
         check_color_row(&none);
 
         struct cnvs_gradient full = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
-        for (int k = 0; k < CNVS_MAX_STOPS; k++) {
-            float o = (float)k / (float)(CNVS_MAX_STOPS - 1);
+        for (int k = 0; k < CNVS_STOPS_MAX; k++) {
+            float o = (float)k / (float)(CNVS_STOPS_MAX - 1);
             cnvs_gradient_add_stop(&full, o,
                 cnvs_unpremul_of(o, 1.0f - o, 0.5f + 0.4f * sinf(20.0f * o), 1.0f));
         }

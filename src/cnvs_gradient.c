@@ -15,7 +15,7 @@ static float clamp01(float v) {
 }
 
 void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremul color) {
-    if (gr->stop_count >= CNVS_MAX_STOPS) {
+    if (gr->stop_count >= CNVS_STOPS_MAX) {
         return;
     }
     float o = clamp01(offset);
@@ -270,8 +270,8 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
         // Per-stop lane constants, splatted once per row: offsets in f32 (they
         // are geometry, like the parameter), channels in _Float16 (the colour
         // compute type, docs/decisions/color-axis.md).
-        float8 off[CNVS_MAX_STOPS];
-        gradpx8 col[CNVS_MAX_STOPS];
+        float8 off[CNVS_STOPS_MAX];
+        gradpx8 col[CNVS_STOPS_MAX];
         for (int s = 0; s < sc; s++) {
             cnvs_stop st = gr->stops[s];
             off[s] = (float8)st.offset;

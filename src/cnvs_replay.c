@@ -34,7 +34,7 @@
                                         // grows per arriving line, so memory
                                         // tracks the file's actual size)
 #define REPLAY_RESIZE_DIM_MAX 16384     // resize dims (mirrors canvas.c's
-                                        // CANVAS_MAX_DIM: the recorder only
+                                        // CANVAS_DIM_MAX: the recorder only
                                         // writes a resize that succeeded)
 #define REPLAY_BITMAP_DIM_MAX 512    // capture dims cap: bounds a bitmap
                                      // block's decoded allocation at 1 MiB

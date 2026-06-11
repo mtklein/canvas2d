@@ -26,17 +26,17 @@
 
 // Maximum chord deviation (device pixels) when flattening curves.
 #define CANVAS_FLATTEN_TOL 0.25f
-#define CANVAS_MAX_DASH 16
+#define CANVAS_DASH_MAX 16
 
 // Cap canvas dimensions so width*height and width*height*4 stay well within a
 // positive int -- the whole pipeline's RGBA8 size math is `int`.  Mirrors the
 // cnvs_png.c clamp.
-#define CANVAS_MAX_DIM 16384
+#define CANVAS_DIM_MAX 16384
 
 // A caller-supplied image rectangle (get/put_image_data region, drawImage
 // source) is honoured only if its RGBA8 byte size fits a positive int: that is
 // what makes the `w * h * 4` size arithmetic at the call sites overflow-free.
-// (Canvas dims are already bounded by CANVAS_MAX_DIM; these come straight from
+// (Canvas dims are already bounded by CANVAS_DIM_MAX; these come straight from
 // the caller and are otherwise unbounded.)
 static bool rgba8_dims_ok(int w, int h) {
     return w > 0 && h > 0 && (int64_t)w * (int64_t)h <= (int64_t)INT_MAX / 4;
@@ -97,7 +97,7 @@ struct canvas_state {
     enum cnvs_line_join line_join;
     enum cnvs_line_cap line_cap;
     float miter_limit;
-    float dash[CANVAS_MAX_DASH];
+    float dash[CANVAS_DASH_MAX];
     int dash_count;
     float dash_offset;
     float font_size;  // text size in user px (Canvas default 10px)
@@ -183,7 +183,7 @@ static void draw_image_quad(struct canvas *__single cv,
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
 // be paired with a positive count under -fbounds-safety.  An empty pattern stays
 // consistent across the state copies that save/restore make.
-static void pattern_clear(struct cnvs_pattern *p) {
+static void pattern_reset(struct cnvs_pattern *p) {
     p->len = 0;
     p->data = NULL;
     p->w = 0;
@@ -204,10 +204,10 @@ static void state_defaults(struct canvas_state *s) {
     s->ctm = cnvs_mat_identity();
     s->fill = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
     s->fill_kind = CNVS_PAINT_SOLID;
-    pattern_clear(&s->fill_pattern);
+    pattern_reset(&s->fill_pattern);
     s->stroke = cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
     s->stroke_kind = CNVS_PAINT_SOLID;
-    pattern_clear(&s->stroke_pattern);
+    pattern_reset(&s->stroke_pattern);
     s->global_alpha = 1.0f;
     s->composite = CANVAS_OP_SOURCE_OVER;
     s->line_width = 1.0f;
@@ -237,7 +237,7 @@ static void state_defaults(struct canvas_state *s) {
 
 struct canvas *__single canvas(int width, int height) {
     if (width <= 0 || height <= 0 ||
-        width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
+        width > CANVAS_DIM_MAX || height > CANVAS_DIM_MAX) {
         return NULL;
     }
     int const n = width * height;
@@ -431,7 +431,7 @@ void canvas_reset(struct canvas *__single cv) {
 
 bool canvas_resize(struct canvas *__single cv, int width, int height) {
     if (width <= 0 || height <= 0 ||
-        width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
+        width > CANVAS_DIM_MAX || height > CANVAS_DIM_MAX) {
         return false;
     }
     // Build the new-sized target first; on failure leave the canvas intact.
@@ -939,8 +939,8 @@ static int filter_margin(struct canvas const *__single cv) {
             int ay = f.dy < 0 ? -f.dy : f.dy;
             m += ax > ay ? ax : ay;
         }
-        if (m > CANVAS_MAX_DIM) {
-            return CANVAS_MAX_DIM;
+        if (m > CANVAS_DIM_MAX) {
+            return CANVAS_DIM_MAX;
         }
     }
     return m;
@@ -1823,7 +1823,7 @@ static int shadow_radius(float blur) {
 // Round a shadow offset to an integer device pixel, clamped to a sane range (a
 // larger offset just pushes the shadow off-canvas).
 static int shadow_offset(float v) {
-    float m = (float)(2 * CANVAS_MAX_DIM);
+    float m = (float)(2 * CANVAS_DIM_MAX);
     v = v > m ? m : (v < -m ? -m : v);
     return cnvs_f2i(roundf(v));
 }
@@ -2398,8 +2398,8 @@ void canvas_set_line_dash(struct canvas *__single cv,
     // Clamp into a separate variable: mutating `count` would desync the
     // __counted_by(count) bound on `pattern`.
     int m = count < 0 ? 0 : count;
-    if (m > CANVAS_MAX_DASH) {
-        m = CANVAS_MAX_DASH;
+    if (m > CANVAS_DASH_MAX) {
+        m = CANVAS_DASH_MAX;
     }
     for (int i = 0; i < m; i++) {
         cv->cur.dash[i] = pattern[i];
@@ -2436,7 +2436,7 @@ static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path cons
     float hw = cv->cur.line_width * 0.5f * scale;
 
     bool dashed = cv->cur.dash_count > 0;
-    float sdash[CANVAS_MAX_DASH];
+    float sdash[CANVAS_DASH_MAX];
     for (int i = 0; i < cv->cur.dash_count; i++) {
         sdash[i] = cv->cur.dash[i] * scale;
     }
