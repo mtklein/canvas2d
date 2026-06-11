@@ -139,8 +139,8 @@ TEMPLATE = r"""<!doctype html>
            border-radius:8px; padding:8px; display:none; z-index:9; box-shadow:0 4px 24px #000a; }
   #loupe canvas { display:block; border:1px solid #2a2e38; background:#000; }
   #loupe pre { margin:6px 0 0; font:11px/1.5 ui-monospace, monospace; color:#cdd3df; }
-  #loupe .sw { display:inline-block; width:10px; height:10px; margin-right:6px;
-               vertical-align:-1px; border:1px solid #3a4152; }
+  #loupe .sw { display:inline-block; width:var(--z, 8px); height:var(--z, 8px);
+               margin-right:6px; vertical-align:middle; border:1px solid #3a4152; }
   #loupe pre .on { color:#fff; font-weight:600; }
   #loupe pre .dim { color:#8b93a7; }
 </style>
@@ -323,10 +323,14 @@ function drawLoupe() {
   // A swatch of the metered pixel heads each line -- the colour itself says
   // which row is which.  The pixel's rgba layers over a 5px checker so alpha
   // reads honestly at swatch size.
+  // Swatches are exactly one loupe cell: zoom x zoom, so the chip reads as
+  // the metered pixel lifted out of the canvas.  Checker quarters scale to a
+  // clean 2x2 at any zoom.
+  lpre.style.setProperty("--z", zoom + "px");
   const sw = p => `<span class="sw" style="background:`
     + `linear-gradient(rgba(${p[i]},${p[i+1]},${p[i+2]},${p[i+3]/255}),`
     + `rgba(${p[i]},${p[i+1]},${p[i+2]},${p[i+3]/255})),`
-    + `repeating-conic-gradient(#888 0 25%, #ccc 0 50%) 0 0/5px 5px"></span>`;
+    + `repeating-conic-gradient(#888 0 25%, #ccc 0 50%) 0 0/${zoom/2}px ${zoom/2}px"></span>`;
   const row = (tag, p, on) =>
     `${sw(p)}<span class="${on ? "on" : "dim"}">${tag}  ${hex(p)}  ${flt(p)}</span>`;
   lpre.innerHTML = [
