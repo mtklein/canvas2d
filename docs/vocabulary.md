@@ -348,3 +348,14 @@ both read very clear to me.
   a reason (half8_if_then_else vs OpenCL select(): different argument
   order, hence different name).
 - 2026-06-11: k255 split — inv255 is 1/255; k255 is 255 (0f6a0af).
+- 2026-06-11 (structural, from the abstraction docket): the compositor stops
+  existing — no object, no ABI, no compositor_cpu.c; blending integrates
+  holistically into canvas.  Web names at the public surface, blend-family
+  names inside.  Enum mirrors elsewhere: coordinator's call — the leaf
+  modules (cover, stroke) keep their minimal vocabularies (genuinely
+  standalone algorithms; asserts pin the seams); the matrix pair stays.
+  APIs bend toward the web: per-call beats stateful (fill rule moves to the
+  call, set_fill_rule dies; create_image_data drops its ignored canvas).
+  The selection/caret text API is REAL, not neglected: gallery demos coming.
+  Large coherent files are fine — one concern per file, large concerns make
+  large files.
