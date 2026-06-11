@@ -189,19 +189,30 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c) {
     cnvs_text_cache_init(c);  // back to the empty state, stats included
 }
 
+// The slot a fresh shaped line lands in: the first empty slot, else the
+// least-recently-used one.
+static cnvs_shape_slot *__single shape_lru_victim(cnvs_text_cache *__single c) {
+    cnvs_shape_slot *victim = &c->shape[0];
+    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
+        if (!c->shape[i].s) {
+            return &c->shape[i];
+        }
+        if (c->shape[i].stamp < victim->stamp) {
+            victim = &c->shape[i];
+        }
+    }
+    return victim;
+}
+
 cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, char const *__counted_by(len) text, int len) {
-    uint32_t size_bits = 0;
-    memcpy(&size_bits, &size_px, sizeof size_bits);
-    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        cnvs_shape_slot *slot = &c->shape[i];
-        if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
-            slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
-            slot->stamp = ++c->tick;
-            c->shape_hits++;
-            return slot->s;
-        }
+    cnvs_shape_slot *__single hit = cnvs_text_cache_shape_slot(c, size_px, rtl,
+                                                               text, len);
+    if (hit) {
+        hit->stamp = ++c->tick;
+        c->shape_hits++;
+        return hit->s;
     }
     c->shape_misses++;
     // Miss.  Copy the key bytes the slot will own (+1 so a zero-length key
@@ -221,16 +232,9 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
     // Insert into an empty slot, else evict the least-recently-used one.  This
     // cannot invalidate a borrowed line: call sites take one lookup per op and
     // never nest, so no borrow is alive across an insert.
-    cnvs_shape_slot *victim = &c->shape[0];
-    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        if (!c->shape[i].s) {
-            victim = &c->shape[i];
-            break;
-        }
-        if (c->shape[i].stamp < victim->stamp) {
-            victim = &c->shape[i];
-        }
-    }
+    uint32_t size_bits = 0;
+    memcpy(&size_bits, &size_px, sizeof size_bits);
+    cnvs_shape_slot *victim = shape_lru_victim(c);
     if (victim->s) {
         cnvs_shaped_free(victim->s);
         free(victim->text);
@@ -343,6 +347,19 @@ static cnvs_glyph_slot *__single glyph_probe(cnvs_text_cache *__single c,
     }
 }
 
+// Build the glyph table on the first miss or insert that needs it; false when
+// it (still) doesn't exist -- a failed build just retries on the next call.
+static bool glyph_table_ensure(cnvs_text_cache *__single c) {
+    if (c->glyph_cap == 0) {
+        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
+        if (t) {
+            c->glyph = t;
+            c->glyph_cap = CNVS_GLYPH_TABLE_N;
+        }
+    }
+    return c->glyph_cap != 0;
+}
+
 cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
         int fid, void *__single font, uint16_t glyph, float size_px) {
     if (!c || fid < 0) {
@@ -358,13 +375,8 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
         return NULL;  // nothing to fetch with (a replay-built run whose glyph
     }                 // block was missing): degrade, don't poison the cache
     c->glyph_misses++;
-    if (c->glyph_cap == 0) {  // first miss: build the table (a failure here
-        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
-        if (t) {              // just retries on the next miss)
-            c->glyph = t;
-            c->glyph_cap = CNVS_GLYPH_TABLE_N;
-            slot = glyph_probe(c, key);
-        }
+    if (glyph_table_ensure(c)) {
+        slot = glyph_probe(c, key);
     }
     if (!slot || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
         return NULL;  // nowhere to remember the fetch: plain boundary path
@@ -452,13 +464,7 @@ void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
         free(pt);
         return;
     }
-    if (c->glyph_cap == 0) {  // first insert: build the table, like a live miss
-        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
-        if (t) {
-            c->glyph = t;
-            c->glyph_cap = CNVS_GLYPH_TABLE_N;
-        }
-    }
+    (void)glyph_table_ensure(c);  // first insert builds it, like a live miss
     uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
     cnvs_glyph_slot *slot = glyph_probe(c, key);
     if (!slot || slot->used || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
@@ -503,13 +509,8 @@ cnvs_glyph_slot *__single cnvs_text_cache_color(cnvs_text_cache *__single c,
         return NULL;  // nothing to rasterize with (a replay-built run whose
     }                 // bitmap block was missing): degrade, don't poison
     c->glyph_misses++;
-    if (c->glyph_cap == 0) {  // first miss: build the table (a failure here
-        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
-        if (t) {              // just retries on the next miss)
-            c->glyph = t;
-            c->glyph_cap = CNVS_GLYPH_TABLE_N;
-            slot = glyph_probe(c, key);
-        }
+    if (glyph_table_ensure(c)) {
+        slot = glyph_probe(c, key);
     }
     if (!slot || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
         return NULL;  // nowhere to remember the capture: per-draw boundary path
@@ -564,13 +565,7 @@ void cnvs_text_cache_put_capture(cnvs_text_cache *__single c, int fid,
         free(px);
         return;
     }
-    if (c->glyph_cap == 0) {  // first insert: build the table, like a live miss
-        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
-        if (t) {
-            c->glyph = t;
-            c->glyph_cap = CNVS_GLYPH_TABLE_N;
-        }
-    }
+    (void)glyph_table_ensure(c);  // first insert builds it, like a live miss
     uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
     cnvs_glyph_slot *slot = glyph_probe(c, key);
     if (!slot || slot->used || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
@@ -723,16 +718,7 @@ void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
     cnvs_shape_slot *victim = cnvs_text_cache_shape_slot(c, size_px, rtl, text,
                                                          len);
     if (!victim) {
-        victim = &c->shape[0];
-        for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-            if (!c->shape[i].s) {
-                victim = &c->shape[i];
-                break;
-            }
-            if (c->shape[i].stamp < victim->stamp) {
-                victim = &c->shape[i];
-            }
-        }
+        victim = shape_lru_victim(c);
     }
     if (victim->s) {
         cnvs_shaped_free(victim->s);
