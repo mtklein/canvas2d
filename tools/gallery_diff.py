@@ -90,8 +90,8 @@ def main():
 
 
 # One page, no dependencies.  The overview ranks every changed scene
-# worst-first by weighted change with an idiff-CSS glow thumbnail per row
-# (instant, no decode); the per-scene modes are blink (default; 2 Hz, space
+# worst-first by weighted change with a heatmap thumbnail per row (the same
+# renderer and gain as mode 2); the per-scene modes are blink (default; 2 Hz, space
 # steps by hand) | heatmap (per-pixel max channel delta, exact stats,
 # adjustable gain) | swipe (pointer-driven divider) | side-by-side.  The
 # loupe magnifies around the cursor in every mode and stays live through
@@ -122,9 +122,6 @@ TEMPLATE = r"""<!doctype html>
        heatmap against blink is the whole point of mode-flicking) */
   img, canvas { image-rendering:pixelated; background:
        repeating-conic-gradient(#23262e 0 25%, #1b1e25 0 50%) 0 0/16px 16px; border:1px solid #2a2e38; }
-  .glow { position:relative; filter: grayscale(1) brightness(64); background:#000; }
-  .glow img { display:block; border:0; background:none; }
-  .glow img + img { position:absolute; inset:0; mix-blend-mode:difference; }
   #overlay { position:relative; cursor:ew-resize; }
   #overlay img { display:block; }
   #overlay .top { position:absolute; inset:0; }
@@ -135,8 +132,7 @@ TEMPLATE = r"""<!doctype html>
   table#over td { padding:6px 10px; vertical-align:middle; border-bottom:1px solid #2a2e38; }
   table#over tr { cursor:pointer; }
   table#over tr:hover td { background:#1d212b; }
-  table#over img, table#over .glow { max-height:96px; }
-  table#over .glow img { max-height:96px; }
+  table#over img, table#over canvas { max-height:96px; }
   table#over .num { color:#8b93a7; font-variant-numeric:tabular-nums; text-align:right; }
   #loupe { position:fixed; right:16px; bottom:16px; background:#10131a; border:1px solid #3a4152;
            border-radius:8px; padding:8px; display:none; z-index:9; box-shadow:0 4px 24px #000a; }
@@ -169,10 +165,18 @@ const nav = document.getElementById("nav"), view = document.getElementById("view
 
 function img(src) { const e = new Image(); e.src = src; return e; }
 
-function glowEl(s) {  // idiff's CSS diff: instant, kept for overview thumbnails
-  const g = document.createElement("div"); g.className = "glow";
-  g.append(img(s.before), img(s.after));
-  return g;
+function heatCanvas(s) {  // the one heatmap renderer: mode 2 and the overview
+  const {w, h, pa, pb} = s.px;
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d"), out = cx.createImageData(w, h);
+  for (let i = 0; i < pa.length; i += 4) {
+    const d = Math.max(Math.abs(pa[i]-pb[i]), Math.abs(pa[i+1]-pb[i+1]),
+                       Math.abs(pa[i+2]-pb[i+2]), Math.abs(pa[i+3]-pb[i+3]));
+    const v = Math.min(255, d * gain);
+    out.data[i] = v; out.data[i+1] = d ? 48 : 0; out.data[i+2] = 0; out.data[i+3] = 255;
+  }
+  cx.putImageData(out, 0, 0);
+  return cv;
 }
 
 // Decode once per scene; data: URIs keep the canvas untainted.  Alongside the
@@ -238,7 +242,7 @@ function rebuildNav() {
 
 function overview() {
   view.innerHTML = ""; hideLoupe(); clearInterval(blinkTimer); blinkTimer = null;
-  stats.textContent = "ranked by weighted change (% px changed, sqrt-magnitude); click a row";
+  stats.textContent = `ranked by weighted change; heat ×${gain} ([ and ] adjust); click a row`;
   document.querySelectorAll(".mode").forEach(b => b.classList.remove("sel"));
   const order = ranked();
   const t = document.createElement("table"); t.id = "over";
@@ -251,7 +255,7 @@ function overview() {
     num.textContent = s.pct !== undefined && s.count >= 0
       ? `${(s.pct * 100).toFixed(2)}% changed  ·  ${s.count.toLocaleString()} px  ·  max ${s.max}` : "";
     const gl = document.createElement("td");
-    if (s.before && s.after) gl.append(glowEl(s));
+    if (s.before && s.after && s.px) gl.append(heatCanvas(s));
     const ba = document.createElement("td");
     if (s.before) ba.append(img(s.before));
     if (s.after) ba.append(img(s.after));
@@ -375,16 +379,8 @@ function render() {
       applyPhase();  // the shared clock (startClock above) does the blinking
     }
   } else {  // heatmap: exact, JS-computed, adjustable gain
-    pixels(s, ({w, h, pa, pb}) => {
-      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-      const cx = cv.getContext("2d"), out = cx.createImageData(w, h);
-      for (let i = 0; i < pa.length; i += 4) {
-        const d = Math.max(Math.abs(pa[i]-pb[i]), Math.abs(pa[i+1]-pb[i+1]),
-                           Math.abs(pa[i+2]-pb[i+2]), Math.abs(pa[i+3]-pb[i+3]));
-        const v = Math.min(255, d * gain);
-        out.data[i] = v; out.data[i+1] = d ? 48 : 0; out.data[i+2] = 0; out.data[i+3] = 255;
-      }
-      cx.putImageData(out, 0, 0);
+    pixels(s, () => {
+      const cv = heatCanvas(s);
       const f = document.createElement("figure"); f.append(cv);
       f.insertAdjacentHTML("beforeend", `<figcaption>delta ×${gain} ([ and ] adjust)</figcaption>`);
       view.append(f); watch(cv);
@@ -409,8 +405,8 @@ addEventListener("keydown", e => {
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
     paused = true; clearInterval(blinkTimer); blinkTimer = null; tick(); }
   else if (e.key === "Enter") { if (cur < 0) return; paused = false; startClock(); }
-  else if (e.key === "]") { gain = Math.min(256, gain * 2); if (mode === "heat") render(); }
-  else if (e.key === "[") { gain = Math.max(1, gain / 2); if (mode === "heat") render(); }
+  else if (e.key === "]") { gain = Math.min(256, gain * 2); if (mode === "heat" || cur < 0) render(); }
+  else if (e.key === "[") { gain = Math.max(1, gain / 2); if (mode === "heat" || cur < 0) render(); }
   else if (e.key === "+" || e.key === "=") { zoom = Math.min(32, zoom * 2); drawLoupe(); }
   else if (e.key === "-") { zoom = Math.max(2, zoom / 2); drawLoupe(); }
   else if (e.key === "m") { loupeOn = !loupeOn; loupeOn ? drawLoupe() : hideLoupe(); }
