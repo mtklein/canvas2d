@@ -3136,6 +3136,29 @@ static void p2d_replay(canvas *__single cv, canvas_path2d const *__single p) {
     }
 }
 
+// Borrow the current-path machinery for a Path2D without disturbing it: swap_in
+// copies the current path (and its user-space pen) aside and builds `p` into a
+// fresh one in its place; swap_out frees the scratch and restores the original.
+// Every Path2D draw and hit-test runs between the two.
+struct p2d_scratch {
+    cnvs_path path;
+    cnvs_vec2 user;
+};
+
+static void p2d_swap_in(canvas *__single cv, canvas_path2d const *__single p,
+                        struct p2d_scratch *__single sv) {
+    sv->path = cv->path;
+    sv->user = cv->cur_user;
+    cnvs_path_init(&cv->path);
+    p2d_replay(cv, p);
+}
+
+static void p2d_swap_out(canvas *__single cv, struct p2d_scratch *__single sv) {
+    cnvs_path_free(&cv->path);
+    cv->path = sv->path;
+    cv->cur_user = sv->user;
+}
+
 void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
                       canvas_fill_rule rule) {
     // Record `fill_path <id> <rule>` against the path's numbered block, then
@@ -3146,17 +3169,11 @@ void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
         if (id >= 0) { cnvs_rec_path_rule(cv->rec, "fill_path", id, rule); }
     }
     cnvs_rec_enter(cv->rec);
-    // Replay into a fresh device-space path without touching the current path:
-    // copy the current path aside, build, fill, free, restore.
-    cnvs_path saved = cv->path;
-    cnvs_vec2 saved_user = cv->cur_user;
-    cnvs_path_init(&cv->path);
-    p2d_replay(cv, p);
+    struct p2d_scratch sv;
+    p2d_swap_in(cv, p, &sv);
     fill_device_path(cv, &cv->path,
                      rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
-    cnvs_path_free(&cv->path);
-    cv->path = saved;
-    cv->cur_user = saved_user;
+    p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
 }
 
@@ -3166,14 +3183,10 @@ void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
         if (id >= 0) { cnvs_rec_path_op(cv->rec, "stroke_path", id); }
     }
     cnvs_rec_enter(cv->rec);
-    cnvs_path saved = cv->path;
-    cnvs_vec2 saved_user = cv->cur_user;
-    cnvs_path_init(&cv->path);
-    p2d_replay(cv, p);
+    struct p2d_scratch sv;
+    p2d_swap_in(cv, p, &sv);
     stroke_device_path(cv, &cv->path);
-    cnvs_path_free(&cv->path);
-    cv->path = saved;
-    cv->cur_user = saved_user;
+    p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
 }
 
@@ -3185,18 +3198,14 @@ void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
     }
     // Swallow both p2d_replay's path methods and the nested canvas_clip.
     cnvs_rec_enter(cv->rec);
-    cnvs_path saved = cv->path;
-    cnvs_vec2 saved_user = cv->cur_user;
+    struct p2d_scratch sv;
     cnvs_fill_rule saved_rule = cv->cur.fill_rule;
-    cnvs_path_init(&cv->path);
-    p2d_replay(cv, p);
+    p2d_swap_in(cv, p, &sv);
     // canvas_clip reads the current fill rule; honour the explicit one here.
     cv->cur.fill_rule = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
     canvas_clip(cv);
     cv->cur.fill_rule = saved_rule;
-    cnvs_path_free(&cv->path);
-    cv->path = saved;
-    cv->cur_user = saved_user;
+    p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
 }
 
@@ -3206,15 +3215,11 @@ bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__singl
         return false;
     }
     cnvs_rec_enter(cv->rec);  // a query: p2d_replay's path methods record nothing
-    cnvs_path saved = cv->path;
-    cnvs_vec2 saved_user = cv->cur_user;
-    cnvs_path_init(&cv->path);
-    p2d_replay(cv, p);
+    struct p2d_scratch sv;
+    p2d_swap_in(cv, p, &sv);
     bool inside = path_contains(&cv->path, xf(cv, x, y),
                                 rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
-    cnvs_path_free(&cv->path);
-    cv->path = saved;
-    cv->cur_user = saved_user;
+    p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
     return inside;
 }
@@ -3226,15 +3231,11 @@ bool canvas_is_point_in_stroke_path(canvas *__single cv,
         return false;
     }
     cnvs_rec_enter(cv->rec);  // a query: p2d_replay's path methods record nothing
-    cnvs_path saved = cv->path;
-    cnvs_vec2 saved_user = cv->cur_user;
-    cnvs_path_init(&cv->path);
-    p2d_replay(cv, p);
+    struct p2d_scratch sv;
+    p2d_swap_in(cv, p, &sv);
     bool inside = build_stroke_verts(cv, &cv->path) &&
                   stroke_verts_contain(cv, xf(cv, x, y));
-    cnvs_path_free(&cv->path);
-    cv->path = saved;
-    cv->cur_user = saved_user;
+    p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
     return inside;
 }
