@@ -30,9 +30,9 @@ cnvs_mat cnvs_mat_scale(float sx, float sy) {
 
 cnvs_mat cnvs_mat_rotate(float radians) {
     float s = sinf(radians);
-    float k = cosf(radians);
-    return (cnvs_mat){ .a = k, .c = -s, .e = 0.0f,
-                       .b = s, .d =  k, .f = 0.0f };
+    float c = cosf(radians);
+    return (cnvs_mat){ .a = c, .c = -s, .e = 0.0f,
+                       .b = s, .d =  c, .f = 0.0f };
 }
 
 cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p) {

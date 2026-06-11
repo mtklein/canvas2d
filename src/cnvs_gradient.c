@@ -157,7 +157,7 @@ cnvs_unpremul cnvs_gradient_sample(struct cnvs_gradient const *gr, cnvs_vec2 p, 
 // lane is set (-1, from a vector comparison), else b.  Bitwise: the selected
 // lane passes through untouched (an arithmetic b + (a-b)*m re-rounds it), and
 // an unselected lane's inf/NaN is discarded exactly.
-static float8 vsel_bits(int8 m, float8 a, float8 b) {
+static float8 float8_if_then_else(int8 m, float8 a, float8 b) {
     return (float8)(((int8)a & m) | ((int8)b & ~m));
 }
 
@@ -217,10 +217,10 @@ void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, in
                 float8 lo = __builtin_elementwise_min(r1_, r2_);
                 int8 hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
                 int8 look = r0 + lo * dr >= 0.0f;
-                root = vsel_bits(hiok, hi, vsel_bits(look, lo, (float8)0.0f));
+                root = float8_if_then_else(hiok, hi, float8_if_then_else(look, lo, (float8)0.0f));
                 valid = (disc >= 0.0f) & (hiok | look);
             }
-            float8 out = vsel_bits(valid, vclamp01(root), (float8)-1.0f);
+            float8 out = float8_if_then_else(valid, vclamp01(root), (float8)-1.0f);
             memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
         }
     }
@@ -292,8 +292,8 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
             for (int s = 1; s + 1 < sc; s++) {
                 int8 m = tv > off[s];
                 short8 mh = __builtin_convertvector(m, short8);
-                lo_off = vsel_bits(m, off[s],     lo_off);
-                hi_off = vsel_bits(m, off[s + 1], hi_off);
+                lo_off = float8_if_then_else(m, off[s],     lo_off);
+                hi_off = float8_if_then_else(m, off[s + 1], hi_off);
                 lo = gradpx8_sel(mh, col[s],     lo);
                 hi = gradpx8_sel(mh, col[s + 1], hi);
             }
@@ -301,7 +301,7 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
             // overwrite may divide by a zero span; the bitwise selects discard
             // the resulting inf/NaN exactly.
             float8 span = hi_off - lo_off;
-            float8 u32 = vsel_bits(span > 0.0f, (tv - lo_off) / span,
+            float8 u32 = float8_if_then_else(span > 0.0f, (tv - lo_off) / span,
                                    (float8)0.0f);
             half8 u = __builtin_convertvector(u32, half8);
             gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,

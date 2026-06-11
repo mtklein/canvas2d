@@ -466,11 +466,11 @@ void cnvs_rec_pattern(struct cnvs_recorder *__single r,
 }
 
 // One Path2D command's verb token and float-argument count; NULL for a value
-// that is not an enum p2d_op.  The list comes from our own builders, but the
+// that is not an enum p2d_verb.  The list comes from our own builders, but the
 // serializer validates it anyway (the glyph emission posture): an invalid
 // command means the whole block is skipped, never a short block.
-static char const *__null_terminated p2d_token(enum p2d_op op, int *__single nargs) {
-    switch (op) {
+static char const *__null_terminated p2d_token(enum p2d_verb verb, int *__single nargs) {
+    switch (verb) {
         case P2D_MOVE:       *nargs = 2; return "m";
         case P2D_LINE:       *nargs = 2; return "l";
         case P2D_QUAD:       *nargs = 4; return "q";
@@ -492,7 +492,7 @@ static char const *__null_terminated p2d_token(enum p2d_op op, int *__single nar
 static bool path_cmds_eq(p2d_cmd const *__counted_by(n) a,
                          p2d_cmd const *__counted_by(n) b, int n) {
     for (int i = 0; i < n; i++) {
-        if (a[i].op != b[i].op || a[i].ccw != b[i].ccw ||
+        if (a[i].verb != b[i].verb || a[i].ccw != b[i].ccw ||
             memcmp(a[i].a, b[i].a, sizeof a[i].a) != 0) {
             return false;
         }
@@ -507,7 +507,7 @@ int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *
     int const n = p->ncmds;
     for (int iv = 0; iv < n; iv++) {
         int k = 0;
-        if (!p2d_token(p->cmds[iv].op, &k)) {
+        if (!p2d_token(p->cmds[iv].verb, &k)) {
             return -1;  // not a command: emit nothing rather than a short block
         }
     }
@@ -533,10 +533,10 @@ int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *
     fprintf(r->f, "path %d %d\n", id, n);
     for (int i = 0; i < n; i++) {
         int k = 0;
-        char const *__null_terminated tok = p2d_token(p->cmds[i].op, &k);
+        char const *__null_terminated tok = p2d_token(p->cmds[i].verb, &k);
         fputs(tok, r->f);
         put_floats(r->f, p->cmds[i].a, k);
-        if (p->cmds[i].op == P2D_ARC || p->cmds[i].op == P2D_ELLIPSE) {
+        if (p->cmds[i].verb == P2D_ARC || p->cmds[i].verb == P2D_ELLIPSE) {
             fputs(p->cmds[i].ccw ? " 1" : " 0", r->f);
         }
         fputc('\n', r->f);

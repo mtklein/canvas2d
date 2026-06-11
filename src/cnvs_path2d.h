@@ -12,13 +12,13 @@
 
 #include <ptrcheck.h>
 
-enum p2d_op {
+enum p2d_verb {
     P2D_MOVE, P2D_LINE, P2D_QUAD, P2D_CUBIC, P2D_ARC, P2D_ELLIPSE,
     P2D_ARC_TO, P2D_RECT, P2D_ROUND_RECT, P2D_CLOSE
 };
 
 typedef struct {
-    enum p2d_op op;
+    enum p2d_verb verb;
     float a[8];  // op arguments (ellipse uses the most: x,y,rx,ry,rotation,sa,ea)
     bool ccw;    // arc / ellipse winding direction
 } p2d_cmd;

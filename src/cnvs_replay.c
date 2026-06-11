@@ -402,9 +402,10 @@ static void blocks_finish_shape(struct canvas *__single cv,
 // declared, finite metrics, non-empty name.
 static bool replay_font(struct canvas *__single cv, struct replay_blocks *__single b,
                         char const *__counted_by(le) data, size_t le, size_t j) {
-    long id = 0;
+    long file_id = 0;
     float vm[2];
-    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || b->seen[id]) {
+    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &file_id) ||
+        b->seen[file_id]) {
         return false;
     }
     if (!read_floats(data, le, &j, vm, 2) ||
@@ -415,10 +416,10 @@ static bool replay_font(struct canvas *__single cv, struct replay_blocks *__sing
     if (j >= le) {
         return false;  // empty name
     }
-    b->seen[id] = true;
+    b->seen[file_id] = true;
     int fid = cnvs_text_cache_intern(cnvs_canvas_text_cache(cv), data + j,
                                      (int)(le - j));
-    b->map[id] = fid;
+    b->map[file_id] = fid;
     if (fid >= 0) {
         cnvs_text_cache_set_vmetrics(cnvs_canvas_text_cache(cv), fid,
                                      vm[0], vm[1]);
@@ -434,9 +435,10 @@ static bool replay_font(struct canvas *__single cv, struct replay_blocks *__sing
 // numbers, upem >= 0.
 static bool replay_glyph(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
-    long id = 0, gid = 0;
+    long file_id = 0, gid = 0;
     float meta[5];  // upem, then the font-unit ink box x0 y0 x1 y1
-    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || !b->seen[id]) {
+    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &file_id) ||
+        !b->seen[file_id]) {
         return false;
     }
     if (!read_uint(data, le, &j, 0xFFFF, &gid)) {
@@ -483,7 +485,7 @@ static bool replay_glyph(struct canvas *__single cv, struct replay_blocks *__sin
     if (meta[0] == 0.0f && nv != 0) {
         return false;  // a blank glyph has no curves
     }
-    if (b->map[id] < 0) {
+    if (b->map[file_id] < 0) {
         return true;  // interning degraded: a well-formed block with nowhere
     }                 // to land; its references degrade to blank glyphs
     // Pass 2: rebuild the owned arrays (the cache takes ownership).
@@ -519,7 +521,7 @@ static bool replay_glyph(struct canvas *__single cv, struct replay_blocks *__sin
             }
         }
     }
-    cnvs_text_cache_put_glyph(cnvs_canvas_text_cache(cv), b->map[id],
+    cnvs_text_cache_put_glyph(cnvs_canvas_text_cache(cv), b->map[file_id],
                               (uint16_t)gid, verbs, nv, pts, np, meta[0],
                               meta[1], meta[2], meta[3], meta[4]);
     return true;
@@ -539,9 +541,10 @@ static bool replay_glyph(struct canvas *__single cv, struct replay_blocks *__sin
 // [1, ceil(zlen / 3)] (each line must contribute at least one decoded byte).
 static bool replay_bitmap(struct replay_blocks *__single b,
                           char const *__counted_by(le) data, size_t le, size_t j) {
-    long id = 0, gid = 0, w = 0, h = 0, zlen = 0, nlines = 0;
+    long file_id = 0, gid = 0, w = 0, h = 0, zlen = 0, nlines = 0;
     float ink[4];
-    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) || !b->seen[id]) {
+    if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &file_id) ||
+        !b->seen[file_id]) {
         return false;
     }
     if (!read_uint(data, le, &j, 0xFFFF, &gid)) {
@@ -579,7 +582,7 @@ static bool replay_bitmap(struct replay_blocks *__single b,
     }
     b->bm_zlen = (int)zlen;
     b->bm = zs;              // count before pointer
-    b->bm_fid = b->map[id];  // -1 = interning degraded: validate, don't land
+    b->bm_fid = b->map[file_id];  // -1 = interning degraded: validate, don't land
     b->bm_img = -1;          // a capture, not an `image` block
     b->bm_total = (int)total;
     b->bm_fill = 0;
@@ -930,13 +933,13 @@ static bool replay_run(struct canvas *__single cv, struct replay_blocks *__singl
         return false;
     }
     if (!tok_eq(data, le, ts, tl, "-1")) {  // -1 = an unkeyed (or color) run
-        long id = 0;
+        long file_id = 0;
         j = j0;
-        if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &id) ||
-            !b->seen[id]) {
+        if (!read_uint(data, le, &j, CNVS_FONT_INTERN_N - 1, &file_id) ||
+            !b->seen[file_id]) {
             return false;
         }
-        name_id = b->map[id];  // -1 when interning degraded
+        name_id = b->map[file_id];  // -1 when interning degraded
     }
     bool rtl = false, color = false;
     long n = 0;

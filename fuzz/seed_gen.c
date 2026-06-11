@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
         op(&s, OP_SET_LINE_DASH); rng(&s, 0, 2); f32(&s, 6); f32(&s, 3);
         op(&s, OP_BEGIN_PATH);
         op(&s, OP_MOVE_TO); f32(&s, 10); f32(&s, 40);
-        op(&s, OP_BEZIER_TO); f32(&s, 60); f32(&s, 0); f32(&s, 140); f32(&s, 80); f32(&s, 190); f32(&s, 40);
+        op(&s, OP_CUBIC_TO); f32(&s, 60); f32(&s, 0); f32(&s, 140); f32(&s, 80); f32(&s, 190); f32(&s, 40);
         op(&s, OP_STROKE);
         write_seed(dir, idx++, &s);
     }

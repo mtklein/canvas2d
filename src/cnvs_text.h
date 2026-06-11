@@ -173,7 +173,7 @@ struct cnvs_shape_slot {
     int len;
     uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
     bool rtl;            // paragraph direction, the key's third part
-    uint64_t stamp;      // last-use tick, the LRU ordering
+    uint64_t last_use;   // tick at last use, the LRU ordering
     struct cnvs_shaped *__single s;  // owned; freed on eviction/clear
     bool emitted;  // already serialized into the active recording (cnvs_record.c)
 };
@@ -224,7 +224,7 @@ struct cnvs_font_name {
 
 struct cnvs_text_cache {
     struct cnvs_shape_slot shape[CNVS_SHAPE_CACHE_N];
-    uint64_t tick;  // monotone use counter feeding the shape slots' LRU stamps
+    uint64_t tick;  // monotone use counter feeding the shape slots' last_use
     struct cnvs_glyph_slot *__counted_by(glyph_cap) glyph;  // lazily built on first miss
     int glyph_cap;                                   // 0 until that build succeeds
     int glyph_count;

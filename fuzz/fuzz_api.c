@@ -120,7 +120,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                                             rd_f32(&c), rd_f32(&c)); break;
             case OP_QUAD_TO:    canvas_quadratic_curve_to(cv, rd_f32(&c), rd_f32(&c),
                                                           rd_f32(&c), rd_f32(&c)); break;
-            case OP_BEZIER_TO:  canvas_bezier_curve_to(cv, rd_f32(&c), rd_f32(&c),
+            case OP_CUBIC_TO:  canvas_bezier_curve_to(cv, rd_f32(&c), rd_f32(&c),
                                                        rd_f32(&c), rd_f32(&c),
                                                        rd_f32(&c), rd_f32(&c)); break;
             case OP_ARC:        canvas_arc(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),

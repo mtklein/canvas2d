@@ -1216,14 +1216,14 @@ static rgb8 set_lum8(rgb8 c, half8 l) {
     return clip_color8(c);
 }
 
-static half8 sat8(rgb8 c) {
+static half8 saturation8(rgb8 c) {
     return __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b))
          - __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
 }
 
 // Set saturation: max channel -> s, min -> 0, mid proportional; an all-equal
 // lane (mx <= mn) has no saturation axis and goes to black.
-static rgb8 set_sat8(rgb8 c, half8 s) {
+static rgb8 set_saturation8(rgb8 c, half8 s) {
     half8 const zero = (half8)(_Float16)0.0f;
     half8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
     half8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
@@ -1236,8 +1236,8 @@ static rgb8 set_sat8(rgb8 c, half8 s) {
 
 static rgb8 blend_nonsep8(enum canvas_composite_op mode, rgb8 cb, rgb8 cs) {
     switch ((int)mode) {
-        case CANVAS_OP_HUE:        return set_lum8(set_sat8(cs, sat8(cb)), lum8(cb));
-        case CANVAS_OP_SATURATION: return set_lum8(set_sat8(cb, sat8(cs)), lum8(cb));
+        case CANVAS_OP_HUE:        return set_lum8(set_saturation8(cs, saturation8(cb)), lum8(cb));
+        case CANVAS_OP_SATURATION: return set_lum8(set_saturation8(cb, saturation8(cs)), lum8(cb));
         case CANVAS_OP_COLOR:      return set_lum8(cs, lum8(cb));
         default:                   return set_lum8(cb, lum8(cs));  // luminosity
     }
@@ -1311,15 +1311,15 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
     return cnvs_px8_clamp_premul(co);  // additive 'lighter' can exceed 1
 }
 
-// The coverage lerp: out = blend*k + dst*(1-k) per plane.  Two products, not
-// dst + (blend-dst)*k, so k == 1 returns the blend bit-exactly and k == 0
-// returns dst bit-exactly (full coverage must not perturb the blend; zero
-// coverage must not perturb the destination).  The clamp restores the
-// premultiplied invariant against the one-ULP drift of k + (1-k) in f16.
-static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 k) {
-    half8 j = (half8)(_Float16)1.0f - k;
-    cnvs_px8 o = { co.r * k + d.r * j, co.g * k + d.g * j,
-                   co.b * k + d.b * j, co.a * k + d.a * j };
+// The coverage lerp: out = blend*cov + dst*(1-cov) per plane.  Two products,
+// not dst + (blend-dst)*cov, so cov == 1 returns the blend bit-exactly and
+// cov == 0 returns dst bit-exactly (full coverage must not perturb the blend;
+// zero coverage must not perturb the destination).  The clamp restores the
+// premultiplied invariant against the one-ULP drift of cov + (1-cov) in f16.
+static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 cov) {
+    half8 icov = (half8)(_Float16)1.0f - cov;
+    cnvs_px8 o = { co.r * cov + d.r * icov, co.g * cov + d.g * icov,
+                   co.b * cov + d.b * icov, co.a * cov + d.a * icov };
     return cnvs_px8_clamp_premul(o);
 }
 
@@ -1363,14 +1363,14 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                 }
                 o = blend8(s, d, mode);
             } else {
-                half8 k = one;  // 1*x is exact: a lone factor passes through
+                half8 cv8 = one;  // 1*x is exact: a lone factor passes through
                 if (cov) {
-                    k = k * (half8_from_u8(cov + ti) * inv255);
+                    cv8 = cv8 * (half8_from_u8(cov + ti) * inv255);
                 }
                 if (clip) {
-                    k = k * (half8_from_u8(clip + di) * inv255);
+                    cv8 = cv8 * (half8_from_u8(clip + di) * inv255);
                 }
-                o = cov_lerp8(d, blend8(s, d, mode), k);
+                o = cov_lerp8(d, blend8(s, d, mode), cv8);
             }
             cnvs_px8_store(cv->target + di, o);
         }
@@ -1392,14 +1392,14 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                 }
                 o = blend8(s, d, mode);
             } else {
-                half8 k = one;
+                half8 cv8 = one;
                 if (cov) {
-                    k = k * (half8_from_u8_k(cov + ti, n) * inv255);
+                    cv8 = cv8 * (half8_from_u8_k(cov + ti, n) * inv255);
                 }
                 if (clip) {
-                    k = k * (half8_from_u8_k(clip + di, n) * inv255);
+                    cv8 = cv8 * (half8_from_u8_k(clip + di, n) * inv255);
                 }
-                o = cov_lerp8(d, blend8(s, d, mode), k);
+                o = cov_lerp8(d, blend8(s, d, mode), cv8);
             }
             cnvs_px8_store_k(cv->target + di, n, o);
         }
@@ -1838,13 +1838,13 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
     if (!shadow_active(cv) || b.w <= 0 || b.h <= 0) {
         return;
     }
-    int r = shadow_radius(cv->cur.shadow_blur);
+    int radius = shadow_radius(cv->cur.shadow_blur);
     int offx = shadow_offset(cv->cur.shadow_offset_x);
     int offy = shadow_offset(cv->cur.shadow_offset_y);
-    // Three box passes each spread the blur by r, so the falloff reaches ~0 only
-    // at 3r beyond the shape -- the mask region must include that whole spread or
-    // the soft edge gets clipped to a rectangle.
-    int margin = 3 * r;
+    // Three box passes each spread the blur by the radius, so the falloff
+    // reaches ~0 only at 3x the radius beyond the shape -- the mask region must
+    // include that whole spread or the soft edge gets clipped to a rectangle.
+    int margin = 3 * radius;
     int sx0 = b.x       + offx - margin, sy0 = b.y       + offy - margin;
     int sx1 = b.x + b.w + offx + margin, sy1 = b.y + b.h + offy + margin;
     if (sx0 < 0)          { sx0 = 0; }
@@ -1872,10 +1872,10 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
             }
         }
     }
-    if (r > 0) {  // three separable box passes ~ a Gaussian (src/dst ping-pong)
+    if (radius > 0) {  // three separable box passes ~ a Gaussian (ping-pong)
         for (int pass = 0; pass < 3; pass++) {
-            blur_box_h(cv->shadow_dst, cv->shadow_src, sw, sh, r);
-            blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, r);
+            blur_box_h(cv->shadow_dst, cv->shadow_src, sw, sh, radius);
+            blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, radius);
         }
     }
     // Tint the blurred mask into the tile.  For folding modes, eight pixels
@@ -3478,26 +3478,26 @@ static void p2d_push(struct canvas_path2d *__single p, p2d_cmd c) {
 }
 
 void canvas_path2d_move_to(struct canvas_path2d *__single p, float x, float y) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_MOVE, .a = { x, y } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_MOVE, .a = { x, y } });
 }
 
 void canvas_path2d_line_to(struct canvas_path2d *__single p, float x, float y) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_LINE, .a = { x, y } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_LINE, .a = { x, y } });
 }
 
 void canvas_path2d_quadratic_curve_to(struct canvas_path2d *__single p,
                                       float cpx, float cpy, float x, float y) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_QUAD, .a = { cpx, cpy, x, y } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_QUAD, .a = { cpx, cpy, x, y } });
 }
 
 void canvas_path2d_bezier_curve_to(struct canvas_path2d *__single p, float c1x, float c1y,
                                    float c2x, float c2y, float x, float y) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_CUBIC, .a = { c1x, c1y, c2x, c2y, x, y } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_CUBIC, .a = { c1x, c1y, c2x, c2y, x, y } });
 }
 
 void canvas_path2d_arc(struct canvas_path2d *__single p, float x, float y, float radius,
                        float start_angle, float end_angle, bool anticlockwise) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_ARC,
+    p2d_push(p, (p2d_cmd){ .verb = P2D_ARC,
                            .a = { x, y, radius, start_angle, end_angle },
                            .ccw = anticlockwise });
 }
@@ -3505,28 +3505,28 @@ void canvas_path2d_arc(struct canvas_path2d *__single p, float x, float y, float
 void canvas_path2d_ellipse(struct canvas_path2d *__single p, float x, float y,
                            float rx, float ry, float rotation,
                            float start_angle, float end_angle, bool anticlockwise) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_ELLIPSE,
+    p2d_push(p, (p2d_cmd){ .verb = P2D_ELLIPSE,
                            .a = { x, y, rx, ry, rotation, start_angle, end_angle },
                            .ccw = anticlockwise });
 }
 
 void canvas_path2d_arc_to(struct canvas_path2d *__single p, float x1, float y1,
                           float x2, float y2, float radius) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_ARC_TO, .a = { x1, y1, x2, y2, radius } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_ARC_TO, .a = { x1, y1, x2, y2, radius } });
 }
 
 void canvas_path2d_rect(struct canvas_path2d *__single p, float x, float y,
                         float w, float h) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_RECT, .a = { x, y, w, h } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_RECT, .a = { x, y, w, h } });
 }
 
 void canvas_path2d_round_rect(struct canvas_path2d *__single p, float x, float y,
                               float w, float h, float radius) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_ROUND_RECT, .a = { x, y, w, h, radius } });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_ROUND_RECT, .a = { x, y, w, h, radius } });
 }
 
 void canvas_path2d_close_path(struct canvas_path2d *__single p) {
-    p2d_push(p, (p2d_cmd){ .op = P2D_CLOSE });
+    p2d_push(p, (p2d_cmd){ .verb = P2D_CLOSE });
 }
 
 void canvas_path2d_add_path(struct canvas_path2d *__single dst,
@@ -3542,7 +3542,7 @@ static void p2d_replay(struct canvas *__single cv, struct canvas_path2d const *_
     for (int i = 0; i < p->ncmds; i++) {
         p2d_cmd c = p->cmds[i];
         float const *a = c.a;
-        switch (c.op) {
+        switch (c.verb) {
             case P2D_MOVE:       canvas_move_to(cv, a[0], a[1]); break;
             case P2D_LINE:       canvas_line_to(cv, a[0], a[1]); break;
             case P2D_QUAD:       canvas_quadratic_curve_to(cv, a[0], a[1], a[2], a[3]); break;

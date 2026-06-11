@@ -11,7 +11,7 @@ enum fuzz_op {
     OP_LINE_TO,
     OP_RECT,
     OP_QUAD_TO,
-    OP_BEZIER_TO,
+    OP_CUBIC_TO,
     OP_ARC,
     OP_ELLIPSE,
     OP_ROUND_RECT,

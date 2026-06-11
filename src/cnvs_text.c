@@ -197,7 +197,7 @@ static struct cnvs_shape_slot *__single shape_lru_victim(struct cnvs_text_cache 
         if (!c->shape[i].s) {
             return &c->shape[i];
         }
-        if (c->shape[i].stamp < victim->stamp) {
+        if (c->shape[i].last_use < victim->last_use) {
             victim = &c->shape[i];
         }
     }
@@ -210,7 +210,7 @@ struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache 
     struct cnvs_shape_slot *__single hit = cnvs_text_cache_shape_slot(c, size_px, rtl,
                                                                text, len);
     if (hit) {
-        hit->stamp = ++c->tick;
+        hit->last_use = ++c->tick;
         c->shape_hits++;
         return hit->s;
     }
@@ -243,7 +243,7 @@ struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache 
     victim->len = len;
     victim->size_bits = size_bits;
     victim->rtl = rtl;
-    victim->stamp = ++c->tick;
+    victim->last_use = ++c->tick;
     victim->s = s;
     victim->emitted = false;  // a fresh line (even in a reused slot) is not yet
     return s;                 // serialized into any active recording
@@ -730,7 +730,7 @@ void cnvs_text_cache_put_shape(struct cnvs_text_cache *__single c, float size_px
     victim->len = len;
     victim->size_bits = size_bits;
     victim->rtl = rtl;
-    victim->stamp = ++c->tick;
+    victim->last_use = ++c->tick;
     victim->s = s;
     victim->emitted = false;
 }
