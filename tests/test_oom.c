@@ -25,7 +25,7 @@ static void scene_fill(struct canvas *__single cv) {
     canvas_line_to(cv, 16.0f, 28.0f);
     canvas_close_path(cv);
     canvas_set_fill_rgba(cv, 0.8f, 0.3f, 0.2f, 1.0f);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
 }
 
 static void scene_curve(struct canvas *__single cv) {
@@ -33,7 +33,7 @@ static void scene_curve(struct canvas *__single cv) {
     canvas_move_to(cv, 2.0f, 16.0f);
     canvas_bezier_curve_to(cv, 10.0f, 0.0f, 22.0f, 32.0f, 30.0f, 16.0f);
     canvas_set_fill_rgba(cv, 0.3f, 0.7f, 0.4f, 1.0f);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
 }
 
 static void scene_gradient(struct canvas *__single cv) {
@@ -70,7 +70,7 @@ static void scene_clip(struct canvas *__single cv) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_arc(cv, 16.0f, 16.0f, 12.0f, 0.0f, 6.2831853f, false);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 0.9f, 0.6f, 0.2f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_restore(cv);

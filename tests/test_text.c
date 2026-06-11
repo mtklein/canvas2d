@@ -90,7 +90,7 @@ int main(void) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, 4.0f, 4.0f);  // tiny corner, far from the text
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hello", 40.0f, 55.0f);
     canvas_restore(cv);

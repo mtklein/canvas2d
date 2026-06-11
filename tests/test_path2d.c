@@ -41,7 +41,7 @@ int main(void) {
     CHECK(clear(px, len, 2, 2));   // current path was NOT filled by fill_path
     // Filling the current path now proves it survived intact.
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 1, 1), 0, 0, 255, 255, 2));
     canvas_path2d_free(rp);

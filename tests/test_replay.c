@@ -88,7 +88,7 @@ int main(void) {
         "add_stroke_color_stop 0 1 1 0 1\n"
         "begin_path\n"
         "round_rect_radii 4 4 40 24 2 3 4 2 0 0 5 5\n"
-        "fill\n"
+        "fill nonzero\n"
         "set_image_smoothing_enabled 0\n"
         "set_image_smoothing_quality high\n"
         "set_image_smoothing_enabled true\n"

@@ -36,7 +36,7 @@ static void scene(struct canvas *__single cv, int f) {
             canvas_line_to(cv, cx + r * cosf(a), cy + r * sinf(a));
         }
         canvas_close_path(cv);
-        canvas_fill(cv);
+        canvas_fill(cv, CANVAS_NONZERO);
     }
 
     // Linear + radial gradient fills (the 8-wide param solve + stop lerp rows).
@@ -62,7 +62,7 @@ static void scene(struct canvas *__single cv, int f) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_arc(cv, 128.0f, 128.0f, 70.0f, 0.0f, 6.2831853f, false);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 1.0f, 0.4f, 0.7f, 0.6f);
     canvas_fill_rect(cv, 60.0f, 60.0f, 140.0f, 140.0f);
     canvas_restore(cv);

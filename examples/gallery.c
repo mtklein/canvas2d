@@ -91,12 +91,12 @@ static void shapes(void) {
     canvas_bezier_curve_to(c, 150.0f, 8.0f, 150.0f, 88.0f, 100.0f, 68.0f);
     canvas_bezier_curve_to(c, 70.0f, 58.0f, 70.0f, 38.0f, 100.0f, 28.0f);
     canvas_close_path(c);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     canvas_set_fill_rgba(c, 0.85f, 0.30f, 0.75f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 198.0f, 135.0f, 28.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
     canvas_set_stroke_rgba(c, 1.0f, 0.60f, 0.10f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
@@ -126,7 +126,6 @@ static void winding(void) {
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
-    canvas_set_fill_rule(c, CANVAS_NONZERO);
     canvas_set_fill_rgba(c, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_begin_path(c);
     canvas_rect(c, 20.0f, 20.0f, 80.0f, 80.0f);
@@ -135,17 +134,15 @@ static void winding(void) {
     canvas_line_to(c, 35.0f, 85.0f);
     canvas_line_to(c, 85.0f, 85.0f);
     canvas_close_path(c);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     star(c, 160.0f, 60.0f, 40.0f);
-    canvas_set_fill_rule(c, CANVAS_NONZERO);
     canvas_set_fill_rgba(c, 0.90f, 0.30f, 0.40f, 1.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     star(c, 250.0f, 60.0f, 40.0f);
-    canvas_set_fill_rule(c, CANVAS_EVENODD);
     canvas_set_fill_rgba(c, 0.30f, 0.75f, 0.95f, 1.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_EVENODD);
 
     save(c, "gallery/winding.png");
 }
@@ -210,7 +207,7 @@ static void imagedata(void) {
     canvas_set_fill_rgba(c, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 30.0f, 45.0f, 17.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
     canvas_set_fill_rgba(c, 0.85f, 0.30f, 0.75f, 1.0f);
     canvas_fill_rect(c, 12.0f, 27.0f, 14.0f, 14.0f);
 
@@ -281,12 +278,12 @@ static void paths(void) {
     canvas_set_fill_rgba(c, 0.40f, 0.65f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_ellipse(c, 72.0f, 52.0f, 52.0f, 28.0f, 0.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     canvas_set_fill_rgba(c, 0.55f, 0.85f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
     canvas_set_stroke_rgba(c, 0.95f, 0.60f, 0.20f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
@@ -351,7 +348,7 @@ static void roundrect(void) {
                                            card[i].c0[2], 1.0f);
                 canvas_add_fill_color_stop(c, 1.0f, card[i].c1[0], card[i].c1[1],
                                            card[i].c1[2], 1.0f);
-                canvas_fill(c);
+                canvas_fill(c, CANVAS_NONZERO);
             } else {
                 canvas_set_stroke_rgba(c, 0.96f, 0.97f, 0.99f, 0.9f);
                 canvas_set_line_width(c, 2.0f);
@@ -369,7 +366,7 @@ static void roundrect(void) {
     canvas_begin_path(c);
     canvas_round_rect_radii(c, bx, by, bw, bh, 200.0f, 200.0f, 200.0f, 200.0f,
                             200.0f, 200.0f, 200.0f, 200.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     save(c, "gallery/roundrect.png");
 }
@@ -475,7 +472,7 @@ static void conic(void) {
     }
     canvas_begin_path(c);
     canvas_arc(c, cx[0], cy, r, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     // B: five solid sectors via paired (coincident) stops -> hard edges.
     float const bnd[6] = { 0.00f, 0.18f, 0.40f, 0.55f, 0.78f, 1.00f };
@@ -491,7 +488,7 @@ static void conic(void) {
     }
     canvas_begin_path(c);
     canvas_arc(c, cx[1], cy, r, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     // C: a two-tone conic medallion, ringed by a conic-gradient stroke.
     canvas_set_fill_conic_gradient(c, TAU * 0.1f, cx[2], cy);
@@ -502,7 +499,7 @@ static void conic(void) {
     canvas_add_fill_color_stop(c, 1.00f, 0.82f, 0.84f, 0.90f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, cx[2], cy, 24.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     canvas_set_stroke_conic_gradient(c, 0.0f, cx[2], cy);
     for (int k = 0; k < ns; k++) {
@@ -695,7 +692,7 @@ static void textgrid(void) {
         canvas_set_fill_rgba(c, 0.40f, 0.85f, 0.95f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, 270.0f, ay[i], 3.0f, 0.0f, TAU, false);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
     }
 
     // --- textBaseline: one horizontal baseline, "Hg" set six ways ---
@@ -825,7 +822,7 @@ static void textmetrics(void) {
     canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, x0, y0, 4.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     canvas_set_text_align(c, CANVAS_ALIGN_START);
     save(c, "gallery/textmetrics.png");
@@ -944,7 +941,7 @@ static void hittest(void) {
             }
             canvas_begin_path(c);
             canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
-            canvas_fill(c);
+            canvas_fill(c, CANVAS_NONZERO);
         }
     }
 
@@ -973,7 +970,7 @@ static void hittest(void) {
             }
             canvas_begin_path(c);
             canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
-            canvas_fill(c);
+            canvas_fill(c, CANVAS_NONZERO);
         }
     }
 
@@ -1003,7 +1000,7 @@ static void dirtyrect(void) {
     int const Lx = 24, Ly = 24, Rx = 274, Ry = 24;
 
     int len = -1;
-    uint8_t *img = canvas_create_image_data(c, W, H, &len);
+    uint8_t *img = canvas_create_image_data(W, H, &len);
     if (img) {
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
@@ -1163,7 +1160,7 @@ static void pd_src(struct canvas *__single c, float ox, float oy) {  // orange d
     canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, ox + 62.0f, oy + 52.0f, 27.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 }
 
 // The 11 Porter-Duff compositing operators (how source alpha combines with the
@@ -1201,7 +1198,7 @@ static void porterduff(void) {
         canvas_save(c);
         canvas_begin_path(c);
         canvas_rect(c, ox + 3.0f, oy + 3.0f, 112.0f, 78.0f);
-        canvas_clip(c);
+        canvas_clip(c, CANVAS_NONZERO);
         canvas_clear_rect(c, ox + 3.0f, oy + 3.0f, 112.0f, 78.0f);
         pd_dst(c, ox, oy);  // destination (source-over)
         canvas_set_global_composite_operation(c, ops[idx]);
@@ -1227,7 +1224,7 @@ static void porterduff(void) {
     canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, lox + 35.0f, loy + 58.0f, 13.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
     canvas_set_fill_rgba(c, 0.85f, 0.88f, 0.93f, 1.0f);
     canvas_fill_text(c, "source", lox + 56.0f, loy + 62.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_START);
@@ -1257,7 +1254,7 @@ static void subrect(void) {
                 case 0:  // circle
                     canvas_begin_path(ac);
                     canvas_arc(ac, cx, cy, 14.0f, 0.0f, TAU, false);
-                    canvas_fill(ac);
+                    canvas_fill(ac, CANVAS_NONZERO);
                     break;
                 case 1:  // square
                     canvas_fill_rect(ac, cx - 13.0f, cy - 13.0f, 26.0f, 26.0f);
@@ -1268,11 +1265,11 @@ static void subrect(void) {
                     canvas_line_to(ac, cx + 14.0f, cy + 12.0f);
                     canvas_line_to(ac, cx - 14.0f, cy + 12.0f);
                     canvas_close_path(ac);
-                    canvas_fill(ac);
+                    canvas_fill(ac, CANVAS_NONZERO);
                     break;
                 default:  // star
                     star(ac, cx, cy, 16.0f);
-                    canvas_fill(ac);
+                    canvas_fill(ac, CANVAS_NONZERO);
                     break;
             }
         }
@@ -1493,23 +1490,23 @@ static void clipping(void) {
     canvas_save(c);
     canvas_begin_path(c);
     canvas_arc(c, 55.0f, 60.0f, 40.0f, 0.0f, TAU, false);
-    canvas_clip(c);
+    canvas_clip(c, CANVAS_NONZERO);
     clip_stripes(c, 15.0f, 20.0f, 95.0f, 100.0f);
     canvas_restore(c);
 
     canvas_save(c);
     canvas_begin_path(c);
     canvas_arc(c, 135.0f, 60.0f, 38.0f, 0.0f, TAU, false);
-    canvas_clip(c);
+    canvas_clip(c, CANVAS_NONZERO);
     canvas_begin_path(c);
     canvas_arc(c, 170.0f, 60.0f, 38.0f, 0.0f, TAU, false);
-    canvas_clip(c);  // intersect: only the lens overlap survives
+    canvas_clip(c, CANVAS_NONZERO);  // intersect: only the lens overlap survives
     clip_stripes(c, 95.0f, 20.0f, 210.0f, 100.0f);
     canvas_restore(c);
 
     canvas_save(c);
     star(c, 250.0f, 60.0f, 42.0f);
-    canvas_clip(c);
+    canvas_clip(c, CANVAS_NONZERO);
     clip_stripes(c, 205.0f, 15.0f, 295.0f, 105.0f);
     canvas_restore(c);
 
@@ -1532,7 +1529,7 @@ static void gradients(void) {
     canvas_add_fill_color_stop(c, 1.0f, 0.90f, 0.22f, 0.42f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
     // Outline it with a contrasting gradient stroke (cyan -> yellow, diagonal).
     canvas_set_stroke_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
     canvas_add_stroke_color_stop(c, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
@@ -1548,7 +1545,7 @@ static void gradients(void) {
     canvas_add_fill_color_stop(c, 1.0f, 0.05f, 0.10f, 0.35f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 150.0f, 60.0f, 44.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     canvas_set_fill_linear_gradient(c, 205.0f, 0.0f, 285.0f, 0.0f);
     canvas_add_fill_color_stop(c, 0.00f, 0.90f, 0.20f, 0.25f, 1.0f);
@@ -1557,7 +1554,7 @@ static void gradients(void) {
     canvas_add_fill_color_stop(c, 1.00f, 0.30f, 0.45f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 205.0f, 25.0f, 75.0f, 70.0f, 12.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     save(c, "gallery/gradients.png");
 }
@@ -1593,7 +1590,7 @@ static void batching(void) {
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, x, y, r, 0.0f, TAU, false);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
     }
 
     save(c, "gallery/batch.png");
@@ -1708,18 +1705,18 @@ static void blend(void) {
         canvas_add_fill_color_stop(c, 1.0f, 0.98f, 0.85f, 0.30f, 1.0f);
         canvas_begin_path(c);
         canvas_round_rect(c, ox + 18.0f, oy + 12.0f, 104.0f, 88.0f, 12.0f);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
 
         // Two overlapping discs under this cell's blend mode.
         canvas_set_global_composite_operation(c, cell[i].op);
         canvas_set_fill_rgba(c, 0.92f, 0.26f, 0.21f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 54.0f, oy + 42.0f, 26.0f, 0.0f, TAU, false);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
         canvas_set_fill_rgba(c, 0.18f, 0.85f, 0.42f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 80.0f, oy + 66.0f, 26.0f, 0.0f, TAU, false);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
 
         // Label.
         canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
@@ -1753,7 +1750,7 @@ static void shadows(void) {
     canvas_set_fill_rgba(c, 0.92f, 0.30f, 0.34f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 30.0f, 32.0f, 72.0f, 62.0f, 12.0f);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     // Soft, blurred shadow under a disc.
     canvas_set_shadow_color_rgba(c, 0.10f, 0.20f, 0.45f, 0.8f);
@@ -1763,7 +1760,7 @@ static void shadows(void) {
     canvas_set_fill_rgba(c, 0.35f, 0.70f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 185.0f, 60.0f, 34.0f, 0.0f, TAU, false);
-    canvas_fill(c);
+    canvas_fill(c, CANVAS_NONZERO);
 
     // Text shadow.
     canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.5f);
@@ -2103,16 +2100,16 @@ static void filters(void) {
         canvas_add_fill_color_stop(c, 1.0f, 0.20f, 0.55f, 0.95f, 1.0f);
         canvas_begin_path(c);
         canvas_round_rect(c, ox + 18.0f, oy + 12.0f, 104.0f, 88.0f, 12.0f);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
 
         canvas_set_fill_rgba(c, 0.15f, 0.90f, 0.45f, 0.55f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 52.0f, oy + 44.0f, 24.0f, 0.0f, TAU, false);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
         canvas_set_fill_rgba(c, 0.95f, 0.20f, 0.20f, 0.55f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 84.0f, oy + 64.0f, 24.0f, 0.0f, TAU, false);
-        canvas_fill(c);
+        canvas_fill(c, CANVAS_NONZERO);
 
         // Label, with the filter cleared so every caption reads uniformly.
         canvas_set_filter_none(c);

@@ -25,7 +25,7 @@ int main(void) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_rect(cv, 16.0f, 16.0f, 32.0f, 32.0f);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
@@ -46,10 +46,10 @@ int main(void) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_rect(cv, 8.0f, 8.0f, 40.0f, 40.0f);  // x,y in [8,48)
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_begin_path(cv);
     canvas_rect(cv, 24.0f, 0.0f, 40.0f, 64.0f);  // x in [24,64)
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
@@ -63,7 +63,7 @@ int main(void) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_arc(cv, 32.0f, 32.0f, 16.0f, 0.0f, 2.0f * (float)M_PI, false);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);

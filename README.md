@@ -376,7 +376,7 @@ canvas_resize(cv, width, height)                             // realloc + clear 
 canvas_is_context_lost                                        // always false (headless)
 canvas_save / canvas_restore / canvas_reset
 canvas_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
-canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha / set_fill_rule
+canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha
 canvas_set_global_composite_operation                        // 26 GCO modes
 canvas_set_shadow_color_rgba / set_shadow_blur / set_shadow_offset_x / set_shadow_offset_y
 canvas_set_filter_none / add_filter_blur / add_filter_brightness / add_filter_contrast /
@@ -389,7 +389,7 @@ canvas_set_line_dash / get_line_dash / set_line_dash_offset
 canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / round_rect_radii / arc_to / close_path
-canvas_fill / canvas_stroke / canvas_clip / is_point_in_path / is_point_in_stroke
+canvas_fill(rule) / canvas_stroke / canvas_clip(rule) / is_point_in_path / is_point_in_stroke
 canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas_path2d_free
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / read_png

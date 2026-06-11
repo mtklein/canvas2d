@@ -40,7 +40,7 @@ static void scene(struct canvas *__single cv, int f) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_arc(cv, w * 0.5f, h * 0.5f, w * 0.45f, 0.0f, 6.2831853f, false);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 1.0f, 0.4f, 0.7f, 0.5f);
     canvas_fill_rect(cv, 0.0f, 0.0f, w, h);
     canvas_restore(cv);

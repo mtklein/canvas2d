@@ -13,7 +13,7 @@ int main(void) {
 
     // A 4x3 blank image is 48 bytes, all zero (transparent black).
     int len = -1;
-    uint8_t *img = canvas_create_image_data(cv, 4, 3, &len);
+    uint8_t *img = canvas_create_image_data(4, 3, &len);
     CHECK(img != NULL);
     CHECK(len == 4 * 3 * 4);
     if (img) {
@@ -47,14 +47,14 @@ int main(void) {
 
     // Invalid dimensions return NULL and a zero length.
     len = -1;
-    CHECK(canvas_create_image_data(cv, 0, 5, &len) == NULL);
+    CHECK(canvas_create_image_data(0, 5, &len) == NULL);
     CHECK(len == 0);
     len = -1;
-    CHECK(canvas_create_image_data(cv, -2, 3, &len) == NULL);
+    CHECK(canvas_create_image_data(-2, 3, &len) == NULL);
     CHECK(len == 0);
     // A size that would overflow int is rejected (no huge allocation attempted).
     len = -1;
-    CHECK(canvas_create_image_data(cv, 100000, 100000, &len) == NULL);
+    CHECK(canvas_create_image_data(100000, 100000, &len) == NULL);
     CHECK(len == 0);
 
     canvas_free(cv);

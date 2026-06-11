@@ -2,8 +2,9 @@
 # One command per line: the command is exactly the canvas_* function name without
 # the canvas_ prefix, then its whitespace-separated args.  '#' starts a comment;
 # blank lines are ignored.  Enums (set_global_composite_operation / set_line_join /
-# set_line_cap / set_fill_rule) are given by name; fill_text/stroke_text take the
-# rest of the line as the text (UTF-8).
+# set_line_cap) are given by name; fill and clip carry their fill rule by name
+# (fill nonzero / clip evenodd); fill_text/stroke_text take the rest of the line
+# as the text (UTF-8).
 
 # dark background
 set_fill_rgba 0.16 0.18 0.25 1
@@ -19,7 +20,7 @@ move_to 30 34
 line_to 150 52
 line_to 78 128
 close_path
-fill
+fill nonzero
 stroke
 
 # a gradient-filled disc
@@ -28,7 +29,7 @@ add_fill_color_stop 0 1.0 0.85 0.10 1
 add_fill_color_stop 1 0.90 0.20 0.60 1
 begin_path
 arc 188 82 44 0 6.2831853 0
-fill
+fill nonzero
 
 # a dashed white arc over the top
 set_stroke_rgba 1 1 1 0.9

@@ -109,6 +109,8 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     }
 
     float stops[4];  // scratch reused for color components
+    enum canvas_fill_rule rule = CANVAS_NONZERO;  // per-call: OP_SET_FILL_RULE
+                                                  // picks what OP_FILL/OP_CLIP pass
 
     int budget = 0;
     while (!c.eof && budget++ < 2000) {
@@ -134,9 +136,9 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                                               rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_CLOSE_PATH: canvas_close_path(cv); break;
 
-            case OP_FILL:       canvas_fill(cv); break;
+            case OP_FILL:       canvas_fill(cv, rule); break;
             case OP_STROKE:     canvas_stroke(cv); break;
-            case OP_CLIP:       canvas_clip(cv); break;
+            case OP_CLIP:       canvas_clip(cv, rule); break;
             case OP_FILL_RECT:  canvas_fill_rect(cv, rd_f32(&c), rd_f32(&c),
                                                  rd_f32(&c), rd_f32(&c)); break;
             case OP_CLEAR_RECT: canvas_clear_rect(cv, rd_f32(&c), rd_f32(&c),
@@ -153,8 +155,8 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_SET_LINE_CAP:    canvas_set_line_cap(cv,
                                          (enum canvas_line_cap)rd_range(&c, 0, 2)); break;
             case OP_SET_MITER_LIMIT: canvas_set_miter_limit(cv, rd_f32(&c)); break;
-            case OP_SET_FILL_RULE:   canvas_set_fill_rule(cv,
-                                         (enum canvas_fill_rule)rd_range(&c, 0, 1)); break;
+            case OP_SET_FILL_RULE:   rule =
+                                         (enum canvas_fill_rule)rd_range(&c, 0, 1); break;
             case OP_SET_COMPOSITE:   canvas_set_global_composite_operation(cv,
                                          (enum canvas_composite_op)rd_range(&c, 0, 25)); break;
             case OP_SET_LINE_DASH: {

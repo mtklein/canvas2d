@@ -29,11 +29,11 @@ int main(void) {
         canvas_move_to(cv, v, 0.0f);
         canvas_line_to(cv, 0.0f, v);
         canvas_line_to(cv, v, v);
-        canvas_fill(cv);                                   // coverage rasterizer casts
+        canvas_fill(cv, CANVAS_NONZERO);                                   // coverage rasterizer casts
 
         canvas_begin_path(cv);
         canvas_ellipse(cv, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f, v, false);
-        canvas_fill(cv);                                   // ellipse segment-count cast
+        canvas_fill(cv, CANVAS_NONZERO);                                   // ellipse segment-count cast
 
         canvas_set_line_width(cv, v);
         canvas_begin_path(cv);

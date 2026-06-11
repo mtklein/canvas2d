@@ -137,8 +137,11 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
 void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminated name,
                    int const *__counted_by(n) v, int n);
 
+// `name <rule>` -- fill/clip with their per-call fill rule, written by name.
+void cnvs_rec_rule(struct cnvs_recorder *__single r,
+                   char const *__null_terminated name, enum canvas_fill_rule rule);
+
 // Enum-valued setters, written by name (the spellings the parser accepts).
-void cnvs_rec_fill_rule(struct cnvs_recorder *__single r, enum canvas_fill_rule rule);
 void cnvs_rec_smoothing_quality(struct cnvs_recorder *__single r,
                                 enum canvas_image_smoothing_quality quality);
 void cnvs_rec_line_join(struct cnvs_recorder *__single r, enum canvas_line_join join);

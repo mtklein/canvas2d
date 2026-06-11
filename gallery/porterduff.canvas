@@ -3,7 +3,7 @@ fill_rect 0 0 504 329
 save
 begin_path
 rect 19 19 112 78
-clip
+clip nonzero
 clear_rect 19 19 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 32 28 50 50
@@ -11,7 +11,7 @@ set_global_composite_operation source-over
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 78 68 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 19 19 13 13
@@ -142,7 +142,7 @@ fill_text 75 109 source-over
 save
 begin_path
 rect 137 19 112 78
-clip
+clip nonzero
 clear_rect 137 19 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 150 28 50 50
@@ -150,7 +150,7 @@ set_global_composite_operation source-in
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 196 68 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 137 19 13 13
@@ -273,7 +273,7 @@ fill_text 193 109 source-in
 save
 begin_path
 rect 255 19 112 78
-clip
+clip nonzero
 clear_rect 255 19 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 268 28 50 50
@@ -281,7 +281,7 @@ set_global_composite_operation source-out
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 314 68 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 255 19 13 13
@@ -403,7 +403,7 @@ fill_text 311 109 source-out
 save
 begin_path
 rect 373 19 112 78
-clip
+clip nonzero
 clear_rect 373 19 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 386 28 50 50
@@ -411,7 +411,7 @@ set_global_composite_operation source-atop
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 432 68 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 373 19 13 13
@@ -534,7 +534,7 @@ fill_text 429 109 source-atop
 save
 begin_path
 rect 19 118 112 78
-clip
+clip nonzero
 clear_rect 19 118 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 32 127 50 50
@@ -542,7 +542,7 @@ set_global_composite_operation destination-over
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 78 167 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 19 118 13 13
@@ -664,7 +664,7 @@ fill_text 75 208 destination-over
 save
 begin_path
 rect 137 118 112 78
-clip
+clip nonzero
 clear_rect 137 118 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 150 127 50 50
@@ -672,7 +672,7 @@ set_global_composite_operation destination-in
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 196 167 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 137 118 13 13
@@ -793,7 +793,7 @@ fill_text 193 208 destination-in
 save
 begin_path
 rect 255 118 112 78
-clip
+clip nonzero
 clear_rect 255 118 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 268 127 50 50
@@ -801,7 +801,7 @@ set_global_composite_operation destination-out
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 314 167 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 255 118 13 13
@@ -922,7 +922,7 @@ fill_text 311 208 destination-out
 save
 begin_path
 rect 373 118 112 78
-clip
+clip nonzero
 clear_rect 373 118 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 386 127 50 50
@@ -930,7 +930,7 @@ set_global_composite_operation destination-atop
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 432 167 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 373 118 13 13
@@ -1051,7 +1051,7 @@ fill_text 429 208 destination-atop
 save
 begin_path
 rect 19 217 112 78
-clip
+clip nonzero
 clear_rect 19 217 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 32 226 50 50
@@ -1059,7 +1059,7 @@ set_global_composite_operation lighter
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 78 266 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 19 217 13 13
@@ -1183,7 +1183,7 @@ fill_text 75 307 lighter
 save
 begin_path
 rect 137 217 112 78
-clip
+clip nonzero
 clear_rect 137 217 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 150 226 50 50
@@ -1191,7 +1191,7 @@ set_global_composite_operation xor
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 196 266 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 137 217 13 13
@@ -1313,7 +1313,7 @@ fill_text 193 307 xor
 save
 begin_path
 rect 255 217 112 78
-clip
+clip nonzero
 clear_rect 255 217 112 78
 set_fill_rgba 0.200000003 0.550000012 0.899999976 1
 fill_rect 268 226 50 50
@@ -1321,7 +1321,7 @@ set_global_composite_operation copy
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 314 266 27 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation destination-over
 set_fill_rgba 0.839999974 0.850000024 0.879999995 1
 fill_rect 255 217 13 13
@@ -1453,7 +1453,7 @@ fill_text 426 244 destination
 set_fill_rgba 0.970000029 0.550000012 0.180000007 1
 begin_path
 arc 405 272 13 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.850000024 0.879999995 0.930000007 1
 shaping 12 0 6 1 6 source
 run 1 0 0 6 86 4.52400017 0 82 4.67999983 1 88 5.18400002 2 85 3.79200006 3 70 4.66800022 4 72 4.42799997 5

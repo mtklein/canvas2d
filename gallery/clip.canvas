@@ -3,7 +3,7 @@ fill_rect 0 0 300 120
 save
 begin_path
 arc 55 60 40 0 6.28318548 0
-clip
+clip nonzero
 set_fill_rgba 1 0.259123087 0.232086718 1
 fill_rect 15 20 6 80
 set_fill_rgba 0.956772685 0.101734996 0.426958621 1
@@ -40,10 +40,10 @@ restore
 save
 begin_path
 arc 135 60 38 0 6.28318548 0
-clip
+clip nonzero
 begin_path
 arc 170 60 38 0 6.28318548 0
-clip
+clip nonzero
 set_fill_rgba 1 0.259123087 0.232086718 1
 fill_rect 95 20 8.1875 80
 set_fill_rgba 0.956772685 0.101734996 0.426958621 1
@@ -85,7 +85,7 @@ line_to 210.055618 47.021286
 line_to 289.944366 47.0212898
 line_to 225.313004 93.9786987
 close_path
-clip
+clip nonzero
 set_fill_rgba 1 0.259123087 0.232086718 1
 fill_rect 205 15 6.625 90
 set_fill_rgba 0.956772685 0.101734996 0.426958621 1

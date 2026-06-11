@@ -84,7 +84,6 @@ struct canvas_state {
     float global_alpha;
     enum canvas_composite_op composite;  // globalCompositeOperation
     float line_width;
-    enum cnvs_fill_rule fill_rule;
     enum cnvs_line_join line_join;
     enum cnvs_line_cap line_cap;
     float miter_limit;
@@ -202,7 +201,6 @@ static void state_defaults(struct canvas_state *s) {
     s->global_alpha = 1.0f;
     s->composite = CANVAS_OP_SOURCE_OVER;
     s->line_width = 1.0f;
-    s->fill_rule = CNVS_NONZERO;
     s->line_join = CNVS_JOIN_MITER;
     s->line_cap = CNVS_CAP_BUTT;
     s->miter_limit = 10.0f;
@@ -2245,14 +2243,6 @@ void canvas_close_path(struct canvas *__single cv) {
     cnvs_path_close(&cv->path);
 }
 
-void canvas_set_fill_rule(struct canvas *__single cv, enum canvas_fill_rule rule) {
-    if (cv->rec) { cnvs_rec_fill_rule(cv->rec, rule); }
-    switch (rule) {
-        case CANVAS_NONZERO: cv->cur.fill_rule = CNVS_NONZERO; break;
-        case CANVAS_EVENODD: cv->cur.fill_rule = CNVS_EVENODD; break;
-    }
-}
-
 // Rasterize a device-space path under `rule` and paint it with the fill paint
 // over its clamped bbox.
 static void fill_device_path(struct canvas *__single cv, struct cnvs_path const *p,
@@ -2267,9 +2257,10 @@ static void fill_device_path(struct canvas *__single cv, struct cnvs_path const 
     paint_fill(cv, b);
 }
 
-void canvas_fill(struct canvas *__single cv) {
-    if (cv->rec) { cnvs_rec_op(cv->rec, "fill"); }
-    fill_device_path(cv, &cv->path, cv->cur.fill_rule);
+void canvas_fill(struct canvas *__single cv, enum canvas_fill_rule rule) {
+    if (cv->rec) { cnvs_rec_rule(cv->rec, "fill", rule); }
+    fill_device_path(cv, &cv->path,
+                     rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
 }
 
 // Point-in-path for hit testing.  Each subpath is treated as implicitly closed
@@ -2318,8 +2309,8 @@ bool canvas_is_point_in_path(struct canvas *__single cv, float x, float y,
     return path_contains(&cv->path, xf(cv, x, y), r);
 }
 
-void canvas_clip(struct canvas *__single cv) {
-    if (cv->rec) { cnvs_rec_op(cv->rec, "clip"); }
+void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
+    if (cv->rec) { cnvs_rec_rule(cv->rec, "clip", rule); }
     int n = cv->width * cv->height;
     uint8_t *nm = malloc((size_t)n);
     if (!nm) {
@@ -2330,7 +2321,9 @@ void canvas_clip(struct canvas *__single cv) {
     if (b.w > 0 && b.h > 0 && ensure_tile(cv, b.w * b.h) &&
         cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         cover_path_edges(cv, b, &cv->path);
-        cnvs_cover_resolve(&cv->cover, b.w, b.h, cv->cur.fill_rule, cv->cov);
+        cnvs_cover_resolve(&cv->cover, b.w, b.h,
+                           rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO,
+                           cv->cov);
     } else {
         b.w = 0;
         b.h = 0;  // empty path: clip to nothing
@@ -3315,8 +3308,7 @@ void canvas_get_image_data(struct canvas *__single cv, int x, int y, int w, int 
 }
 
 uint8_t *__counted_by_or_null(*len)
-canvas_create_image_data(struct canvas *__single cv, int sw, int sh, int *__single len) {
-    (void)cv;  // image data is independent of canvas contents (no colorSpace here)
+canvas_create_image_data(int sw, int sh, int *__single len) {
     if (!rgba8_dims_ok(sw, sh)) {
         *len = 0;
         return NULL;
@@ -3615,12 +3607,8 @@ void canvas_clip_path(struct canvas *__single cv, struct canvas_path2d const *__
     // Swallow both p2d_replay's path methods and the nested canvas_clip.
     cnvs_rec_enter(cv->rec);
     struct p2d_scratch sv;
-    enum cnvs_fill_rule saved_rule = cv->cur.fill_rule;
     p2d_swap_in(cv, p, &sv);
-    // canvas_clip reads the current fill rule; honour the explicit one here.
-    cv->cur.fill_rule = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
-    canvas_clip(cv);
-    cv->cur.fill_rule = saved_rule;
+    canvas_clip(cv, rule);
     p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
 }

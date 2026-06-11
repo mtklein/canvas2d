@@ -3,7 +3,7 @@ fill_rect 0 0 240 90
 set_fill_rgba 0.949999988 0.800000012 0.25 1
 begin_path
 arc 30 45 17 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.850000024 0.300000012 0.75 1
 fill_rect 12 27 14 14
 image 0 44 44 463 1

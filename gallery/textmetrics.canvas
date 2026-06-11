@@ -106,5 +106,5 @@ fill_text 240.718994 215.079773 advance width
 set_fill_rgba 0.959999979 0.349999994 0.449999988 1
 begin_path
 arc 140 150 4 0 6.28318548 0
-fill
+fill nonzero
 set_text_align start

@@ -50,12 +50,12 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case S_CLIP_RECT:
                 canvas_begin_path(cv);
                 canvas_rect(cv, coord(&c), coord(&c), coord(&c), coord(&c));
-                canvas_clip(cv);                          // alloc full-canvas mask, intersect
+                canvas_clip(cv, CANVAS_NONZERO);                          // alloc full-canvas mask, intersect
                 break;
             case S_CLIP_CIRCLE:
                 canvas_begin_path(cv);
                 canvas_arc(cv, coord(&c), coord(&c), coord(&c), 0.0f, 6.2831853f, false);
-                canvas_clip(cv);
+                canvas_clip(cv, CANVAS_NONZERO);
                 break;
             case S_TRANSLATE: canvas_translate(cv, coord(&c), coord(&c)); break;
             case S_SCALE:     canvas_scale(cv, coord(&c) * 0.1f, coord(&c) * 0.1f); break;

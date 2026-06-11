@@ -419,7 +419,7 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
         canvas_line_to(cv, vx[i], vy[i]);
     }
     canvas_close_path(cv);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, W * H * 4);
 
     // Pixel-aligned source-over rect fills onto transparent land the exact

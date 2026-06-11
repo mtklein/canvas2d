@@ -72,7 +72,7 @@ static void scene_gradients(struct canvas *__single cv) {
         canvas_add_fill_color_stop(cv, 1.0f, 0.8f, 0.2f, 0.4f, 0.0f);
         canvas_begin_path(cv);
         canvas_arc(cv, cx, cy, 110.0f, 0.0f, 6.2831853f, false);
-        canvas_fill(cv);
+        canvas_fill(cv, CANVAS_NONZERO);
     }
 
     // A conic-gradient pinwheel centred on a four-tile corner.
@@ -82,7 +82,7 @@ static void scene_gradients(struct canvas *__single cv) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.2f, 0.8f, 0.9f, 0.9f);
     canvas_begin_path(cv);
     canvas_arc(cv, 512.0f, 256.0f, 150.0f, 0.0f, 6.2831853f, false);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
 
     // Shadowed rounded rects.
     canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 0.0f, 0.8f);
@@ -92,11 +92,11 @@ static void scene_gradients(struct canvas *__single cv) {
     canvas_set_fill_rgba(cv, 0.95f, 0.85f, 0.30f, 1.0f);
     canvas_begin_path(cv);
     canvas_round_rect(cv, 180.0f, 430.0f, 300.0f, 200.0f, 28.0f);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, 0.30f, 0.85f, 0.55f, 0.9f);
     canvas_begin_path(cv);
     canvas_round_rect(cv, 620.0f, 80.0f, 260.0f, 170.0f, 40.0f);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 0.0f, 0.0f);  // shadows off
 
     // A dashed gradient stroke weaving across every tile column.

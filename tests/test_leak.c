@@ -27,7 +27,7 @@ static void draw_some(struct canvas *__single cv, int seed) {
     // previous one, restore() below frees this and brings the old one back).
     canvas_begin_path(cv);
     canvas_rect(cv, 4.0f, 4.0f, 40.0f, 30.0f);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
 
     // Gradient fill (grows the parameter/colour row buffers), then a solid
     // fill and a stroke.
@@ -36,7 +36,7 @@ static void draw_some(struct canvas *__single cv, int seed) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_arc(cv, 24.0f, 24.0f, 18.0f, 0.0f, 6.2831853f, false);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
 
     canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f);
@@ -49,7 +49,7 @@ static void draw_some(struct canvas *__single cv, int seed) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_rect(cv, 10.0f, 10.0f, 10.0f, 10.0f);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
     canvas_fill_rect(cv, 0.0f, 0.0f, 48.0f, 48.0f);
     canvas_restore(cv);
 

@@ -220,15 +220,15 @@ void canvas_arc_to(struct canvas *__single cv, float x1, float y1, float x2, flo
                    float radius);
 void canvas_close_path(struct canvas *__single cv);
 
-// Fill the current path under the current fill rule (default nonzero); handles
-// holes and self-intersection.
-void canvas_set_fill_rule(struct canvas *__single cv, enum canvas_fill_rule rule);
-void canvas_fill(struct canvas *__single cv);
+// Fill the current path under `rule` -- the rule rides each call, as on the web
+// (fill() defaults to nonzero THERE; a C caller spells it) -- handling holes
+// and self-intersection.
+void canvas_fill(struct canvas *__single cv, enum canvas_fill_rule rule);
 
-// Intersect the clip region with the current path (under the current fill rule).
-// Subsequent draws are masked to the running intersection of all clips; the
-// region is part of the saved state, so save()/restore() brackets a clip.
-void canvas_clip(struct canvas *__single cv);
+// Intersect the clip region with the current path under `rule`.  Subsequent
+// draws are masked to the running intersection of all clips; the region is
+// part of the saved state, so save()/restore() brackets a clip.
+void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule);
 
 // Hit testing: whether the point (x, y) is inside the current path under `rule`.
 // (x, y) is transformed by the current transform before the test -- matching how
@@ -461,9 +461,11 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 //     set_global_composite_operation multiply
 //     fill_text 12 30 Hello
 // Enums (set_global_composite_operation / set_line_join / set_line_cap /
-// set_fill_rule / set_text_align / set_text_baseline / set_direction /
+// set_text_align / set_text_baseline / set_direction /
 // set_image_smoothing_quality / the pattern repeat modes) are written by
-// name; bool args (arc/ellipse winding, set_image_smoothing_enabled) are 0/1
+// name; fill and clip carry their fill rule by name (`fill nonzero`,
+// `clip evenodd`), like fill_path/clip_path; bool args (arc/ellipse winding,
+// set_image_smoothing_enabled) are 0/1
 // or false/true; set_line_dash takes a variable number of lengths; the text
 // ops take the rest of the line as their text.  The int-typed ops
 // (put_image_data placement and dirty rects, resize) write integers.  reset
@@ -596,8 +598,7 @@ bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated 
 // pixels -- the layout get/put_image_data use.  Returns a freshly malloc'd,
 // zeroed buffer of sw*sh*4 bytes (free it with free()) and stores that byte
 // length in *len, ready to hand to put_image_data.  On non-positive dimensions,
-// a size that would overflow, or out of memory, returns NULL and stores 0.  The
-// canvas argument is accepted for API symmetry; the image is independent of its
-// contents.
+// a size that would overflow, or out of memory, returns NULL and stores 0.
+// The image is independent of any canvas, so none is taken.
 uint8_t *__counted_by_or_null(*len)
-canvas_create_image_data(struct canvas *__single cv, int sw, int sh, int *__single len);
+canvas_create_image_data(int sw, int sh, int *__single len);

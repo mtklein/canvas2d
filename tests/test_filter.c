@@ -329,7 +329,7 @@ static void blur_clipped(void) {
     if (px && cv) {
         canvas_begin_path(cv);
         canvas_rect(cv, 8.0f, 8.0f, 16.0f, 32.0f);
-        canvas_clip(cv);
+        canvas_clip(cv, CANVAS_NONZERO);
         canvas_add_filter_blur(cv, 3.0f);  // spread 9: the skirt spans x in [3, 29)
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 12.0f, 16.0f, 8.0f, 8.0f);

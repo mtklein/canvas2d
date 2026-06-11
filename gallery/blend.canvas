@@ -6,16 +6,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 30 24 104 88 12
-fill
+fill nonzero
 set_global_composite_operation multiply
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 66 54 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 92 78 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -38,16 +38,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 170 24 104 88 12
-fill
+fill nonzero
 set_global_composite_operation screen
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 206 54 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 232 78 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -66,16 +66,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 310 24 104 88 12
-fill
+fill nonzero
 set_global_composite_operation overlay
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 346 54 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 372 78 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -92,16 +92,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 450 24 104 88 12
-fill
+fill nonzero
 set_global_composite_operation darken
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 486 54 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 512 78 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -117,16 +117,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 590 24 104 88 12
-fill
+fill nonzero
 set_global_composite_operation lighten
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 626 54 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 652 78 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -142,16 +142,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 30 148 104 88 12
-fill
+fill nonzero
 set_global_composite_operation color-dodge
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 66 178 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 92 202 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -166,16 +166,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 170 148 104 88 12
-fill
+fill nonzero
 set_global_composite_operation color-burn
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 206 178 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 232 202 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -190,16 +190,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 310 148 104 88 12
-fill
+fill nonzero
 set_global_composite_operation hard-light
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 346 178 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 372 202 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -213,16 +213,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 450 148 104 88 12
-fill
+fill nonzero
 set_global_composite_operation soft-light
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 486 178 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 512 202 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -237,16 +237,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 590 148 104 88 12
-fill
+fill nonzero
 set_global_composite_operation difference
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 626 178 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 652 202 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -260,16 +260,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 30 272 104 88 12
-fill
+fill nonzero
 set_global_composite_operation exclusion
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 66 302 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 92 326 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -284,16 +284,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 170 272 104 88 12
-fill
+fill nonzero
 set_global_composite_operation hue
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 206 302 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 232 326 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -307,16 +307,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 310 272 104 88 12
-fill
+fill nonzero
 set_global_composite_operation saturation
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 346 302 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 372 326 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -330,16 +330,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 450 272 104 88 12
-fill
+fill nonzero
 set_global_composite_operation color
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 486 302 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 512 326 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13
@@ -353,16 +353,16 @@ add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
 round_rect 590 272 104 88 12
-fill
+fill nonzero
 set_global_composite_operation luminosity
 set_fill_rgba 0.920000017 0.25999999 0.209999993 1
 begin_path
 arc 626 302 26 0 6.28318548 0
-fill
+fill nonzero
 set_fill_rgba 0.180000007 0.850000024 0.419999987 1
 begin_path
 arc 652 326 26 0 6.28318548 0
-fill
+fill nonzero
 set_global_composite_operation source-over
 set_fill_rgba 0.899999976 0.920000017 0.959999979 1
 set_font_size 13

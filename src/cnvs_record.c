@@ -581,11 +581,13 @@ void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminat
     fputc('\n', r->f);
 }
 
-void cnvs_rec_fill_rule(struct cnvs_recorder *__single r, enum canvas_fill_rule rule) {
+void cnvs_rec_rule(struct cnvs_recorder *__single r,
+                   char const *__null_terminated name, enum canvas_fill_rule rule) {
     if (!r || r->suspend != 0) {
         return;
     }
-    fputs("set_fill_rule ", r->f);
+    fputs(name, r->f);
+    fputc(' ', r->f);
     fputs(rule == CANVAS_EVENODD ? "evenodd" : "nonzero", r->f);
     fputc('\n', r->f);
 }

@@ -42,7 +42,7 @@ int main(void) {
     canvas_add_fill_color_stop(cv, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     struct rgba ctr = pixel_at(px, len, w, 32, 32);
     struct rgba ring = pixel_at(px, len, w, 46, 32);  // ~half radius
@@ -59,7 +59,7 @@ int main(void) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     struct rgba g_mid = pixel_at(px, len, w, 32, 32);
     CHECK(g_mid.g > 200 && g_mid.r < 40 && g_mid.b < 40);  // green at the centre stop
@@ -69,7 +69,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 6, 32), 0, 255, 0, 255, 1));  // solid green again
 
@@ -83,7 +83,7 @@ int main(void) {
     canvas_restore(cv);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 6, 32), 51, 51, 51, 255, 2));  // restored solid
 

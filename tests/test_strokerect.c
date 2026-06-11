@@ -64,7 +64,7 @@ int main(void) {
     canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_stroke_rect(cv, 40.0f, 40.0f, 16.0f, 16.0f);
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 16, 16), 0, 0, 255, 255, 1));  // path filled
     CHECK(px_near(pixel_at(px, len, w, 40, 48), 255, 0, 0, 255, 1));  // strokeRect edge

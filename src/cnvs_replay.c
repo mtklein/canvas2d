@@ -1039,9 +1039,7 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "reset_transform")) { canvas_reset_transform(cv); }
     else if (tok_eq(data, le, cs, cl, "begin_path"))      { canvas_begin_path(cv); }
     else if (tok_eq(data, le, cs, cl, "close_path"))      { canvas_close_path(cv); }
-    else if (tok_eq(data, le, cs, cl, "fill"))            { canvas_fill(cv); }
     else if (tok_eq(data, le, cs, cl, "stroke"))          { canvas_stroke(cv); }
-    else if (tok_eq(data, le, cs, cl, "clip"))            { canvas_clip(cv); }
     else if (tok_eq(data, le, cs, cl, "set_filter_none")) { canvas_set_filter_none(cv); }
     else if (tok_eq(data, le, cs, cl, "reset")) {
         // reset clears the text cache, and with it every interned font id:
@@ -1156,12 +1154,16 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     }
 
     // --- enums by name ---
-    else if (tok_eq(data, le, cs, cl, "set_fill_rule")) {
+    else if (tok_eq(data, le, cs, cl, "fill") || tok_eq(data, le, cs, cl, "clip")) {
+        bool fill = data[cs] == 'f';
         size_t ts, tl;
         if (!read_token(data, le, &j, &ts, &tl)) return false;
-        if (tok_eq(data, le, ts, tl, "nonzero"))      canvas_set_fill_rule(cv, CANVAS_NONZERO);
-        else if (tok_eq(data, le, ts, tl, "evenodd")) canvas_set_fill_rule(cv, CANVAS_EVENODD);
+        enum canvas_fill_rule rule;
+        if (tok_eq(data, le, ts, tl, "nonzero"))      rule = CANVAS_NONZERO;
+        else if (tok_eq(data, le, ts, tl, "evenodd")) rule = CANVAS_EVENODD;
         else return false;
+        if (fill) canvas_fill(cv, rule);
+        else      canvas_clip(cv, rule);
     }
     else if (tok_eq(data, le, cs, cl, "set_line_join")) {
         size_t ts, tl;

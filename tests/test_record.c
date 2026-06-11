@@ -51,7 +51,6 @@ static void draw_program(struct canvas *__single cv) {
     // Global state + blend mode + fill rule.
     canvas_set_global_alpha(cv, 0.75f);
     canvas_set_global_composite_operation(cv, CANVAS_OP_MULTIPLY);
-    canvas_set_fill_rule(cv, CANVAS_EVENODD);
 
     canvas_clear_rect(cv, 1.0f, 1.0f, 2.0f, 2.0f);
 
@@ -95,7 +94,7 @@ static void draw_program(struct canvas *__single cv) {
     canvas_round_rect_radii(cv, 34.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
                             4.0f, 2.0f, 0.0f, 0.0f, 5.0f, 5.0f);
     canvas_close_path(cv);
-    canvas_fill(cv);
+    canvas_fill(cv, CANVAS_NONZERO);
     canvas_stroke(cv);
 
     // The filter list: every function once (the chain applies to the fill),
@@ -188,7 +187,7 @@ static void draw_program(struct canvas *__single cv) {
     // A clip last, so a non-empty path region is exercised by the clip command.
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
 
     canvas_restore(cv);
 }

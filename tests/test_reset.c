@@ -40,7 +40,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, 2.0f, 2.0f);
-    canvas_clip(cv);
+    canvas_clip(cv, CANVAS_NONZERO);
 
     canvas_reset(cv);
 

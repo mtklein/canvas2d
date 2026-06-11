@@ -18,11 +18,11 @@ move_to 100 28
 bezier_curve_to 150 8 150 88 100 68
 bezier_curve_to 70 58 70 38 100 28
 close_path
-fill
+fill nonzero
 set_fill_rgba 0.850000024 0.300000012 0.75 1
 begin_path
 arc 198 135 28 0 6.28318548 0
-fill
+fill nonzero
 set_stroke_rgba 1 0.600000024 0.100000001 1
 set_line_width 4
 begin_path
