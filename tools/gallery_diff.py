@@ -264,7 +264,11 @@ function overview() {
     if (s.before) ba.append(img(s.before));
     if (s.after) ba.append(img(s.after));
     tr.append(name, num, gl, ba);
+    // The thumbnail you click is the view you land in: heatmap cell opens
+    // heat, the actuals open blink; anywhere else on the row defaults to blink.
     tr.onclick = () => { cur = i; mode = "blink"; render(); };
+    gl.onclick = e => { e.stopPropagation(); cur = i; mode = "heat"; render(); };
+    ba.onclick = e => { e.stopPropagation(); cur = i; mode = "blink"; render(); };
     t.append(tr);
   }
   view.append(t);
