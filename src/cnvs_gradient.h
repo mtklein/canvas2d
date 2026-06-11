@@ -36,6 +36,11 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color
 // With no stops the result is transparent black.
 cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
 
+// Per spec, a zero-length linear gradient and a radial gradient whose two
+// circles coincide paint NOTHING (the whole draw is skipped).  Exact ==, not
+// epsilon: a tiny-but-nonzero gradient still paints.
+bool cnvs_gradient_paints_nothing(cnvs_gradient const *gr);
+
 // Gradient parameter for a device-space point, written to *t (clamped to
 // [0,1]).  Returns false when a radial point lies outside the gradient (no
 // circle in the family passes through it) -- such samples paint transparent.

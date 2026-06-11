@@ -61,6 +61,21 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     return gr->stops[n - 1].color;  // unreachable: t < last offset handled above
 }
 
+// The spec's degenerate test is EXACT equality (a tiny-but-nonzero gradient
+// still paints), so float == is the required semantic here, not an accident.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wfloat-equal"
+bool cnvs_gradient_paints_nothing(cnvs_gradient const *gr) {
+    bool coincident = gr->p0.x == gr->p1.x && gr->p0.y == gr->p1.y;
+    switch (gr->kind) {
+        case CNVS_GRAD_LINEAR: return coincident;
+        case CNVS_GRAD_RADIAL: return coincident && gr->r0 == gr->r1;
+        case CNVS_GRAD_CONIC:  return false;
+    }
+    return false;
+}
+#pragma clang diagnostic pop
+
 bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t) {
     if (gr->kind == CNVS_GRAD_CONIC) {
         // Angle of p about the centre, measured clockwise from +x (device space is

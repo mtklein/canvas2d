@@ -114,6 +114,38 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 2));  // solid green again
 
+    // Per spec, exact degenerates paint NOTHING -- the draw is a no-op:
+    // a zero-length linear gradient, and a radial whose circles coincide.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);  // white ground
+
+    canvas_set_fill_linear_gradient(cv, 32.0f, 32.0f, 32.0f, 32.0f);
+    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 255, 255, 0));
+
+    canvas_set_fill_radial_gradient(cv, 32.0f, 32.0f, 8.0f, 32.0f, 32.0f, 8.0f);
+    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 255, 255, 0));
+
+    // The boundary is exact equality: a tiny-but-nonzero linear gradient and a
+    // point-centred conic both still paint.
+    canvas_set_fill_linear_gradient(cv, 32.0f, 32.0f, 32.001f, 32.0f);
+    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 0, 255, 2));
+
+    canvas_set_fill_conic_gradient(cv, 0.0f, 32.0f, 32.0f);
+    canvas_add_fill_color_stop(cv, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 255, 255, 2));
+
     canvas_destroy(cv);
     free(px);
     return TEST_REPORT();

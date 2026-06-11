@@ -1476,6 +1476,10 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
 // on its kind (solid and gradient share paint_tile; pattern has its own loop).
 // The shadow, if any, is cast first so it lands under the shape.
 static void paint_fill(canvas *__single cv, cbbox b) {
+    if (cv->cur.fill_kind == CNVS_PAINT_GRADIENT &&
+        cnvs_gradient_paints_nothing(&cv->cur.fill_grad)) {
+        return;
+    }
     emit_shadow(cv, b);
     if (cv->cur.fill_kind == CNVS_PAINT_PATTERN) {
         paint_tile_pattern(cv, b, &cv->cur.fill_pattern);
@@ -1486,6 +1490,10 @@ static void paint_fill(canvas *__single cv, cbbox b) {
 }
 
 static void paint_stroke(canvas *__single cv, cbbox b) {
+    if (cv->cur.stroke_kind == CNVS_PAINT_GRADIENT &&
+        cnvs_gradient_paints_nothing(&cv->cur.stroke_grad)) {
+        return;
+    }
     emit_shadow(cv, b);
     if (cv->cur.stroke_kind == CNVS_PAINT_PATTERN) {
         paint_tile_pattern(cv, b, &cv->cur.stroke_pattern);
