@@ -23,12 +23,9 @@ static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
     float dx = p1.x - p0.x;
     float dy = p1.y - p0.y;
     float l = sqrtf(dx * dx + dy * dy);
-    if (l < 1e-6f) {
-        return false;
-    }
     *dir = (cnvs_vec2){ .x = dx / l, .y = dy / l };
     *len = l;
-    return true;
+    return !(l < 1e-6f);
 }
 
 // The quad's two triangles, staged: (a0,b0,b1) (a0,b1,a1).

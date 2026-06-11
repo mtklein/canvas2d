@@ -1671,15 +1671,10 @@ void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
 
 // CSS border-radius overlap rule: reduce the scale factor `f` so that two radii
 // summing to `sum` fit within an edge of length `len`.  `sum` 0 (no radii on the
-// edge) imposes no constraint.
+// edge) divides to inf or NaN, which never passes g < f.
 static float radii_fit(float f, float len, float sum) {
-    if (sum > 0.0f) {
-        float g = len / sum;
-        if (g < f) {
-            f = g;
-        }
-    }
-    return f;
+    float g = len / sum;
+    return g < f ? g : f;
 }
 
 static void round_rect_radii_impl(canvas *__single cv, float x, float y,
