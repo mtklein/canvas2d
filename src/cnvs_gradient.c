@@ -145,11 +145,14 @@ cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float a
 typedef float gradf8 __attribute__((ext_vector_type(8)));
 typedef int gradi8 __attribute__((ext_vector_type(8)));
 
-// Element-wise select (C's ?: collapses a vector condition to scalar, so do it by
-// hand): a where the mask lane is true (-1 from a comparison), else b.
-static gradf8 vsel(gradf8 a, gradf8 b, gradi8 mask) {
-    gradf8 m = -__builtin_convertvector(mask, gradf8);  // 1.0 where true, else 0.0
-    return b + (a - b) * m;
+// Bit-exact f32 lane select, the 32-bit twin of cnvs_h8_sel: a where the mask
+// lane is set (-1, from a vector comparison), else b.  Bitwise per the house
+// doctrine: the selected lane passes through untouched (an arithmetic
+// b + (a-b)*m re-rounds it), and an unselected lane's inf/NaN -- the radial
+// solve's guarded divides below, the colour row's guarded span divide -- is
+// discarded exactly.
+static gradf8 vsel_bits(gradi8 m, gradf8 a, gradf8 b) {
+    return (gradf8)(((gradi8)a & m) | ((gradi8)b & ~m));
 }
 
 static gradf8 vclamp01(gradf8 v) {
@@ -208,10 +211,10 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
                 gradf8 lo = __builtin_elementwise_min(r1_, r2_);
                 gradi8 hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
                 gradi8 look = r0 + lo * dr >= 0.0f;
-                root = vsel(hi, vsel(lo, (gradf8)0.0f, look), hiok);
+                root = vsel_bits(hiok, hi, vsel_bits(look, lo, (gradf8)0.0f));
                 valid = (disc >= 0.0f) & (hiok | look);
             }
-            gradf8 out = vsel(vclamp01(root), (gradf8)-1.0f, valid);
+            gradf8 out = vsel_bits(valid, vclamp01(root), (gradf8)-1.0f);
             memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
         }
     }
@@ -222,14 +225,6 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
         cnvs_vec2 p = { .x = (float)x0 + (float)i + 0.5f, .y = y };
         t_out[i] = cnvs_gradient_param(gr, p, &t) ? t : -1.0f;
     }
-}
-
-// Bit-exact f32 lane select, the 32-bit twin of cnvs_h8_sel: a where the mask
-// lane is set (-1, from a vector comparison), else b.  Bitwise, not arithmetic
-// like vsel above, because the unselected lane here holds the inf/NaN of the
-// guarded span divide and must be discarded exactly (cnvs_planar.h).
-static gradf8 vsel_bits(gradi8 m, gradf8 a, gradf8 b) {
-    return (gradf8)(((gradi8)a & m) | ((gradi8)b & ~m));
 }
 
 // Eight unpremultiplied pixels as four channel planes -- the planar shape of
