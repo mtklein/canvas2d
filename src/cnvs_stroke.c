@@ -231,7 +231,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             cnvs_f4 dirx = dx / len;
             cnvs_f4 diry = dy / len;
             cnvs_f4 nrmx = -diry * hw;
-            cnvs_f4 nrmy = dirx * hw;
+            cnvs_f4 nrmy =  dirx * hw;
             // Corners in AoS form: nrm re-interleaved, then p +/- nrm is the
             // same lane-wise fadd/fsub the scalar corner math does.
             cnvs_f8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
@@ -287,8 +287,8 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             cnvs_vec2 wedges[24];  // 4 joins x (pa, v, pb, pa, tip, pb)
             int col4[4], ok4[4];
             if (vjoin) {
-                cnvs_f4 p0x = __builtin_shufflevector(q0, q0, 0, 2, 4, 6);
-                cnvs_f4 p0y = __builtin_shufflevector(q0, q0, 1, 3, 5, 7);
+                cnvs_f4 p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
+                cnvs_f4 p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
                 cnvs_f4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
                 cnvs_f4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
                 d0x[0] = prev_dir.x;  // constant-index insert: stays in-register
@@ -299,10 +299,10 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
                 // Outer side is opposite the turn (bit-exact +/-1 select).
                 cnvs_f4 sgn = (cnvs_f4)((pos & (cnvs_i4)(cnvs_f4)-1.0f) |
                                         (~pos & (cnvs_i4)(cnvs_f4)1.0f));
-                cnvs_f4 pax = p0x + sgn * -d0y * hw;
-                cnvs_f4 pay = p0y + sgn * d0x * hw;
+                cnvs_f4 pax = p0x + sgn * -d0y  * hw;
+                cnvs_f4 pay = p0y + sgn *  d0x  * hw;
                 cnvs_f4 pbx = p0x + sgn * -diry * hw;
-                cnvs_f4 pby = p0y + sgn * dirx * hw;
+                cnvs_f4 pby = p0y + sgn *  dirx * hw;
                 // Miter tip = intersection of the outer edges (pa,d0),(pb,d1).
                 cnvs_f4 sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
                 cnvs_f4 tipx = pax + d0x * sm;
@@ -311,8 +311,8 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
                 cnvs_f4 my = tipy - p0y;
                 float mlim = miter_limit * hw;
                 cnvs_i4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
-                cnvs_f8 zpa = __builtin_shufflevector(pax, pay, 0, 4, 1, 5, 2, 6, 3, 7);
-                cnvs_f8 zpb = __builtin_shufflevector(pbx, pby, 0, 4, 1, 5, 2, 6, 3, 7);
+                cnvs_f8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
+                cnvs_f8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
                 cnvs_f8 ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
 #define CNVS_PUT_WEDGE(i)                                                         \
     do {                                                                          \
