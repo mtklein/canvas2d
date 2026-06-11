@@ -40,8 +40,8 @@ typedef enum {
     CANVAS_REPEAT, CANVAS_REPEAT_X, CANVAS_REPEAT_Y, CANVAS_NO_REPEAT,
 } canvas_pattern_repeat;
 
-// globalCompositeOperation.  Order mirrors compositor_blend_mode (src/compositor.h)
-// value-for-value; the first 11 are Porter-Duff operators, then the separable
+// globalCompositeOperation.  The blend kernels (canvas.c) dispatch on this
+// order directly: the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
 typedef enum {
     CANVAS_OP_SOURCE_OVER, CANVAS_OP_SOURCE_IN, CANVAS_OP_SOURCE_OUT,

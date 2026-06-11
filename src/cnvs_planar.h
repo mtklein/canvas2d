@@ -186,7 +186,7 @@ static inline cnvs_px8 cnvs_px8_premultiply(cnvs_px8 p) {
     return o;
 }
 
-// The compositor's output clamp: ao = min(a, 1) ('lighter' can exceed 1), and
+// The blend stage's output clamp: ao = min(a, 1) ('lighter' can exceed 1), and
 // every channel -- alpha included -- pins into [0, ao], preserving the
 // premultiplied invariant rgb <= a.
 static inline cnvs_px8 cnvs_px8_clamp_premul(cnvs_px8 co) {

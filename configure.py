@@ -119,11 +119,6 @@ ANALYZE = ("--analyze -Xclang -analyzer-output=text -Xclang -analyzer-werror "
 # Frameworks every variant needs (the Core Text font shim).
 BASE_FRAMEWORKS = "-framework CoreText -framework CoreGraphics -framework CoreFoundation"
 
-# The compositor backend: the software compositor (src/compositor_cpu.c), built into
-# every binary.  It links no extra frameworks beyond BASE_FRAMEWORKS.
-COMPOSITOR_SRC = "src/compositor_cpu.c"
-BACKEND_SRCS = {os.path.basename(COMPOSITOR_SRC)}
-
 # Platform-boundary C sources: built without -fbounds-safety at -Wall -Wextra
 # because they bind un-annotated system headers, behind a bounds-safe ABI.
 BOUNDARY_C = {"cnvs_text_ct.c"}
@@ -173,10 +168,10 @@ FUZZ_CFLAGS = ("-std=c23 -g -O1 -fno-omit-frame-pointer -Ifuzz/shim -Ifuzz "
                "-Iinclude -Isrc -Wall -Wno-unknown-warning-option")
 # Modules the libFuzzer harnesses do NOT link.  Currently empty: every src/*.c is
 # part of the render core a harness can reach.  The fuzz core is the whole canvas
-# render core (core_c, globbed) plus the CPU compositor backend, so a new
-# cnvs_*.c module is picked up automatically.  Kept as an *exclude* set (rather
-# than an include list) because an include list grows with every feature and
-# silently drifts out of date; an empty exclude needs no maintenance.
+# render core (core_c, globbed), so a new cnvs_*.c module is picked up
+# automatically.  Kept as an *exclude* set (rather than an include list)
+# because an include list grows with every feature and silently drifts out of
+# date; an empty exclude needs no maintenance.
 FUZZ_CORE_EXCLUDE = set()
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?).
@@ -204,8 +199,7 @@ def obj(variant, src):
 
 
 def main():
-    core_c = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.c"))
-                    if os.path.basename(p) not in BACKEND_SRCS)
+    core_c = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "src", "*.c")))
     # test_oom.c is built only by the `oom` target (it needs the fault-injecting
     # allocator and the malloc redefines), not the normal suite.
     tests = sorted(rel(p) for p in glob.glob(os.path.join(HERE, "tests", "test_*.c"))
@@ -418,10 +412,6 @@ def main():
             ccrule = "cc_boundary" if os.path.basename(c) in BOUNDARY_C else "cc"
             w(f"build {o}: {ccrule}_{variant} {c}")
             lib_objs.append(o)
-        # The software compositor backend.
-        bo = obj(variant, COMPOSITOR_SRC)
-        w(f"build {bo}: cc_{variant} {COMPOSITOR_SRC}")
-        lib_objs.append(bo)
         variant_lib_objs[variant] = list(lib_objs)
         w("")
 
@@ -574,11 +564,9 @@ def main():
         w("rule gen_seeds")
         w("  command = mkdir -p fuzz/seeds && $bin fuzz/seeds && touch $out")
         w("")
-        # The canvas render core (core_c) minus the unreached subsystems, plus the
-        # compositor backend (core_c excludes it).
+        # The canvas render core (core_c) minus the unreached subsystems.
         fuzz_core_srcs = [c for c in core_c
                           if os.path.basename(c) not in FUZZ_CORE_EXCLUDE]
-        fuzz_core_srcs.append(COMPOSITOR_SRC)
         fuzz_core_objs = []
         for c in fuzz_core_srcs:
             stem = os.path.splitext(os.path.basename(c))[0]
@@ -627,10 +615,9 @@ def main():
         f'echo "# large" ; {tp_lg} ./{lg}')
     w(f"build throughput: throughput {sm} {lg}")
     w(f"  cmd = {throughput_cmd}")
-    # `analyze` runs the static analyzer over the checked C (core + the compositor
-    # backend).  One stamp per TU so it's incremental and parallel; gated by
-    # -analyzer-werror in the rule.
-    analyze_srcs = core_c + [COMPOSITOR_SRC]
+    # `analyze` runs the static analyzer over the checked C core.  One stamp per
+    # TU so it's incremental and parallel; gated by -analyzer-werror in the rule.
+    analyze_srcs = core_c
     analyze_stamps = []
     for c in analyze_srcs:
         stem = os.path.splitext(os.path.basename(c))[0]
@@ -726,10 +713,6 @@ def main():
         ccrule = "cc_cov_boundary" if os.path.basename(c) in BOUNDARY_C else "cc_cov"
         w(f"build {o}: {ccrule} {c}")
         cov_lib.append(o)
-    cov_bsrc = COMPOSITOR_SRC
-    cov_bo = obj("cov", cov_bsrc)
-    w(f"build {cov_bo}: cc_cov {cov_bsrc}")
-    cov_lib.append(cov_bo)
     # The fault injector is linked into every coverage binary (the redefined core
     # calls it); only test_oom arms it.
     cov_oom_alloc = "build/cov/obj/oom_alloc.o"
@@ -811,10 +794,6 @@ def main():
         ccrule = "cc_oom_boundary" if os.path.basename(c) in BOUNDARY_C else "cc_oom"
         w(f"build {o}: {ccrule} {c}")
         oom_objs.append(o)
-    oom_bsrc = COMPOSITOR_SRC
-    oom_bo = obj("oom", oom_bsrc)
-    w(f"build {oom_bo}: cc_oom {oom_bsrc}")
-    oom_objs.append(oom_bo)
     w("build build/oom/obj/oom_alloc.o: cc_oom_shim tests/oom_alloc.c")
     w("build build/oom/obj/test_oom.o: cc_oom_harness tests/test_oom.c")
     w(f"build build/oom/test_oom: link_oom build/oom/obj/test_oom.o "

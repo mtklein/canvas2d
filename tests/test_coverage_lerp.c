@@ -23,7 +23,7 @@
 //     every bbox pixel the shape never touched.  These are the modes the
 //     lerp genuinely fixes, and EXPECT_CLOSER asserts the fix.
 //
-// Part A drives the compositor directly: for (mode x src x dst), a 256-pixel
+// Part A drives the blend kernels directly: for (mode x src x dst), a 256-pixel
 // row sweeping every coverage byte, three ways -- NEW (full-strength tile +
 // coverage plane, the shipping path), OLD (coverage folded into the tile by
 // the old shade arithmetic, f32 fold then f16 premultiply, composited with no
@@ -40,15 +40,14 @@
 // PREMULTIPLIED space (readback u8 is re-premultiplied), so low-alpha pixels
 // don't amplify quantization noise.
 
-#include "canvas.h"
-#include "compositor.h"
+#include "cnvs_blend.h"
 #include "test_util.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-// --- the double-precision reference (mirrors compositor_cpu.c's math) -------
+// --- the double-precision reference (mirrors canvas.c's blend kernels) ------
 
 typedef struct {
     double r, g, b, a;
@@ -60,27 +59,27 @@ static double dmax(double a, double b) { return a > b ? a : b; }
 // Separable blend B(cb, cs), unpremultiplied.
 static double sep_ref(int mode, double cb, double cs) {
     switch (mode) {
-        case COMPOSITOR_MULTIPLY:   return cb * cs;
-        case COMPOSITOR_SCREEN:     return cb + cs - cb * cs;
-        case COMPOSITOR_OVERLAY:
+        case CANVAS_OP_MULTIPLY:   return cb * cs;
+        case CANVAS_OP_SCREEN:     return cb + cs - cb * cs;
+        case CANVAS_OP_OVERLAY:
             return 2.0 * cb <= 1.0 ? 2.0 * cb * cs
                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
-        case COMPOSITOR_DARKEN:     return dmin(cb, cs);
-        case COMPOSITOR_LIGHTEN:    return dmax(cb, cs);
-        case COMPOSITOR_COLOR_DODGE:
+        case CANVAS_OP_DARKEN:     return dmin(cb, cs);
+        case CANVAS_OP_LIGHTEN:    return dmax(cb, cs);
+        case CANVAS_OP_COLOR_DODGE:
             return cb <= 0.0 ? 0.0 : (cs >= 1.0 ? 1.0 : dmin(1.0, cb / (1.0 - cs)));
-        case COMPOSITOR_COLOR_BURN:
+        case CANVAS_OP_COLOR_BURN:
             return cb >= 1.0 ? 1.0
                              : (cs <= 0.0 ? 0.0 : 1.0 - dmin(1.0, (1.0 - cb) / cs));
-        case COMPOSITOR_HARD_LIGHT:
+        case CANVAS_OP_HARD_LIGHT:
             return 2.0 * cs <= 1.0 ? 2.0 * cb * cs
                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
-        case COMPOSITOR_SOFT_LIGHT: {
+        case CANVAS_OP_SOFT_LIGHT: {
             double dd = cb <= 0.25 ? ((16.0 * cb - 12.0) * cb + 4.0) * cb : sqrt(cb);
             return cs <= 0.5 ? cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
                              : cb + (2.0 * cs - 1.0) * (dd - cb);
         }
-        case COMPOSITOR_DIFFERENCE: return fabs(cb - cs);
+        case CANVAS_OP_DIFFERENCE: return fabs(cb - cs);
         default:                    return cb + cs - 2.0 * cb * cs;  // exclusion
     }
 }
@@ -135,9 +134,9 @@ static drgb set_sat_ref(drgb c, double s) {
 
 static drgb nonsep_ref(int mode, drgb cb, drgb cs) {
     switch (mode) {
-        case COMPOSITOR_HUE:        return set_lum_ref(set_sat_ref(cs, sat_ref(cb)), lum_ref(cb));
-        case COMPOSITOR_SATURATION: return set_lum_ref(set_sat_ref(cb, sat_ref(cs)), lum_ref(cb));
-        case COMPOSITOR_COLOR:      return set_lum_ref(cs, lum_ref(cb));
+        case CANVAS_OP_HUE:        return set_lum_ref(set_sat_ref(cs, sat_ref(cb)), lum_ref(cb));
+        case CANVAS_OP_SATURATION: return set_lum_ref(set_sat_ref(cb, sat_ref(cs)), lum_ref(cb));
+        case CANVAS_OP_COLOR:      return set_lum_ref(cs, lum_ref(cb));
         default:                    return set_lum_ref(cb, lum_ref(cs));  // luminosity
     }
 }
@@ -153,19 +152,19 @@ static dpx clamp_premul_ref(dpx c) {
 static dpx blend_ref(int mode, dpx s, dpx d) {
     double sa = s.a, da = d.a;
     dpx co;
-    if (mode <= COMPOSITOR_COPY) {
+    if (mode <= CANVAS_OP_COPY) {
         double fa, fb;
         switch (mode) {
-            case COMPOSITOR_SRC_IN:   fa = da;       fb = 0.0;      break;
-            case COMPOSITOR_SRC_OUT:  fa = 1.0 - da; fb = 0.0;      break;
-            case COMPOSITOR_SRC_ATOP: fa = da;       fb = 1.0 - sa; break;
-            case COMPOSITOR_DST_OVER: fa = 1.0 - da; fb = 1.0;      break;
-            case COMPOSITOR_DST_IN:   fa = 0.0;      fb = sa;       break;
-            case COMPOSITOR_DST_OUT:  fa = 0.0;      fb = 1.0 - sa; break;
-            case COMPOSITOR_DST_ATOP: fa = 1.0 - da; fb = sa;       break;
-            case COMPOSITOR_XOR:      fa = 1.0 - da; fb = 1.0 - sa; break;
-            case COMPOSITOR_LIGHTER:  fa = 1.0;      fb = 1.0;      break;
-            case COMPOSITOR_COPY:     fa = 1.0;      fb = 0.0;      break;
+            case CANVAS_OP_SOURCE_IN:   fa = da;       fb = 0.0;      break;
+            case CANVAS_OP_SOURCE_OUT:  fa = 1.0 - da; fb = 0.0;      break;
+            case CANVAS_OP_SOURCE_ATOP: fa = da;       fb = 1.0 - sa; break;
+            case CANVAS_OP_DESTINATION_OVER: fa = 1.0 - da; fb = 1.0;      break;
+            case CANVAS_OP_DESTINATION_IN:   fa = 0.0;      fb = sa;       break;
+            case CANVAS_OP_DESTINATION_OUT:  fa = 0.0;      fb = 1.0 - sa; break;
+            case CANVAS_OP_DESTINATION_ATOP: fa = 1.0 - da; fb = sa;       break;
+            case CANVAS_OP_XOR:      fa = 1.0 - da; fb = 1.0 - sa; break;
+            case CANVAS_OP_LIGHTER:  fa = 1.0;      fb = 1.0;      break;
+            case CANVAS_OP_COPY:     fa = 1.0;      fb = 0.0;      break;
             default:                  fa = 1.0;      fb = 1.0 - sa; break;  // src-over
         }
         co = (dpx){ fa * s.r + fb * d.r, fa * s.g + fb * d.g,
@@ -176,7 +175,7 @@ static dpx blend_ref(int mode, dpx s, dpx d) {
         drgb cb = da > 0.0 ? (drgb){ d.r / da, d.g / da, d.b / da }
                            : (drgb){ 0.0, 0.0, 0.0 };
         drgb t;
-        if (mode >= COMPOSITOR_HUE) {
+        if (mode >= CANVAS_OP_HUE) {
             t = nonsep_ref(mode, cb, cs);
         } else {
             t = (drgb){ sep_ref(mode, cb.r, cs.r), sep_ref(mode, cb.g, cs.g),
@@ -220,12 +219,12 @@ static void err_acc(errs *e, dpx got, dpx ref) {
 // than the old fold.
 static bool expect_closer(int mode) {
     switch (mode) {
-        case COMPOSITOR_SRC_IN:
-        case COMPOSITOR_SRC_OUT:
-        case COMPOSITOR_DST_IN:
-        case COMPOSITOR_DST_ATOP:
-        case COMPOSITOR_COPY:
-        case COMPOSITOR_LIGHTER:
+        case CANVAS_OP_SOURCE_IN:
+        case CANVAS_OP_SOURCE_OUT:
+        case CANVAS_OP_DESTINATION_IN:
+        case CANVAS_OP_DESTINATION_ATOP:
+        case CANVAS_OP_COPY:
+        case CANVAS_OP_LIGHTER:
             return true;
         default:
             return false;
@@ -251,7 +250,7 @@ enum { NSRC = (int)(sizeof SRCS / sizeof SRCS[0]),
 
 static void part_a(void) {
     enum { N = 256 };  // one pixel per coverage byte
-    compositor *__single c = compositor_create(N, 1);
+    canvas *__single c = canvas_create(N, 1);
     cnvs_premul *dstt = malloc((size_t)N * sizeof *dstt);
     cnvs_premul *full = malloc((size_t)N * sizeof *full);
     cnvs_premul *fold = malloc((size_t)N * sizeof *fold);
@@ -265,7 +264,7 @@ static void part_a(void) {
         covp[i] = (uint8_t)i;
     }
 
-    for (int mode = 0; mode < COMPOSITOR_MODE_COUNT; mode++) {
+    for (int mode = 0; mode < CNVS_BLEND_MODE_COUNT; mode++) {
         errs en = { 0 }, eo = { 0 };
         for (int si = 0; si < NSRC; si++) {
             cnvs_unpremul su = cnvs_unpremul_of(SRCS[si][0], SRCS[si][1],
@@ -288,10 +287,10 @@ static void part_a(void) {
                 dpx s_d = dpx_of(sp), d_d = dpx_of(dp);
 
                 // NEW: full-strength tile + the coverage plane.
-                compositor_blend(c, 0, 0, N, 1, dstt, NULL, COMPOSITOR_COPY);
-                compositor_blend(c, 0, 0, N, 1, full, covp,
-                                 (compositor_blend_mode)mode);
-                compositor_read(c, out, N);
+                cnvs_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS_OP_COPY);
+                cnvs_blend(c, 0, 0, N, 1, full, covp, NULL, 0,
+                           (canvas_composite_op)mode);
+                cnvs_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
                     dpx ref = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
                                            (double)i / 255.0);
@@ -299,10 +298,10 @@ static void part_a(void) {
                 }
 
                 // OLD: pre-folded tile, no plane.
-                compositor_blend(c, 0, 0, N, 1, dstt, NULL, COMPOSITOR_COPY);
-                compositor_blend(c, 0, 0, N, 1, fold, NULL,
-                                 (compositor_blend_mode)mode);
-                compositor_read(c, out, N);
+                cnvs_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS_OP_COPY);
+                cnvs_blend(c, 0, 0, N, 1, fold, NULL, NULL, 0,
+                           (canvas_composite_op)mode);
+                cnvs_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
                     dpx ref = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
                                            (double)i / 255.0);
@@ -336,7 +335,7 @@ static void part_a(void) {
         }
     }
 done:
-    compositor_destroy(c);
+    canvas_destroy(c);
     free(dstt);
     free(full);
     free(fold);
@@ -480,7 +479,7 @@ static void part_b(void) {
     if (covd && covq) {
         coverage_ss(dx, dy, NV, covd);
         coverage_ss(qx, qy, 4, covq);
-        for (int mode = 0; mode < COMPOSITOR_MODE_COUNT; mode++) {
+        for (int mode = 0; mode < CNVS_BLEND_MODE_COUNT; mode++) {
             errs en = { 0 }, eo = { 0 };
             check_scene(mode, dx, dy, NV, SDISC, covd, &en, &eo);
             check_scene(mode, qx, qy, 4, SQUAD, covq, &en, &eo);

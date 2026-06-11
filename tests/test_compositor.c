@@ -1,4 +1,4 @@
-#include "compositor.h"
+#include "cnvs_blend.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
@@ -22,14 +22,14 @@ static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
 
 // Read the premultiplied target back as unpremultiplied RGBA8 (mirrors the
 // canvas-side conversion), so the pixel checks can use unpremultiplied values.
-static void read8(compositor *__single c, int w, int h,
+static void read8(canvas *__single c, int w, int h,
                   uint8_t *__counted_by(w * h * 4) out) {
     int const n = w * h;
     cnvs_premul *__counted_by(n) buf = malloc((size_t)n * sizeof *buf);
     if (!buf) {
         return;
     }
-    compositor_read(c, buf, n);
+    cnvs_blend_read(c, buf, n);
     for (int i = 0; i < n; i++) {
         cnvs_unpremul s = cnvs_unpremultiply(buf[i]);
         out[i * 4]     = (uint8_t)((float)s.r * 255.0f + 0.5f);
@@ -41,10 +41,10 @@ static void read8(compositor *__single c, int w, int h,
 }
 
 // clearRect == destination-out of a unit-alpha tile.
-static void clear_all(compositor *__single c, int w, int h) {
+static void clear_all(canvas *__single c, int w, int h) {
     cnvs_premul *t = make_tile16(w, h, 0.0f, 0.0f, 0.0f, 1.0f);
     if (t) {
-        compositor_blend(c, 0, 0, w, h, t, NULL, COMPOSITOR_DST_OUT);
+        cnvs_blend(c, 0, 0, w, h, t, NULL, NULL, 0, CANVAS_OP_DESTINATION_OUT);
         free(t);
     }
 }
@@ -64,7 +64,7 @@ static void source_over_vs_double(void) {
     cnvs_premul *__counted_by(n) dst = malloc((size_t)n * sizeof *dst);
     cnvs_premul *__counted_by(n) src = malloc((size_t)n * sizeof *src);
     cnvs_premul *__counted_by(n) out = malloc((size_t)n * sizeof *out);
-    compositor *__single c = compositor_create(N, N);
+    canvas *__single c = canvas_create(N, N);
     CHECK(dst != NULL && src != NULL && out != NULL && c != NULL);
     if (dst && src && out && c) {
         for (int y = 0; y < N; y++) {
@@ -84,9 +84,9 @@ static void source_over_vs_double(void) {
             for (int y = 1; y < N; y++) {
                 memcpy(src + y * N, src, (size_t)N * sizeof *src);
             }
-            compositor_blend(c, 0, 0, N, N, dst, NULL, COMPOSITOR_COPY);
-            compositor_blend(c, 0, 0, N, N, src, NULL, COMPOSITOR_SRC_OVER);
-            compositor_read(c, out, n);
+            cnvs_blend(c, 0, 0, N, N, dst, NULL, NULL, 0, CANVAS_OP_COPY);
+            cnvs_blend(c, 0, 0, N, N, src, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
+            cnvs_blend_read(c, out, n);
             for (int y = 0; y < N; y++) {
                 for (int x = 0; x < N; x++) {
                     // co = s + (1-sa)*d onto opaque d: ao == 1, so the
@@ -105,18 +105,18 @@ static void source_over_vs_double(void) {
         }
         CHECK(max_delta <= 1);
     }
-    compositor_destroy(c);
+    canvas_destroy(c);
     free(dst);
     free(src);
     free(out);
 }
 
-// compositor_blend_solid must be byte-identical to compositor_blend of a tile
-// whose every pixel is the colour -- the splat IS the constant tile, minus
-// the round trip.  Sweep every mode under all four coverage shapes (none,
-// op plane, clip, both), over a gradient destination wide enough to exercise
-// full blocks and a 5-pixel tail, and compare the premultiplied targets
-// bit for bit.
+// cnvs_blend_solid must be byte-identical to cnvs_blend of a tile whose every
+// pixel is the colour -- the splat IS the constant tile, minus the round
+// trip.  Sweep every mode under all four coverage shapes (none, op plane,
+// clip, both), over a gradient destination wide enough to exercise full
+// blocks and a 5-pixel tail, and compare the premultiplied targets bit for
+// bit.
 static void solid_vs_tile(void) {
     enum { W = 61, H = 4 };  // 7 full blocks + a 5-pixel tail per row
     int const n = W * H;
@@ -126,7 +126,7 @@ static void solid_vs_tile(void) {
     cnvs_premul *__counted_by(n) want = malloc((size_t)n * sizeof *want);
     uint8_t *__counted_by(n) covp = malloc((size_t)n);
     uint8_t *__counted_by(n) mask = malloc((size_t)n);
-    compositor *__single c = compositor_create(W, H);
+    canvas *__single c = canvas_create(W, H);
     CHECK(dst && tile && got && want && covp && mask && c);
     if (dst && tile && got && want && covp && mask && c) {
         cnvs_premul const color =
@@ -138,34 +138,31 @@ static void solid_vs_tile(void) {
             covp[i] = (uint8_t)(i * 7);   // every byte value over the sweep
             mask[i] = (uint8_t)(255 - i % 256);
         }
-        for (int mode = 0; mode < COMPOSITOR_MODE_COUNT; mode++) {
+        for (int mode = 0; mode < CNVS_BLEND_MODE_COUNT; mode++) {
             for (int shape = 0; shape < 4; shape++) {
                 uint8_t const *cv = (shape & 1) ? covp : NULL;
                 bool const clipped = (shape & 2) != 0;
+                uint8_t const *clip = clipped ? mask : NULL;
+                int const clip_len = clipped ? n : 0;
 
-                // Reset the target with the clip OPEN (a clipped COPY is a
-                // lerp toward the current target, not a reset), then close it
-                // for the blend under test.
-                compositor_set_clip(c, NULL, 0);
-                compositor_blend(c, 0, 0, W, H, dst, NULL, COMPOSITOR_COPY);
-                compositor_set_clip(c, clipped ? mask : NULL, clipped ? n : 0);
-                compositor_blend(c, 0, 0, W, H, tile, cv,
-                                 (compositor_blend_mode)mode);
-                compositor_set_clip(c, NULL, 0);
-                compositor_read(c, want, n);
+                // Reset the target with no clip (a clipped COPY is a lerp
+                // toward the current target, not a reset), then blend under
+                // test with the clip in force.
+                cnvs_blend(c, 0, 0, W, H, dst, NULL, NULL, 0, CANVAS_OP_COPY);
+                cnvs_blend(c, 0, 0, W, H, tile, cv, clip, clip_len,
+                           (canvas_composite_op)mode);
+                cnvs_blend_read(c, want, n);
 
-                compositor_blend(c, 0, 0, W, H, dst, NULL, COMPOSITOR_COPY);
-                compositor_set_clip(c, clipped ? mask : NULL, clipped ? n : 0);
-                compositor_blend_solid(c, 0, 0, W, H, color, cv,
-                                       (compositor_blend_mode)mode);
-                compositor_set_clip(c, NULL, 0);
-                compositor_read(c, got, n);
+                cnvs_blend(c, 0, 0, W, H, dst, NULL, NULL, 0, CANVAS_OP_COPY);
+                cnvs_blend_solid(c, 0, 0, W, H, color, cv, clip, clip_len,
+                                 (canvas_composite_op)mode);
+                cnvs_blend_read(c, got, n);
 
                 CHECK(memcmp(got, want, (size_t)n * sizeof *got) == 0);
             }
         }
     }
-    compositor_destroy(c);
+    canvas_destroy(c);
     free(dst);
     free(tile);
     free(got);
@@ -177,7 +174,7 @@ static void solid_vs_tile(void) {
 int main(void) {
     int const w = 16, h = 16, len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    compositor *__single c = compositor_create(w, h);
+    canvas *__single c = canvas_create(w, h);
     CHECK(px != NULL);
     CHECK(c != NULL);
     if (!px || !c) {
@@ -191,7 +188,7 @@ int main(void) {
     // Blend an opaque red tile over a 4x4 region.
     cnvs_premul *red = make_tile16(4, 4, 1.0f, 0.0f, 0.0f, 1.0f);
     if (red) {
-        compositor_blend(c, 2, 2, 4, 4, red, NULL, COMPOSITOR_SRC_OVER);
+        cnvs_blend(c, 2, 2, 4, 4, red, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
         read8(c, w, h, px);
         CHECK(px_near(pixel_at(px, len, w, 3, 3), 255, 0, 0, 255, 1));  // painted
         CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 0));      // outside
@@ -201,7 +198,7 @@ int main(void) {
     // COPY overwrites the destination -- putImageData's compositing operator.
     cnvs_premul *blue = make_tile16(2, 2, 0.0f, 0.0f, 1.0f, 1.0f);
     if (blue) {
-        compositor_blend(c, 3, 3, 2, 2, blue, NULL, COMPOSITOR_COPY);
+        cnvs_blend(c, 3, 3, 2, 2, blue, NULL, NULL, 0, CANVAS_OP_COPY);
         read8(c, w, h, px);
         CHECK(px_near(pixel_at(px, len, w, 3, 3), 0, 0, 255, 255, 1));  // overwritten
         CHECK(px_near(pixel_at(px, len, w, 2, 2), 255, 0, 0, 255, 1));  // still red
@@ -217,7 +214,7 @@ int main(void) {
     // is stored premultiplied (0.5,0,0,0.5) but un-premultiplies to (255,0,0,128).
     cnvs_premul *half_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 0.5f);
     if (half_red) {
-        compositor_blend(c, 0, 0, w, h, half_red, NULL, COMPOSITOR_SRC_OVER);
+        cnvs_blend(c, 0, 0, w, h, half_red, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
         read8(c, w, h, px);
         CHECK(px_near(pixel_at(px, len, w, 8, 8), 255, 0, 0, 128, 3));
         free(half_red);
@@ -232,10 +229,10 @@ int main(void) {
                 mask[y * w + x] = x < 8 ? 255 : 0;
             }
         }
-        compositor_set_clip(c, mask, w * h);
         cnvs_premul *green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 1.0f);
         if (green) {
-            compositor_blend(c, 0, 0, w, h, green, NULL, COMPOSITOR_SRC_OVER);
+            cnvs_blend(c, 0, 0, w, h, green, NULL, mask, w * h,
+                       CANVAS_OP_SOURCE_OVER);
             read8(c, w, h, px);
             CHECK(px_near(pixel_at(px, len, w, 4, 8), 0, 255, 0, 255, 1));  // clip open
             CHECK(px_near(pixel_at(px, len, w, 12, 8), 0, 0, 0, 0, 1));     // clip closed
@@ -244,14 +241,13 @@ int main(void) {
         free(mask);
     }
 
-    // Re-open the clip and check source-over compositing of a half-alpha tile.
-    compositor_set_clip(c, NULL, 0);
+    // With the clip open again, check source-over compositing of a half-alpha tile.
     clear_all(c, w, h);
     cnvs_premul *opaque_red = make_tile16(w, h, 1.0f, 0.0f, 0.0f, 1.0f);
     cnvs_premul *half_green = make_tile16(w, h, 0.0f, 1.0f, 0.0f, 0.5f);
     if (opaque_red && half_green) {
-        compositor_blend(c, 0, 0, w, h, opaque_red, NULL, COMPOSITOR_SRC_OVER);
-        compositor_blend(c, 0, 0, w, h, half_green, NULL, COMPOSITOR_SRC_OVER);
+        cnvs_blend(c, 0, 0, w, h, opaque_red, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
+        cnvs_blend(c, 0, 0, w, h, half_green, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
         read8(c, w, h, px);
         struct px4 m = pixel_at(px, len, w, 8, 8);
         CHECK(m.r > 110 && m.r < 145);  // ~half red survives
@@ -261,7 +257,7 @@ int main(void) {
     free(opaque_red);
     free(half_green);
 
-    compositor_destroy(c);
+    canvas_destroy(c);
     free(px);
 
     source_over_vs_double();

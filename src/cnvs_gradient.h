@@ -3,7 +3,7 @@
 // Linear and radial colour gradients.  Stops are kept sorted by offset in a small
 // fixed array, so a gradient is a plain value copied with the canvas state on
 // save/restore.  Fills and strokes sample it per pixel on the CPU into the tile the
-// compositor blends.
+// blend stage composites.
 
 #include "cnvs_math.h"
 

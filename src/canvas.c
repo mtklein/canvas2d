@@ -1,7 +1,7 @@
 #include "canvas.h"
 
-#include "compositor.h"
 #include "blur.h"
+#include "cnvs_blend.h"
 #include "cnvs_cover.h"
 #include "cnvs_filter.h"
 #include "cnvs_geom.h"
@@ -91,7 +91,7 @@ struct canvas_state {
     cnvs_gradient stroke_grad;
     cnvs_pattern stroke_pattern;
     float global_alpha;
-    compositor_blend_mode composite;  // globalCompositeOperation
+    canvas_composite_op composite;  // globalCompositeOperation
     float line_width;
     cnvs_fill_rule fill_rule;
     cnvs_line_join line_join;
@@ -124,9 +124,10 @@ struct canvas_state {
 };
 
 struct canvas {
-    compositor *__single comp;
     int width;
     int height;
+    cnvs_premul *__counted_by(target_len) target;  // premultiplied; all-zero == transparent
+    int target_len;                                // == width * height
     struct canvas_state cur;
     struct canvas_state *__counted_by(stack_cap) stack;
     int stack_len;
@@ -208,7 +209,7 @@ static void state_defaults(struct canvas_state *s) {
     s->stroke_kind = CNVS_PAINT_SOLID;
     pattern_clear(&s->stroke_pattern);
     s->global_alpha = 1.0f;
-    s->composite = COMPOSITOR_SRC_OVER;
+    s->composite = CANVAS_OP_SOURCE_OVER;
     s->line_width = 1.0f;
     s->fill_rule = CNVS_NONZERO;
     s->line_join = CNVS_JOIN_MITER;
@@ -239,18 +240,20 @@ canvas *__single canvas_create(int width, int height) {
         width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
         return NULL;
     }
-    compositor *__single comp = compositor_create(width, height);
-    if (!comp) {
+    int const n = width * height;
+    cnvs_premul *__counted_by_or_null(n) target = calloc((size_t)n, sizeof *target);
+    if (!target) {
         return NULL;
     }
     canvas *__single cv = calloc(1, sizeof *cv);
     if (!cv) {
-        compositor_destroy(comp);
+        free(target);
         return NULL;
     }
-    cv->comp = comp;
     cv->width = width;
     cv->height = height;
+    cv->target_len = n;
+    cv->target = target;  // count before pointer
     state_defaults(&cv->cur);
     cv->stack = NULL;
     cv->stack_len = 0;
@@ -270,7 +273,7 @@ void canvas_destroy(canvas *__single cv) {
         return;
     }
     cnvs_recorder_close(cv->rec);  // flush and close any active recording
-    compositor_destroy(cv->comp);
+    free(cv->target);
     for (int i = 0; i < cv->stack_len; i++) {
         free(cv->stack[i].filters);
         free(cv->stack[i].clip_mask);
@@ -387,7 +390,6 @@ void canvas_restore(canvas *__single cv) {
         free(cv->cur.filters);
         free(cv->cur.clip_mask);
         cv->cur = cv->stack[cv->stack_len];  // adopts the saved clip mask + filters
-        compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
     }
 }
 
@@ -417,14 +419,14 @@ void canvas_reset(canvas *__single cv) {
     // long-lived canvas to shed accumulated memory, so warm entries go (and
     // resize(), which resets, starts its new canvas cold like create() does).
     cnvs_text_cache_clear(&cv->text_cache);
-    // Open the clip, then clear the whole bitmap to transparent black: a
-    // destination-out of a unit-alpha splat leaves dst*(1 - 1) = 0 everywhere
-    // (no tile, so a reset can't fail on allocation).
-    compositor_set_clip(cv->comp, NULL, 0);
-    compositor_blend_solid(cv->comp, 0, 0, cv->width, cv->height,
-                           (cnvs_premul){ .r = 0, .g = 0, .b = 0,
-                                          .a = (_Float16)1.0f },
-                           NULL, COMPOSITOR_DST_OUT);
+    // Clear the whole bitmap to transparent black: a destination-out of a
+    // unit-alpha splat leaves dst*(1 - 1) = 0 everywhere, with the clip open
+    // (state_defaults just dropped the mask; no tile, so a reset can't fail
+    // on allocation).
+    cnvs_blend_solid(cv, 0, 0, cv->width, cv->height,
+                     (cnvs_premul){ .r = 0, .g = 0, .b = 0,
+                                    .a = (_Float16)1.0f },
+                     NULL, NULL, 0, CANVAS_OP_DESTINATION_OUT);
 }
 
 bool canvas_resize(canvas *__single cv, int width, int height) {
@@ -432,13 +434,15 @@ bool canvas_resize(canvas *__single cv, int width, int height) {
         width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
         return false;
     }
-    // Build the new-sized compositor first; on failure leave the canvas intact.
-    compositor *__single nc = compositor_create(width, height);
-    if (!nc) {
+    // Build the new-sized target first; on failure leave the canvas intact.
+    int const n = width * height;
+    cnvs_premul *__counted_by_or_null(n) nt = calloc((size_t)n, sizeof *nt);
+    if (!nt) {
         return false;
     }
-    compositor_destroy(cv->comp);
-    cv->comp = nc;
+    free(cv->target);
+    cv->target_len = n;
+    cv->target = nt;  // count before pointer
     cv->width = width;
     cv->height = height;
     // Record `resize` only once it has succeeded (a failed resize changes
@@ -653,19 +657,13 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha) {
     cv->cur.global_alpha = clamp01(alpha);
 }
 
-static_assert((int)CANVAS_OP_SOURCE_OVER == (int)COMPOSITOR_SRC_OVER &&
-              (int)CANVAS_OP_COPY        == (int)COMPOSITOR_COPY &&
-              (int)CANVAS_OP_LUMINOSITY  == (int)COMPOSITOR_LUMINOSITY &&
-              (int)CANVAS_OP_LUMINOSITY + 1 == (int)COMPOSITOR_MODE_COUNT,
-              "canvas_composite_op mirrors compositor_blend_mode value-for-value");
-
 void canvas_set_global_composite_operation(canvas *__single cv,
                                            canvas_composite_op op) {
-    if ((int)op < 0 || (int)op >= COMPOSITOR_MODE_COUNT) {
+    if ((int)op < 0 || (int)op >= CNVS_BLEND_MODE_COUNT) {
         return;
     }
     if (cv->rec) { cnvs_rec_composite(cv->rec, op); }
-    cv->cur.composite = (compositor_blend_mode)op;
+    cv->cur.composite = op;
 }
 
 void canvas_set_shadow_color_rgba(canvas *__single cv,
@@ -1066,12 +1064,443 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
     }
 }
 
+// --- the blend stage ----------------------------------------------------------
+//
+// W3C composite + blend math, premultiplied throughout, in _Float16 arithmetic
+// end to end (docs/decisions/color-axis.md: f16 is the compute type, not just
+// the storage type).  Blend modes: co = s*(1-da) + d*(1-sa) + T,
+// ao = sa + da*(1-sa), with premultiplied term T = sa*da*B(Cb,Cs); the
+// polynomial modes have divide-free T, the non-linear ones (dodge/burn/
+// soft-light, HSL) un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.
+//
+// Everything below runs eight pixels at a time over channel planes
+// (cnvs_planar.h); per-pixel branches are bitwise lane selects (half8_if_then_else)
+// that compute both arms and discard a guarded divide's inf/NaN lanes
+// exactly.
+//
+// Coverage (the op's AA plane x the clip mask) applies per the ruling in
+// docs/rasterization.md: out = lerp(dst, blend(src, dst), cov) -- the
+// uncovered fraction of a pixel keeps its destination.  Folding coverage
+// into source alpha instead is identical math exactly when, in
+// co = Fa*s + Fb*d, Fa is free of sa and Fb is affine in sa with Fb(0) = 1
+// (coverage_folds): the over-family folds, every other mode blends at full
+// strength and lerps.
+
+static_assert(CANVAS_OP_COPY == 10 && CANVAS_OP_MULTIPLY == 11 &&
+              CANVAS_OP_EXCLUSION == 21 && CANVAS_OP_HUE == 22 &&
+              CNVS_BLEND_MODE_COUNT == 26,
+              "blend8 dispatches on these mode bands");
+
+// Coverage semantics (docs/rasterization.md): partial
+// coverage applies in principle as a lerp between the destination and the
+// full-strength blend, out = lerp(dst, blend(src, dst), cov) -- a pixel the
+// shape doesn't cover keeps its destination.  Folding coverage into source
+// alpha instead (src *= cov, premultiplied) is identical math only where the
+// Porter-Duff form co = Fa*s + Fb*d has Fa free of sa and Fb affine in sa
+// with Fb(0) = 1, AND the result never trips the output clamp: the modes
+// below.  Those fold; every other mode takes the lerp in cnvs_blend.
+// 'lighter' passes the Fa/Fb criterion (Fa = Fb = 1) but its co = s + d
+// exceeds 1 exactly where it saturates, and clamp(c*s + d) != lerp(d,
+// clamp(s + d), c) there -- the supersampled truth clamps per subsample, so
+// lighter lerps (test_coverage_lerp measures the difference).
+static bool coverage_folds(canvas_composite_op m) {
+    switch ((int)m) {
+        case CANVAS_OP_SOURCE_OVER:      // Fa = 1,      Fb = 1 - sa
+        case CANVAS_OP_SOURCE_ATOP:      // Fa = da,     Fb = 1 - sa
+        case CANVAS_OP_DESTINATION_OVER: // Fa = 1 - da, Fb = 1
+        case CANVAS_OP_DESTINATION_OUT:  // Fa = 0,      Fb = 1 - sa
+        case CANVAS_OP_XOR:              // Fa = 1 - da, Fb = 1 - sa
+            return true;
+        default:  // copy, the in/out family, dst-atop, lighter, blends
+            return false;
+    }
+}
+
+// Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
+static half8 blend_sep8(canvas_composite_op mode, half8 cb, half8 cs) {
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    switch ((int)mode) {
+        case CANVAS_OP_COLOR_DODGE:
+            return half8_if_then_else(cb <= zero, zero,
+                   half8_if_then_else(cs >= one,  one,
+                       __builtin_elementwise_min(one, cb / (one - cs))));
+        case CANVAS_OP_COLOR_BURN:
+            return half8_if_then_else(cb >= one,  one,
+                   half8_if_then_else(cs <= zero, zero,
+                       one - __builtin_elementwise_min(one, (one - cb) / cs)));
+        case CANVAS_OP_SOFT_LIGHT: {
+            half8 dd = half8_if_then_else(cb <= (half8)(_Float16)0.25f,
+                (((_Float16)16.0f * cb - (_Float16)12.0f) * cb + (_Float16)4.0f) * cb,
+                __builtin_elementwise_sqrt(cb));
+            return half8_if_then_else(cs <= (half8)(_Float16)0.5f,
+                cb - (one - (_Float16)2.0f * cs) * cb * (one - cb),
+                cb + ((_Float16)2.0f * cs - one) * (dd - cb));
+        }
+        default:
+            return cs;
+    }
+}
+
+// Premultiplied separable term T = sa*da*B per channel plane (s, d premultiplied).
+static half8 blend_term8(canvas_composite_op mode,
+                           half8 s, half8 d, half8 sa, half8 da) {
+    switch ((int)mode) {
+        case CANVAS_OP_MULTIPLY:    return s * d;
+        case CANVAS_OP_SCREEN:      return sa * d + da * s - s * d;
+        case CANVAS_OP_OVERLAY:
+            return half8_if_then_else((_Float16)2.0f * d <= da,
+                                      (_Float16)2.0f * s * d,
+                                      sa * da - (_Float16)2.0f * (da - d) * (sa - s));
+        case CANVAS_OP_DARKEN:      return __builtin_elementwise_min(s * da, d * sa);
+        case CANVAS_OP_LIGHTEN:     return __builtin_elementwise_max(s * da, d * sa);
+        case CANVAS_OP_HARD_LIGHT:
+            return half8_if_then_else((_Float16)2.0f * s <= sa,
+                                      (_Float16)2.0f * s * d,
+                                      sa * da - (_Float16)2.0f * (da - d) * (sa - s));
+        case CANVAS_OP_DIFFERENCE:
+            return __builtin_elementwise_abs(s * da - d * sa);
+        case CANVAS_OP_EXCLUSION:   return sa * d + da * s - (_Float16)2.0f * s * d;
+        default: {  // color-dodge / color-burn / soft-light
+            half8 const zero = (half8)(_Float16)0.0f;
+            half8 cs = half8_if_then_else(sa > zero, s / sa, zero);
+            half8 cb = half8_if_then_else(da > zero, d / da, zero);
+            return sa * da * blend_sep8(mode, cb, cs);
+        }
+    }
+}
+
+// Source-over for one planar block: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
+// the same fold over every channel plane, alpha included.
+static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
+    half8 fb = (half8)(_Float16)1.0f - s.a;
+    cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
+                    s.b + fb * d.b, s.a + fb * d.a };
+    return cnvs_px8_clamp_premul(co);
+}
+
+// Eight pixels' unpremultiplied colour as three channel planes.
+typedef struct {
+    half8 r, g, b;
+} rgb8;
+
+static half8 lum8(rgb8 c) {
+    return (_Float16)0.3f * c.r + (_Float16)0.59f * c.g + (_Float16)0.11f * c.b;
+}
+
+static rgb8 clip_color8(rgb8 c) {
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    half8 l = lum8(c);
+    half8 n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    half8 x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    short8 lo = n < zero;  // lanes with a channel below 0: scale about l
+    half8 kn = l / (l - n);
+    c.r = half8_if_then_else(lo, l + (c.r - l) * kn, c.r);
+    c.g = half8_if_then_else(lo, l + (c.g - l) * kn, c.g);
+    c.b = half8_if_then_else(lo, l + (c.b - l) * kn, c.b);
+    // The W3C ClipColor computes n and x ONCE, before either fix: the x > 1
+    // test and the kx denominator both read the pre-fix maximum even though
+    // the channels they rescale may have just been pulled toward l.
+    short8 hi = x > one;   // lanes with a channel above 1
+    half8 kx = (one - l) / (x - l);
+    c.r = half8_if_then_else(hi, l + (c.r - l) * kx, c.r);
+    c.g = half8_if_then_else(hi, l + (c.g - l) * kx, c.g);
+    c.b = half8_if_then_else(hi, l + (c.b - l) * kx, c.b);
+    return c;
+}
+
+static rgb8 set_lum8(rgb8 c, half8 l) {
+    half8 dl = l - lum8(c);
+    c.r += dl;
+    c.g += dl;
+    c.b += dl;
+    return clip_color8(c);
+}
+
+static half8 sat8(rgb8 c) {
+    return __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b))
+         - __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+}
+
+// Set saturation: max channel -> s, min -> 0, mid proportional; an all-equal
+// lane (mx <= mn) has no saturation axis and goes to black.
+static rgb8 set_sat8(rgb8 c, half8 s) {
+    half8 const zero = (half8)(_Float16)0.0f;
+    half8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    half8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    short8 flat = mx <= mn;
+    half8 k = s / (mx - mn);
+    return (rgb8){ .r = half8_if_then_else(flat, zero, (c.r - mn) * k),
+                   .g = half8_if_then_else(flat, zero, (c.g - mn) * k),
+                   .b = half8_if_then_else(flat, zero, (c.b - mn) * k) };
+}
+
+static rgb8 blend_nonsep8(canvas_composite_op mode, rgb8 cb, rgb8 cs) {
+    switch ((int)mode) {
+        case CANVAS_OP_HUE:        return set_lum8(set_sat8(cs, sat8(cb)), lum8(cb));
+        case CANVAS_OP_SATURATION: return set_lum8(set_sat8(cb, sat8(cs)), lum8(cb));
+        case CANVAS_OP_COLOR:      return set_lum8(cs, lum8(cb));
+        default:                   return set_lum8(cb, lum8(cs));  // luminosity
+    }
+}
+
+// `s` is one planar block of premultiplied source pixels, already
+// clip-attenuated.  The composite fold runs the same expression over every
+// plane: in the Porter-Duff arm the
+// alpha plane of Fa*s + Fb*d is Fa*sa + Fb*da = ao, and in the blend arm the
+// alpha plane of s*(1-da) + d*(1-sa) + T is sa + da*(1-sa) = ao because T's
+// alpha plane is pinned to sa*da.
+static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, canvas_composite_op mode) {
+    if (mode == CANVAS_OP_SOURCE_OVER) {
+        // Delegate to the fast path's kernel: the Porter-Duff arm below would
+        // spell source-over as fa*s + fb*d with fa = 1, and the contraction
+        // shape differs -- fa*s rounds fb*d's product separately where
+        // src_over8's s + fb*d fuses it -- so the explicit kernel keeps every
+        // source-over bit-identical no matter which loop reached it.
+        return src_over8(s, d);
+    }
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    half8 sa = s.a, da = d.a;
+    cnvs_px8 co;
+
+    if ((int)mode <= CANVAS_OP_COPY) {
+        // Porter-Duff: co = Fa*s + Fb*d, ao = Fa*sa + Fb*da.
+        half8 fa, fb;
+        switch ((int)mode) {
+            case CANVAS_OP_SOURCE_IN:        fa = da;       fb = zero;      break;
+            case CANVAS_OP_SOURCE_OUT:       fa = one - da; fb = zero;      break;
+            case CANVAS_OP_SOURCE_ATOP:      fa = da;       fb = one - sa;  break;
+            case CANVAS_OP_DESTINATION_OVER: fa = one - da; fb = one;       break;
+            case CANVAS_OP_DESTINATION_IN:   fa = zero;     fb = sa;        break;
+            case CANVAS_OP_DESTINATION_OUT:  fa = zero;     fb = one - sa;  break;
+            case CANVAS_OP_DESTINATION_ATOP: fa = one - da; fb = sa;        break;
+            case CANVAS_OP_XOR:              fa = one - da; fb = one - sa;  break;
+            case CANVAS_OP_LIGHTER:          fa = one;      fb = one;       break;
+            case CANVAS_OP_COPY:             fa = one;      fb = zero;      break;
+            default:                         fa = one;      fb = one - sa;  break;  // source-over
+        }
+        co.r = fa * s.r + fb * d.r;
+        co.g = fa * s.g + fb * d.g;
+        co.b = fa * s.b + fb * d.b;
+        co.a = fa * sa  + fb * da ;
+    } else {
+        cnvs_px8 t;
+        if ((int)mode >= CANVAS_OP_HUE) {
+            short8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
+            rgb8 cs = { half8_if_then_else(sm, s.r / sa, zero),
+                        half8_if_then_else(sm, s.g / sa, zero),
+                        half8_if_then_else(sm, s.b / sa, zero) };
+            rgb8 cb = { half8_if_then_else(dm, d.r / da, zero),
+                        half8_if_then_else(dm, d.g / da, zero),
+                        half8_if_then_else(dm, d.b / da, zero) };
+            rgb8 bl = blend_nonsep8(mode, cb, cs);
+            t.r = sa * da * bl.r;
+            t.g = sa * da * bl.g;
+            t.b = sa * da * bl.b;
+            t.a = sa * da       ;
+        } else {
+            t.r = blend_term8(mode, s.r, d.r, sa, da);
+            t.g = blend_term8(mode, s.g, d.g, sa, da);
+            t.b = blend_term8(mode, s.b, d.b, sa, da);
+            t.a = sa * da;
+        }
+        co.r = s.r * (one - da) + d.r * (one - sa) + t.r;
+        co.g = s.g * (one - da) + d.g * (one - sa) + t.g;
+        co.b = s.b * (one - da) + d.b * (one - sa) + t.b;
+        co.a = sa  * (one - da) + da  * (one - sa) + t.a;
+    }
+    return cnvs_px8_clamp_premul(co);  // additive 'lighter' can exceed 1
+}
+
+// The coverage lerp: out = blend*k + dst*(1-k) per plane.  Two products, not
+// dst + (blend-dst)*k, so k == 1 returns the blend bit-exactly and k == 0
+// returns dst bit-exactly (full coverage must not perturb the blend; zero
+// coverage must not perturb the destination).  The clamp restores the
+// premultiplied invariant against the one-ULP drift of k + (1-k) in f16.
+static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 k) {
+    half8 j = (half8)(_Float16)1.0f - k;
+    cnvs_px8 o = { co.r * k + d.r * j, co.g * k + d.g * j,
+                   co.b * k + d.b * j, co.a * k + d.a * j };
+    return cnvs_px8_clamp_premul(o);
+}
+
+// The generic modes, shared by the tile and solid-colour entry points: the
+// same planar block walk as the source-over fast path, with the 26-mode
+// kernel in place of the source-over fold.  `tile` may be NULL, in which case
+// every block's source is `splat` -- one solid colour broadcast across the
+// lanes.  Effective coverage is the op plane x the clip mask (each absent
+// factor is 1); the over-family folds it into the source exactly as the fast
+// path does, every other mode blends at full strength and lerps toward the
+// destination (cov_lerp8).
+static void blend_region(canvas *__single cv, int x, int y, int w, int h,
+                         cnvs_premul const *__counted_by_or_null(w * h) tile,
+                         cnvs_px8 splat,
+                         uint8_t const *__counted_by_or_null(w * h) cov,
+                         uint8_t const *__counted_by_or_null(clip_len) clip,
+                         int clip_len, canvas_composite_op mode) {
+    (void)clip_len;
+    bool const folds = coverage_folds(mode);
+    bool const atten = cov || clip;  // any coverage to apply?
+    _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
+    half8 const one = (half8)(_Float16)1.0f;
+    for (int row = 0; row < h; row++) {
+        int col = 0;
+        for (; col + 8 <= w; col += 8) {
+            int ti = row * w + col;
+            int di = (y + row) * cv->width + (x + col);
+            cnvs_px8 s = tile ? cnvs_px8_load(tile + ti) : splat;
+            cnvs_px8 d = cnvs_px8_load(cv->target + di);
+            cnvs_px8 o;
+            if (!atten) {
+                o = blend8(s, d, mode);
+            } else if (folds) {
+                // Attenuate the source by each factor in turn, exactly as the
+                // fast path does (combining the factors first re-rounds).
+                if (cov) {
+                    s = cnvs_px8_scale(s, half8_from_u8(cov + ti) * inv255);
+                }
+                if (clip) {
+                    s = cnvs_px8_scale(s, half8_from_u8(clip + di) * inv255);
+                }
+                o = blend8(s, d, mode);
+            } else {
+                half8 k = one;  // 1*x is exact: a lone factor passes through
+                if (cov) {
+                    k = k * (half8_from_u8(cov + ti) * inv255);
+                }
+                if (clip) {
+                    k = k * (half8_from_u8(clip + di) * inv255);
+                }
+                o = cov_lerp8(d, blend8(s, d, mode), k);
+            }
+            cnvs_px8_store(cv->target + di, o);
+        }
+        if (col < w) {
+            int n = w - col;
+            int ti = row * w + col;
+            int di = (y + row) * cv->width + (x + col);
+            cnvs_px8 s = tile ? cnvs_px8_load_k(tile + ti, n) : splat;
+            cnvs_px8 d = cnvs_px8_load_k(cv->target + di, n);
+            cnvs_px8 o;
+            if (!atten) {
+                o = blend8(s, d, mode);
+            } else if (folds) {
+                if (cov) {
+                    s = cnvs_px8_scale(s, half8_from_u8_k(cov + ti, n) * inv255);
+                }
+                if (clip) {
+                    s = cnvs_px8_scale(s, half8_from_u8_k(clip + di, n) * inv255);
+                }
+                o = blend8(s, d, mode);
+            } else {
+                half8 k = one;
+                if (cov) {
+                    k = k * (half8_from_u8_k(cov + ti, n) * inv255);
+                }
+                if (clip) {
+                    k = k * (half8_from_u8_k(clip + di, n) * inv255);
+                }
+                o = cov_lerp8(d, blend8(s, d, mode), k);
+            }
+            cnvs_px8_store_k(cv->target + di, n, o);
+        }
+    }
+}
+
+void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
+                cnvs_premul const *__counted_by(w * h) tile,
+                uint8_t const *__counted_by_or_null(w * h) cov,
+                uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
+                canvas_composite_op mode) {
+    if (!tile || w <= 0 || h <= 0) {
+        return;
+    }
+    if (x < 0 || y < 0 || x + w > cv->width || y + h > cv->height) {
+        return;
+    }
+    if (clip && clip_len < cv->width * cv->height) {
+        return;
+    }
+    if (mode == CANVAS_OP_SOURCE_OVER) {
+        // The fast path.  Source-over folds: op coverage (normally already
+        // folded by the shade stage, so cov is NULL here) and clip
+        // attenuation both scale the premultiplied source, in f16.
+        _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
+        for (int row = 0; row < h; row++) {
+            int col = 0;
+            for (; col + 8 <= w; col += 8) {
+                int ti = row * w + col;
+                int di = (y + row) * cv->width + (x + col);
+                cnvs_px8 s = cnvs_px8_load(tile + ti);
+                if (cov) {
+                    s = cnvs_px8_scale(s, half8_from_u8(cov + ti) * inv255);
+                }
+                if (clip) {
+                    s = cnvs_px8_scale(s, half8_from_u8(clip + di) * inv255);
+                }
+                cnvs_px8 d = cnvs_px8_load(cv->target + di);
+                cnvs_px8_store(cv->target + di, src_over8(s, d));
+            }
+            if (col < w) {
+                int k = w - col;
+                int ti = row * w + col;
+                int di = (y + row) * cv->width + (x + col);
+                cnvs_px8 s = cnvs_px8_load_k(tile + ti, k);
+                if (cov) {
+                    s = cnvs_px8_scale(s, half8_from_u8_k(cov + ti, k) * inv255);
+                }
+                if (clip) {
+                    s = cnvs_px8_scale(s, half8_from_u8_k(clip + di, k) * inv255);
+                }
+                cnvs_px8 d = cnvs_px8_load_k(cv->target + di, k);
+                cnvs_px8_store_k(cv->target + di, k, src_over8(s, d));
+            }
+        }
+        return;
+    }
+    // The generic modes: the shared region walk (splat unused, tile present).
+    cnvs_px8 const zero = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
+                            (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    blend_region(cv, x, y, w, h, tile, zero, cov, clip, clip_len, mode);
+}
+
+void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
+                      cnvs_premul color,
+                      uint8_t const *__counted_by_or_null(w * h) cov,
+                      uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
+                      canvas_composite_op mode) {
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    if (x < 0 || y < 0 || x + w > cv->width || y + h > cv->height) {
+        return;
+    }
+    if (clip && clip_len < cv->width * cv->height) {
+        return;
+    }
+    // Broadcast the colour across the lanes once: a splat lane equals a
+    // stored-and-reloaded f16 exactly, so the region walk's output is
+    // byte-identical to materializing the constant tile.  SOURCE_OVER takes
+    // the region walk here, not the fast path, and still lands the same
+    // bytes: blend8 delegates source-over to src_over8, and the fold arm
+    // applies cov/clip as the same two successive scales.
+    cnvs_px8 const splat = { (half8)color.r, (half8)color.g,
+                             (half8)color.b, (half8)color.a };
+    blend_region(cv, x, y, w, h, NULL, splat, cov, clip, clip_len, mode);
+}
+
+void cnvs_blend_read(canvas *__single cv, cnvs_premul *__counted_by(len) out, int len) {
+    if (!out || len < cv->target_len) {
+        return;
+    }
+    memcpy(out, cv->target, (size_t)cv->target_len * sizeof *out);
+}
+
 // --- the planar shade stage --------------------------------------------------
 //
 // The coverage -> premultiplied-tile fold, eight pixels per step over channel
 // planes (cnvs_planar.h).  The fold runs in _Float16, the pipeline's compute
 // type (docs/decisions/color-axis.md): coverage normalizes as one f16
-// multiply by RN16(1/255) -- the compositor's exact idiom, and 255 * that
+// multiply by RN16(1/255) -- the blend stage's exact idiom, and 255 * that
 // rounds back to exactly 1.0, so full coverage passes the paint's alpha
 // through untouched -- and each paint's alpha factors fold in the type the
 // colour data is born in (f16 for solid and gradient paint, f32 for image
@@ -1105,31 +1534,31 @@ static foldv8 mat_apply8(cnvs_mat m, float8 x, float y) {
 }
 
 // Does the shade stage fold the op's coverage into the tile's alpha?  The
-// over-family folds exactly (compositor_coverage_folds); for every other
+// over-family folds exactly (coverage_folds); for every other
 // mode the tile carries the source at full strength and the
-// coverage plane rides to compositor_blend separately, which lerps.  Filters
+// coverage plane rides to cnvs_blend separately, which lerps.  Filters
 // force the fold regardless: blur()/drop-shadow() consume the op's silhouette
 // from the tile's alpha, so coverage must be materialized before they run --
 // after a filter the coverage genuinely is source alpha.
 static bool shade_folds_coverage(canvas const *__single cv) {
-    return compositor_coverage_folds(cv->cur.composite) ||
+    return coverage_folds(cv->cur.composite) ||
            cv->cur.filter_count > 0;
 }
 
 // Finish a freshly shaded tile: run the state's filter list over it, then
 // composite -- the shared tail of every tile-building paint loop.  `fold` is
 // the caller's shade_folds_coverage answer: a folded tile already carries the
-// op's coverage in its alpha; otherwise cv->cov rides to the compositor's lerp.
+// op's coverage in its alpha; otherwise cv->cov rides to the blend's lerp.
 static void blend_tile(canvas *__single cv, cbbox b, bool fold) {
     apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
-                     fold ? NULL : cv->cov, cv->cur.composite);
+    cnvs_blend(cv, b.x, b.y, b.w, b.h, cv->tile, fold ? NULL : cv->cov,
+               cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
 }
 
 // Paint the resolved coverage in cv->cov with a solid colour.  Each pixel's
 // alpha is paint_alpha * global_alpha * coverage when the composite mode folds
 // coverage (shade_folds_coverage); otherwise paint_alpha * global_alpha, with
-// cv->cov handed to the compositor's lerp.
+// cv->cov handed to the blend's lerp.
 static void paint_tile_solid(canvas *__single cv, cbbox b, cnvs_unpremul solid) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
@@ -1145,14 +1574,15 @@ static void paint_tile_solid(canvas *__single cv, cbbox b, cnvs_unpremul solid) 
         // Full-strength source: every pixel is the same premultiplied
         // colour (at full coverage the folded form's base * 1.0 is base
         // exactly, so interiors agree bit for bit).  No tile at all --
-        // the compositor takes the colour as a splat and the op's
+        // the blend takes the colour as a splat and the op's
         // coverage plane drives its lerp.  (!fold implies no filters:
         // shade_folds_coverage forces the fold whenever filters are
         // active, so skipping apply_filters here drops only a no-op.)
         cnvs_premul px;
         cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
-        compositor_blend_solid(cv->comp, b.x, b.y, b.w, b.h, px, cv->cov,
-                               cv->cur.composite);
+        cnvs_blend_solid(cv, b.x, b.y, b.w, b.h, px, cv->cov,
+                         cv->cur.clip_mask, cv->cur.clip_len,
+                         cv->cur.composite);
         return;
     }
     int i = 0;
@@ -1451,10 +1881,10 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
     // per step: the shadow colour is a splat, so this is the planar f16 shade
     // fold with the blurred mask as its coverage plane.  For lerping modes
     // the tile is the full-strength tint and the blurred mask rides to the
-    // compositor as the op's coverage plane.  (Filters never apply to the
+    // blend as the op's coverage plane.  (Filters never apply to the
     // shadow tile, so unlike paint_tile the decision is the composite mode
     // alone.)
-    bool const fold = compositor_coverage_folds(cv->cur.composite);
+    bool const fold = coverage_folds(cv->cur.composite);
     cnvs_unpremul const sc = cv->cur.shadow_color;
     float const ga = cv->cur.global_alpha;
     half8 const cr = (half8)sc.r, cg = (half8)sc.g, cb = (half8)sc.b;
@@ -1473,15 +1903,16 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
         }
     } else {
         // Full-strength tint: one splat colour, the blurred mask as the
-        // compositor's coverage plane -- no tile.
+        // blend's coverage plane -- no tile.
         cnvs_premul px;
         cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
-        compositor_blend_solid(cv->comp, sx0, sy0, sw, sh, px,
-                               cv->shadow_src, cv->cur.composite);
+        cnvs_blend_solid(cv, sx0, sy0, sw, sh, px, cv->shadow_src,
+                         cv->cur.clip_mask, cv->cur.clip_len,
+                         cv->cur.composite);
         return;
     }
-    compositor_blend(cv->comp, sx0, sy0, sw, sh, cv->tile, NULL,
-                     cv->cur.composite);
+    cnvs_blend(cv, sx0, sy0, sw, sh, cv->tile, NULL,
+               cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
 }
 
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
@@ -1523,10 +1954,11 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
     // Erase = destination-out of a unit-alpha solid: out = dst*(1 - alpha), and
     // the clip attenuates alpha to the coverage, so a clip leaves dst*(1 - clip).
     // The unit-alpha source is one splat colour -- no tile (and no allocation).
-    compositor_blend_solid(cv->comp, b.x, b.y, b.w, b.h,
-                           (cnvs_premul){ .r = 0, .g = 0, .b = 0,
-                                          .a = (_Float16)1.0f },
-                           NULL, COMPOSITOR_DST_OUT);
+    cnvs_blend_solid(cv, b.x, b.y, b.w, b.h,
+                     (cnvs_premul){ .r = 0, .g = 0, .b = 0,
+                                    .a = (_Float16)1.0f },
+                     NULL, cv->cur.clip_mask, cv->cur.clip_len,
+                     CANVAS_OP_DESTINATION_OUT);
 }
 
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
@@ -1925,7 +2357,6 @@ void canvas_clip(canvas *__single cv) {
     free(cv->cur.clip_mask);
     cv->cur.clip_mask = nm;
     cv->cur.clip_len = n;
-    compositor_set_clip(cv->comp, cv->cur.clip_mask, n);
 }
 
 void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
@@ -2746,8 +3177,8 @@ static void draw_image_quad(canvas *__single cv,
         }
     }
     apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
-                     fold ? NULL : cv->cov, cv->cur.composite);
+    cnvs_blend(cv, b.x, b.y, b.w, b.h, cv->tile, fold ? NULL : cv->cov,
+               cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
 }
 
 void canvas_draw_image_subrect(canvas *__single cv,
@@ -2834,7 +3265,7 @@ static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
                        u.b * k255 + half, u.a * k255 + half };
 }
 
-// Read the canvas back as unpremultiplied RGBA8: the compositor returns
+// Read the canvas back as unpremultiplied RGBA8: the target holds
 // premultiplied pixels, and the un-premultiply and 8-bit quantize happen here,
 // eight pixels per step over channel planes with st4 re-interleaving at the
 // RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same block gathered.
@@ -2848,7 +3279,7 @@ void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int l
     if (!buf) {
         return;
     }
-    compositor_read(cv->comp, buf, n);
+    cnvs_blend_read(cv, buf, n);
     int i = 0;
     for (; i + 8 <= n; i += 8) {
         cnvs_px8_store_rgba8(out + i * 4, unpremul_quant8(cnvs_px8_load(buf + i)));
@@ -2958,12 +3389,9 @@ static void put_image_sub(canvas *__single cv,
             cnvs_px8_store_k(cv->tile + py * rw + px, k, cnvs_px8_premultiply(p));
         }
     }
-    // putImageData overwrites and ignores the clip: composite COPY with the clip
-    // open, then restore it.
-    compositor_set_clip(cv->comp, NULL, 0);
-    compositor_blend(cv->comp, (int)cx0, (int)cy0, rw, rh, cv->tile, NULL,
-                     COMPOSITOR_COPY);
-    compositor_set_clip(cv->comp, cv->cur.clip_mask, cv->cur.clip_len);
+    // putImageData overwrites and ignores the clip: composite COPY with no clip.
+    cnvs_blend(cv, (int)cx0, (int)cy0, rw, rh, cv->tile, NULL, NULL, 0,
+               CANVAS_OP_COPY);
 }
 
 void canvas_put_image_data(canvas *__single cv,

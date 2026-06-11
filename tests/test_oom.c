@@ -64,7 +64,7 @@ static void scene_image(canvas *__single cv) {
     canvas_draw_image_scaled(cv, src, 8, 8, 2.0f, 2.0f, 24.0f, 24.0f);
 }
 
-// Clipping: build a clip mask, then paint through it (exercises the compositor's
+// Clipping: build a clip mask, then paint through it (exercises the canvas's
 // clip-mask allocation and the clip stack).
 static void scene_clip(canvas *__single cv) {
     canvas_save(cv);
