@@ -149,14 +149,14 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_SET_GLOBAL_ALPHA: canvas_set_global_alpha(cv, rd_f32(&c)); break;
             case OP_SET_LINE_WIDTH:  canvas_set_line_width(cv, rd_f32(&c)); break;
             case OP_SET_LINE_JOIN:   canvas_set_line_join(cv,
-                                         (canvas_line_join)rd_range(&c, 0, 2)); break;
+                                         (enum canvas_line_join)rd_range(&c, 0, 2)); break;
             case OP_SET_LINE_CAP:    canvas_set_line_cap(cv,
-                                         (canvas_line_cap)rd_range(&c, 0, 2)); break;
+                                         (enum canvas_line_cap)rd_range(&c, 0, 2)); break;
             case OP_SET_MITER_LIMIT: canvas_set_miter_limit(cv, rd_f32(&c)); break;
             case OP_SET_FILL_RULE:   canvas_set_fill_rule(cv,
-                                         (canvas_fill_rule)rd_range(&c, 0, 1)); break;
+                                         (enum canvas_fill_rule)rd_range(&c, 0, 1)); break;
             case OP_SET_COMPOSITE:   canvas_set_global_composite_operation(cv,
-                                         (canvas_composite_op)rd_range(&c, 0, 25)); break;
+                                         (enum canvas_composite_op)rd_range(&c, 0, 25)); break;
             case OP_SET_LINE_DASH: {
                 int n = rd_range(&c, 0, 8);
                 float dash[8];

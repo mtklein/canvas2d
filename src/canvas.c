@@ -64,9 +64,9 @@ struct cnvs_owned_image {
 
 // Which paint a fill/stroke uses.  SOLID reads the `fill`/`stroke` colour,
 // GRADIENT the `*_grad`, PATTERN the `*_pattern`.
-typedef enum {
+enum cnvs_paint_kind {
     CNVS_PAINT_SOLID, CNVS_PAINT_GRADIENT, CNVS_PAINT_PATTERN
-} cnvs_paint_kind;
+};
 
 // An image pattern paint.  The source is borrowed (the caller owns it); `len`
 // (== w*h*4) bounds it for -fbounds-safety.  `to_pattern` maps a device point to
@@ -76,37 +76,37 @@ typedef struct {
     uint8_t const *__counted_by(len) data;
     int len;
     int w, h;
-    canvas_pattern_repeat repeat;
+    enum canvas_pattern_repeat repeat;
     cnvs_mat to_pattern;
 } cnvs_pattern;
 
 struct canvas_state {
     cnvs_mat ctm;
     cnvs_unpremul fill;
-    cnvs_paint_kind fill_kind;
+    enum cnvs_paint_kind fill_kind;
     cnvs_gradient fill_grad;
     cnvs_pattern fill_pattern;
     cnvs_unpremul stroke;
-    cnvs_paint_kind stroke_kind;
+    enum cnvs_paint_kind stroke_kind;
     cnvs_gradient stroke_grad;
     cnvs_pattern stroke_pattern;
     float global_alpha;
-    canvas_composite_op composite;  // globalCompositeOperation
+    enum canvas_composite_op composite;  // globalCompositeOperation
     float line_width;
-    cnvs_fill_rule fill_rule;
-    cnvs_line_join line_join;
-    cnvs_line_cap line_cap;
+    enum cnvs_fill_rule fill_rule;
+    enum cnvs_line_join line_join;
+    enum cnvs_line_cap line_cap;
     float miter_limit;
     float dash[CANVAS_MAX_DASH];
     int dash_count;
     float dash_offset;
     float font_size;  // text size in user px (Canvas default 10px)
-    canvas_text_align text_align;
-    canvas_text_baseline text_baseline;
-    canvas_direction direction;  // paragraph direction: resolves start/end and
+    enum canvas_text_align text_align;
+    enum canvas_text_baseline text_baseline;
+    enum canvas_direction direction;  // paragraph direction: resolves start/end and
                                  // is the base direction text shapes under
     bool image_smoothing_enabled;
-    canvas_image_smoothing_quality image_smoothing_quality;
+    enum canvas_image_smoothing_quality image_smoothing_quality;
     cnvs_unpremul shadow_color;  // shadow off when its alpha is 0
     float shadow_blur;           // device px (a Gaussian radius; CTM does not apply)
     float shadow_offset_x, shadow_offset_y;  // device px (CTM does not apply)
@@ -557,7 +557,7 @@ static void grad_set_conic(canvas *__single cv, cnvs_gradient *gr,
 // __counted_by(w*h*4), exactly the new len.
 static void pattern_set(canvas *__single cv, cnvs_pattern *p,
                         uint8_t const *__counted_by(w * h * 4) src, int w, int h,
-                        canvas_pattern_repeat repeat) {
+                        enum canvas_pattern_repeat repeat) {
     p->data = src;
     p->len = w * h * 4;
     p->w = w;
@@ -596,7 +596,7 @@ void canvas_add_fill_color_stop(canvas *__single cv, float offset,
 
 void canvas_set_fill_pattern(canvas *__single cv,
                              uint8_t const *__counted_by(w * h * 4) src,
-                             int w, int h, canvas_pattern_repeat repeat) {
+                             int w, int h, enum canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
         return;  // invalid dimensions: leave the fill paint unchanged
     }
@@ -640,7 +640,7 @@ void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
 
 void canvas_set_stroke_pattern(canvas *__single cv,
                                uint8_t const *__counted_by(w * h * 4) src,
-                               int w, int h, canvas_pattern_repeat repeat) {
+                               int w, int h, enum canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
         return;
     }
@@ -658,7 +658,7 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha) {
 }
 
 void canvas_set_global_composite_operation(canvas *__single cv,
-                                           canvas_composite_op op) {
+                                           enum canvas_composite_op op) {
     if ((int)op < 0 || (int)op >= CNVS_BLEND_MODE_COUNT) {
         return;
     }
@@ -1103,7 +1103,7 @@ static_assert(CANVAS_OP_COPY == 10 && CANVAS_OP_MULTIPLY == 11 &&
 // exceeds 1 exactly where it saturates, and clamp(c*s + d) != lerp(d,
 // clamp(s + d), c) there -- the supersampled truth clamps per subsample, so
 // lighter lerps (test_coverage_lerp measures the difference).
-static bool coverage_folds(canvas_composite_op m) {
+static bool coverage_folds(enum canvas_composite_op m) {
     switch ((int)m) {
         case CANVAS_OP_SOURCE_OVER:      // Fa = 1,      Fb = 1 - sa
         case CANVAS_OP_SOURCE_ATOP:      // Fa = da,     Fb = 1 - sa
@@ -1117,7 +1117,7 @@ static bool coverage_folds(canvas_composite_op m) {
 }
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
-static half8 blend_sep8(canvas_composite_op mode, half8 cb, half8 cs) {
+static half8 blend_sep8(enum canvas_composite_op mode, half8 cb, half8 cs) {
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
     switch ((int)mode) {
         case CANVAS_OP_COLOR_DODGE:
@@ -1142,7 +1142,7 @@ static half8 blend_sep8(canvas_composite_op mode, half8 cb, half8 cs) {
 }
 
 // Premultiplied separable term T = sa*da*B per channel plane (s, d premultiplied).
-static half8 blend_term8(canvas_composite_op mode,
+static half8 blend_term8(enum canvas_composite_op mode,
                            half8 s, half8 d, half8 sa, half8 da) {
     switch ((int)mode) {
         case CANVAS_OP_MULTIPLY:    return s * d;
@@ -1234,7 +1234,7 @@ static rgb8 set_sat8(rgb8 c, half8 s) {
                    .b = half8_if_then_else(flat, zero, (c.b - mn) * k) };
 }
 
-static rgb8 blend_nonsep8(canvas_composite_op mode, rgb8 cb, rgb8 cs) {
+static rgb8 blend_nonsep8(enum canvas_composite_op mode, rgb8 cb, rgb8 cs) {
     switch ((int)mode) {
         case CANVAS_OP_HUE:        return set_lum8(set_sat8(cs, sat8(cb)), lum8(cb));
         case CANVAS_OP_SATURATION: return set_lum8(set_sat8(cb, sat8(cs)), lum8(cb));
@@ -1249,7 +1249,7 @@ static rgb8 blend_nonsep8(canvas_composite_op mode, rgb8 cb, rgb8 cs) {
 // alpha plane of Fa*s + Fb*d is Fa*sa + Fb*da = ao, and in the blend arm the
 // alpha plane of s*(1-da) + d*(1-sa) + T is sa + da*(1-sa) = ao because T's
 // alpha plane is pinned to sa*da.
-static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, canvas_composite_op mode) {
+static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
     if (mode == CANVAS_OP_SOURCE_OVER) {
         // Delegate to the fast path's kernel: the Porter-Duff arm below would
         // spell source-over as fa*s + fb*d with fa = 1, and the contraction
@@ -1336,7 +1336,7 @@ static void blend_region(canvas *__single cv, int x, int y, int w, int h,
                          cnvs_px8 splat,
                          uint8_t const *__counted_by_or_null(w * h) cov,
                          uint8_t const *__counted_by_or_null(clip_len) clip,
-                         int clip_len, canvas_composite_op mode) {
+                         int clip_len, enum canvas_composite_op mode) {
     (void)clip_len;
     bool const folds = coverage_folds(mode);
     bool const atten = cov || clip;  // any coverage to apply?
@@ -1410,7 +1410,7 @@ void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
                 cnvs_premul const *__counted_by(w * h) tile,
                 uint8_t const *__counted_by_or_null(w * h) cov,
                 uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
-                canvas_composite_op mode) {
+                enum canvas_composite_op mode) {
     if (!tile || w <= 0 || h <= 0) {
         return;
     }
@@ -1467,7 +1467,7 @@ void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
                       cnvs_premul color,
                       uint8_t const *__counted_by_or_null(w * h) cov,
                       uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
-                      canvas_composite_op mode) {
+                      enum canvas_composite_op mode) {
     if (w <= 0 || h <= 0) {
         return;
     }
@@ -2252,7 +2252,7 @@ void canvas_close_path(canvas *__single cv) {
     cnvs_path_close(&cv->path);
 }
 
-void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
+void canvas_set_fill_rule(canvas *__single cv, enum canvas_fill_rule rule) {
     if (cv->rec) { cnvs_rec_fill_rule(cv->rec, rule); }
     switch (rule) {
         case CANVAS_NONZERO: cv->cur.fill_rule = CNVS_NONZERO; break;
@@ -2263,7 +2263,7 @@ void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule) {
 // Rasterize a device-space path under `rule` and paint it with the fill paint
 // over its clamped bbox.
 static void fill_device_path(canvas *__single cv, cnvs_path const *p,
-                             cnvs_fill_rule rule) {
+                             enum cnvs_fill_rule rule) {
     cbbox b = points_bbox(cv, p->pts, p->pt_len, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
@@ -2285,7 +2285,7 @@ void canvas_fill(canvas *__single cv) {
 // count is the crossing number (even-odd rule).  The half-open vertical test
 // (a.y <= q.y < b.y for an upward edge, and the reverse for downward) counts each
 // shared vertex exactly once.
-static bool path_contains(cnvs_path const *p, cnvs_vec2 q, cnvs_fill_rule rule) {
+static bool path_contains(cnvs_path const *p, cnvs_vec2 q, enum cnvs_fill_rule rule) {
     int wn = 0;   // winding number  (nonzero rule)
     int cn = 0;   // crossing number (even-odd rule)
     for (int s = 0; s < p->sp_len; s++) {
@@ -2317,11 +2317,11 @@ static bool path_contains(cnvs_path const *p, cnvs_vec2 q, cnvs_fill_rule rule) 
 }
 
 bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
-                             canvas_fill_rule rule) {
+                             enum canvas_fill_rule rule) {
     if (!isfinite(x) || !isfinite(y)) {
         return false;
     }
-    cnvs_fill_rule r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    enum cnvs_fill_rule r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
     return path_contains(&cv->path, xf(cv, x, y), r);
 }
 
@@ -2370,7 +2370,7 @@ void canvas_set_line_width(canvas *__single cv, float width) {
     cv->cur.line_width = width;
 }
 
-void canvas_set_line_join(canvas *__single cv, canvas_line_join join) {
+void canvas_set_line_join(canvas *__single cv, enum canvas_line_join join) {
     if (cv->rec) { cnvs_rec_line_join(cv->rec, join); }
     switch (join) {
         case CANVAS_JOIN_MITER: cv->cur.line_join = CNVS_JOIN_MITER; break;
@@ -2379,7 +2379,7 @@ void canvas_set_line_join(canvas *__single cv, canvas_line_join join) {
     }
 }
 
-void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap) {
+void canvas_set_line_cap(canvas *__single cv, enum canvas_line_cap cap) {
     if (cv->rec) { cnvs_rec_line_cap(cv->rec, cap); }
     switch (cap) {
         case CANVAS_CAP_BUTT:   cv->cur.line_cap = CNVS_CAP_BUTT;   break;
@@ -2625,7 +2625,7 @@ void canvas_set_font_size(canvas *__single cv, float px) {
     cv->cur.font_size = px > 0.0f ? px : 0.0f;
 }
 
-void canvas_set_text_align(canvas *__single cv, canvas_text_align align) {
+void canvas_set_text_align(canvas *__single cv, enum canvas_text_align align) {
     switch (align) {
         case CANVAS_ALIGN_START:
         case CANVAS_ALIGN_END:
@@ -2638,7 +2638,7 @@ void canvas_set_text_align(canvas *__single cv, canvas_text_align align) {
     }
 }
 
-void canvas_set_direction(canvas *__single cv, canvas_direction dir) {
+void canvas_set_direction(canvas *__single cv, enum canvas_direction dir) {
     switch (dir) {
         case CANVAS_DIRECTION_LTR:
         case CANVAS_DIRECTION_RTL:
@@ -2648,7 +2648,7 @@ void canvas_set_direction(canvas *__single cv, canvas_direction dir) {
     }
 }
 
-void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline) {
+void canvas_set_text_baseline(canvas *__single cv, enum canvas_text_baseline baseline) {
     switch (baseline) {
         case CANVAS_BASELINE_ALPHABETIC:
         case CANVAS_BASELINE_TOP:
@@ -2666,7 +2666,7 @@ void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline
 // left 0, center 0.5, right 1.  start/end resolve through the direction
 // attribute -- start is the edge the text flows from (left under ltr, right
 // under rtl), end the edge it flows toward.
-static float text_align_frac(canvas_text_align a, canvas_direction dir) {
+static float text_align_frac(enum canvas_text_align a, enum canvas_direction dir) {
     bool const rtl = dir == CANVAS_DIRECTION_RTL;
     switch (a) {
         case CANVAS_ALIGN_START:  return rtl ? 1.0f : 0.0f;
@@ -3056,7 +3056,7 @@ void canvas_set_image_smoothing_enabled(canvas *__single cv, bool enabled) {
 }
 
 void canvas_set_image_smoothing_quality(canvas *__single cv,
-                                        canvas_image_smoothing_quality quality) {
+                                        enum canvas_image_smoothing_quality quality) {
     switch (quality) {
         case CANVAS_SMOOTHING_LOW:
         case CANVAS_SMOOTHING_MEDIUM:
@@ -3583,7 +3583,7 @@ static void p2d_swap_out(canvas *__single cv, struct p2d_scratch *__single sv) {
 }
 
 void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
-                      canvas_fill_rule rule) {
+                      enum canvas_fill_rule rule) {
     // Record `fill_path <id> <rule>` against the path's numbered block, then
     // swallow the public path methods p2d_replay drives -- the file keeps the
     // op the caller issued, not the path's expansion into the current path.
@@ -3614,7 +3614,7 @@ void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
 }
 
 void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
-                      canvas_fill_rule rule) {
+                      enum canvas_fill_rule rule) {
     if (cv->rec) {
         int const id = cnvs_rec_path(cv->rec, p);
         if (id >= 0) { cnvs_rec_path_rule(cv->rec, "clip_path", id, rule); }
@@ -3622,7 +3622,7 @@ void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
     // Swallow both p2d_replay's path methods and the nested canvas_clip.
     cnvs_rec_enter(cv->rec);
     struct p2d_scratch sv;
-    cnvs_fill_rule saved_rule = cv->cur.fill_rule;
+    enum cnvs_fill_rule saved_rule = cv->cur.fill_rule;
     p2d_swap_in(cv, p, &sv);
     // canvas_clip reads the current fill rule; honour the explicit one here.
     cv->cur.fill_rule = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
@@ -3633,7 +3633,7 @@ void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
 }
 
 bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__single p,
-                               float x, float y, canvas_fill_rule rule) {
+                               float x, float y, enum canvas_fill_rule rule) {
     if (!isfinite(x) || !isfinite(y)) {
         return false;
     }

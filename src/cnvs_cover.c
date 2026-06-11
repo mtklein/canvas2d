@@ -166,7 +166,7 @@ void cnvs_cover_add_edge(cnvs_cover *c, int w, int h,
 }
 
 // Fold an accumulated winding value to 8-bit coverage under the fill rule.
-static uint8_t cover_to_u8(cnvs_fill_rule rule, float run) {
+static uint8_t cover_to_u8(enum cnvs_fill_rule rule, float run) {
     float cov;
     if (rule == CNVS_EVENODD) {
         // Triangle wave of period 2: fold the winding count to coverage without
@@ -186,7 +186,7 @@ static uint8_t cover_to_u8(cnvs_fill_rule rule, float run) {
 // Coverage-fold a vector of 8 winding values to 0..255, matching cover_to_u8 lane
 // by lane.  run values are finite (a prefix sum of finite areas), so the saturating
 // guards in cnvs_f2u8 reduce to a [0,255] clamp the convert handles by construction.
-static uchar8 cover_to_u8x8(cnvs_fill_rule rule, float8 run) {
+static uchar8 cover_to_u8x8(enum cnvs_fill_rule rule, float8 run) {
     float8 cov;
     if (rule == CNVS_EVENODD) {
         float8 t = run * 0.5f;
@@ -211,7 +211,7 @@ static inline float8 prefix_sum8(float8 v) {
     return v;
 }
 
-void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
+void cnvs_cover_resolve(cnvs_cover *c, int w, int h, enum cnvs_fill_rule rule,
                         uint8_t *__counted_by(w * h) out) {
     // Fold each row's signed-area deltas to coverage in one pass: an 8-wide
     // in-register prefix sum, plus a running scalar carry from earlier

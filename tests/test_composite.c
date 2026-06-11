@@ -7,7 +7,7 @@
 // Paint an opaque backdrop, then a source under `op`, and read the centre pixel.
 static struct px4 blend(canvas *__single cv, int w, int h,
                         uint8_t *__counted_by(len) px, int len,
-                        canvas_composite_op op,
+                        enum canvas_composite_op op,
                         float br, float bg, float bb,
                         float sr, float sg, float sb, float sa) {
     canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);

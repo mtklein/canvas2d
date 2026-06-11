@@ -92,7 +92,7 @@ int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
 // How many control points one canonical verb consumes; -1 for a byte that is not a
 // verb.  The curve stream is boundary data, so a bad byte stops the walk cleanly
 // rather than being trusted -- the same posture as the cluster range check.
-static int verb_pts(cnvs_glyph_verb v) {
+static int verb_pts(enum cnvs_glyph_verb v) {
     switch (v) {
         case CNVS_GLYPH_MOVE:
         case CNVS_GLYPH_LINE:  return 1;
@@ -120,13 +120,13 @@ static cnvs_vec2 place(struct glyph_place const *g, cnvs_vec2 fu) {
 // data (fresh or remembered), so the walk stays defensive: a byte that is not a
 // verb, or a verb whose points would run past the count, stops the walk cleanly
 // rather than being trusted as an index.
-static void walk_curves(cnvs_glyph_verb const *__counted_by(nv) verb, int nv,
+static void walk_curves(enum cnvs_glyph_verb const *__counted_by(nv) verb, int nv,
                         cnvs_vec2 const *__counted_by(np) pt, int np,
                         struct glyph_place const *__single g, float tol,
                         cnvs_path *__single out) {
     int ip = 0;
     for (int iv = 0; iv < nv; iv++) {
-        cnvs_glyph_verb v = verb[iv];
+        enum cnvs_glyph_verb v = verb[iv];
         int k = verb_pts(v);
         if (k < 0 || ip + k > np) {
             break;  // not a verb, or its points would run past the count: stop
@@ -384,7 +384,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
     // Stack buffers cover the typical glyph; a rare complex one (a dense CJK
     // ideograph, an ornate display face) takes the grow-and-refetch path below.
     enum { VSTACK = 256, PSTACK = 512 };
-    cnvs_glyph_verb vstack[VSTACK];
+    enum cnvs_glyph_verb vstack[VSTACK];
     cnvs_vec2 pstack[PSTACK];
     int nv = 0, np = 0;
     float upem = 0.0f;
@@ -400,7 +400,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
         // Overflow: exact-size heap buffers, refetched once and donated to the
         // slot -- the complex glyph's second fetch happens once per (font,
         // glyph), not once per draw.
-        cnvs_glyph_verb *vheap = malloc((size_t)nv * sizeof *vheap);
+        enum cnvs_glyph_verb *vheap = malloc((size_t)nv * sizeof *vheap);
         cnvs_vec2 *pheap = malloc((size_t)(np > 0 ? np : 1) * sizeof *pheap);
         if (!vheap || !pheap) {
             free(vheap);
@@ -417,7 +417,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
         slot->npts = np;
         slot->upem = upem;
     } else {  // the common case: copy out of the stack buffers
-        cnvs_glyph_verb *vc = malloc((size_t)nv * sizeof *vc);
+        enum cnvs_glyph_verb *vc = malloc((size_t)nv * sizeof *vc);
         cnvs_vec2 *pc = malloc((size_t)(np > 0 ? np : 1) * sizeof *pc);
         if (!vc || !pc) {
             free(vc);
@@ -456,7 +456,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
 }
 
 void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
-        uint16_t glyph, cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
+        uint16_t glyph, enum cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
         cnvs_vec2 *__counted_by(npts) pt, int npts, float upem,
         float ink_x0, float ink_y0, float ink_x1, float ink_y1) {
     if (!c || fid < 0 || nverbs < 0 || npts < 0) {
@@ -759,7 +759,7 @@ static void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_p
     // Stack buffers cover the typical glyph; a rare complex one takes the
     // grow-and-refetch path (cnvs_glyph_curves reports the true counts).
     enum { VSTACK = 256, PSTACK = 512 };
-    cnvs_glyph_verb vstack[VSTACK];
+    enum cnvs_glyph_verb vstack[VSTACK];
     cnvs_vec2 pstack[PSTACK];
     int nv = 0, np = 0;
     float upem = 0.0f;
@@ -767,7 +767,7 @@ static void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_p
     if (nv <= 0 || np < 0 || upem <= 0.0f) {
         return;  // blank or color glyph: no outline
     }
-    cnvs_glyph_verb *vheap = NULL;
+    enum cnvs_glyph_verb *vheap = NULL;
     cnvs_vec2 *pheap = NULL;
     if (nv > VSTACK || np > PSTACK) {
         vheap = malloc((size_t)nv * sizeof *vheap);

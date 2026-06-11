@@ -12,38 +12,38 @@ typedef struct canvas canvas;
 // (a*x + c*y + e, b*x + d*y + f) -- the argument order of canvas_set_transform.
 typedef struct { float a, b, c, d, e, f; } canvas_matrix;
 
-typedef enum { CANVAS_NONZERO, CANVAS_EVENODD } canvas_fill_rule;
-typedef enum { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL } canvas_line_join;
-typedef enum { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE } canvas_line_cap;
+enum canvas_fill_rule { CANVAS_NONZERO, CANVAS_EVENODD };
+enum canvas_line_join { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND, CANVAS_JOIN_BEVEL };
+enum canvas_line_cap { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND, CANVAS_CAP_SQUARE };
 
 // textAlign / textBaseline.  start/end resolve against the direction attribute:
 // start == left and end == right under ltr, the opposite under rtl.
-typedef enum {
+enum canvas_text_align {
     CANVAS_ALIGN_START, CANVAS_ALIGN_END,
     CANVAS_ALIGN_LEFT, CANVAS_ALIGN_RIGHT, CANVAS_ALIGN_CENTER,
-} canvas_text_align;
+};
 // direction: the paragraph direction for text.  Headless, so no "inherit"; the
 // default is ltr, matching what inherit resolves to in an undirected document.
-typedef enum { CANVAS_DIRECTION_LTR, CANVAS_DIRECTION_RTL } canvas_direction;
-typedef enum {
+enum canvas_direction { CANVAS_DIRECTION_LTR, CANVAS_DIRECTION_RTL };
+enum canvas_text_baseline {
     CANVAS_BASELINE_ALPHABETIC, CANVAS_BASELINE_TOP, CANVAS_BASELINE_HANGING,
     CANVAS_BASELINE_MIDDLE, CANVAS_BASELINE_IDEOGRAPHIC, CANVAS_BASELINE_BOTTOM,
-} canvas_text_baseline;
+};
 
 // imageSmoothingQuality (a hint; see canvas_set_image_smoothing_quality).
-typedef enum {
+enum canvas_image_smoothing_quality {
     CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
-} canvas_image_smoothing_quality;
+};
 
 // createPattern repetition mode.
-typedef enum {
+enum canvas_pattern_repeat {
     CANVAS_REPEAT, CANVAS_REPEAT_X, CANVAS_REPEAT_Y, CANVAS_NO_REPEAT,
-} canvas_pattern_repeat;
+};
 
 // globalCompositeOperation.  The blend kernels (canvas.c) dispatch on this
 // order directly: the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
-typedef enum {
+enum canvas_composite_op {
     CANVAS_OP_SOURCE_OVER, CANVAS_OP_SOURCE_IN, CANVAS_OP_SOURCE_OUT,
     CANVAS_OP_SOURCE_ATOP, CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
     CANVAS_OP_DESTINATION_OUT, CANVAS_OP_DESTINATION_ATOP, CANVAS_OP_XOR,
@@ -53,7 +53,7 @@ typedef enum {
     CANVAS_OP_HARD_LIGHT, CANVAS_OP_SOFT_LIGHT, CANVAS_OP_DIFFERENCE,
     CANVAS_OP_EXCLUSION,
     CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
-} canvas_composite_op;
+};
 
 // NULL on failure; the canvas starts transparent black.
 canvas *__single canvas_create(int width, int height);
@@ -95,7 +95,7 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha);
 // what's already there (default source-over).  Applies to every painted op except
 // clear_rect and put_image_data.
 void canvas_set_global_composite_operation(canvas *__single cv,
-                                           canvas_composite_op op);
+                                           enum canvas_composite_op op);
 
 // Shadows: a blurred, offset, colour-tinted copy of each fill/stroke/text/image
 // is painted underneath it.  A shadow is cast only when shadow_color's alpha is
@@ -180,7 +180,7 @@ void canvas_add_fill_color_stop(canvas *__single cv, float offset,
 // nearest).  Ignored if the dimensions are non-positive or overflow.
 void canvas_set_fill_pattern(canvas *__single cv,
                              uint8_t const *__counted_by(w * h * 4) src,
-                             int w, int h, canvas_pattern_repeat repeat);
+                             int w, int h, enum canvas_pattern_repeat repeat);
 
 void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h);
 void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h);
@@ -221,7 +221,7 @@ void canvas_close_path(canvas *__single cv);
 
 // Fill the current path under the current fill rule (default nonzero); handles
 // holes and self-intersection.
-void canvas_set_fill_rule(canvas *__single cv, canvas_fill_rule rule);
+void canvas_set_fill_rule(canvas *__single cv, enum canvas_fill_rule rule);
 void canvas_fill(canvas *__single cv);
 
 // Intersect the clip region with the current path (under the current fill rule).
@@ -234,7 +234,7 @@ void canvas_clip(canvas *__single cv);
 // path points are baked through the CTM as they are added -- so a point given in
 // the same user space as the path hits.  Non-finite coordinates return false.
 bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
-                             canvas_fill_rule rule);
+                             enum canvas_fill_rule rule);
 // Whether (x, y) is inside the stroked area of the current path under the current
 // line styles (width/join/cap/dash).  (x, y) is transformed by the current
 // transform, as for is_point_in_path; non-finite coordinates return false.
@@ -277,12 +277,12 @@ void canvas_path2d_add_path(canvas_path2d *__single dst,
 // Fill / stroke / clip / hit-test a Path2D (the fill rule is explicit here, not
 // taken from state).  None of these disturb the canvas's current path.
 void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
-                      canvas_fill_rule rule);
+                      enum canvas_fill_rule rule);
 void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p);
 void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
-                      canvas_fill_rule rule);
+                      enum canvas_fill_rule rule);
 bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__single p,
-                               float x, float y, canvas_fill_rule rule);
+                               float x, float y, enum canvas_fill_rule rule);
 bool canvas_is_point_in_stroke_path(canvas *__single cv,
                                     canvas_path2d const *__single p,
                                     float x, float y);
@@ -302,10 +302,10 @@ void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
 // Image pattern stroke paint, mirroring canvas_set_fill_pattern.
 void canvas_set_stroke_pattern(canvas *__single cv,
                                uint8_t const *__counted_by(w * h * 4) src,
-                               int w, int h, canvas_pattern_repeat repeat);
+                               int w, int h, enum canvas_pattern_repeat repeat);
 void canvas_set_line_width(canvas *__single cv, float width);
-void canvas_set_line_join(canvas *__single cv, canvas_line_join join);
-void canvas_set_line_cap(canvas *__single cv, canvas_line_cap cap);
+void canvas_set_line_join(canvas *__single cv, enum canvas_line_join join);
+void canvas_set_line_cap(canvas *__single cv, enum canvas_line_cap cap);
 void canvas_set_miter_limit(canvas *__single cv, float limit);
 // `pattern` lists alternating on/off lengths (user units); count 0 = solid.
 void canvas_set_line_dash(canvas *__single cv,
@@ -332,7 +332,7 @@ void canvas_set_image_smoothing_enabled(canvas *__single cv, bool enabled);
 // smoothing is enabled.  Stored for API parity; our sampler is one bilinear
 // quality, so it does not change the output.
 void canvas_set_image_smoothing_quality(canvas *__single cv,
-                                        canvas_image_smoothing_quality quality);
+                                        enum canvas_image_smoothing_quality quality);
 void canvas_draw_image(canvas *__single cv,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy);
@@ -357,18 +357,18 @@ void canvas_set_font_size(canvas *__single cv, float px);
 // right at the right edge, center centres it; start (default) and end resolve
 // through the direction attribute (start == left under ltr, == right under rtl;
 // end the opposite).
-void canvas_set_text_align(canvas *__single cv, canvas_text_align align);
+void canvas_set_text_align(canvas *__single cv, enum canvas_text_align align);
 // direction: the paragraph direction (default ltr).  It resolves textAlign
 // start/end, and it is the base direction text is shaped under -- a
 // mixed-direction string lays its runs out in the visual order that base
 // implies, and neutrals (spaces, punctuation) resolve against it -- so the same
 // string can draw differently under ltr and rtl.  Part of the drawing state:
 // save/restore brackets it, reset/resize restore the default.
-void canvas_set_direction(canvas *__single cv, canvas_direction dir);
+void canvas_set_direction(canvas *__single cv, enum canvas_direction dir);
 // textBaseline: vertical placement of the baseline relative to (x, y).
 // alphabetic (default) draws the baseline at y; top/hanging/middle/ideographic/
 // bottom shift it by the font's ascent/descent.
-void canvas_set_text_baseline(canvas *__single cv, canvas_text_baseline baseline);
+void canvas_set_text_baseline(canvas *__single cv, enum canvas_text_baseline baseline);
 float canvas_measure_text(canvas *__single cv, char const *__null_terminated text);
 
 // Full measureText() TextMetrics, all in user px, relative to the text's origin

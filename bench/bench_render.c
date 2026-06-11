@@ -68,7 +68,7 @@ static void scene(canvas *__single cv, int f) {
     canvas_restore(cv);
 
     // A blend-mode composite (blend math beyond source-over).
-    canvas_composite_op modes[3] = { CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN,
+    enum canvas_composite_op modes[3] = { CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN,
                                      CANVAS_OP_LIGHTEN };
     canvas_set_global_composite_operation(cv, modes[f % 3]);
     canvas_set_fill_rgba(cv, 0.9f, 0.3f, 0.5f, 0.7f);

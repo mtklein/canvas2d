@@ -67,7 +67,7 @@ static inline void bench_cover_path(cnvs_cover *cov, int w, int h,
 static inline double bench_fill_shapes(cnvs_cover *cover,
                                        uint8_t *__counted_by(cov_cap) cov, int cov_cap,
                                        int clampw, int clamph, cnvs_path const *p,
-                                       cnvs_fill_rule rule) {
+                                       enum cnvs_fill_rule rule) {
     double sink = 0.0;
     for (int s = 0; s < p->sp_len; s++) {
         cnvs_subpath sp = p->subs[s];

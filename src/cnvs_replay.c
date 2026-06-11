@@ -487,7 +487,7 @@ static bool replay_glyph(canvas *__single cv, struct replay_blocks *__single b,
         return true;  // interning degraded: a well-formed block with nowhere
     }                 // to land; its references degrade to blank glyphs
     // Pass 2: rebuild the owned arrays (the cache takes ownership).
-    cnvs_glyph_verb *verbs = NULL;
+    enum cnvs_glyph_verb *verbs = NULL;
     cnvs_vec2 *pts = NULL;
     if (nv > 0) {
         verbs = malloc((size_t)nv * sizeof *verbs);
@@ -502,7 +502,7 @@ static bool replay_glyph(canvas *__single cv, struct replay_blocks *__single b,
         while (iv < nv && !at_eol(data, le, j)) {
             size_t ts = 0, tl = 0;
             (void)read_token(data, le, &j, &ts, &tl);  // validated by pass 1
-            cnvs_glyph_verb v = CNVS_GLYPH_CLOSE;
+            enum cnvs_glyph_verb v = CNVS_GLYPH_CLOSE;
             int k = 0;
             switch (data[ts]) {
                 case 'm': v = CNVS_GLYPH_MOVE;  k = 1; break;
@@ -1220,7 +1220,7 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
             if (tok_eq(data, le, ts, tl, cnvs_composite_name[k])) { op = k; break; }
         }
         if (op < 0) return false;
-        canvas_set_global_composite_operation(cv, (canvas_composite_op)op);
+        canvas_set_global_composite_operation(cv, (enum canvas_composite_op)op);
     }
 
     // --- variadic dash ---
@@ -1255,7 +1255,7 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         size_t ts, tl;
         if (!read_uint(data, le, &j, CNVS_REC_PATHS_MAX - 1, &id) ||
             !blk->paths[id] || !read_token(data, le, &j, &ts, &tl)) return false;
-        canvas_fill_rule rule;
+        enum canvas_fill_rule rule;
         if (tok_eq(data, le, ts, tl, "nonzero"))      rule = CANVAS_NONZERO;
         else if (tok_eq(data, le, ts, tl, "evenodd")) rule = CANVAS_EVENODD;
         else return false;
@@ -1323,10 +1323,10 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         if (rep < 0) return false;
         if (fill) {
             canvas_set_fill_pattern(cv, blk->img[id].px, blk->img[id].w,
-                                    blk->img[id].h, (canvas_pattern_repeat)rep);
+                                    blk->img[id].h, (enum canvas_pattern_repeat)rep);
         } else {
             canvas_set_stroke_pattern(cv, blk->img[id].px, blk->img[id].w,
-                                      blk->img[id].h, (canvas_pattern_repeat)rep);
+                                      blk->img[id].h, (enum canvas_pattern_repeat)rep);
         }
     }
 

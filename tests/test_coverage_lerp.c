@@ -289,7 +289,7 @@ static void part_a(void) {
                 // NEW: full-strength tile + the coverage plane.
                 cnvs_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS_OP_COPY);
                 cnvs_blend(c, 0, 0, N, 1, full, covp, NULL, 0,
-                           (canvas_composite_op)mode);
+                           (enum canvas_composite_op)mode);
                 cnvs_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
                     dpx ref = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
@@ -300,7 +300,7 @@ static void part_a(void) {
                 // OLD: pre-folded tile, no plane.
                 cnvs_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS_OP_COPY);
                 cnvs_blend(c, 0, 0, N, 1, fold, NULL, NULL, 0,
-                           (canvas_composite_op)mode);
+                           (enum canvas_composite_op)mode);
                 cnvs_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
                     dpx ref = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
@@ -411,7 +411,7 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W / 2.0f, (float)H);
     canvas_set_fill_rgba(cv, DR[0], DR[1], DR[2], DR[3]);
     canvas_fill_rect(cv, (float)W / 2.0f, 0.0f, (float)W / 2.0f, (float)H);
-    canvas_set_global_composite_operation(cv, (canvas_composite_op)mode);
+    canvas_set_global_composite_operation(cv, (enum canvas_composite_op)mode);
     canvas_set_fill_rgba(cv, sc[0], sc[1], sc[2], sc[3]);
     canvas_begin_path(cv);
     canvas_move_to(cv, vx[0], vy[0]);

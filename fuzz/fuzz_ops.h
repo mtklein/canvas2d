@@ -5,7 +5,7 @@
 // calls, never rejected, so a coverage fuzzer reaches deep into the renderer).
 // Shared by the harness (fuzz_api.c) and the seed generator (seed_gen.c).
 
-typedef enum {
+enum fuzz_op {
     OP_BEGIN_PATH,
     OP_MOVE_TO,
     OP_LINE_TO,
@@ -56,4 +56,4 @@ typedef enum {
     OP_DRAW_IMAGE,
 
     FUZZ_OP_COUNT,
-} fuzz_op;
+};

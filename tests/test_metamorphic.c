@@ -19,7 +19,7 @@ enum { W = 16, H = 16, LEN = W * H * 4 };
 // cleared canvas, then layer 1 under `op`; return the centre pixel.  Either layer
 // may be translucent.
 static struct px4 over(canvas *__single cv, uint8_t *__counted_by(LEN) px,
-                       canvas_composite_op op,
+                       enum canvas_composite_op op,
                        float r1, float g1, float b1, float a1,
                        float r2, float g2, float b2, float a2) {
     canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
@@ -35,7 +35,7 @@ static struct px4 over(canvas *__single cv, uint8_t *__counted_by(LEN) px,
 
 // Opaque backdrop (br,bg,bb), then (sr,sg,sb,sa) under `op`; centre pixel.
 static struct px4 blend(canvas *__single cv, uint8_t *__counted_by(LEN) px,
-                        canvas_composite_op op, float br, float bg, float bb,
+                        enum canvas_composite_op op, float br, float bg, float bb,
                         float sr, float sg, float sb, float sa) {
     return over(cv, px, op, sr, sg, sb, sa, br, bg, bb, 1.0f);
 }
@@ -74,7 +74,7 @@ int main(void) {
     //    including when one or both layers are translucent (verified: maxd 0 at
     //    alpha 1.0/0.5/0.25).  The translucent cases are what exercise the full
     //    s*(1-da)+d*(1-sa)+T path rather than the opaque T-only reduction.
-    canvas_composite_op const SYM[] = {
+    enum canvas_composite_op const SYM[] = {
         CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN, CANVAS_OP_DARKEN,
         CANVAS_OP_LIGHTEN, CANVAS_OP_DIFFERENCE, CANVAS_OP_EXCLUSION,
     };
@@ -114,7 +114,7 @@ int main(void) {
     //    hue/sat/color/luminosity of C onto C all recover C.  Drives set_lum,
     //    set_sat, clip_color, lum -- the chunk the example tests never reach.  The
     //    float HSL round-trip can land 1/255 off, so allow tol 1.
-    canvas_composite_op const HSL[] = {
+    enum canvas_composite_op const HSL[] = {
         CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
     };
     for (int m = 0; m < (int)(sizeof HSL / sizeof HSL[0]); m++) {
@@ -135,9 +135,9 @@ int main(void) {
         float sr = COL[i][0], sg = COL[i][1], sb = COL[i][2];
         struct px4 s = blend(cv, px, CANVAS_OP_COPY, br, bgc, bb, sr, sg, sb, 1.0f);  // == S
         struct px4 b = blend(cv, px, CANVAS_OP_COPY, sr, sg, sb, br, bgc, bb, 1.0f);  // == B
-        canvas_composite_op const TO_S[] = { CANVAS_OP_SOURCE_IN, CANVAS_OP_SOURCE_ATOP,
+        enum canvas_composite_op const TO_S[] = { CANVAS_OP_SOURCE_IN, CANVAS_OP_SOURCE_ATOP,
                                              CANVAS_OP_SOURCE_OVER };
-        canvas_composite_op const TO_B[] = { CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
+        enum canvas_composite_op const TO_B[] = { CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
                                              CANVAS_OP_DESTINATION_ATOP };
         for (int k = 0; k < 3; k++) {
             CHECK(px_eq(blend(cv, px, TO_S[k], br, bgc, bb, sr, sg, sb, 1.0f), s));

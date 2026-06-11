@@ -2,7 +2,7 @@
 
 // The blend stage's seam, internal to the canvas (canvas.c implements it):
 // composite a premultiplied tile onto the canvas's premultiplied RGBA16F
-// target under a canvas_composite_op.  Declared here so the blend oracles
+// target under an enum canvas_composite_op.  Declared here so the blend oracles
 // (test_compositor, test_coverage_lerp) can drive the kernels directly;
 // canvas.c's own paint paths are the production callers.
 //
@@ -17,7 +17,7 @@
 #include <ptrcheck.h>
 #include <stdint.h>
 
-// One past the last canvas_composite_op (the public, web-named enum carries no
+// One past the last enum canvas_composite_op (the public, web-named enum carries no
 // count member): 0..10 Porter-Duff operators, 11..21 separable blend modes,
 // 22..25 non-separable.
 #define CNVS_BLEND_MODE_COUNT ((int)CANVAS_OP_LUMINOSITY + 1)
@@ -35,7 +35,7 @@ void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
                 cnvs_premul const *__counted_by(w * h) tile,
                 uint8_t const *__counted_by_or_null(w * h) cov,
                 uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
-                canvas_composite_op mode);
+                enum canvas_composite_op mode);
 
 // cnvs_blend of a tile whose every pixel is `color`, without the tile: the
 // caller passes the one premultiplied colour and the blend stage splats it
@@ -45,7 +45,7 @@ void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
                       cnvs_premul color,
                       uint8_t const *__counted_by_or_null(w * h) cov,
                       uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
-                      canvas_composite_op mode);
+                      enum canvas_composite_op mode);
 
 // Copy the premultiplied target out, row-major top-first; len must be
 // width*height (pixels).  The oracle tests' bit-exact view of the target --

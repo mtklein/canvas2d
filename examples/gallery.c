@@ -238,7 +238,7 @@ static void joinscaps(void) {
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 160.0f);
 
-    canvas_line_join const js[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
+    enum canvas_line_join const js[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
                                      CANVAS_JOIN_BEVEL };
     canvas_set_line_width(c, 16.0f);
     for (int k = 0; k < 3; k++) {
@@ -252,7 +252,7 @@ static void joinscaps(void) {
         canvas_stroke(c);
     }
 
-    canvas_line_cap const cs[3] = { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND,
+    enum canvas_line_cap const cs[3] = { CANVAS_CAP_BUTT, CANVAS_CAP_ROUND,
                                     CANVAS_CAP_SQUARE };
     canvas_set_line_join(c, CANVAS_JOIN_MITER);
     for (int k = 0; k < 3; k++) {
@@ -401,7 +401,7 @@ static void strokerect(void) {
         canvas_set_line_cap(c, CANVAS_CAP_BUTT);
 
         if (idx == 0 || idx == 1 || idx == 2) {
-            canvas_line_join const j[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
+            enum canvas_line_join const j[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
                                             CANVAS_JOIN_BEVEL };
             float const col3[3][3] = { { 0.96f, 0.56f, 0.26f },
                                        { 0.40f, 0.82f, 0.50f },
@@ -567,7 +567,7 @@ static void pattern(void) {
     uint8_t tile[32 * 32 * 4];
     make_tile(tile);
 
-    canvas_pattern_repeat const modes[4] = { CANVAS_REPEAT, CANVAS_REPEAT_X,
+    enum canvas_pattern_repeat const modes[4] = { CANVAS_REPEAT, CANVAS_REPEAT_X,
                                              CANVAS_REPEAT_Y, CANVAS_NO_REPEAT };
     char const *const labels[4] = { "repeat", "repeat-x", "repeat-y",
                                     "no-repeat" };
@@ -683,7 +683,7 @@ static void textgrid(void) {
     canvas_line_to(c, 270.0f, 124.0f);
     canvas_stroke(c);
 
-    canvas_text_align const aligns[3] = { CANVAS_ALIGN_LEFT, CANVAS_ALIGN_CENTER,
+    enum canvas_text_align const aligns[3] = { CANVAS_ALIGN_LEFT, CANVAS_ALIGN_CENTER,
                                           CANVAS_ALIGN_RIGHT };
     char const *const atext[3] = { "left", "center", "right" };
     float const ay[3] = { 64.0f, 92.0f, 120.0f };
@@ -711,7 +711,7 @@ static void textgrid(void) {
     canvas_line_to(c, 496.0f, 200.0f);
     canvas_stroke(c);
 
-    canvas_text_baseline const bl[6] = {
+    enum canvas_text_baseline const bl[6] = {
         CANVAS_BASELINE_TOP, CANVAS_BASELINE_HANGING, CANVAS_BASELINE_MIDDLE,
         CANVAS_BASELINE_ALPHABETIC, CANVAS_BASELINE_IDEOGRAPHIC,
         CANVAS_BASELINE_BOTTOM,
@@ -1180,7 +1180,7 @@ static void porterduff(void) {
     canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 504.0f, 329.0f);
 
-    canvas_composite_op const ops[11] = {
+    enum canvas_composite_op const ops[11] = {
         CANVAS_OP_SOURCE_OVER,      CANVAS_OP_SOURCE_IN,
         CANVAS_OP_SOURCE_OUT,       CANVAS_OP_SOURCE_ATOP,
         CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
@@ -1677,7 +1677,7 @@ static void text(void) {
 // diagonal gradient backdrop (the W3C composite+blend formula, the checked-C blend
 // kernel).
 static void blend(void) {
-    struct { canvas_composite_op op; char const *name; } const cell[15] = {
+    struct { enum canvas_composite_op op; char const *name; } const cell[15] = {
         { CANVAS_OP_MULTIPLY, "multiply" },       { CANVAS_OP_SCREEN, "screen" },
         { CANVAS_OP_OVERLAY, "overlay" },         { CANVAS_OP_DARKEN, "darken" },
         { CANVAS_OP_LIGHTEN, "lighten" },         { CANVAS_OP_COLOR_DODGE, "color-dodge" },
@@ -1994,8 +1994,8 @@ static void rtl(void) {
     canvas_set_fill_rgba(c, 0.85f, 0.35f, 0.35f, 1.0f);
     canvas_fill_rect(c, ax - 0.5f, 196.0f, 1.0f, 122.0f);
     struct {
-        canvas_direction dir;
-        canvas_text_align align;
+        enum canvas_direction dir;
+        enum canvas_text_align align;
         char const *label;
     } const row[4] = {
         { CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START, "ltr start" },

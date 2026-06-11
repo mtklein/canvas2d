@@ -95,7 +95,7 @@ void cnvs_rec_image_ints(cnvs_recorder *__single r,
 // pattern's pixels ride the image block; the repeat mode is written by name.
 void cnvs_rec_pattern(cnvs_recorder *__single r,
                       char const *__null_terminated name, int id,
-                      canvas_pattern_repeat repeat);
+                      enum canvas_pattern_repeat repeat);
 
 // Serialize one Path2D's command list as a numbered `path` block -- a
 // `path <id> <ncmds>` header, then one verb line per command (m/l/q/c with
@@ -115,7 +115,7 @@ void cnvs_rec_path_op(cnvs_recorder *__single r,
                       char const *__null_terminated name, int id);
 void cnvs_rec_path_rule(cnvs_recorder *__single r,
                         char const *__null_terminated name, int id,
-                        canvas_fill_rule rule);
+                        enum canvas_fill_rule rule);
 
 // Serialize the derived text data a fill_text/stroke_text op is about to use --
 // interned fonts (with their size-1.0 vmetrics), canonical glyph curves + ink
@@ -138,13 +138,13 @@ void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name
                    int const *__counted_by(n) v, int n);
 
 // Enum-valued setters, written by name (the spellings the parser accepts).
-void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule);
+void cnvs_rec_fill_rule(cnvs_recorder *__single r, enum canvas_fill_rule rule);
 void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
-                                canvas_image_smoothing_quality quality);
-void cnvs_rec_line_join(cnvs_recorder *__single r, canvas_line_join join);
-void cnvs_rec_line_cap(cnvs_recorder *__single r, canvas_line_cap cap);
-void cnvs_rec_composite(cnvs_recorder *__single r, canvas_composite_op op);
-void cnvs_rec_text_align(cnvs_recorder *__single r, canvas_text_align align);
+                                enum canvas_image_smoothing_quality quality);
+void cnvs_rec_line_join(cnvs_recorder *__single r, enum canvas_line_join join);
+void cnvs_rec_line_cap(cnvs_recorder *__single r, enum canvas_line_cap cap);
+void cnvs_rec_composite(cnvs_recorder *__single r, enum canvas_composite_op op);
+void cnvs_rec_text_align(cnvs_recorder *__single r, enum canvas_text_align align);
 void cnvs_rec_text_baseline(cnvs_recorder *__single r,
-                            canvas_text_baseline baseline);
-void cnvs_rec_direction(cnvs_recorder *__single r, canvas_direction dir);
+                            enum canvas_text_baseline baseline);
+void cnvs_rec_direction(cnvs_recorder *__single r, enum canvas_direction dir);

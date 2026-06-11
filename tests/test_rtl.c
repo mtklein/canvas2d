@@ -24,7 +24,7 @@
 // Render `text` with the given direction/align into px: white ground, black
 // ink, one fill_text anchored mid-canvas.
 static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated text,
-                   canvas_direction dir, canvas_text_align align) {
+                   enum canvas_direction dir, enum canvas_text_align align) {
     canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {

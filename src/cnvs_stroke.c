@@ -98,7 +98,7 @@ static bool emit_disc(cnvs_verts *out, cnvs_vec2 c, float r) {
 // between incoming dir d0 and outgoing dir d1; `cross` is d0 x d1, nonzero.
 // Returns the vertex count staged: 3 or 6.
 static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 d0,
-                       cnvs_vec2 d1, float cross, float hw, cnvs_line_join join,
+                       cnvs_vec2 d1, float cross, float hw, enum cnvs_line_join join,
                        float miter_limit) {
     // Outer side is opposite the turn.
     float sgn = cross > 0.0f ? -1.0f : 1.0f;
@@ -129,7 +129,7 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
 // on allocation failure.
 static int join_at(cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
                    cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1, float hw,
-                   cnvs_line_join join, float miter_limit) {
+                   enum cnvs_line_join join, float miter_limit) {
     float cross = d0.x * d1.y - d0.y * d1.x;
     if (cross > -1e-6f && cross < 1e-6f) {
         return k;  // collinear: no gap to fill
@@ -145,7 +145,7 @@ static int join_at(cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
 
 // Fill the join at vertex v between incoming dir d0 and outgoing dir d1.
 static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
-                      float hw, cnvs_line_join join, float miter_limit) {
+                      float hw, enum cnvs_line_join join, float miter_limit) {
     cnvs_vec2 stage[48];
     int k = join_at(out, stage, 0, v, d0, d1, hw, join, miter_limit);
     return k >= 0 && cnvs_verts_append(out, stage, k);
@@ -153,7 +153,7 @@ static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
 
 // Cap at open end `e`, with `capdir` pointing outward along the line.
 static bool emit_cap(cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir, float hw,
-                     cnvs_line_cap cap) {
+                     enum cnvs_line_cap cap) {
     if (cap == CNVS_CAP_BUTT) {
         return true;
     }
@@ -166,7 +166,7 @@ static bool emit_cap(cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir, float hw,
 }
 
 bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
-                          float half_width, cnvs_line_join join, cnvs_line_cap cap,
+                          float half_width, enum cnvs_line_join join, enum cnvs_line_cap cap,
                           float miter_limit, cnvs_verts *out) {
     if (n < 2 || half_width <= 0.0f) {
         return true;

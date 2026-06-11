@@ -105,14 +105,14 @@ static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
 // to land on the font's design grid.  No pen, no transform, no flattening -- those
 // run in the checked core now (cnvs_glyph_outline in cnvs_text.c).
 struct curves {
-    cnvs_glyph_verb *verb;
+    enum cnvs_glyph_verb *verb;
     cnvs_vec2 *pt;
     int vcap, pcap;
     int nv, np;       // true counts, kept past the caps so the caller can grow
     double to_units;  // CT point-size px -> font units
 };
 
-static void put(struct curves *c, cnvs_glyph_verb v, CGPoint const *p, int n) {
+static void put(struct curves *c, enum cnvs_glyph_verb v, CGPoint const *p, int n) {
     if (c->nv < c->vcap) {
         c->verb[c->nv] = v;
     }
@@ -148,7 +148,7 @@ static void emit(void *info, CGPathElement const *e) {
 }
 
 void cnvs_glyph_curves(void *font, uint16_t glyph,
-                       cnvs_glyph_verb *verb, int vcap,
+                       enum cnvs_glyph_verb *verb, int vcap,
                        cnvs_vec2 *pt, int pcap,
                        int *nverbs, int *npts, float *units_per_em) {
     *nverbs = 0;

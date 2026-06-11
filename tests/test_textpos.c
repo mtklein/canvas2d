@@ -11,7 +11,7 @@
 // and report the ink bounding box (pixels with a dark red channel).  Returns the
 // ink pixel count.
 static long ink_bbox(canvas *__single cv, uint8_t *__counted_by(len) px, int len,
-                     canvas_text_align align, canvas_text_baseline base,
+                     enum canvas_text_align align, enum canvas_text_baseline base,
                      float x0, float y0,
                      int *__single ixmin, int *__single iymin) {
     canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);

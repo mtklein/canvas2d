@@ -97,13 +97,13 @@ int cnvs_run_font_name(void const *__single font, char *__counted_by(cap) buf, i
 // size_px / units_per_em (flipping y for canvas's y-down user space), places them
 // at the pen, maps them through the CTM, and flattens -- nothing device- or
 // call-specific crosses.
-typedef enum : uint8_t {
+enum cnvs_glyph_verb : uint8_t {
     CNVS_GLYPH_MOVE,   // 1 point
     CNVS_GLYPH_LINE,   // 1 point
     CNVS_GLYPH_QUAD,   // 2 points: control, end
     CNVS_GLYPH_CUBIC,  // 3 points: control 1, control 2, end
     CNVS_GLYPH_CLOSE,  // no points
-} cnvs_glyph_verb;
+};
 
 // Fetch one glyph's canonical curves.  The checked caller owns the buffers and the
 // boundary fills within their caps (the cnvs_glyph_draw hand-off, twice over); the
@@ -112,7 +112,7 @@ typedef enum : uint8_t {
 // resolution, the denominator of the px scale.  A blank or color (emoji) glyph has
 // no outline: both counts come back 0.  Boundary helper.
 void cnvs_glyph_curves(void *__single font, uint16_t glyph,
-                       cnvs_glyph_verb *__counted_by(vcap) verb, int vcap,
+                       enum cnvs_glyph_verb *__counted_by(vcap) verb, int vcap,
                        cnvs_vec2 *__counted_by(pcap) pt, int pcap,
                        int *__single nverbs, int *__single npts,
                        float *__single units_per_em);
@@ -185,7 +185,7 @@ typedef struct {
 // A blank glyph of either kind caches as upem == 0 / cap_w == 0 with no data --
 // "known to be blank" is itself a boundary result worth keeping.
 typedef struct {
-    cnvs_glyph_verb *__counted_by(nverbs) verb;  // owned canonical curves
+    enum cnvs_glyph_verb *__counted_by(nverbs) verb;  // owned canonical curves
     cnvs_vec2 *__counted_by(npts) pt;
     int nverbs, npts;
     float upem;    // units_per_em; 0 for a glyph with no outline (color glyphs too)
@@ -289,7 +289,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
 // that already drew live), and a full table or failed build just leaves the
 // entry out -- the cache's usual best-effort degradation, not an error.
 void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
-        uint16_t glyph, cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
+        uint16_t glyph, enum cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
         cnvs_vec2 *__counted_by(npts) pt, int npts, float upem,
         float ink_x0, float ink_y0, float ink_x1, float ink_y1);
 

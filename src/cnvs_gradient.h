@@ -11,7 +11,7 @@
 
 #define CNVS_MAX_STOPS 16
 
-typedef enum { CNVS_GRAD_LINEAR, CNVS_GRAD_RADIAL, CNVS_GRAD_CONIC } cnvs_grad_kind;
+enum cnvs_grad_kind { CNVS_GRAD_LINEAR, CNVS_GRAD_RADIAL, CNVS_GRAD_CONIC };
 
 typedef struct {
     float offset;  // in [0,1]
@@ -21,7 +21,7 @@ typedef struct {
 // Coordinates and radii are device space (the CTM is baked in when the gradient
 // is created).
 typedef struct {
-    cnvs_grad_kind kind;
+    enum cnvs_grad_kind kind;
     cnvs_vec2 p0, p1;
     float r0, r1;
     float angle;   // conic: start angle (radians), device space; unused otherwise

@@ -170,7 +170,7 @@ void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated 
 // data, so the emission walk stays as defensive as the drawing walk
 // (walk_curves in cnvs_text.c): a bad byte or a short point array stops the
 // walk instead of being trusted.
-static char const *__null_terminated verb_token(cnvs_glyph_verb v,
+static char const *__null_terminated verb_token(enum cnvs_glyph_verb v,
                                                 int *__single npts) {
     switch (v) {
         case CNVS_GLYPH_MOVE:  *npts = 1; return "m";
@@ -451,7 +451,7 @@ void cnvs_rec_image_ints(cnvs_recorder *__single r,
 
 void cnvs_rec_pattern(cnvs_recorder *__single r,
                       char const *__null_terminated name, int id,
-                      canvas_pattern_repeat repeat) {
+                      enum canvas_pattern_repeat repeat) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -466,10 +466,10 @@ void cnvs_rec_pattern(cnvs_recorder *__single r,
 }
 
 // One Path2D command's verb token and float-argument count; NULL for a value
-// that is not a p2d_op.  The list comes from our own builders, but the
+// that is not an enum p2d_op.  The list comes from our own builders, but the
 // serializer validates it anyway (the glyph emission posture): an invalid
 // command means the whole block is skipped, never a short block.
-static char const *__null_terminated p2d_token(p2d_op op, int *__single nargs) {
+static char const *__null_terminated p2d_token(enum p2d_op op, int *__single nargs) {
     switch (op) {
         case P2D_MOVE:       *nargs = 2; return "m";
         case P2D_LINE:       *nargs = 2; return "l";
@@ -559,7 +559,7 @@ void cnvs_rec_path_op(cnvs_recorder *__single r,
 
 void cnvs_rec_path_rule(cnvs_recorder *__single r,
                         char const *__null_terminated name, int id,
-                        canvas_fill_rule rule) {
+                        enum canvas_fill_rule rule) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -581,7 +581,7 @@ void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name
     fputc('\n', r->f);
 }
 
-void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule) {
+void cnvs_rec_fill_rule(cnvs_recorder *__single r, enum canvas_fill_rule rule) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -591,7 +591,7 @@ void cnvs_rec_fill_rule(cnvs_recorder *__single r, canvas_fill_rule rule) {
 }
 
 void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
-                                canvas_image_smoothing_quality quality) {
+                                enum canvas_image_smoothing_quality quality) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -606,7 +606,7 @@ void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_line_join(cnvs_recorder *__single r, canvas_line_join join) {
+void cnvs_rec_line_join(cnvs_recorder *__single r, enum canvas_line_join join) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -621,7 +621,7 @@ void cnvs_rec_line_join(cnvs_recorder *__single r, canvas_line_join join) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_line_cap(cnvs_recorder *__single r, canvas_line_cap cap) {
+void cnvs_rec_line_cap(cnvs_recorder *__single r, enum canvas_line_cap cap) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -636,7 +636,7 @@ void cnvs_rec_line_cap(cnvs_recorder *__single r, canvas_line_cap cap) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_text_align(cnvs_recorder *__single r, canvas_text_align align) {
+void cnvs_rec_text_align(cnvs_recorder *__single r, enum canvas_text_align align) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -654,7 +654,7 @@ void cnvs_rec_text_align(cnvs_recorder *__single r, canvas_text_align align) {
 }
 
 void cnvs_rec_text_baseline(cnvs_recorder *__single r,
-                            canvas_text_baseline baseline) {
+                            enum canvas_text_baseline baseline) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -672,7 +672,7 @@ void cnvs_rec_text_baseline(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_direction(cnvs_recorder *__single r, canvas_direction dir) {
+void cnvs_rec_direction(cnvs_recorder *__single r, enum canvas_direction dir) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -681,7 +681,7 @@ void cnvs_rec_direction(cnvs_recorder *__single r, canvas_direction dir) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_composite(cnvs_recorder *__single r, canvas_composite_op op) {
+void cnvs_rec_composite(cnvs_recorder *__single r, enum canvas_composite_op op) {
     if (!r || r->suspend != 0) {
         return;
     }

@@ -150,12 +150,12 @@ static void solid_vs_tile(void) {
                 // test with the clip in force.
                 cnvs_blend(c, 0, 0, W, H, dst, NULL, NULL, 0, CANVAS_OP_COPY);
                 cnvs_blend(c, 0, 0, W, H, tile, cv, clip, clip_len,
-                           (canvas_composite_op)mode);
+                           (enum canvas_composite_op)mode);
                 cnvs_blend_read(c, want, n);
 
                 cnvs_blend(c, 0, 0, W, H, dst, NULL, NULL, 0, CANVAS_OP_COPY);
                 cnvs_blend_solid(c, 0, 0, W, H, color, cv, clip, clip_len,
-                                 (canvas_composite_op)mode);
+                                 (enum canvas_composite_op)mode);
                 cnvs_blend_read(c, got, n);
 
                 CHECK(memcmp(got, want, (size_t)n * sizeof *got) == 0);

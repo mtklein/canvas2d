@@ -19,7 +19,7 @@ typedef struct {
 static void u8(buf *s, int v)      { if (s->n < (int)sizeof s->b) { s->b[s->n++] = (uint8_t)v; } }
 static void f32(buf *s, float f)   { uint8_t t[4]; memcpy(t, &f, 4); for (int i = 0; i < 4; i++) { u8(s, t[i]); } }
 static void rng(buf *s, int lo, int v) { int d = v - lo; u8(s, (d >> 8) & 0xFF); u8(s, d & 0xFF); }  // -> lo + d
-static void op(buf *s, fuzz_op o)  { u8(s, (int)o); }
+static void op(buf *s, enum fuzz_op o)  { u8(s, (int)o); }
 
 static void canvas_hw(buf *s, int w, int h) { rng(s, 1, w); rng(s, 1, h); }
 
