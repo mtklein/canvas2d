@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
-"""Visual review of gallery changes: ranked overview, side-by-side, swipe,
-blink, glow, and a measuring heatmap.
+"""Visual review of gallery changes: ranked overview, blink, heatmap, swipe,
+side-by-side, and a Digital Color Meter-style loupe.
 
 The image equivalent of `git diff <ref> -- gallery/`: every changed gallery
 PNG becomes a before/after pair in one self-contained HTML page (the PNGs are
 base64-embedded, so the file works from anywhere, needs no server, and the
-data: URIs keep the canvas untainted for the pixel-stats/heatmap mode).
+data: URIs keep the canvas untainted for pixel work).
 
   python3 tools/gallery_diff.py              # vs github/main (the push gap)
   python3 tools/gallery_diff.py HEAD~5       # vs any ref
   python3 tools/gallery_diff.py --no-open    # just print the output path
 
 Keys in the page: `o` for the ranked overview, arrows or j/k switch scenes,
-1/2/3/4/5 switch modes (blink / heatmap / swipe / side-by-side / glow),
-space toggles blink by hand, [ and ] adjust glow/heatmap gain.
+1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space toggles
+blink by hand, [ and ] adjust heatmap gain, + and - adjust loupe zoom,
+m toggles the loupe.
 
 Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
-per-pixel magnitude crediting with diminishing (sqrt) returns.
-The glow mode is lifted from Mike's idiff (github.com/mtklein/idiff): two
-stacked images under mix-blend-mode:difference and a grayscale+brightness
-filter -- the browser computes the amplified diff, no JS, no decode.
+per-pixel magnitude crediting with diminishing (sqrt) returns.  Hovering any
+image raises the loupe: a magnified aperture around the cursor (live through
+blink, so a neighborhood can be watched flipping) with both sides' center
+pixel as unorm8 hex and float, plus the per-channel delta.  The overview's
+thumbnails use idiff's CSS difference trick (github.com/mtklein/idiff) --
+stacked images under mix-blend-mode:difference and grayscale+brightness --
+kept there because it renders before any decode lands.
 """
 
 import argparse
@@ -84,12 +88,12 @@ def main():
 
 
 # One page, no dependencies.  The overview ranks every changed scene
-# worst-first by weighted change (%-of-pixels-changed dominating, magnitude
-# crediting with diminishing sqrt returns, computed client-side) with a glow
-# thumbnail per row; the per-scene modes are blink (the default; 2 Hz, space
-# to step by hand) | heatmap (per-pixel max channel delta, exact stats,
-# adjustable gain) | swipe (pointer-driven divider) | side-by-side | glow
-# (idiff's stacked difference + grayscale/brightness, all CSS).
+# worst-first by weighted change with an idiff-CSS glow thumbnail per row
+# (instant, no decode); the per-scene modes are blink (default; 2 Hz, space
+# steps by hand) | heatmap (per-pixel max channel delta, exact stats,
+# adjustable gain) | swipe (pointer-driven divider) | side-by-side.  The
+# loupe magnifies around the cursor in every mode and stays live through
+# blink; its readout gives both sides' center pixel as #RRGGBBAA and float.
 TEMPLATE = r"""<!doctype html>
 <meta charset="utf-8">
 <title>gallery diff vs __REF__</title>
@@ -114,7 +118,7 @@ TEMPLATE = r"""<!doctype html>
   .pair figure { margin:0; text-align:center; color:#8b93a7; }
   img, canvas { image-rendering:pixelated; background:
        repeating-conic-gradient(#23262e 0 25%, #1b1e25 0 50%) 0 0/16px 16px; border:1px solid #2a2e38; }
-  .glow { position:relative; filter: grayscale(1) brightness(var(--gain, 64)); background:#000; }
+  .glow { position:relative; filter: grayscale(1) brightness(64); background:#000; }
   .glow img { display:block; border:0; background:none; }
   .glow img + img { position:absolute; inset:0; mix-blend-mode:difference; }
   #overlay { position:relative; cursor:ew-resize; }
@@ -130,6 +134,12 @@ TEMPLATE = r"""<!doctype html>
   table#over img, table#over .glow { max-height:96px; }
   table#over .glow img { max-height:96px; }
   table#over .num { color:#8b93a7; font-variant-numeric:tabular-nums; text-align:right; }
+  #loupe { position:fixed; right:16px; bottom:16px; background:#10131a; border:1px solid #3a4152;
+           border-radius:8px; padding:8px; display:none; z-index:9; box-shadow:0 4px 24px #000a; }
+  #loupe canvas { display:block; border:1px solid #2a2e38; background:#000; }
+  #loupe pre { margin:6px 0 0; font:11px/1.5 ui-monospace, monospace; color:#cdd3df; }
+  #loupe pre .on { color:#fff; font-weight:600; }
+  #loupe pre .dim { color:#8b93a7; }
 </style>
 <div id="nav"><h1>vs __REF__ <span class="score">(o: overview)</span></h1></div>
 <div id="main">
@@ -138,27 +148,31 @@ TEMPLATE = r"""<!doctype html>
     <button class="mode" data-m="heat">2 heatmap</button>
     <button class="mode" data-m="swipe">3 swipe</button>
     <button class="mode" data-m="side">4 side-by-side</button>
-    <button class="mode" data-m="glow">5 glow</button>
     <span id="stats"></span>
   </div>
   <div id="view"></div>
 </div>
+<div id="loupe"><canvas width="200" height="200"></canvas><pre></pre></div>
 <script>
 const scenes = __SCENES__;
-let cur = -1, mode = "blink", gain = 64, blinkShow = 0, blinkTimer = null;
+let cur = -1, mode = "blink", gain = 16, blinkShow = 0, blinkTimer = null,
+    zoom = 8, loupeOn = true, swipeFrac = 0.5,
+    hover = null;  // {s, x, y, side} -- side: which image the cursor implies
 const nav = document.getElementById("nav"), view = document.getElementById("view"),
-      stats = document.getElementById("stats");
+      stats = document.getElementById("stats"),
+      loupe = document.getElementById("loupe"),
+      lcv = loupe.querySelector("canvas"), lpre = loupe.querySelector("pre");
 
 function img(src) { const e = new Image(); e.src = src; return e; }
 
-function glowEl(s) {  // idiff's trick: the browser computes the amplified diff
+function glowEl(s) {  // idiff's CSS diff: instant, kept for overview thumbnails
   const g = document.createElement("div"); g.className = "glow";
-  g.style.setProperty("--gain", gain);
   g.append(img(s.before), img(s.after));
   return g;
 }
 
-// Decode once per scene; data: URIs keep the canvas untainted.
+// Decode once per scene; data: URIs keep the canvas untainted.  Alongside the
+// raw pixel arrays, keep each side as a canvas the loupe can drawImage from.
 function pixels(s, cb) {
   if (s.px) return cb(s.px);
   const a = new Image(), b = new Image(); let n = 0;
@@ -168,29 +182,26 @@ function pixels(s, cb) {
     cx.drawImage(a, 0, 0); const pa = cx.getImageData(0, 0, w, h).data;
     cx.clearRect(0, 0, w, h);
     cx.drawImage(b, 0, 0); const pb = cx.getImageData(0, 0, w, h).data;
-    s.px = {w, h, pa, pb}; cb(s.px);
+    const mk = p => { const c = new OffscreenCanvas(w, h);
+      c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(p), w, h), 0, 0); return c; };
+    s.px = {w, h, pa, pb, cva: mk(pa), cvb: mk(pb)}; cb(s.px);
   };
   a.onload = done; b.onload = done; a.src = s.before; b.src = s.after;
 }
 
-// idiff's ranking: mean absolute channel delta, worst first.  Scored lazily
-// at load; the nav and overview re-sort as results land.
+// Rank worst-first by weighted change: %-of-pixels-changed dominates,
+// magnitude credits with diminishing (sqrt) returns.
 function score(s, cb) {
-  if (s.score !== undefined) return cb && cb();
-  if (!s.before || !s.after) { s.score = 1; s.w = 1; s.pct = 1; s.count = NaN; s.max = NaN; return cb && cb(); }
+  if (s.w !== undefined) return cb && cb();
+  if (!s.before || !s.after) { s.w = 1; s.pct = 1; s.count = NaN; s.max = NaN; return cb && cb(); }
   pixels(s, ({w, h, pa, pb}) => {
-    let sum = 0, wsum = 0, count = 0, max = 0;
+    let wsum = 0, count = 0, max = 0;
     for (let i = 0; i < pa.length; i += 4) {
       const d = Math.max(Math.abs(pa[i]-pb[i]), Math.abs(pa[i+1]-pb[i+1]),
                          Math.abs(pa[i+2]-pb[i+2]), Math.abs(pa[i+3]-pb[i+3]));
-      sum += Math.abs(pa[i]-pb[i]) + Math.abs(pa[i+1]-pb[i+1])
-           + Math.abs(pa[i+2]-pb[i+2]) + Math.abs(pa[i+3]-pb[i+3]);
       if (d) { count++; if (d > max) max = d; wsum += Math.sqrt(d / 255); }
     }
-    // Rank by the weighted score: %-changed dominates, magnitude credits with
-    // diminishing returns (sqrt) -- broad subtle drift outranks a few loud px.
-    s.score = sum / (pa.length * 255); s.count = count; s.max = max;
-    s.pct = count / (w * h); s.w = wsum / (w * h);
+    s.count = count; s.max = max; s.pct = count / (w * h); s.w = wsum / (w * h);
     cb && cb();
   });
 }
@@ -211,7 +222,8 @@ function rebuildNav() {
 }
 
 function overview() {
-  view.innerHTML = ""; stats.textContent = "ranked by weighted change (% px changed, sqrt-magnitude); click a row";
+  view.innerHTML = ""; hideLoupe();
+  stats.textContent = "ranked by weighted change (% px changed, sqrt-magnitude); click a row";
   document.querySelectorAll(".mode").forEach(b => b.classList.remove("sel"));
   const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
   const t = document.createElement("table"); t.id = "over";
@@ -226,9 +238,8 @@ function overview() {
     const gl = document.createElement("td");
     if (s.before && s.after) gl.append(glowEl(s));
     const ba = document.createElement("td");
-    const small = src => { const e = img(src); return e; };
-    if (s.before) ba.append(small(s.before));
-    if (s.after) ba.append(small(s.after));
+    if (s.before) ba.append(img(s.before));
+    if (s.after) ba.append(img(s.after));
     tr.append(name, num, gl, ba);
     tr.onclick = () => { cur = i; mode = "blink"; render(); };
     t.append(tr);
@@ -236,13 +247,67 @@ function overview() {
   view.append(t);
 }
 
+// --- the loupe: a Digital Color Meter for the pair --------------------------
+
+function hideLoupe() { loupe.style.display = "none"; hover = null; }
+
+function watch(el, side) {  // arm an element as a loupe source over scene px
+  el.addEventListener("mousemove", e => {
+    if (!loupeOn || cur < 0) return;
+    const s = scenes[cur]; if (!s.px) return;
+    const r = el.getBoundingClientRect();
+    // Displayed at natural size (border 1px); map to pixel coords directly.
+    const x = Math.floor((e.clientX - r.left - 1) * s.px.w / (r.width - 2));
+    const y = Math.floor((e.clientY - r.top  - 1) * s.px.h / (r.height - 2));
+    if (x < 0 || y < 0 || x >= s.px.w || y >= s.px.h) return;
+    hover = {s, x, y, side};
+    drawLoupe();
+  });
+  el.addEventListener("mouseleave", hideLoupe);
+}
+
+function loupeSide() {  // which image the loupe magnifies right now
+  if (!hover) return "after";
+  if (mode === "blink") return blinkShow ? "after" : "before";
+  if (mode === "swipe") return (hover.x / hover.s.px.w) < swipeFrac ? "after" : "before";
+  return hover.side;  // side-by-side: the hovered figure; heatmap: after
+}
+
+function drawLoupe() {
+  if (!hover) return;
+  const {s, x, y} = hover, {w, h, pa, pb, cva, cvb} = s.px;
+  const side = loupeSide();
+  const cx = lcv.getContext("2d");
+  cx.imageSmoothingEnabled = false;
+  // DCM-style: fixed panel, the aperture shrinks as zoom grows (odd, centered).
+  const n = Math.max(3, Math.floor(200 / zoom) | 1), half = n >> 1;
+  cx.clearRect(0, 0, 200, 200);
+  cx.drawImage(side === "after" ? cvb : cva, x - half, y - half, n, n, 0, 0, n * zoom, n * zoom);
+  cx.strokeStyle = "#3d77d8"; cx.lineWidth = 2;
+  cx.strokeRect(half * zoom, half * zoom, zoom, zoom);  // the metered pixel
+  const i = 4 * (y * w + x);
+  const hex = p => "#" + [0,1,2,3].map(k => p[i+k].toString(16).padStart(2, "0")).join("").toUpperCase();
+  const flt = p => [0,1,2,3].map(k => (p[i+k] / 255).toFixed(4)).join(" ");
+  const dmax = Math.max(...[0,1,2,3].map(k => Math.abs(pa[i+k] - pb[i+k])));
+  const row = (tag, p, on) =>
+    `<span class="${on ? "on" : "dim"}">${tag}  ${hex(p)}  ${flt(p)}</span>`;
+  lpre.innerHTML = [
+    row("ref", pa, side === "before"),
+    row("wt ", pb, side === "after"),
+    `<span class="dim">Δmax ${dmax}/255 · (${x},${y}) · ${zoom}x (+/-)</span>`,
+  ].join("\n");
+  loupe.style.display = "block";
+}
+
+// -----------------------------------------------------------------------------
+
 function render() {
   if (cur < 0) return overview();
   const s = scenes[cur];
   scenes.forEach(x => x.btn && x.btn.classList.toggle("sel", x === s));
   document.querySelectorAll(".mode").forEach(b => b.classList.toggle("sel", b.dataset.m === mode));
   clearInterval(blinkTimer); blinkTimer = null;
-  view.innerHTML = ""; stats.textContent = "";
+  view.innerHTML = ""; stats.textContent = ""; hideLoupe();
   if (!s.before || !s.after) {  // new or deleted scene: nothing to compare
     const f = document.createElement("figure");
     f.append(img(s.after || s.before));
@@ -250,11 +315,13 @@ function render() {
       `<figcaption class="badge">${s.after ? "new scene (not in __REF__)" : "deleted scene"}</figcaption>`);
     view.append(f); return;
   }
+  pixels(s, () => {});  // warm the loupe's canvases
   if (mode === "side") {
     const p = document.createElement("div"); p.className = "pair";
-    for (const [src, cap] of [[s.before, "__REF__"], [s.after, "worktree"]]) {
+    for (const [src, cap, side] of [[s.before, "__REF__", "before"], [s.after, "worktree", "after"]]) {
       const f = document.createElement("figure");
-      f.append(img(src)); f.insertAdjacentHTML("beforeend", `<figcaption>${cap}</figcaption>`);
+      const e = img(src); watch(e, side); f.append(e);
+      f.insertAdjacentHTML("beforeend", `<figcaption>${cap}</figcaption>`);
       p.append(f);
     }
     view.append(p);
@@ -264,23 +331,21 @@ function render() {
     const ti = img(s.after); top.append(ti);
     const d = document.createElement("div"); d.id = "divider";
     o.append(base, top, d); view.append(o);
+    watch(o, "after");
     if (mode === "swipe") {
-      const set = frac => { const w = base.clientWidth * frac;
+      const set = frac => { swipeFrac = frac; const w = base.clientWidth * frac;
         ti.style.clipPath = `inset(0 ${base.clientWidth - w}px 0 0)`; d.style.left = w + "px"; };
       base.onload = () => set(0.5); if (base.complete) set(0.5);
-      o.onmousemove = e => set(Math.min(1, Math.max(0, (e.offsetX) / base.clientWidth)));
+      o.addEventListener("mousemove",
+        e => set(Math.min(1, Math.max(0, e.offsetX / base.clientWidth))));
     } else {
       d.remove();
       const tick = () => { blinkShow ^= 1; top.style.visibility = blinkShow ? "visible" : "hidden";
-        stats.textContent = blinkShow ? "worktree" : "__REF__"; };
+        stats.textContent = blinkShow ? "worktree" : "__REF__";
+        drawLoupe();  // the loupe blinks too -- watch a neighborhood flip
+      };
       tick(); blinkTimer = setInterval(tick, 500);
     }
-  } else if (mode === "glow") {
-    const f = document.createElement("figure"); f.append(glowEl(s));
-    f.insertAdjacentHTML("beforeend",
-      `<figcaption>difference × brightness(${gain}) — all CSS, per idiff ([ and ] adjust)</figcaption>`);
-    view.append(f);
-    score(s, () => { stats.textContent = statline(s); });
   } else {  // heatmap: exact, JS-computed, adjustable gain
     pixels(s, ({w, h, pa, pb}) => {
       const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
@@ -294,7 +359,7 @@ function render() {
       cx.putImageData(out, 0, 0);
       const f = document.createElement("figure"); f.append(cv);
       f.insertAdjacentHTML("beforeend", `<figcaption>delta ×${gain} ([ and ] adjust)</figcaption>`);
-      view.append(f);
+      view.append(f); watch(cv, "after");
       score(s, () => { stats.textContent = statline(s); });
     });
   }
@@ -302,8 +367,7 @@ function render() {
 
 function statline(s) {
   const {w, h} = s.px;
-  return `${s.count.toLocaleString()} px changed (${(100*s.count/(w*h)).toFixed(2)}%), `
-       + `max delta ${s.max}/255, mean ${(s.score*100).toFixed(4)}%`;
+  return `${s.count.toLocaleString()} px changed (${(100*s.count/(w*h)).toFixed(2)}%), max delta ${s.max}/255`;
 }
 
 document.querySelectorAll(".mode").forEach(b => b.onclick = () => {
@@ -312,16 +376,19 @@ addEventListener("keydown", e => {
   if (e.key === "o" || e.key === "0") { cur = -1; render(); }
   else if (e.key === "ArrowRight" || e.key === "j") { cur = (cur + 1 + scenes.length) % scenes.length; render(); }
   else if (e.key === "ArrowLeft" || e.key === "k") { cur = (cur - 1 + scenes.length) % scenes.length; render(); }
-  else if (e.key >= "1" && e.key <= "5") { mode = ["blink","heat","swipe","side","glow"][e.key - 1];
+  else if (e.key >= "1" && e.key <= "4") { mode = ["blink","heat","swipe","side"][e.key - 1];
     if (cur < 0) cur = 0; render(); }
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
     if (mode !== "blink") { mode = "blink"; render(); }
     else { clearInterval(blinkTimer); blinkTimer = null;
            const top = document.querySelector("#overlay .top"); blinkShow ^= 1;
            top.style.visibility = blinkShow ? "visible" : "hidden";
-           stats.textContent = blinkShow ? "worktree" : "__REF__"; } }
-  else if (e.key === "]") { gain = Math.min(1024, gain * 2); if (mode === "heat" || mode === "glow" || cur < 0) render(); }
-  else if (e.key === "[") { gain = Math.max(1, gain / 2); if (mode === "heat" || mode === "glow" || cur < 0) render(); }
+           stats.textContent = blinkShow ? "worktree" : "__REF__"; drawLoupe(); } }
+  else if (e.key === "]") { gain = Math.min(256, gain * 2); if (mode === "heat") render(); }
+  else if (e.key === "[") { gain = Math.max(1, gain / 2); if (mode === "heat") render(); }
+  else if (e.key === "+" || e.key === "=") { zoom = Math.min(32, zoom * 2); drawLoupe(); }
+  else if (e.key === "-") { zoom = Math.max(2, zoom / 2); drawLoupe(); }
+  else if (e.key === "m") { loupeOn = !loupeOn; if (!loupeOn) hideLoupe(); }
 });
 
 // Score everything lazily at load; the nav and overview rank as results land.
