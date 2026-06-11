@@ -54,8 +54,10 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
             // colour lerp itself runs in _Float16, one 4-lane vector op per
             // term (<=0.25/255 of rounding vs an exact double reference --
             // measured 0.156/255 worst-case; test_gradient_solve gates it).
+            // The guard is the minimal one: it exists only to keep the
+            // divide defined at coincident stops (span == 0 takes lo).
             float span = hi.offset - lo.offset;
-            float u = span > 1e-9f ? (t - lo.offset) / span : 0.0f;
+            float u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
             gradh4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
             gradh4 hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
             gradh4 c = lov + (hiv - lov) * (_Float16)u;
@@ -296,7 +298,7 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             // overwrite may divide by a zero span; the bitwise selects discard
             // the resulting inf/NaN exactly.
             gradf8 span = hi_off - lo_off;
-            gradf8 u32 = vsel_bits(span > 1e-9f, (tv - lo_off) / span,
+            gradf8 u32 = vsel_bits(span > 0.0f, (tv - lo_off) / span,
                                    (gradf8)0.0f);
             cnvs_h8 u = __builtin_convertvector(u32, cnvs_h8);
             gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,
