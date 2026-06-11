@@ -76,6 +76,14 @@ Caveats on these numbers, stated once:
   frames ≈ 10.7 ms/frame), e2e `bench` 45 ms and codec-bound (README table). The
   profile is the *gallery* mix; `bench_render_large`'s few-huge-fills shape
   weights the same stages differently (more composite, less per-op overhead).
+- **The coverage histogram, re-measured (2026-06-10, seam-efficiency pass):**
+  per-pixel coverage classes over every painted fill/stroke bbox.  The gallery
+  mix is **12.2 % zero / 2.6 % partial / 85.1 % full** and `bench_render` is
+  10.8 % zero — far fuller than the old survey's 39–59 %, which reproduces
+  only on its original content classes (200 concave stars: 59.6/8.5/31.9;
+  200 convex n-gons: 26.3/3.9/69.8).  The committed scenes are rect- and
+  text-heavy: zero-coverage skipping has little to bite on in the flagship
+  mixes, which is why the §3.8 block predicates priced ~flat there.
 - Attribution is smeared by inlining at `-Os`: `accum_row`/`deposit` fold into
   `cnvs_cover_add_edge`, the prefix sum and fill-rule fold into
   `cnvs_cover_resolve`, and the planar shade helpers (`cover8`/`shade8`/
@@ -108,16 +116,22 @@ One pipeline, per op, over the op's device-space bounding box
    (nonzero = clamp |run|; evenodd = triangle wave), and quantizes once to a
    dense u8 coverage buffer.
 4. **Shade** (`paint_tile` / `paint_tile_pattern` / `draw_image_quad`): eight
-   pixels per step over channel planes (the §3.1 conversion). For over-family
-   composite modes (and any filtered op), coverage widens to one f32 plane and
-   the fold (paint alpha × global alpha × coverage) is f32 vector arithmetic
-   with the scalar form's exact association; for every other mode the tile is
-   the source at full strength (paint alpha × global alpha only) and the op's
-   u8 coverage buffer rides to composite as its own plane (§3.8's ruling,
-   landed). Either way: one narrowing convert to f16, then the planar
-   premultiply (`cnvs_px8_premultiply`) and an st4 into the premultiplied
-   RGBA16F tile. Gradients get their parameters and colors solved 8-wide per
-   row ([gradient-eval.md](decisions/gradient-eval.md)) and are picked back up
+   pixels per step over channel planes (the §3.1 conversion). For folding
+   composite modes — the over-family AND all 15 blend modes (§3.8's ruling
+   plus the homogeneity re-fold) and any filtered op — coverage widens to one
+   f32 plane and the fold (paint alpha × global alpha × coverage) is f32
+   vector arithmetic with the scalar form's exact association; for the lerp
+   family (copy, in/out, dst-atop, lighter) the tile is the source at full
+   strength (paint alpha × global alpha only) and the op's u8 coverage buffer
+   rides to composite as its own plane. Either way: one narrowing convert to
+   f16, then the planar premultiply (`cnvs_px8_premultiply`) and an st4 into
+   the premultiplied RGBA16F tile. One seam shortcut (the §3.8 efficiency
+   pass, landed): a lerp-family **solid** paint writes no tile at all — the
+   one premultiplied colour goes to `compositor_blend_solid` as a splat (so
+   do clearRect/reset's unit-alpha erase and the full-strength shadow tint).
+   Gradients get their parameters and
+   colors solved 8-wide per row
+   ([gradient-eval.md](decisions/gradient-eval.md)) and are picked back up
    as planes (ld4 over the row buffer). Pattern and image sampling stay scalar
    per lane — the taps are data-dependent gathers — inside the planar fold,
    with the device→source coordinate chain vectorized (elementwise, bit-exact
@@ -126,8 +140,13 @@ One pipeline, per op, over the op's device-space bounding box
    [cnvs_planar.h](../src/cnvs_planar.h)): 8 pixels per step as four f16 channel
    planes, ld4/st4 at the seams, all 26 modes straight-line vector code.
    Effective coverage (op plane × clip mask) applies per the §3.8 ruling:
-   folded into src for the over-family, `lerp(dst, blend, cov)` after the
-   full-strength blend for the rest. This is the fast, finished part.
+   folded into src for the over-family and the blends, `lerp(dst, blend, cov)`
+   after the full-strength blend for copy/in-out/dst-atop/lighter. Block
+   predicates implement the §3.8 model's `if (cov == 0) return` eight lanes at
+   a time: all-zero coverage (u8-plane u64 test) or a transparent-black source
+   block (folded zeros; three vector ORs + a reduce) skips the dst round trip,
+   and all-255 coverage with no clip takes the k = 1 short path — all
+   bit-exact by construction. This is the fast, finished part.
 
 Strokes go through the same path: [cnvs_stroke.c](../src/cnvs_stroke.c) expands
 the polyline to triangles, `stroke_device_path` feeds each triangle's edges with
@@ -177,13 +196,13 @@ the same way, then intersect into a full-canvas u8 mask with a scalar
 - **Dense touch of the whole bbox.** Per solid-fill bbox pixel, regardless of
   coverage: 4 B memset (`cover_reset`) + 4 B read + 1 B write (resolve) + 1 B
   read + 8 B write (shade) + 8+8+8 B (composite read tile, read/write target) ≈
-  **42 B of traffic per bbox pixel**, before one pixel visibly changes.
-  [sparse-coverage.md](sparse-coverage.md) measured 39–59 % of a fill's bbox at
-  zero coverage (convex → concave). At `bench_render_large` scale that's roughly
-  260 MB/frame of floor traffic — ~10–15 % of the 17.9 ms frame at plausible
-  single-core bandwidth, so we are **compute-bound, not bandwidth-bound**
-  (estimate, unmeasured; consistent with a scalar shade stage dominating the
-  profile).
+  **42 B of traffic per bbox pixel**, before one pixel visibly changes.  The
+  seam-efficiency pass (§3.8, landed) trimmed the worst of it: the tile's
+  16 B/px round trip is gone outright for lerp-family solids (the splat), and
+  zero-coverage blocks skip the composite's 16 B/px dst round trip.  The
+  re-measured histogram (§1) says the committed mixes are 85 % full coverage,
+  so the *zero-skip* part has little to bite on today; the old 39–59 % figure
+  was the stars/convex survey content, not the gallery.
 - **The shade stage's remaining scalar interior is the sampling taps.** The
   fold is planar everywhere (§3.1, landed); what stays per-lane is
   `sample_src`/`pattern_sample`'s data-dependent addressing — four taps per
@@ -598,25 +617,31 @@ Two things the model surfaces that a refactor must not blur past:
   for several blend modes, but not all of them." The criterion, from
   `co = Fa·s + Fb·d`: fold ≡ lerp exactly when `Fa` is `sa`-free and `Fb` is
   affine in `sa` with `Fb(0)=1`. As landed (`compositor_coverage_folds`,
-  [compositor.h](../src/compositor.h)): source-over, destination-over,
-  destination-out, source-atop, and xor fold; copy, the in/out family,
-  destination-atop, **lighter**, and all 20 blend-family modes lerp — shade
-  skips its coverage fold for those, the op's u8 coverage buffer rides to
-  `compositor_blend` as its own plane, and the kernel computes
-  `out = lerp(dst, blend(src,dst), op_cov × clip_cov)` (clip coverage was the
-  same bug and takes the same lerp). Two findings sharpened the ruling while
-  implementing, both pinned by the oracle (tests/test_coverage_lerp.c):
-  (1) lighter passes the Fa/Fb criterion only unclamped — its `co = s + d`
-  saturates, the supersampled truth clamps per subsample, and the fold was up
-  to 0.25 off the oracle where it clamps, so lighter lerps; (2) every
-  separable/non-separable blend is fold-EXACT in exact arithmetic — the
-  premultiplied term `T = sa·da·B(d/da, s/sa)` is degree-1 homogeneous in
-  `(s, sa)`, so for blends the lerp moved only f16 rounding (gallery
-  blend.png: 368 px, max delta 1/255), never semantics. The genuine fixes are
-  copy/in/out/dst-atop (oracle error sums collapsed ~800×; porterduff.png
-  re-baselined, 1030 px, max delta 163) and lighter's clamp edge. Filtered
-  ops still fold before the filter runs — blur consumes the silhouette from
-  the tile's alpha, after which coverage genuinely is source alpha.
+  [compositor.h](../src/compositor.h), re-folded in the seam-efficiency
+  pass): source-over, destination-over, destination-out, source-atop, xor,
+  AND all 15 blend modes fold; copy, the in/out family, destination-atop,
+  and **lighter** lerp — shade skips its coverage fold for those, the op's
+  u8 coverage buffer rides to `compositor_blend` as its own plane, and the
+  kernel computes `out = lerp(dst, blend(src,dst), op_cov × clip_cov)` (clip
+  coverage was the same bug and takes the same lerp). Two findings sharpened
+  the ruling while implementing, both pinned by the oracle
+  (tests/test_coverage_lerp.c): (1) lighter passes the Fa/Fb criterion only
+  unclamped — its `co = s + d` saturates, the supersampled truth clamps per
+  subsample, and the fold was up to 0.25 off the oracle where it clamps, so
+  lighter lerps; (2) every separable/non-separable blend is fold-EXACT in
+  exact arithmetic — the premultiplied term `T = sa·da·B(d/da, s/sa)` is
+  degree-1 homogeneous in `(s, sa)`, so for blends fold vs lerp moves only
+  f16 rounding, never semantics. The fix's #28 commit took the lerp for
+  blends (the recorded criterion); the seam pass cashed the homogeneity
+  license back in — blends re-fold shade-side, deleting their coverage-plane
+  read and lerp, moving blend.png alone by the same 368 px / max 1/255 the
+  lerp had moved it, oracle green (part A fold error ≤ 0.0015 of the double
+  reference, part B's idealized fold-vs-lerp ≤ 3e-15 summed). The genuine
+  fixes are copy/in/out/dst-atop (oracle error sums collapsed ~800×;
+  porterduff.png re-baselined, 1030 px, max delta 163) and lighter's clamp
+  edge — those keep the lerp; they NEED it. Filtered ops still fold before
+  the filter runs — blur consumes the silhouette from the tile's alpha,
+  after which coverage genuinely is source alpha.
 - **Materialization boundaries stay.** blur()/drop-shadow()/shadows need the
   op's spatial extent: the filter path keeps a tile; shadows are a second
   pipeline invocation (blurred cov_fn, tint shader_fn). The fused pipeline is
@@ -624,6 +649,53 @@ Two things the model surfaces that a refactor must not blur past:
 - The model's two `if`s become block predicates 8 lanes at a time; the
   cov==0 early-out is §3.4's empty-classification arriving through the front
   door.
+
+**Landed (2026-06-10, the seam-efficiency pass — Mike's step 2 of 3,
+"efficient, not necessarily unified").** Four structural changes, each
+byte-still except the licensed re-fold:
+
+1. **The splat:** lerp-family solid paints (and clearRect/reset's unit-alpha
+   erase, and the full-strength shadow tint) write no tile —
+   `compositor_blend_solid` takes the one premultiplied colour and the region
+   walk splats it, deleting a ~16 B/px round trip that carried zero
+   information.  Byte-identical by construction and by test
+   (test_compositor's solid_vs_tile pins all 26 modes × coverage shapes
+   bit-for-bit; blend8 now delegates source-over to src_over8 — the generic
+   `fa*s + fb*d` arm contracts differently than `s + fb*d`, a 1-ULP trap no
+   caller could previously reach).
+2. **The block predicates:** the model's `if (cov==0) return` as one u64
+   compare per 8-px block on the u8 planes (op cov, clip), a 4-op vector test
+   for transparent-black source blocks on the folded path, and the k = 1
+   short path for all-255 coverage — all bit-exact (k=0/k=1 are exact by the
+   two-product lerp form; s=0 blending to d IS the fold criterion).  Priced
+   ~flat on the committed mixes — the re-measured histogram (§1: 85 % full
+   coverage) explains why — kept for what the benches don't contain
+   (expensive blends over sparse shapes, closed-clip regions).
+3. **The re-fold:** all 15 blend modes fold coverage shade-side again, per the
+   homogeneity license (the ruling bullet above) — no coverage plane, no
+   lerp, on the flagship's hottest non-over modes.  blend.png moved 368 px ×
+   ≤ 1/255, re-baselined lockstep; oracle green.
+4. **The row-granular handoff — tried, measured, DROPPED.** Unfiltered ops
+   shading one reused tile row and compositing it cache-hot (the staged shape
+   of the §3.8 race at row granularity) was implemented and priced: −3 % on
+   `bench_render` (the gallery's many small ops pay a compositor call per ROW
+   instead of per op), +0.8 % ≈ 1σ on `bench_render_large`, flat e2e.  The
+   per-call overhead beats the cache win at our op sizes; the code is not
+   committed (this entry is its record).  The result is also the first real
+   data point for #27: interleaving the stages at row granularity LOSES —
+   whatever fusion wins, it must win by eliminating the handoff entirely
+   (registers), not by shrinking its granularity.
+
+Measured (interleaved A/B medians, gallery + flagships): the splat bought
+−7.8 % `bench_render` / −6.8 % `bench_render_large`; the predicates and the
+re-fold each priced ~flat-to-−1 % on the committed mixes (the histogram, the
+fuller-than-assumed truth); row-granular lost (above).  What remains for
+the unification question (#27, step 3): the folding paths still write and
+re-read the whole-op tile (16 B/px round trip, DRAM-scale for large ops);
+the u8 coverage seam between resolve and shade (2 B/px + the /255 refold)
+still stands; the lerp family still rides its plane.  Full fusion would move
+blocks through q0–q3 registers instead — and the row-granular loss says the
+win has to come from deleting the handoff, not rescheduling it.
 
 ## 4. Ranked next experiments
 
@@ -643,24 +715,13 @@ split is in the kernel, the oracle pins it, porterduff/blend re-baselined; the
 outcome is recorded in §3.8. Mike's sequencing for the rest: seam efficiency
 next, then the unification question.)
 
-1. **Seam efficiency** (§3.8's experiment, the structural half): the
-   shade→composite seam is now a premultiplied f16 tile *plus, for lerping
-   modes, the op's u8 coverage plane* — a ~16 B/px round trip (plus 1 B/px
-   coverage re-read) that exists only because canvas and compositor were once
-   different machines. Race Mike's two shapes — (a) staged planar row buffers
-   between stages vs (b) a fused per-block register pipeline (`cnvs_px8` is an
-   HVA; stage functions compose through q0–q3) — and let paired benches pick.
-   The fused shape deletes the tile on the no-filter path outright, and the
-   coverage plane stops being a buffer at all (cov_fn feeds the lerp in
-   registers). *Why first:* it attacks bandwidth the sample profile can't even
-   see, and the coverage seam just gained a second buffer to delete. The
-   sampling and clip work below survive it (they live inside shader_fn /
-   upstream of it). *Kill:* the fused shape loses to the staged shape AND the
-   staged shape loses to status quo (then the tile was free and the model is
-   documentation, not code). If the race never beats status quo, the broader
-   unified-pipeline rewrite (§3.8's full model) is a consideration to revisit
-   only after this evidence exists.
-2. **Vectorize the sampling interior of `draw_image_quad`** (the 25 %
+(#1, seam efficiency, **landed 2026-06-10** — the splat, the block
+predicates, and the blend re-fold; row-granular tried and dropped; outcome and the
+honest残り recorded in §3.8's landed note. The staged-row shape won by
+default at row granularity; the fused-register shape is #27's remaining
+question, now fighting for row-cache bandwidth rather than DRAM.)
+
+1. **Vectorize the sampling interior of `draw_image_quad`** (the 25 %
    pole). The taps stay scalar — there is no NEON gather — but per block the
    four tap colours can land in f32 planes and the bilinear weight/lerp
    arithmetic (`tx`/`ty`, two lerps × four channels, the /255) plus the index
@@ -670,11 +731,11 @@ next, then the unification question.)
    *Expected:* a real slice of 25 % on the gallery, more on emoji/drawimage
    scenes — the probe. *Kill:* the gather/insert shuffling eats the arithmetic
    win (the taps are ~16 byte-loads per pixel either way).
-3. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
+2. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
    still a half-day). 8-wide integer `old * pc / 255` with the planar seams,
    bbox-limited. The /255 must stay exact (it's integer today; keep it
    integer). No memo ceremony needed; the byte-gate is the whole gate.
-4. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
+3. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
    no threads). *Re-priced after #1 landed:* the solid-tile fast path now skips
    much cheaper shade work, so the 5–15 % guess shrinks; coverage (22 %) is the
    bigger target now. *Kill:* < 5 % flagship, or a measurable regression on
@@ -699,8 +760,6 @@ mostly coverage/composite traffic, not shade compute).
   of `bench_render` is per-op overhead (bbox, reset, dispatch) vs per-pixel work
   is exactly what #1's kill condition would reveal — nobody has measured it
   directly.
-- **The coverage histogram is stale.** 39–59 % zero-coverage predates the text
-  and emoji scenes; re-run before pricing §3.2/§3.4 seriously.
 - **GCD fork/join latency at our op sizes** is folklore (~µs); measure
   `dispatch_apply` overhead on this machine before designing #2's threshold.
 - **Whether any committed scene can see the 1/510 coverage quantizer** — claimed
