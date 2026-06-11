@@ -38,8 +38,8 @@ static void put8(struct writer *w, uint8_t b) {
 static void put32be(struct writer *w, uint32_t v) {
     put8(w, (uint8_t)(v >> 24));
     put8(w, (uint8_t)(v >> 16));
-    put8(w, (uint8_t)(v >> 8));
-    put8(w, (uint8_t)(v));
+    put8(w, (uint8_t)(v >>  8));
+    put8(w, (uint8_t)(v      ));
 }
 
 // Bulk copy into the cursor; traps if at+n exceeds cap, since w->buf is
@@ -244,7 +244,7 @@ bool cnvs_png_write(char const *__null_terminated path,
 // Big-endian 32-bit read; callers establish at+4 <= n before slicing.
 static uint32_t rd32be(uint8_t const *__counted_by(4) p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
-           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+           ((uint32_t)p[2] <<  8) |  (uint32_t)p[3]       ;
 }
 
 // Un-Up one row: out[i] = row[i] + prev[i] mod 256 -- filter_up's exact
