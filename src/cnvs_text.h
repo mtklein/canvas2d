@@ -182,7 +182,7 @@ struct cnvs_shape_slot {
 // glyph holds its canonical CAPTURE instead -- one premultiplied RGBA8 render
 // of the glyph at CNVS_CAPTURE_EM px to the em, rasterized by the boundary
 // once per (font, glyph) ever and sampled (never re-rasterized) at draw time.
-// A blank glyph of either kind caches as upem == 0 / cap_w == 0 with no data --
+// A blank glyph of either kind caches as upem == 0 / capture_w == 0 with no data --
 // "known to be blank" is itself a boundary result worth keeping.
 struct cnvs_glyph_slot {
     enum cnvs_glyph_verb *__counted_by(nverbs) verb;  // owned canonical curves
@@ -195,14 +195,14 @@ struct cnvs_glyph_slot {
                    // glyph (scale by size_px/CNVS_CAPTURE_EM).  Size-independent
                    // either way, so one entry serves measureText at every size;
                    // all zero for a blank glyph.
-    // The canonical capture (color glyphs only; NULL/0 otherwise).  cap_w x
-    // cap_h premultiplied RGBA8, top row first, covering the glyph-space rect
-    // [ink_x0, ink_x0 + cap_w] x [ink_y0, ink_y0 + cap_h] in capture px -- the
+    // The canonical capture (color glyphs only; NULL/0 otherwise).  capture_w x
+    // capture_h premultiplied RGBA8, top row first, covering the glyph-space rect
+    // [ink_x0, ink_x0 + capture_w] x [ink_y0, ink_y0 + capture_h] in capture px -- the
     // ink box's bottom-left pinned to the buffer's bottom-left corner, the way
     // cnvs_glyph_draw + cnvs_glyph_bounds place a live render.
-    uint8_t *__counted_by(cap_len) capture;  // owned; the canonical bytes
-    int cap_len;       // cap_w * cap_h * 4
-    int cap_w, cap_h;  // capture dims (CNVS_CAPTURE_EM square when fetched live)
+    uint8_t *__counted_by(capture_size) capture;  // owned; the canonical bytes
+    int capture_size;       // capture_w * capture_h * 4
+    int capture_w, capture_h;  // capture dims (CNVS_CAPTURE_EM square when fetched live)
     cnvs_mip *__counted_by(nmips) mip;  // derived pyramid, largest first, down
     int nmips;                          // to 1x1; built lazily by cnvs_glyph_mip
     uint32_t key;  // font_id << 16 | glyph id
@@ -298,7 +298,7 @@ void cnvs_text_cache_put_glyph(struct cnvs_text_cache *__single c, int fid,
 // ONCE -- a sized handle at CNVS_CAPTURE_EM px (cnvs_font_resized), the ink box
 // (cnvs_glyph_bounds, in capture px), and one cnvs_glyph_draw into the square
 // CNVS_CAPTURE_EM buffer -- and inserts; every later draw at every size and
-// transform samples those bytes.  A glyph with empty ink caches as cap_w == 0
+// transform samples those bytes.  A glyph with empty ink caches as capture_w == 0
 // (known blank, no capture).  NULL when the cache can't serve -- no cache,
 // fid < 0, no `font` handle to rasterize with (a replay-built run whose bitmap
 // block was missing), a full table, or a failed allocation -- and the caller

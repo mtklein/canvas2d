@@ -544,9 +544,9 @@ struct cnvs_glyph_slot *__single cnvs_text_cache_color(struct cnvs_text_cache *_
     cnvs_glyph_draw(big, glyph, -x0, -y0, px, w, h);
     cnvs_font_release(big);
     slot->capture = px;
-    slot->cap_len = len;
-    slot->cap_w = w;
-    slot->cap_h = h;
+    slot->capture_size = len;
+    slot->capture_w = w;
+    slot->capture_h = h;
     slot->ink_x0 = x0;
     slot->ink_y0 = y0;
     slot->ink_x1 = x1;
@@ -573,9 +573,9 @@ void cnvs_text_cache_put_capture(struct cnvs_text_cache *__single c, int fid,
         return;    // a full table is the usual best-effort degradation
     }
     slot->capture = px;
-    slot->cap_len = len;
-    slot->cap_w = w;
-    slot->cap_h = h;
+    slot->capture_size = len;
+    slot->capture_w = w;
+    slot->capture_h = h;
     slot->ink_x0 = ink_x0;
     slot->ink_y0 = ink_y0;
     slot->ink_x1 = ink_x1;
@@ -614,11 +614,11 @@ void cnvs_mip_halve(uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh
 // effort -- a failed allocation keeps the prefix built so far, and selection
 // then degrades to the coarsest available level (worst case the capture).
 static void build_mips(struct cnvs_glyph_slot *__single slot) {
-    if (slot->nmips > 0 || slot->cap_w <= 0) {
+    if (slot->nmips > 0 || slot->capture_w <= 0) {
         return;  // built (even partially), or nothing to derive from
     }
     int n = 0;
-    for (int w = slot->cap_w, h = slot->cap_h; w > 1 || h > 1;) {
+    for (int w = slot->capture_w, h = slot->capture_h; w > 1 || h > 1;) {
         w = (w + 1) / 2;
         h = (h + 1) / 2;
         n++;
@@ -631,7 +631,7 @@ static void build_mips(struct cnvs_glyph_slot *__single slot) {
         return;
     }
     uint8_t *prev = slot->capture;
-    int pw = slot->cap_w, ph = slot->cap_h;
+    int pw = slot->capture_w, ph = slot->capture_h;
     int built = 0;
     for (int i = 0; i < n; i++) {
         int const lw = (pw + 1) / 2, lh = (ph + 1) / 2;
@@ -660,7 +660,7 @@ static void build_mips(struct cnvs_glyph_slot *__single slot) {
 
 cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint) {
     cnvs_mip pick = { .px = NULL, .len = 0, .w = 0, .h = 0 };
-    if (!slot || slot->cap_w <= 0) {
+    if (!slot || slot->capture_w <= 0) {
         return pick;
     }
     build_mips(slot);
@@ -669,9 +669,9 @@ cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint) 
     // before.  Walk down while the next level still covers the footprint in
     // both dimensions, so the level sampled is the smallest one >= footprint.
     pick.px = slot->capture;
-    pick.len = slot->cap_len;
-    pick.w = slot->cap_w;
-    pick.h = slot->cap_h;
+    pick.len = slot->capture_size;
+    pick.w = slot->capture_w;
+    pick.h = slot->capture_h;
     for (int i = 0; i < slot->nmips; i++) {
         if ((float)slot->mip[i].w < f || (float)slot->mip[i].h < f) {
             break;
@@ -892,7 +892,7 @@ void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
                                         size_px);
             if (slot) {
                 float k = 0.0f;  // a blank glyph's box stays all-zero
-                if (run.is_color && slot->cap_w > 0) {
+                if (run.is_color && slot->capture_w > 0) {
                     k = size_px / (float)CNVS_CAPTURE_EM;
                 } else if (!run.is_color && slot->upem > 0.0f) {
                     k = size_px / slot->upem;

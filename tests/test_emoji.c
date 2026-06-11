@@ -21,7 +21,7 @@
 static struct cnvs_glyph_slot *__single find_capture(struct canvas *__single cv) {
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     for (int i = 0; i < c->glyph_cap; i++) {
-        if (c->glyph[i].used && c->glyph[i].cap_w > 0) {
+        if (c->glyph[i].used && c->glyph[i].capture_w > 0) {
             return &c->glyph[i];
         }
     }
@@ -71,12 +71,12 @@ static void check_renders_in_color(void) {
     struct cnvs_glyph_slot *__single slot = find_capture(cv);
     CHECK(slot != NULL);
     if (slot) {
-        CHECK(slot->cap_w == CNVS_CAPTURE_EM && slot->cap_h == CNVS_CAPTURE_EM);
-        CHECK(slot->cap_len == CNVS_CAPTURE_EM * CNVS_CAPTURE_EM * 4);
-        uint8_t *snap = malloc((size_t)slot->cap_len);
+        CHECK(slot->capture_w == CNVS_CAPTURE_EM && slot->capture_h == CNVS_CAPTURE_EM);
+        CHECK(slot->capture_size == CNVS_CAPTURE_EM * CNVS_CAPTURE_EM * 4);
+        uint8_t *snap = malloc((size_t)slot->capture_size);
         CHECK(snap != NULL);
         if (snap) {
-            memcpy(snap, slot->capture, (size_t)slot->cap_len);
+            memcpy(snap, slot->capture, (size_t)slot->capture_size);
             uint8_t const *before = slot->capture;
             struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
             int miss = c->glyph_misses;
@@ -84,7 +84,7 @@ static void check_renders_in_color(void) {
             canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 40.0f);
             CHECK(c->glyph_misses == miss);    // no new boundary fetch
             CHECK(slot->capture == before);    // same buffer...
-            CHECK(memcmp(snap, slot->capture, (size_t)slot->cap_len) == 0);  // ...same bytes
+            CHECK(memcmp(snap, slot->capture, (size_t)slot->capture_size) == 0);  // ...same bytes
             free(snap);
         }
     }
@@ -265,7 +265,7 @@ static void check_draw_matches_level(struct canvas *__single cv, float size_px,
     canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 192.0f, 192.0f);
     canvas_set_font_size(cv, size_px);
-    // The capture covers glyph-space y in [ink_y0, ink_y0 + cap_h] = [-20, 140]
+    // The capture covers glyph-space y in [ink_y0, ink_y0 + capture_h] = [-20, 140]
     // at em 160 for AppleColorEmoji, so the buffer's top edge sits 140*k above
     // the baseline: baseline = oy + 140*k puts the top edge at device y = oy.
     float const k = size_px / (float)CNVS_CAPTURE_EM;

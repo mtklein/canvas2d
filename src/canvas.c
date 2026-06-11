@@ -2725,19 +2725,19 @@ static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
 // so the emoji takes the transform, clip, global alpha, and shadow like any
 // other image, and no boundary call (indeed, no CTFontRef at all) is needed
 // once the capture exists.  The capture covers the glyph-space rect
-// [ink_x0, ink_x0 + cap_w] x [ink_y0, ink_y0 + cap_h] in capture px (y up,
+// [ink_x0, ink_x0 + capture_w] x [ink_y0, ink_y0 + capture_h] in capture px (y up,
 // baseline-relative); scaling by size_px / CNVS_CAPTURE_EM and pinning to the
 // pen maps it to user space.
 static void draw_glyph_capture(struct canvas *__single cv, struct cnvs_glyph_slot *__single slot,
                                float pen_x, float baseline_y, float size_px) {
     float const k = size_px / (float)CNVS_CAPTURE_EM;
-    float const dw = (float)slot->cap_w * k;
-    float const dh = (float)slot->cap_h * k;
+    float const dw = (float)slot->capture_w * k;
+    float const dh = (float)slot->capture_h * k;
     if (!(dw > 0.0f) || !(dh > 0.0f)) {
         return;
     }
     float const dx = pen_x + slot->ink_x0 * k;
-    float const dy = baseline_y - (slot->ink_y0 + (float)slot->cap_h) * k;
+    float const dy = baseline_y - (slot->ink_y0 + (float)slot->capture_h) * k;
     // The mip rule: the quad's device footprint is its longer mapped edge, and
     // the level sampled is the smallest one >= that footprint -- bilinear then
     // never downscales by more than 2x within the level, which box-halved
@@ -2821,7 +2821,7 @@ static void paint_color_glyph(void *__single ctx, int fid, void *__single font,
     struct cnvs_glyph_slot *__single slot =
         cnvs_text_cache_color(&cc->cv->text_cache, fid, font, glyph);
     if (slot) {
-        if (slot->cap_w > 0) {
+        if (slot->capture_w > 0) {
             draw_glyph_capture(cc->cv, slot, pen_x, baseline_y, cc->size_px);
         }
         return;  // a cached blank: known to have no ink, nothing to draw

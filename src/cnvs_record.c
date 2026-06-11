@@ -311,15 +311,15 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
         for (int i = 0; i < run->count; i++) {
             struct cnvs_glyph_slot *__single g =
                 cnvs_text_cache_color(c, fid, run->font, run->glyph[i]);
-            if (!g || g->emitted || g->cap_w <= 0) {
+            if (!g || g->emitted || g->capture_w <= 0) {
                 continue;
             }
-            int const zcap = cnvs_zlib_bound(g->cap_len);
+            int const zcap = cnvs_zlib_bound(g->capture_size);
             uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
             if (!z) {
                 continue;  // OOM: skip the block, leave the glyph un-emitted
             }
-            int const zn = cnvs_zlib_deflate(z, zcap, g->capture, g->cap_len);
+            int const zn = cnvs_zlib_deflate(z, zcap, g->capture, g->capture_size);
             if (zn < 0) {
                 free(z);
                 continue;  // deflate's own scratch allocation failed: ditto
@@ -327,7 +327,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
             int const nlines =
                 (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
             fprintf(r->f, "bitmap %d %u %d %d %.9g %.9g %.9g %.9g %d %d\n",
-                    fid, (unsigned)run->glyph[i], g->cap_w, g->cap_h,
+                    fid, (unsigned)run->glyph[i], g->capture_w, g->capture_h,
                     (double)g->ink_x0, (double)g->ink_y0, (double)g->ink_x1,
                     (double)g->ink_y1, zn, nlines);
             for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
