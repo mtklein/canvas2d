@@ -41,10 +41,10 @@ cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
             // one: it keeps the divide defined at coincident stops (span == 0
             // takes lo).
             float const span = hi.offset - lo.offset;
-            float const u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
+            float const lerp_t = span > 0.0f ? (t - lo.offset) / span : 0.0f;
             half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
             half4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
-            half4 const c = lov + (hiv - lov) * (_Float16)u;
+            half4 const c = lov + (hiv - lov) * (_Float16)lerp_t;
             return (cnvs_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
         }
     }
@@ -242,10 +242,10 @@ static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
 // Colour for a row of solved parameters, eight pixels per step: each lane finds
 // its surrounding stop pair by a compare+select scan over the (sorted) stops --
 // every lane visits every stop, no gathers -- then runs the scalar lerp's exact
-// arithmetic eight wide (u in f32 with the same true divide and span guard,
-// narrowed once to _Float16 for the colour lerp).  Lane for lane bit-identical
-// to cnvs_gradient_color_at, the semantic reference; t < 0 -- the row
-// solver's "outside" sentinel -- paints transparent black.
+// arithmetic eight wide (lerp_t in f32 with the same true divide and span
+// guard, narrowed once to _Float16 for the colour lerp).  Lane for lane
+// bit-identical to cnvs_gradient_color_at, the semantic reference; t < 0 --
+// the row solver's "outside" sentinel -- paints transparent black.
 void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
                              float const *__counted_by(n) t, int n,
                              cnvs_unpremul *__counted_by(n) out) {
@@ -286,11 +286,14 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
             // overwrite may divide by a zero span; the bitwise selects discard
             // the resulting inf/NaN exactly.
             float8 const span = hi_off - lo_off;
-            float8 u32 = float8_if_then_else(span > 0.0f, (tv - lo_off) / span,
-                                   (float8)0.0f);
-            half8 const u = __builtin_convertvector(u32, half8);
-            gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,
-                          lo.b + (hi.b - lo.b) * u, lo.a + (hi.a - lo.a) * u };
+            float8 const lt32 = float8_if_then_else(span > 0.0f,
+                                                    (tv - lo_off) / span,
+                                                    (float8)0.0f);
+            half8 const lerp_t = __builtin_convertvector(lt32, half8);
+            gradpx8 c = { lo.r + (hi.r - lo.r) * lerp_t,
+                          lo.g + (hi.g - lo.g) * lerp_t,
+                          lo.b + (hi.b - lo.b) * lerp_t,
+                          lo.a + (hi.a - lo.a) * lerp_t };
             // Edge and sentinel lanes, in the scalar path's precedence: t at or
             // past the last stop takes the last colour, t at or before the
             // first takes the first (applied second, so it wins ties exactly
