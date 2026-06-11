@@ -670,7 +670,7 @@ byte-still except the licensed re-fold:
    `cnvs_blend_solid` takes the one premultiplied colour and the region
    walk splats it, deleting a ~16 B/px round trip that carried zero
    information.  Byte-identical by construction and by test
-   (test_compositor's solid_vs_tile pins all 26 modes × coverage shapes
+   (test_blend's solid_vs_tile pins all 26 modes × coverage shapes
    bit-for-bit; blend8 now delegates source-over to src_over8 — the generic
    `fa*s + fb*d` arm contracts differently than `s + fb*d`, a 1-ULP trap no
    caller could previously reach).
