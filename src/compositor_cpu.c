@@ -209,7 +209,7 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
         co.r = fa * s.r + fb * d.r;
         co.g = fa * s.g + fb * d.g;
         co.b = fa * s.b + fb * d.b;
-        co.a = fa * sa + fb * da;
+        co.a = fa * sa  + fb * da ;
     } else {
         cnvs_px8 t;
         if ((int)mode >= COMPOSITOR_HUE) {
@@ -224,7 +224,7 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
             t.r = sa * da * bl.r;
             t.g = sa * da * bl.g;
             t.b = sa * da * bl.b;
-            t.a = sa * da;
+            t.a = sa * da       ;
         } else {
             t.r = blend_term8(mode, s.r, d.r, sa, da);
             t.g = blend_term8(mode, s.g, d.g, sa, da);
@@ -234,7 +234,7 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
         co.r = s.r * (one - da) + d.r * (one - sa) + t.r;
         co.g = s.g * (one - da) + d.g * (one - sa) + t.g;
         co.b = s.b * (one - da) + d.b * (one - sa) + t.b;
-        co.a = sa * (one - da) + da * (one - sa) + t.a;
+        co.a = sa  * (one - da) + da  * (one - sa) + t.a;
     }
     return cnvs_px8_clamp_premul(co);  // additive 'lighter' can exceed 1
 }
