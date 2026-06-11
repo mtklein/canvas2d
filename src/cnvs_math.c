@@ -20,7 +20,7 @@ cnvs_mat cnvs_mat_mul(cnvs_mat m, cnvs_mat n) {
 
 cnvs_mat cnvs_mat_translate(float tx, float ty) {
     return (cnvs_mat){ .a = 1.0f, .b = 0.0f, .c = 0.0f,
-                       .d = 1.0f, .e = tx, .f = ty };
+                       .d = 1.0f, .e = tx,   .f = ty   };
 }
 
 cnvs_mat cnvs_mat_scale(float sx, float sy) {
@@ -31,7 +31,7 @@ cnvs_mat cnvs_mat_scale(float sx, float sy) {
 cnvs_mat cnvs_mat_rotate(float radians) {
     float s = sinf(radians);
     float k = cosf(radians);
-    return (cnvs_mat){ .a = k, .b = s, .c = -s,
+    return (cnvs_mat){ .a = k, .b = s,    .c = -s,
                        .d = k, .e = 0.0f, .f = 0.0f };
 }
 
@@ -48,8 +48,8 @@ cnvs_mat cnvs_mat_invert(cnvs_mat m) {
         return cnvs_mat_identity();
     }
     float inv = 1.0f / det;
-    cnvs_mat r = { .a = m.d * inv, .b = -m.b * inv,
-                   .c = -m.c * inv, .d = m.a * inv };
+    cnvs_mat r = { .a =  m.d * inv, .b = -m.b * inv,
+                   .c = -m.c * inv, .d =  m.a * inv };
     r.e = -(r.a * m.e + r.c * m.f);
     r.f = -(r.b * m.e + r.d * m.f);
     return r;
