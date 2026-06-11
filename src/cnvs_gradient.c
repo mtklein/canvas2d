@@ -66,7 +66,7 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wfloat-equal"
 bool cnvs_gradient_paints_nothing(cnvs_gradient const *gr) {
-    bool coincident = gr->p0.x == gr->p1.x && gr->p0.y == gr->p1.y;
+    bool const coincident = gr->p0.x == gr->p1.x && gr->p0.y == gr->p1.y;
     switch (gr->kind) {
         case CNVS_GRAD_LINEAR: return coincident;
         case CNVS_GRAD_RADIAL: return coincident && gr->r0 == gr->r1;
