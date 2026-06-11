@@ -764,36 +764,12 @@ void cnvs_text_cache_unmark(cnvs_text_cache *__single c) {
     }
 }
 
-// One glyph's outline, through the cache when it can serve: a hit (or a fresh
-// fetch the cache just remembered) replays the canonical curves through the
-// checked transform/flatten.  When the cache can't serve -- no cache, the font
-// couldn't intern, a full table, OOM -- the plain boundary path (the uncached
-// cnvs_glyph_outline) fetches and walks without remembering.  A replay-built
-// run (font == NULL) whose glyph block is missing has nothing to draw and
-// contributes only its advance.
-static void glyph_outline_cached(cnvs_text_cache *__single c, int fid,
-                                 void *__single font, uint16_t glyph,
-                                 float size_px, float ox, float oy,
-                                 cnvs_mat to_device, float tol,
-                                 cnvs_path *__single out) {
-    cnvs_glyph_slot *slot = cnvs_text_cache_glyph(c, fid, font, glyph, size_px);
-    if (slot) {
-        if (slot->upem > 0.0f && slot->nverbs > 0) {
-            struct glyph_place g = { .to_device = to_device, .ox = ox, .oy = oy,
-                                     .scale = size_px / slot->upem };
-            walk_curves(slot->verb, slot->nverbs, slot->pt, slot->npts, &g, tol,
-                        out);
-        }
-        return;  // a cached blank: known to have no outline, nothing to add
-    }
-    if (font) {
-        cnvs_glyph_outline(font, glyph, size_px, ox, oy, to_device, tol, out);
-    }
-}
-
-void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
-                        float ox, float oy, cnvs_mat to_device, float tol,
-                        cnvs_path *__single out) {
+// The uncached path: fetch one glyph's canonical font-unit curves from the
+// boundary and run the same checked transform/flatten a cache hit replays --
+// the degradation glyph_outline_cached takes when the cache can't serve.
+static void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
+                               float ox, float oy, cnvs_mat to_device, float tol,
+                               cnvs_path *__single out) {
     // Stack buffers cover the typical glyph; a rare complex one takes the
     // grow-and-refetch path (cnvs_glyph_curves reports the true counts).
     enum { VSTACK = 256, PSTACK = 512 };
@@ -826,6 +802,33 @@ void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
                 out);
     free(vheap);
     free(pheap);
+}
+
+// One glyph's outline, through the cache when it can serve: a hit (or a fresh
+// fetch the cache just remembered) replays the canonical curves through the
+// checked transform/flatten.  When the cache can't serve -- no cache, the font
+// couldn't intern, a full table, OOM -- the plain boundary path (the uncached
+// cnvs_glyph_outline) fetches and walks without remembering.  A replay-built
+// run (font == NULL) whose glyph block is missing has nothing to draw and
+// contributes only its advance.
+static void glyph_outline_cached(cnvs_text_cache *__single c, int fid,
+                                 void *__single font, uint16_t glyph,
+                                 float size_px, float ox, float oy,
+                                 cnvs_mat to_device, float tol,
+                                 cnvs_path *__single out) {
+    cnvs_glyph_slot *slot = cnvs_text_cache_glyph(c, fid, font, glyph, size_px);
+    if (slot) {
+        if (slot->upem > 0.0f && slot->nverbs > 0) {
+            struct glyph_place g = { .to_device = to_device, .ox = ox, .oy = oy,
+                                     .scale = size_px / slot->upem };
+            walk_curves(slot->verb, slot->nverbs, slot->pt, slot->npts, &g, tol,
+                        out);
+        }
+        return;  // a cached blank: known to have no outline, nothing to add
+    }
+    if (font) {
+        cnvs_glyph_outline(font, glyph, size_px, ox, oy, to_device, tol, out);
+    }
 }
 
 float cnvs_shaped_outline(cnvs_text_cache *__single cache,

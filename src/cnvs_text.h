@@ -381,15 +381,6 @@ float cnvs_shaped_outline(cnvs_text_cache *__single cache,
                           cnvs_mat to_device, float tol, cnvs_path *__single out,
                           cnvs_color_glyph_fn color, void *__single ctx);
 
-// Outline one glyph at pen origin (ox,oy) in user space into `out` (device space,
-// mapped by to_device, curves flattened at `tol` px).  Checked core: fetches the
-// glyph's canonical font-unit curves from the boundary, scales them to user px at
-// `size_px`, and runs the transform and the adaptive flattening every other path
-// takes -- in checked C, not in the shim.
-void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
-                        float ox, float oy, cnvs_mat to_device, float tol,
-                        cnvs_path *__single out);
-
 // Draw one glyph of the opaque `font` into an RGBA8 premultiplied buffer at (x,y) in
 // bitmap space (origin bottom-left, y up).  The rendering path for color glyphs
 // (emoji), which have no outline.  The checked core owns the __counted_by(w*h*4)
