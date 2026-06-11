@@ -94,15 +94,15 @@ cnvs_filter cnvs_filter_hue_rotate(float radians) {
     return (cnvs_filter){
         .m = {
             LR + c * (1.0f - LR) - s * LR,
-            LG - c * LG - s * LG,
-            LB - c * LB + s * (1.0f - LB),
+            LG - c * LG          - s * LG,
+            LB - c * LB          + s * (1.0f - LB),
 
-            LR - c * LR + s * s10,
+            LR - c * LR          + s * s10,
             LG + c * (1.0f - LG) + s * s11,
-            LB - c * LB + s * s12,
+            LB - c * LB          + s * s12,
 
-            LR - c * LR - s * (1.0f - LR),
-            LG - c * LG + s * LG,
+            LR - c * LR          - s * (1.0f - LR),
+            LG - c * LG          + s * LG,
             LB + c * (1.0f - LB) + s * LB,
         },
         .off = { 0.0f, 0.0f, 0.0f },
