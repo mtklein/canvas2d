@@ -60,16 +60,14 @@ cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {
                             .b = (_Float16)b, .a = (_Float16)a };
 }
 
-typedef _Float16 premh4 __attribute__((ext_vector_type(4)));
-
 cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
     // {r*a, g*a, b*a, a}, clamped to [0,1], in _Float16 directly
     // (docs/decisions/color-axis.md).
-    premh4 p = { c.r, c.g, c.b, c.a };
+    half4 p = { c.r, c.g, c.b, c.a };
     _Float16 a = p[3];
-    premh4 out = p * (premh4){ a, a, a, (_Float16)1.0f };
-    out = __builtin_elementwise_min((premh4)(_Float16)1.0f,
-                                    __builtin_elementwise_max((premh4)(_Float16)0.0f, out));
+    half4 out = p * (half4){ a, a, a, (_Float16)1.0f };
+    out = __builtin_elementwise_min((half4)(_Float16)1.0f,
+                                    __builtin_elementwise_max((half4)(_Float16)0.0f, out));
     return (cnvs_premul){ .r = out[0], .g = out[1], .b = out[2], .a = out[3] };
 }
 
@@ -80,9 +78,9 @@ cnvs_unpremul cnvs_unpremultiply(cnvs_premul c) {
     if (a <= (_Float16)0.0f) {  // fully transparent un-premultiplies to all zero
         return (cnvs_unpremul){ .r = 0, .g = 0, .b = 0, .a = 0 };
     }
-    premh4 u = (premh4){ c.r, c.g, c.b, c.a } / a;
+    half4 u = (half4){ c.r, c.g, c.b, c.a } / a;
     u[3] = a;
-    u = __builtin_elementwise_min((premh4)(_Float16)1.0f,
-                                  __builtin_elementwise_max((premh4)(_Float16)0.0f, u));
+    u = __builtin_elementwise_min((half4)(_Float16)1.0f,
+                                  __builtin_elementwise_max((half4)(_Float16)0.0f, u));
     return (cnvs_unpremul){ .r = u[0], .g = u[1], .b = u[2], .a = u[3] };
 }

@@ -152,12 +152,12 @@ static cnvs_px8 filter_block(cnvs_px8 p, cnvs_filter const *__single fn) {
     q.b = (_Float16)fn->m[6] * p.r + (_Float16)fn->m[7] * p.g
         + (_Float16)fn->m[8] * p.b + (_Float16)fn->off[2] * p.a;
     q.a = (_Float16)fn->ka * p.a;
-    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
+    half8 const zero = (half8)(_Float16)0.0f;
     q.r = __builtin_elementwise_max(q.r, zero);
     q.g = __builtin_elementwise_max(q.g, zero);
     q.b = __builtin_elementwise_max(q.b, zero);
     q.a = __builtin_elementwise_max(q.a, zero);
-    cnvs_h8 lim = __builtin_elementwise_min(q.a, (cnvs_h8)(_Float16)1.0f);
+    half8 lim = __builtin_elementwise_min(q.a, (half8)(_Float16)1.0f);
     q.r = __builtin_elementwise_min(q.r, lim);
     q.g = __builtin_elementwise_min(q.g, lim);
     q.b = __builtin_elementwise_min(q.b, lim);

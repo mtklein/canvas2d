@@ -1082,16 +1082,16 @@ typedef float foldf8 __attribute__((ext_vector_type(8)));  // f32 lanes for the
 
 // Eight coverage bytes as an f16 plane in [0, 1]: exact widen (every u8 value
 // is exact in _Float16), one multiply by RN16(1/255).
-static cnvs_h8 cover8(uint8_t const *__counted_by(8) cov) {
-    return cnvs_h8_from_u8(cov) * (_Float16)(1.0f / 255.0f);
+static half8 cover8(uint8_t const *__counted_by(8) cov) {
+    return half8_from_u8(cov) * (_Float16)(1.0f / 255.0f);
 }
 
-static cnvs_h8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
-    return cnvs_h8_from_u8_k(cov, k) * (_Float16)(1.0f / 255.0f);
+static half8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
+    return half8_from_u8_k(cov, k) * (_Float16)(1.0f / 255.0f);
 }
 
 // Premultiply the colour planes under the folded alpha plane.
-static cnvs_px8 shade8(cnvs_h8 r, cnvs_h8 g, cnvs_h8 b, cnvs_h8 alpha) {
+static cnvs_px8 shade8(half8 r, half8 g, half8 b, half8 alpha) {
     return cnvs_px8_premultiply((cnvs_px8){ r, g, b, alpha });
 }
 
@@ -1132,9 +1132,9 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         // coverage is one constant, so the loop is a coverage widen, two
         // multiplies, and the premultiply -> st4.  Coverage and tile are both
         // dense over the bbox, so one flat loop covers all rows.
-        cnvs_h8 const base = (cnvs_h8)(_Float16)((float)solid.a * ga);
-        cnvs_h8 const cr = (cnvs_h8)solid.r, cg = (cnvs_h8)solid.g,
-                      cb = (cnvs_h8)solid.b;
+        half8 const base = (half8)(_Float16)((float)solid.a * ga);
+        half8 const cr = (half8)solid.r, cg = (half8)solid.g,
+                    cb = (half8)solid.b;
         int const npix = b.w * b.h;
         if (fold) {
             int i = 0;
@@ -1169,7 +1169,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         // piecewise-linear colour, no precomputed ramp
         // (docs/decisions/gradient-eval.md) -- then pick the colours back up
         // as planes (ld4 over the row buffer) for the fold.
-        cnvs_h8 const gah = (cnvs_h8)(_Float16)ga;
+        half8 const gah = (half8)(_Float16)ga;
         for (int py = 0; py < b.h; py++) {
             cnvs_gradient_param_row(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
                                     cv->trow);
@@ -1178,7 +1178,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             int px = 0;
             for (; px + 8 <= b.w; px += 8) {
                 cnvs_px8 const col = cnvs_px8_load_unpremul(cv->crow + px);
-                cnvs_h8 alpha = col.a * gah;
+                half8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8(cv->cov + row + px);
                 }
@@ -1188,7 +1188,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             if (px < b.w) {
                 int const k = b.w - px;
                 cnvs_px8 const col = cnvs_px8_load_unpremul_k(cv->crow + px, k);
-                cnvs_h8 alpha = col.a * gah;
+                half8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8_k(cv->cov + row + px, k);
                 }
@@ -1311,14 +1311,14 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            cnvs_h8 alpha = __builtin_convertvector(sa * ga, cnvs_h8);
+            half8 alpha = __builtin_convertvector(sa * ga, half8);
             if (fold) {
                 alpha = alpha * (k < 8 ? cover8_k(cv->cov + i, k)
                                        : cover8(cv->cov + i));
             }
-            cnvs_px8 const out = shade8(__builtin_convertvector(sr, cnvs_h8),
-                                        __builtin_convertvector(sg, cnvs_h8),
-                                        __builtin_convertvector(sb, cnvs_h8),
+            cnvs_px8 const out = shade8(__builtin_convertvector(sr, half8),
+                                        __builtin_convertvector(sg, half8),
+                                        __builtin_convertvector(sb, half8),
                                         alpha);
             if (k < 8) {
                 cnvs_px8_store_k(cv->tile + i, k, out);
@@ -1448,8 +1448,8 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
     bool const fold = compositor_coverage_folds(cv->cur.composite);
     cnvs_unpremul const sc = cv->cur.shadow_color;
     float const ga = cv->cur.global_alpha;
-    cnvs_h8 const cr = (cnvs_h8)sc.r, cg = (cnvs_h8)sc.g, cb = (cnvs_h8)sc.b;
-    cnvs_h8 const base = (cnvs_h8)(_Float16)((float)sc.a * ga);
+    half8 const cr = (half8)sc.r, cg = (half8)sc.g, cb = (half8)sc.b;
+    half8 const base = (half8)(_Float16)((float)sc.a * ga);
     if (fold) {
         int i = 0;
         for (; i + 8 <= n; i += 8) {
@@ -2669,7 +2669,7 @@ static void draw_image_quad(canvas *__single cv,
     // ga x coverage in f16.
     cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float const ga = cv->cur.global_alpha;
-    cnvs_h8 const gah = (cnvs_h8)(_Float16)ga;
+    half8 const gah = (half8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
     foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -2704,24 +2704,24 @@ static void draw_image_quad(canvas *__single cv,
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            cnvs_h8 const covh = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
-                                               : cover8(cv->cov + i))
-                                      : (cnvs_h8)(_Float16)1.0f;  // unused when !fold
+            half8 const covh = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
+                                             : cover8(cv->cov + i))
+                                    : (half8)(_Float16)1.0f;  // unused when !fold
             cnvs_px8 out;
             if (premul_src) {
-                cnvs_h8 const m = fold ? gah * covh : gah;
-                out = (cnvs_px8){ __builtin_convertvector(sr, cnvs_h8) * m,
-                                  __builtin_convertvector(sg, cnvs_h8) * m,
-                                  __builtin_convertvector(sb, cnvs_h8) * m,
-                                  __builtin_convertvector(sa, cnvs_h8) * m };
+                half8 const m = fold ? gah * covh : gah;
+                out = (cnvs_px8){ __builtin_convertvector(sr, half8) * m,
+                                  __builtin_convertvector(sg, half8) * m,
+                                  __builtin_convertvector(sb, half8) * m,
+                                  __builtin_convertvector(sa, half8) * m };
             } else {
-                cnvs_h8 alpha = __builtin_convertvector(sa * ga, cnvs_h8);
+                half8 alpha = __builtin_convertvector(sa * ga, half8);
                 if (fold) {
                     alpha = alpha * covh;
                 }
-                out = shade8(__builtin_convertvector(sr, cnvs_h8),
-                             __builtin_convertvector(sg, cnvs_h8),
-                             __builtin_convertvector(sb, cnvs_h8),
+                out = shade8(__builtin_convertvector(sr, half8),
+                             __builtin_convertvector(sg, half8),
+                             __builtin_convertvector(sb, half8),
                              alpha);
             }
             if (k < 8) {
@@ -2804,17 +2804,17 @@ void canvas_draw_image_scaled(canvas *__single cv,
 // exhaustive round-trip).  Returns finished byte values in [0.5, 255.5) for
 // the truncating store seam (cnvs_px8_store_rgba8).
 static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
-    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
-    cnvs_m8 opaque = p.a > zero;
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    mask8 opaque = p.a > zero;
     cnvs_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
-    u.r = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
-                          __builtin_elementwise_max(zero, u.r)), zero);
-    u.g = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
-                          __builtin_elementwise_max(zero, u.g)), zero);
-    u.b = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
-                          __builtin_elementwise_max(zero, u.b)), zero);
-    u.a = cnvs_h8_sel(opaque, __builtin_elementwise_min(one,
-                          __builtin_elementwise_max(zero, u.a)), zero);
+    u.r = half8_sel(opaque, __builtin_elementwise_min(one,
+                        __builtin_elementwise_max(zero, u.r)), zero);
+    u.g = half8_sel(opaque, __builtin_elementwise_min(one,
+                        __builtin_elementwise_max(zero, u.g)), zero);
+    u.b = half8_sel(opaque, __builtin_elementwise_min(one,
+                        __builtin_elementwise_max(zero, u.b)), zero);
+    u.a = half8_sel(opaque, __builtin_elementwise_min(one,
+                        __builtin_elementwise_max(zero, u.a)), zero);
     _Float16 const half = (_Float16)0.5f, k255 = (_Float16)255.0f;
     return (cnvs_px8){ u.r * k255 + half, u.g * k255 + half,
                        u.b * k255 + half, u.a * k255 + half };

@@ -3,6 +3,21 @@
 #include <limits.h>
 #include <stdint.h>
 
+// Generic SIMD lane vocabulary, <element><lanes>.  mask8 is the f16-compare
+// mask (a _Float16 comparison yields 16-bit lanes); f32 comparisons yield
+// int4/int8.  Domain-specific vector types build on these (cnvs_planar.h).
+typedef _Float16 half4   __attribute__((ext_vector_type(4)));
+typedef _Float16 half8   __attribute__((ext_vector_type(8)));
+typedef _Float16 half16  __attribute__((ext_vector_type(16)));
+typedef float    float4  __attribute__((ext_vector_type(4)));
+typedef float    float8  __attribute__((ext_vector_type(8)));
+typedef float    float16 __attribute__((ext_vector_type(16)));
+typedef int32_t  int4    __attribute__((ext_vector_type(4)));
+typedef int32_t  int8    __attribute__((ext_vector_type(8)));
+typedef short    mask8   __attribute__((ext_vector_type(8)));
+typedef uint8_t  byte4   __attribute__((ext_vector_type(4)));
+typedef uint8_t  byte8   __attribute__((ext_vector_type(8)));
+
 // 2D affine transforms (HTML Canvas 2D convention).  A matrix maps (x, y) to
 //     (a*x + c*y + e,  b*x + d*y + f),
 // the (a, b, c, d, e, f) of CanvasRenderingContext2D.setTransform().

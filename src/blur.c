@@ -153,33 +153,31 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
 // adds/subtracts nothing outside, and every output still divides by the full
 // window (the missing samples really are zeros, not replicated edge pixels).
 
-typedef _Float16 blrh4 __attribute__((ext_vector_type(4)));
 typedef float blrf4 __attribute__((ext_vector_type(4)));
-typedef _Float16 blrh16 __attribute__((ext_vector_type(16)));
 typedef float blrf16 __attribute__((ext_vector_type(16)));
 
 // Load/store one premultiplied pixel (four contiguous _Float16) widened to f32:
 // the memcpy is one bounds check for all four channels (the cnvs_filter idiom).
 static inline blrf4 load4f(cnvs_premul const *__counted_by(1) p) {
-    blrh4 v;
+    half4 v;
     memcpy(&v, p, sizeof v);
     return __builtin_convertvector(v, blrf4);
 }
 
 static inline void store4f(cnvs_premul *__counted_by(1) p, blrf4 v) {
-    blrh4 q = __builtin_convertvector(v, blrh4);
+    half4 q = __builtin_convertvector(v, half4);
     memcpy(p, &q, sizeof q);
 }
 
 // Four adjacent pixels (16 lanes) at once; one bounds check covers all four.
 static inline blrf16 load16f(cnvs_premul const *__counted_by(4) p) {
-    blrh16 v;
+    half16 v;
     memcpy(&v, p, sizeof v);
     return __builtin_convertvector(v, blrf16);
 }
 
 static inline void store16f(cnvs_premul *__counted_by(4) p, blrf16 v) {
-    blrh16 q = __builtin_convertvector(v, blrh16);
+    half16 q = __builtin_convertvector(v, half16);
     memcpy(p, &q, sizeof q);
 }
 

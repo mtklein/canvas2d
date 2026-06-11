@@ -30,10 +30,6 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color
     gr->stop_count += 1;
 }
 
-// One stop colour as a 4-lane _Float16 vector, the colour pipeline's compute
-// type (docs/decisions/color-axis.md).
-typedef _Float16 gradh4 __attribute__((ext_vector_type(4)));
-
 cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
     int n = gr->stop_count;
     if (n == 0) {
@@ -56,9 +52,9 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
             // takes lo).
             float span = hi.offset - lo.offset;
             float u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
-            gradh4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
-            gradh4 hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
-            gradh4 c = lov + (hiv - lov) * (_Float16)u;
+            half4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
+            half4 hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
+            half4 c = lov + (hiv - lov) * (_Float16)u;
             return (cnvs_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
         }
     }
@@ -145,7 +141,7 @@ cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float a
 typedef float gradf8 __attribute__((ext_vector_type(8)));
 typedef int gradi8 __attribute__((ext_vector_type(8)));
 
-// Bit-exact f32 lane select, the 32-bit twin of cnvs_h8_sel: a where the mask
+// Bit-exact f32 lane select, the 32-bit twin of half8_sel: a where the mask
 // lane is set (-1, from a vector comparison), else b.  Bitwise: the selected
 // lane passes through untouched (an arithmetic b + (a-b)*m re-rounds it), and
 // an unselected lane's inf/NaN is discarded exactly.
@@ -229,12 +225,12 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
 // cnvs_px8 (cnvs_planar.h), kept a distinct type for the same reason
 // cnvs_unpremul is distinct from cnvs_premul.
 typedef struct {
-    cnvs_h8 r, g, b, a;
+    half8 r, g, b, a;
 } gradpx8;
 
-static gradpx8 gradpx8_sel(cnvs_m8 m, gradpx8 x, gradpx8 y) {
-    return (gradpx8){ cnvs_h8_sel(m, x.r, y.r), cnvs_h8_sel(m, x.g, y.g),
-                      cnvs_h8_sel(m, x.b, y.b), cnvs_h8_sel(m, x.a, y.a) };
+static gradpx8 gradpx8_sel(mask8 m, gradpx8 x, gradpx8 y) {
+    return (gradpx8){ half8_sel(m, x.r, y.r), half8_sel(m, x.g, y.g),
+                      half8_sel(m, x.b, y.b), half8_sel(m, x.a, y.a) };
 }
 
 // The planar->AoS seam for unpremultiplied colours, mirroring cnvs_px8_store:
@@ -267,11 +263,11 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
         for (int s = 0; s < sc; s++) {
             cnvs_stop st = gr->stops[s];
             off[s] = (gradf8)st.offset;
-            col[s] = (gradpx8){ (cnvs_h8)st.color.r, (cnvs_h8)st.color.g,
-                                (cnvs_h8)st.color.b, (cnvs_h8)st.color.a };
+            col[s] = (gradpx8){ (half8)st.color.r, (half8)st.color.g,
+                                (half8)st.color.b, (half8)st.color.a };
         }
         int const last = sc - 1;
-        cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
+        half8 const zero = (half8)(_Float16)0.0f;
         for (; i + 8 <= n; i += 8) {
             gradf8 tv;
             memcpy(&tv, t + i, sizeof tv);  // bounds-checked vector load
@@ -283,7 +279,7 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             gradpx8 lo     = col[0], hi     = col[last > 0 ? 1 : 0];
             for (int s = 1; s + 1 < sc; s++) {
                 gradi8 m = tv > off[s];
-                cnvs_m8 mh = __builtin_convertvector(m, cnvs_m8);
+                mask8 mh = __builtin_convertvector(m, mask8);
                 lo_off = vsel_bits(m, off[s],     lo_off);
                 hi_off = vsel_bits(m, off[s + 1], hi_off);
                 lo = gradpx8_sel(mh, col[s],     lo);
@@ -295,16 +291,16 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             gradf8 span = hi_off - lo_off;
             gradf8 u32 = vsel_bits(span > 0.0f, (tv - lo_off) / span,
                                    (gradf8)0.0f);
-            cnvs_h8 u = __builtin_convertvector(u32, cnvs_h8);
+            half8 u = __builtin_convertvector(u32, half8);
             gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,
                           lo.b + (hi.b - lo.b) * u, lo.a + (hi.a - lo.a) * u };
             // Edge and sentinel lanes, in the scalar path's precedence: t at or
             // past the last stop takes the last colour, t at or before the
             // first takes the first (applied second, so it wins ties exactly
             // like the scalar's early-out order), and t < 0 is transparent.
-            cnvs_m8 mlast  = __builtin_convertvector(tv >= off[last],    cnvs_m8);
-            cnvs_m8 mfirst = __builtin_convertvector(tv <= off[0],       cnvs_m8);
-            cnvs_m8 mout   = __builtin_convertvector(tv <  (gradf8)0.0f, cnvs_m8);
+            mask8 mlast  = __builtin_convertvector(tv >= off[last],    mask8);
+            mask8 mfirst = __builtin_convertvector(tv <= off[0],       mask8);
+            mask8 mout   = __builtin_convertvector(tv <  (gradf8)0.0f, mask8);
             c = gradpx8_sel(mlast,  col[last], c);
             c = gradpx8_sel(mfirst, col[0],    c);
             c = gradpx8_sel(mout,   (gradpx8){ zero, zero, zero, zero }, c);

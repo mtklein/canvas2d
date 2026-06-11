@@ -16,7 +16,7 @@
 // soft-light, HSL) un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.
 //
 // Everything below runs eight pixels at a time over channel planes
-// (cnvs_planar.h); per-pixel branches are bitwise lane selects (cnvs_h8_sel)
+// (cnvs_planar.h); per-pixel branches are bitwise lane selects (half8_sel)
 // that compute both arms and discard a guarded divide's inf/NaN lanes
 // exactly.
 //
@@ -34,22 +34,22 @@ static_assert(COMPOSITOR_COPY == 10 && COMPOSITOR_MULTIPLY == 11 &&
               "blend8 dispatches on these mode bands");
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
-static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
-    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
+static half8 blend_sep8(compositor_blend_mode mode, half8 cb, half8 cs) {
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
     switch ((int)mode) {
         case COMPOSITOR_COLOR_DODGE:
-            return cnvs_h8_sel(cb <= zero, zero,
-                   cnvs_h8_sel(cs >= one, one,
-                               __builtin_elementwise_min(one, cb / (one - cs))));
+            return half8_sel(cb <= zero, zero,
+                   half8_sel(cs >= one, one,
+                             __builtin_elementwise_min(one, cb / (one - cs))));
         case COMPOSITOR_COLOR_BURN:
-            return cnvs_h8_sel(cb >= one, one,
-                   cnvs_h8_sel(cs <= zero, zero,
-                               one - __builtin_elementwise_min(one, (one - cb) / cs)));
+            return half8_sel(cb >= one, one,
+                   half8_sel(cs <= zero, zero,
+                             one - __builtin_elementwise_min(one, (one - cb) / cs)));
         case COMPOSITOR_SOFT_LIGHT: {
-            cnvs_h8 dd = cnvs_h8_sel(cb <= (cnvs_h8)(_Float16)0.25f,
+            half8 dd = half8_sel(cb <= (half8)(_Float16)0.25f,
                 (((_Float16)16.0f * cb - (_Float16)12.0f) * cb + (_Float16)4.0f) * cb,
                 __builtin_elementwise_sqrt(cb));
-            return cnvs_h8_sel(cs <= (cnvs_h8)(_Float16)0.5f,
+            return half8_sel(cs <= (half8)(_Float16)0.5f,
                 cb - (one - (_Float16)2.0f * cs) * cb * (one - cb),
                 cb + ((_Float16)2.0f * cs - one) * (dd - cb));
         }
@@ -59,28 +59,28 @@ static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
 }
 
 // Premultiplied separable term T = sa*da*B per channel plane (s, d premultiplied).
-static cnvs_h8 blend_term8(compositor_blend_mode mode,
-                           cnvs_h8 s, cnvs_h8 d, cnvs_h8 sa, cnvs_h8 da) {
+static half8 blend_term8(compositor_blend_mode mode,
+                           half8 s, half8 d, half8 sa, half8 da) {
     switch ((int)mode) {
         case COMPOSITOR_MULTIPLY:   return s * d;
         case COMPOSITOR_SCREEN:     return sa * d + da * s - s * d;
         case COMPOSITOR_OVERLAY:
-            return cnvs_h8_sel((_Float16)2.0f * d <= da,
-                               (_Float16)2.0f * s * d,
-                               sa * da - (_Float16)2.0f * (da - d) * (sa - s));
+            return half8_sel((_Float16)2.0f * d <= da,
+                             (_Float16)2.0f * s * d,
+                             sa * da - (_Float16)2.0f * (da - d) * (sa - s));
         case COMPOSITOR_DARKEN:     return __builtin_elementwise_min(s * da, d * sa);
         case COMPOSITOR_LIGHTEN:    return __builtin_elementwise_max(s * da, d * sa);
         case COMPOSITOR_HARD_LIGHT:
-            return cnvs_h8_sel((_Float16)2.0f * s <= sa,
-                               (_Float16)2.0f * s * d,
-                               sa * da - (_Float16)2.0f * (da - d) * (sa - s));
+            return half8_sel((_Float16)2.0f * s <= sa,
+                             (_Float16)2.0f * s * d,
+                             sa * da - (_Float16)2.0f * (da - d) * (sa - s));
         case COMPOSITOR_DIFFERENCE:
             return __builtin_elementwise_abs(s * da - d * sa);
         case COMPOSITOR_EXCLUSION:  return sa * d + da * s - (_Float16)2.0f * s * d;
         default: {  // color-dodge / color-burn / soft-light
-            cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
-            cnvs_h8 cs = cnvs_h8_sel(sa > zero, s / sa, zero);
-            cnvs_h8 cb = cnvs_h8_sel(da > zero, d / da, zero);
+            half8 const zero = (half8)(_Float16)0.0f;
+            half8 cs = half8_sel(sa > zero, s / sa, zero);
+            half8 cb = half8_sel(da > zero, d / da, zero);
             return sa * da * blend_sep8(mode, cb, cs);
         }
     }
@@ -89,7 +89,7 @@ static cnvs_h8 blend_term8(compositor_blend_mode mode,
 // Source-over for one planar block: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
 // the same fold over every channel plane, alpha included.
 static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
-    cnvs_h8 fb = (cnvs_h8)(_Float16)1.0f - s.a;
+    half8 fb = (half8)(_Float16)1.0f - s.a;
     cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
                     s.b + fb * d.b, s.a + fb * d.a };
     return cnvs_px8_clamp_premul(co);
@@ -97,58 +97,58 @@ static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
 
 // Eight pixels' unpremultiplied colour as three channel planes.
 typedef struct {
-    cnvs_h8 r, g, b;
+    half8 r, g, b;
 } rgb8;
 
-static cnvs_h8 lum8(rgb8 c) {
+static half8 lum8(rgb8 c) {
     return (_Float16)0.3f * c.r + (_Float16)0.59f * c.g + (_Float16)0.11f * c.b;
 }
 
 static rgb8 clip_color8(rgb8 c) {
-    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
-    cnvs_h8 l = lum8(c);
-    cnvs_h8 n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
-    cnvs_h8 x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    cnvs_m8 lo = n < zero;  // lanes with a channel below 0: scale about l
-    cnvs_h8 kn = l / (l - n);
-    c.r = cnvs_h8_sel(lo, l + (c.r - l) * kn, c.r);
-    c.g = cnvs_h8_sel(lo, l + (c.g - l) * kn, c.g);
-    c.b = cnvs_h8_sel(lo, l + (c.b - l) * kn, c.b);
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    half8 l = lum8(c);
+    half8 n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    half8 x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    mask8 lo = n < zero;  // lanes with a channel below 0: scale about l
+    half8 kn = l / (l - n);
+    c.r = half8_sel(lo, l + (c.r - l) * kn, c.r);
+    c.g = half8_sel(lo, l + (c.g - l) * kn, c.g);
+    c.b = half8_sel(lo, l + (c.b - l) * kn, c.b);
     // The W3C ClipColor computes n and x ONCE, before either fix: the x > 1
     // test and the kx denominator both read the pre-fix maximum even though
     // the channels they rescale may have just been pulled toward l.
-    cnvs_m8 hi = x > one;   // lanes with a channel above 1
-    cnvs_h8 kx = (one - l) / (x - l);
-    c.r = cnvs_h8_sel(hi, l + (c.r - l) * kx, c.r);
-    c.g = cnvs_h8_sel(hi, l + (c.g - l) * kx, c.g);
-    c.b = cnvs_h8_sel(hi, l + (c.b - l) * kx, c.b);
+    mask8 hi = x > one;   // lanes with a channel above 1
+    half8 kx = (one - l) / (x - l);
+    c.r = half8_sel(hi, l + (c.r - l) * kx, c.r);
+    c.g = half8_sel(hi, l + (c.g - l) * kx, c.g);
+    c.b = half8_sel(hi, l + (c.b - l) * kx, c.b);
     return c;
 }
 
-static rgb8 set_lum8(rgb8 c, cnvs_h8 l) {
-    cnvs_h8 dl = l - lum8(c);
+static rgb8 set_lum8(rgb8 c, half8 l) {
+    half8 dl = l - lum8(c);
     c.r += dl;
     c.g += dl;
     c.b += dl;
     return clip_color8(c);
 }
 
-static cnvs_h8 sat8(rgb8 c) {
+static half8 sat8(rgb8 c) {
     return __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b))
          - __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
 }
 
 // Set saturation: max channel -> s, min -> 0, mid proportional; an all-equal
 // lane (mx <= mn) has no saturation axis and goes to black.
-static rgb8 set_sat8(rgb8 c, cnvs_h8 s) {
-    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
-    cnvs_h8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
-    cnvs_h8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    cnvs_m8 flat = mx <= mn;
-    cnvs_h8 k = s / (mx - mn);
-    return (rgb8){ .r = cnvs_h8_sel(flat, zero, (c.r - mn) * k),
-                   .g = cnvs_h8_sel(flat, zero, (c.g - mn) * k),
-                   .b = cnvs_h8_sel(flat, zero, (c.b - mn) * k) };
+static rgb8 set_sat8(rgb8 c, half8 s) {
+    half8 const zero = (half8)(_Float16)0.0f;
+    half8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    half8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    mask8 flat = mx <= mn;
+    half8 k = s / (mx - mn);
+    return (rgb8){ .r = half8_sel(flat, zero, (c.r - mn) * k),
+                   .g = half8_sel(flat, zero, (c.g - mn) * k),
+                   .b = half8_sel(flat, zero, (c.b - mn) * k) };
 }
 
 static rgb8 blend_nonsep8(compositor_blend_mode mode, rgb8 cb, rgb8 cs) {
@@ -175,13 +175,13 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
         // source-over bit-identical no matter which loop reached it.
         return src_over8(s, d);
     }
-    cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
-    cnvs_h8 sa = s.a, da = d.a;
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    half8 sa = s.a, da = d.a;
     cnvs_px8 co;
 
     if ((int)mode <= COMPOSITOR_COPY) {
         // Porter-Duff: co = Fa*s + Fb*d, ao = Fa*sa + Fb*da.
-        cnvs_h8 fa, fb;
+        half8 fa, fb;
         switch ((int)mode) {
             case COMPOSITOR_SRC_IN:   fa = da;       fb = zero;      break;
             case COMPOSITOR_SRC_OUT:  fa = one - da; fb = zero;      break;
@@ -202,13 +202,13 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
     } else {
         cnvs_px8 t;
         if ((int)mode >= COMPOSITOR_HUE) {
-            cnvs_m8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
-            rgb8 cs = { cnvs_h8_sel(sm, s.r / sa, zero),
-                        cnvs_h8_sel(sm, s.g / sa, zero),
-                        cnvs_h8_sel(sm, s.b / sa, zero) };
-            rgb8 cb = { cnvs_h8_sel(dm, d.r / da, zero),
-                        cnvs_h8_sel(dm, d.g / da, zero),
-                        cnvs_h8_sel(dm, d.b / da, zero) };
+            mask8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
+            rgb8 cs = { half8_sel(sm, s.r / sa, zero),
+                        half8_sel(sm, s.g / sa, zero),
+                        half8_sel(sm, s.b / sa, zero) };
+            rgb8 cb = { half8_sel(dm, d.r / da, zero),
+                        half8_sel(dm, d.g / da, zero),
+                        half8_sel(dm, d.b / da, zero) };
             rgb8 bl = blend_nonsep8(mode, cb, cs);
             t.r = sa * da * bl.r;
             t.g = sa * da * bl.g;
@@ -233,8 +233,8 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
 // returns dst bit-exactly (full coverage must not perturb the blend; zero
 // coverage must not perturb the destination).  The clamp restores the
 // premultiplied invariant against the one-ULP drift of k + (1-k) in f16.
-static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, cnvs_h8 k) {
-    cnvs_h8 j = (cnvs_h8)(_Float16)1.0f - k;
+static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 k) {
+    half8 j = (half8)(_Float16)1.0f - k;
     cnvs_px8 o = { co.r * k + d.r * j, co.g * k + d.g * j,
                    co.b * k + d.b * j, co.a * k + d.a * j };
     return cnvs_px8_clamp_premul(o);
@@ -321,7 +321,7 @@ static void blend_region(compositor *__single c, int x, int y, int w, int h,
     bool const folds = compositor_coverage_folds(mode);
     bool const atten = cov || c->clip;  // any coverage to apply?
     _Float16 const k255 = (_Float16)(1.0f / 255.0f);
-    cnvs_h8 const one = (cnvs_h8)(_Float16)1.0f;
+    half8 const one = (half8)(_Float16)1.0f;
     for (int row = 0; row < h; row++) {
         int col = 0;
         for (; col + 8 <= w; col += 8) {
@@ -336,19 +336,19 @@ static void blend_region(compositor *__single c, int x, int y, int w, int h,
                 // Attenuate the source by each factor in turn, exactly as the
                 // fast path does (combining the factors first re-rounds).
                 if (cov) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8(cov + ti) * k255);
                 }
                 if (c->clip) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8(c->clip + di) * k255);
                 }
                 o = blend8(s, d, mode);
             } else {
-                cnvs_h8 k = one;  // 1*x is exact: a lone factor passes through
+                half8 k = one;  // 1*x is exact: a lone factor passes through
                 if (cov) {
-                    k = k * (cnvs_h8_from_u8(cov + ti) * k255);
+                    k = k * (half8_from_u8(cov + ti) * k255);
                 }
                 if (c->clip) {
-                    k = k * (cnvs_h8_from_u8(c->clip + di) * k255);
+                    k = k * (half8_from_u8(c->clip + di) * k255);
                 }
                 o = cov_lerp8(d, blend8(s, d, mode), k);
             }
@@ -365,19 +365,19 @@ static void blend_region(compositor *__single c, int x, int y, int w, int h,
                 o = blend8(s, d, mode);
             } else if (folds) {
                 if (cov) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(cov + ti, n) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8_k(cov + ti, n) * k255);
                 }
                 if (c->clip) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(c->clip + di, n) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8_k(c->clip + di, n) * k255);
                 }
                 o = blend8(s, d, mode);
             } else {
-                cnvs_h8 k = one;
+                half8 k = one;
                 if (cov) {
-                    k = k * (cnvs_h8_from_u8_k(cov + ti, n) * k255);
+                    k = k * (half8_from_u8_k(cov + ti, n) * k255);
                 }
                 if (c->clip) {
-                    k = k * (cnvs_h8_from_u8_k(c->clip + di, n) * k255);
+                    k = k * (half8_from_u8_k(c->clip + di, n) * k255);
                 }
                 o = cov_lerp8(d, blend8(s, d, mode), k);
             }
@@ -408,10 +408,10 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                 int di = (y + row) * c->width + (x + col);
                 cnvs_px8 s = cnvs_px8_load(tile + ti);
                 if (cov) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8(cov + ti) * k255);
                 }
                 if (c->clip) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8(c->clip + di) * k255);
                 }
                 cnvs_px8 d = cnvs_px8_load(c->target + di);
                 cnvs_px8_store(c->target + di, src_over8(s, d));
@@ -422,10 +422,10 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                 int di = (y + row) * c->width + (x + col);
                 cnvs_px8 s = cnvs_px8_load_k(tile + ti, k);
                 if (cov) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(cov + ti, k) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8_k(cov + ti, k) * k255);
                 }
                 if (c->clip) {
-                    s = cnvs_px8_scale(s, cnvs_h8_from_u8_k(c->clip + di, k) * k255);
+                    s = cnvs_px8_scale(s, half8_from_u8_k(c->clip + di, k) * k255);
                 }
                 cnvs_px8 d = cnvs_px8_load_k(c->target + di, k);
                 cnvs_px8_store_k(c->target + di, k, src_over8(s, d));
@@ -434,8 +434,8 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         return;
     }
     // The generic modes: the shared region walk (splat unused, tile present).
-    cnvs_px8 const zero = { (cnvs_h8)(_Float16)0.0f, (cnvs_h8)(_Float16)0.0f,
-                            (cnvs_h8)(_Float16)0.0f, (cnvs_h8)(_Float16)0.0f };
+    cnvs_px8 const zero = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
+                            (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
     blend_region(c, x, y, w, h, tile, zero, cov, mode);
 }
 
@@ -455,8 +455,8 @@ void compositor_blend_solid(compositor *__single c, int x, int y, int w, int h,
     // region walk here, not the fast path, and still lands the same bytes:
     // blend8 delegates source-over to src_over8, and the fold arm applies
     // cov/clip as the same two successive scales.
-    cnvs_px8 const splat = { (cnvs_h8)color.r, (cnvs_h8)color.g,
-                             (cnvs_h8)color.b, (cnvs_h8)color.a };
+    cnvs_px8 const splat = { (half8)color.r, (half8)color.g,
+                             (half8)color.b, (half8)color.a };
     blend_region(c, x, y, w, h, NULL, splat, cov, mode);
 }
 
