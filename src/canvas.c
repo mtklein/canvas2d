@@ -1066,30 +1066,32 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
 // --- the planar shade stage --------------------------------------------------
 //
 // The coverage -> premultiplied-tile fold, eight pixels per step over channel
-// planes (cnvs_planar.h).  The fold itself stays f32 -- visibly typed, exactly
-// the scalar form's arithmetic and association: alpha = (col.a * ga) *
-// (cov / 255.0f) per lane, one narrowing convert to _Float16, then the planar
-// premultiply -- so no gallery byte moves (docs/rasterization.md §3.1's
-// f32-fold arm).
+// planes (cnvs_planar.h).  The fold runs in _Float16, the pipeline's compute
+// type (docs/decisions/color-axis.md): coverage normalizes as one f16
+// multiply by RN16(1/255) -- the compositor's exact idiom, and 255 * that
+// rounds back to exactly 1.0, so full coverage passes the paint's alpha
+// through untouched -- and each paint's alpha factors fold in the type the
+// colour data is born in (f16 for solid and gradient paint, f32 for image
+// and pattern samples), with one narrowing convert.  This is the f16 arm
+// docs/rasterization.md §3.1 priced and deferred for byte-stillness; taking
+// it re-rounds AA-edge alpha by <= 2 f16 ULP (interiors are exact).
 
-typedef float foldf8 __attribute__((ext_vector_type(8)));  // the f32 fold plane
+typedef float foldf8 __attribute__((ext_vector_type(8)));  // f32 lanes for the
+// coordinate chain and the sampled colours (data born f32 at the taps)
 
-// Eight coverage bytes as an f32 plane in [0, 1]: exact widen (every u8 value
-// is exact in _Float16 and f32), then the scalar fold's true /255.0f divide,
-// lane for lane the same rounding.
-static foldf8 cover8(uint8_t const *__counted_by(8) cov) {
-    return __builtin_convertvector(cnvs_h8_from_u8(cov), foldf8) / 255.0f;
+// Eight coverage bytes as an f16 plane in [0, 1]: exact widen (every u8 value
+// is exact in _Float16), one multiply by RN16(1/255).
+static cnvs_h8 cover8(uint8_t const *__counted_by(8) cov) {
+    return cnvs_h8_from_u8(cov) * (_Float16)(1.0f / 255.0f);
 }
 
-static foldf8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
-    return __builtin_convertvector(cnvs_h8_from_u8_k(cov, k), foldf8) / 255.0f;
+static cnvs_h8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
+    return cnvs_h8_from_u8_k(cov, k) * (_Float16)(1.0f / 255.0f);
 }
 
-// Narrow the folded f32 alpha plane once (the scalar (_Float16)alpha cast,
-// lane for lane) and premultiply the colour planes under it.
-static cnvs_px8 shade8(cnvs_h8 r, cnvs_h8 g, cnvs_h8 b, foldf8 alpha) {
-    return cnvs_px8_premultiply(
-        (cnvs_px8){ r, g, b, __builtin_convertvector(alpha, cnvs_h8) });
+// Premultiply the colour planes under the folded alpha plane.
+static cnvs_px8 shade8(cnvs_h8 r, cnvs_h8 g, cnvs_h8 b, cnvs_h8 alpha) {
+    return cnvs_px8_premultiply((cnvs_px8){ r, g, b, alpha });
 }
 
 // cnvs_mat_apply for eight pixel centres along one row: only x varies and the
@@ -1130,7 +1132,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         // coverage is one constant, so the loop is a coverage widen, two
         // multiplies, and the premultiply -> st4.  Coverage and tile are both
         // dense over the bbox, so one flat loop covers all rows.
-        foldf8 const base = (foldf8)((float)solid.a * ga);
+        cnvs_h8 const base = (cnvs_h8)(_Float16)((float)solid.a * ga);
         cnvs_h8 const cr = (cnvs_h8)solid.r, cg = (cnvs_h8)solid.g,
                  cb = (cnvs_h8)solid.b;
         int const npix = b.w * b.h;
@@ -1167,6 +1169,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         // piecewise-linear colour, no precomputed ramp
         // (docs/decisions/gradient-eval.md) -- then pick the colours back up
         // as planes (ld4 over the row buffer) for the fold.
+        cnvs_h8 const gah = (cnvs_h8)(_Float16)ga;
         for (int py = 0; py < b.h; py++) {
             cnvs_gradient_param_row(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
                                     cv->trow);
@@ -1175,7 +1178,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             int px = 0;
             for (; px + 8 <= b.w; px += 8) {
                 cnvs_px8 const col = cnvs_px8_load_unpremul(cv->crow + px);
-                foldf8 alpha = __builtin_convertvector(col.a, foldf8) * ga;
+                cnvs_h8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8(cv->cov + row + px);
                 }
@@ -1185,7 +1188,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             if (px < b.w) {  // tail: k < 8 pixels through the same planar block
                 int const k = b.w - px;
                 cnvs_px8 const col = cnvs_px8_load_unpremul_k(cv->crow + px, k);
-                foldf8 alpha = __builtin_convertvector(col.a, foldf8) * ga;
+                cnvs_h8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8_k(cv->cov + row + px, k);
                 }
@@ -1206,14 +1209,14 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                                         ? cnvs_gradient_color_at(gr, t)
                                         : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
                 // Fold global alpha (and, for folding modes, coverage) into
-                // the paint's alpha, then premultiply -- the tile stores
-                // premultiplied pixels.
-                float alpha = (float)col.a * ga;
+                // the paint's alpha, then premultiply -- the row kernel's f16
+                // fold, one pixel at a time.
+                _Float16 alpha = col.a * (_Float16)ga;
                 if (fold) {
-                    alpha = alpha * ((float)cv->cov[i] / 255.0f);
+                    alpha = alpha * ((_Float16)cv->cov[i] * (_Float16)(1.0f / 255.0f));
                 }
                 cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
-                    .r = col.r, .g = col.g, .b = col.b, .a = (_Float16)alpha });
+                    .r = col.r, .g = col.g, .b = col.b, .a = alpha });
             }
         }
     }
@@ -1277,12 +1280,10 @@ static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
 // Blocks of eight pixels: the SAMPLING stays scalar per lane -- each sample is
 // data-dependent addressing (up to four taps at arbitrary source coords), with
 // no batch shape -- but everything around it is planar.  A zero-coverage lane
-// skips its sample and stays transparent black, exactly the scalar early-out
-// (covf <= 0 iff the coverage byte is 0; the all-zero lanes fold to the same
-// {0,0,0,0} bits the early-out stored).  The samples land in f32 planes
-// because the scalar fold is f32: alpha = (s[3] * ga) * covf lane for lane,
-// each channel narrowed once to _Float16 (the cnvs_unpremul_of casts), then
-// the planar premultiply.
+// skips its sample and stays transparent black (the all-zero lanes fold to the
+// same {0,0,0,0} bits the skip leaves).  The samples land in f32 planes (they
+// are born f32 at the taps); sample alpha x global alpha folds there, narrows
+// once, and the coverage fold finishes in f16 like every shade path.
 static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const *p) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
@@ -1300,7 +1301,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
             foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
                    sa = (foldf8)0.0f;
             for (int l = 0; l < k; l++) {
-                if (cv->cov[i + l] == 0) {  // the scalar covf <= 0.0f early-out
+                if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
                     continue;
                 }
                 float s[4];
@@ -1310,7 +1311,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            foldf8 alpha = sa * ga;
+            cnvs_h8 alpha = __builtin_convertvector(sa * ga, cnvs_h8);
             if (fold) {
                 alpha = alpha * (k < 8 ? cover8_k(cv->cov + i, k)
                                        : cover8(cv->cov + i));
@@ -1438,34 +1439,34 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
         }
     }
     // Tint the blurred mask into the tile.  For folding modes, eight pixels
-    // per step: the shadow colour is a splat, so this is the planar shade
-    // fold with the blurred mask as its coverage plane -- the scalar form's
-    // f32 arithmetic and association ((mask / 255.0f) * sc.a * ga) kept lane
-    // for lane.  For lerping modes the tile is the full-strength tint and the
-    // blurred mask rides to the compositor as the op's coverage plane.
-    // (Filters never apply to the shadow tile, so unlike paint_tile the
-    // decision is the composite mode alone.)
+    // per step: the shadow colour is a splat, so this is the planar f16 shade
+    // fold with the blurred mask as its coverage plane.  For lerping modes
+    // the tile is the full-strength tint and the blurred mask rides to the
+    // compositor as the op's coverage plane.  (Filters never apply to the
+    // shadow tile, so unlike paint_tile the decision is the composite mode
+    // alone.)
     bool const fold = compositor_coverage_folds(cv->cur.composite);
     cnvs_unpremul const sc = cv->cur.shadow_color;
     float const ga = cv->cur.global_alpha;
     cnvs_h8 const cr = (cnvs_h8)sc.r, cg = (cnvs_h8)sc.g, cb = (cnvs_h8)sc.b;
-    float const sa = (float)sc.a;
+    cnvs_h8 const base = (cnvs_h8)(_Float16)((float)sc.a * ga);
     if (fold) {
         int i = 0;
         for (; i + 8 <= n; i += 8) {
-            foldf8 const alpha = cover8(cv->shadow_src + i) * sa * ga;
-            cnvs_px8_store(cv->tile + i, shade8(cr, cg, cb, alpha));
+            cnvs_px8_store(cv->tile + i,
+                           shade8(cr, cg, cb, base * cover8(cv->shadow_src + i)));
         }
         if (i < n) {  // tail: k < 8 pixels through the same planar block
             int const k = n - i;
-            foldf8 const alpha = cover8_k(cv->shadow_src + i, k) * sa * ga;
-            cnvs_px8_store_k(cv->tile + i, k, shade8(cr, cg, cb, alpha));
+            cnvs_px8_store_k(cv->tile + i, k,
+                             shade8(cr, cg, cb,
+                                    base * cover8_k(cv->shadow_src + i, k)));
         }
     } else {
         // Full-strength tint: one splat colour, the blurred mask as the
         // compositor's coverage plane -- no tile.
         cnvs_premul px;
-        cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, (foldf8)(sa * ga)));
+        cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
         compositor_blend_solid(cv->comp, sx0, sy0, sw, sh, px,
                                cv->shadow_src, cv->cur.composite);
         return;
@@ -2666,13 +2667,15 @@ static void draw_image_quad(canvas *__single cv,
 
     // Blocks of eight pixels, the paint_tile_pattern shape: the SAMPLING stays
     // scalar per lane -- four data-dependent taps at arbitrary source coords --
-    // and the f32 fold + premultiply around it run as planes.  Zero-coverage
-    // lanes skip their sample and fold to the scalar early-out's transparent
-    // black.  The premultiplied-source arm (emoji capture) has no premultiply:
-    // every channel just scales by ga * coverage, the scalar arithmetic kept
-    // lane for lane.
+    // with the fold + premultiply around it run as planes: the sampled colours
+    // are born f32, sample alpha x global alpha folds there, narrows once,
+    // and the coverage fold finishes in f16.  Zero-coverage lanes skip their
+    // sample and fold to transparent black.  The premultiplied-source arm
+    // (emoji capture) has no premultiply: every channel narrows and scales by
+    // ga x coverage in f16.
     cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float const ga = cv->cur.global_alpha;
+    cnvs_h8 const gah = (cnvs_h8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
     foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -2693,7 +2696,7 @@ static void draw_image_quad(canvas *__single cv,
             foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
                    sa = (foldf8)0.0f;
             for (int l = 0; l < k; l++) {
-                if (cv->cov[i + l] == 0) {  // the scalar covf <= 0.0f early-out
+                if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
                     continue;
                 }
                 float s[4];
@@ -2707,20 +2710,20 @@ static void draw_image_quad(canvas *__single cv,
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            foldf8 const covf = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
-                                              : cover8(cv->cov + i))
-                                     : (foldf8)1.0f;  // unused factor when !fold
+            cnvs_h8 const covh = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
+                                               : cover8(cv->cov + i))
+                                      : (cnvs_h8)(_Float16)1.0f;  // unused when !fold
             cnvs_px8 out;
             if (premul_src) {
-                foldf8 const m = fold ? ga * covf : (foldf8)ga;
-                out = (cnvs_px8){ __builtin_convertvector(sr * m, cnvs_h8),
-                                  __builtin_convertvector(sg * m, cnvs_h8),
-                                  __builtin_convertvector(sb * m, cnvs_h8),
-                                  __builtin_convertvector(sa * m, cnvs_h8) };
+                cnvs_h8 const m = fold ? gah * covh : gah;
+                out = (cnvs_px8){ __builtin_convertvector(sr, cnvs_h8) * m,
+                                  __builtin_convertvector(sg, cnvs_h8) * m,
+                                  __builtin_convertvector(sb, cnvs_h8) * m,
+                                  __builtin_convertvector(sa, cnvs_h8) * m };
             } else {
-                foldf8 alpha = sa * ga;
+                cnvs_h8 alpha = __builtin_convertvector(sa * ga, cnvs_h8);
                 if (fold) {
-                    alpha = alpha * covf;
+                    alpha = alpha * covh;
                 }
                 out = shade8(__builtin_convertvector(sr, cnvs_h8),
                              __builtin_convertvector(sg, cnvs_h8),
