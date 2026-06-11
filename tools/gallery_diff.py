@@ -14,9 +14,10 @@ data: URIs keep the canvas untainted for pixel work).
 Keys in the page: `o` for the ranked overview; j/k scan scenes in the nav's
 ranked order (arrows are left to the browser, for scrolling); 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
 the blink clock and steps it by hand, shift-space resumes auto-blink, [ and ] adjust heatmap
-gain, + and - adjust loupe zoom, m toggles the loupe.  Clicking a magnified
-cell IN the loupe pins that pixel and recenters on it (repeat clicks walk
-pixel by pixel); clicking back on the image releases the pin to follow again.
+gain, + and - adjust loupe zoom, m toggles the loupe.  A click on the image
+toggles the pin (pin the pixel under the cursor / release to following);
+a click on a magnified cell IN the loupe moves the pin there and recenters
+(repeat clicks walk pixel by pixel).
 
 Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
 per-pixel magnitude crediting with diminishing (sqrt) returns.  Hovering any
@@ -298,10 +299,10 @@ function watch(el) {  // arm an element as a loupe position source
     hover = at;
     drawLoupe();
   });
-  el.addEventListener("click", e => {  // image click releases a pinned loupe
-    if (!loupeOn || cur < 0 || !pinned) return;
-    pinned = false;
-    const at = imgXY(el, e); if (at) hover = at;  // resume following from here
+  el.addEventListener("click", e => {  // image click TOGGLES the pin:
+    if (!loupeOn || cur < 0) return;    // pin the pixel under the cursor,
+    pinned = !pinned;                   // or release back to following --
+    const at = imgXY(el, e); if (at) hover = at;  // either way, from here
     drawLoupe();
   });
 }
