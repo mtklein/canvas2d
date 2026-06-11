@@ -317,9 +317,8 @@ struct replay_blocks {
     // inflate-validated even when its font id maps to a degraded intern
     // (bm_fid -1): the bits still parse and validate, they just have nowhere
     // to land -- the glyph-block posture.
-    uint8_t *__counted_by(bm_len) bm;
-    int bm_len;     // the buffer's byte size (bm_zlen when allocated)
-    int bm_zlen;    // declared deflated byte count
+    uint8_t *__counted_by(bm_zlen) bm;
+    int bm_zlen;    // declared deflated byte count, the buffer's size
     int bm_total;   // expected inflated bytes: w*h*4
     int bm_fill;    // deflated bytes decoded so far
     int bm_lines;   // `bits` lines still expected; > 0 = a block is pending
@@ -358,9 +357,8 @@ static void blocks_drop(struct replay_blocks *__single b) {
 // finished, or one whose inflated pixels were just handed on).
 static void bitmap_drop(struct replay_blocks *__single b) {
     free(b->bm);
-    b->bm_len = 0;
-    b->bm = NULL;
     b->bm_zlen = 0;
+    b->bm = NULL;
     b->bm_total = 0;
     b->bm_fill = 0;
     b->bm_lines = 0;
@@ -579,9 +577,8 @@ static bool replay_bitmap(struct replay_blocks *__single b,
     if (!zs) {
         return false;  // OOM while rebuilding: stop replay
     }
-    b->bm = zs;
-    b->bm_len = (int)zlen;
     b->bm_zlen = (int)zlen;
+    b->bm = zs;              // count before pointer
     b->bm_fid = b->map[id];  // -1 = interning degraded: validate, don't land
     b->bm_img = -1;          // a capture, not an `image` block
     b->bm_total = (int)total;
@@ -630,9 +627,8 @@ static bool replay_image(struct replay_blocks *__single b,
     if (!zs) {
         return false;  // OOM while rebuilding: stop replay
     }
-    b->bm = zs;
-    b->bm_len = (int)zlen;
     b->bm_zlen = (int)zlen;
+    b->bm = zs;  // count before pointer
     b->bm_fid = -1;
     b->bm_img = (int)id;
     b->bm_total = (int)total;
@@ -1369,7 +1365,7 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
     struct replay_blocks b = { .s = NULL, .runs_done = 0, .size_px = 0.0f,
                                .rtl = false,
                                .text_len = 0, .text = NULL, .bm = NULL,
-                               .bm_len = 0, .bm_zlen = 0, .bm_total = 0,
+                               .bm_zlen = 0, .bm_total = 0,
                                .bm_fill = 0,
                                .bm_lines = 0, .bm_fid = -1, .bm_img = -1,
                                .bm_gid = 0,
