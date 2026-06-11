@@ -18,9 +18,9 @@
 struct cnvs_recorder;
 
 // Open `path` for recording (truncating any existing file).  NULL on failure.
-struct cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path);
+struct cnvs_recorder *__single cnvs_recorder_begin(char const *__null_terminated path);
 // Flush and close; safe on NULL.
-void cnvs_recorder_close(struct cnvs_recorder *__single r);
+void cnvs_recorder_end(struct cnvs_recorder *__single r);
 
 // Suspend / resume emission, reference-counted.  A compound op (arc, round_rect,
 // arc_to) records its own command line, then brackets the public sub-calls it

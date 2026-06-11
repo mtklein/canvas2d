@@ -127,7 +127,7 @@ static void blur_matches_reference(void) {
     int const nf = N * N * 4;
     float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && ref != NULL && tmp != NULL && cv != NULL);
     if (px && ref && tmp && cv) {
         canvas_add_filter_blur(cv, 3.0f);  // stdDev 3 -> box radius 3
@@ -147,7 +147,7 @@ static void blur_matches_reference(void) {
         check_vs_ref(px, len, ref, N, N, 2);
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
     free(ref);
@@ -161,7 +161,7 @@ static void blur_noop_amounts(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_blur(cv, 0.0f);
@@ -176,7 +176,7 @@ static void blur_noop_amounts(void) {
         CHECK(px_near(pixel_at(px, len, N, 7, 12), 0, 0, 0, 0, 0));       // no skirt
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -188,7 +188,7 @@ static void blur_expands_bbox(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_blur(cv, 4.0f);  // box radius 4: spread 12
@@ -207,7 +207,7 @@ static void blur_expands_bbox(void) {
         CHECK(px_near(pixel_at(px, len, N, 44, 24), 0, 0, 0, 0, 0));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -226,7 +226,7 @@ static void blur_order_visible(void) {
     int const nf = N * N * 4;
     float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(pxa != NULL && pxb != NULL && ref != NULL && tmp != NULL && cv != NULL);
     if (pxa && pxb && ref && tmp && cv) {
         for (int order = 0; order < 2; order++) {
@@ -273,7 +273,7 @@ static void blur_order_visible(void) {
         CHECK((int)a.g - (int)b.g > 20);
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(pxa);
     free(pxb);
@@ -289,7 +289,7 @@ static void blur_translucent_consistent(void) {
     enum { N = 40 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_blur(cv, 2.0f);
@@ -313,7 +313,7 @@ static void blur_translucent_consistent(void) {
         CHECK(consistent);
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -324,7 +324,7 @@ static void blur_clipped(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_begin_path(cv);
@@ -339,7 +339,7 @@ static void blur_clipped(void) {
         CHECK(px_near(pixel_at(px, len, N, 4, 20), 0, 0, 0, 0, 0));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -385,7 +385,7 @@ static void drop_shadow_hard_offset(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, 4.0f, 4.0f, 0.0f,
@@ -402,7 +402,7 @@ static void drop_shadow_hard_offset(void) {
         CHECK(px_near(pixel_at(px, len, N, 18, 10), 0, 0, 0, 0, 0));      // offset is 2D
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -419,7 +419,7 @@ static void drop_shadow_matches_reference(void) {
     float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) sh = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && ref != NULL && sh != NULL && tmp != NULL && cv != NULL);
     if (px && ref && sh && tmp && cv) {
         canvas_add_filter_drop_shadow(cv, 5.0f, 3.0f, 2.0f,
@@ -440,7 +440,7 @@ static void drop_shadow_matches_reference(void) {
         check_vs_ref(px, len, ref, N, N, 2);
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
     free(ref);
@@ -455,7 +455,7 @@ static void drop_shadow_tint_translucent(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, 8.0f, 0.0f, 0.0f,
@@ -467,7 +467,7 @@ static void drop_shadow_tint_translucent(void) {
         CHECK(px_near(pixel_at(px, len, N, 12, 12), 0, 255, 0, 255, 0));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -479,7 +479,7 @@ static void drop_shadow_translucent_source(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, 6.0f, 0.0f, 0.0f,
@@ -496,7 +496,7 @@ static void drop_shadow_translucent_source(void) {
         CHECK(px_near(pixel_at(px, len, N, 15, 12), 0, 0, 170, 191, 2));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -508,7 +508,7 @@ static void drop_shadow_order_visible(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         // drop-shadow then grayscale: the pure-green shadow lands on its
@@ -536,7 +536,7 @@ static void drop_shadow_order_visible(void) {
         CHECK(px_near(pixel_at(px, len, N, 10, 10), 54, 54, 54, 255, 2));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -548,7 +548,7 @@ static void drop_shadow_margin(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         // Square [8,16); shadow square [14,22), blurred skirt reaching [8,28).
@@ -567,7 +567,7 @@ static void drop_shadow_margin(void) {
         CHECK(px_near(pixel_at(px, len, N, 40, 40), 0, 0, 0, 0, 0));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -581,7 +581,7 @@ static void drop_shadow_with_canvas_shadow(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_set_shadow_color_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
@@ -599,7 +599,7 @@ static void drop_shadow_with_canvas_shadow(void) {
         CHECK(px_near(pixel_at(px, len, N, 44, 44), 0, 0, 0, 0, 0));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -611,7 +611,7 @@ static void drop_shadow_clamps(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(N, N);
+    struct canvas *__single cv = canvas(N, N);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, NAN, 4.0f, 0.0f, 1, 0, 0, 1);
@@ -636,7 +636,7 @@ static void drop_shadow_clamps(void) {
         CHECK(px_near(pixel_at(px, len, N, 20, 12), 255, 0, 128, 255, 1));
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
 }
@@ -659,7 +659,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -855,7 +855,7 @@ int main(void) {
     CHECK(px_near(fill_and_read(cv, px, len, 1.0f, 0.0f, 0.0f, 1.0f),
                   255, 0, 0, 255, 1));
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
 
     // Text is filtered: red glyphs gray out -- and because the filter runs on
@@ -864,7 +864,7 @@ int main(void) {
     enum { TW = 32 };
     int const tlen = TW * TW * 4;
     uint8_t *__counted_by(tlen) tpx = malloc((size_t)tlen);
-    struct canvas *__single tcv = canvas_create(TW, TW);
+    struct canvas *__single tcv = canvas(TW, TW);
     CHECK(tpx != NULL && tcv != NULL);
     if (tpx && tcv) {
         canvas_add_filter_grayscale(tcv, 1.0f);
@@ -889,7 +889,7 @@ int main(void) {
         CHECK(all_gray);
     }
     if (tcv) {
-        canvas_destroy(tcv);
+        canvas_free(tcv);
     }
     free(tpx);
 

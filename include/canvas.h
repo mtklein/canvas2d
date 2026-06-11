@@ -6,7 +6,7 @@
 #include <ptrcheck.h>
 #include <stdint.h>
 
-struct canvas;  // the rendering context (canvas_create)
+struct canvas;  // the rendering context: canvas() constructs, canvas_free() frees
 
 // The six components of a 2D affine transform: (x,y) maps to
 // (a*x + c*y + e, b*x + d*y + f) -- the argument order of canvas_set_transform.
@@ -55,9 +55,10 @@ enum canvas_composite_op {
     CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
 };
 
-// NULL on failure; the canvas starts transparent black.
-struct canvas *__single canvas_create(int width, int height);
-void canvas_destroy(struct canvas *__single cv);
+// The constructor: NULL on failure; the canvas starts transparent black.
+// canvas_free accepts NULL, like free() itself.
+struct canvas *__single canvas(int width, int height);
+void canvas_free(struct canvas *__single cv);
 
 // Whether the rendering context has been lost (matching isContextLost).  This
 // headless renderer owns its backing store and never loses it, so it is always
@@ -245,10 +246,10 @@ bool canvas_is_point_in_stroke(struct canvas *__single cv, float x, float y);
 // current transform when the path is filled/stroked/clipped/hit-tested -- so the
 // same Path2D draws differently under different transforms (unlike the current
 // path, whose points are baked at build time).  NULL on allocation failure; free
-// with canvas_path2d_destroy.
+// with canvas_path2d_free.
 struct canvas_path2d;
-struct canvas_path2d *__single canvas_path2d_create(void);
-void canvas_path2d_destroy(struct canvas_path2d *__single p);
+struct canvas_path2d *__single canvas_path2d(void);
+void canvas_path2d_free(struct canvas_path2d *__single p);
 
 // Build a Path2D.  These mirror the canvas path methods (a zero-radius corner is
 // sharp; arc/ellipse angles are radians; round_rect takes one scalar radius).

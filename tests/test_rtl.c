@@ -25,7 +25,7 @@
 // ink, one fill_text anchored mid-canvas.
 static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated text,
                    enum canvas_direction dir, enum canvas_text_align align) {
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -38,7 +38,7 @@ static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated 
     canvas_set_text_align(cv, align);
     canvas_fill_text(cv, text, (float)W * 0.5f, 40.0f);
     canvas_read_rgba(cv, px, LEN);
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // start/end resolve against direction; left/right/center ignore it.
@@ -84,7 +84,7 @@ static void check_state(void) {
 
     // Default: never touched == explicitly ltr.
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -96,14 +96,14 @@ static void check_state(void) {
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
         canvas_read_rgba(cv, a, LEN);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START);
     CHECK(memcmp(a, b, LEN) == 0);
 
     // save/restore: the inner ltr is undone, the outer rtl comes back.
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -129,7 +129,7 @@ static void check_state(void) {
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
         canvas_read_rgba(cv, b, LEN);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     static uint8_t r[LEN];
     render(r, t, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
@@ -143,7 +143,7 @@ static void check_state(void) {
 static void check_replay(void) {
     static uint8_t a[LEN], b[LEN];
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -157,13 +157,13 @@ static void check_replay(void) {
             "set_text_align start\n"
             "fill_text 80 40 abc\n"));
         canvas_read_rgba(cv, a, LEN);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     render(b, "abc", CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
     CHECK(memcmp(a, b, LEN) == 0);
 
     // Strict parsing.
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -181,7 +181,7 @@ static void check_replay(void) {
     uint8_t px[LEN];
     canvas_read_rgba(cv, px, LEN);
     CHECK(px[0] == 255);
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Recording writes the op line: a recorded rtl draw replays to identical bytes.
@@ -189,7 +189,7 @@ static void check_record(void) {
     char const *__null_terminated path = "build/test_rtl_rec.canvas";
     static uint8_t a[LEN], b[LEN];
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -203,17 +203,17 @@ static void check_record(void) {
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, "abc", (float)W * 0.5f, 40.0f);
         canvas_read_rgba(cv, a, LEN);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
         CHECK(canvas_replay_from(cv, path));
         canvas_read_rgba(cv, b, LEN);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     CHECK(memcmp(a, b, LEN) == 0);
 }
@@ -244,7 +244,7 @@ static void check_draw_measure(void) {
     char const *__null_terminated heb = "\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D";  // שלום
     float const x = 120.0f;
 
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -278,7 +278,7 @@ static void check_draw_measure(void) {
     CHECK((float)xmax <= x + 2.0f);
     CHECK((float)xmin >= x - w * 0.5f - 2.0f);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Mixed-direction text really reorders: the same bytes, same anchor, same
@@ -292,7 +292,7 @@ static void check_mixed_reorders(void) {
     render(b, mixed, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_LEFT);
     CHECK(memcmp(a, b, LEN) != 0);  // physical alignment, so only the
                                     // reordering can differ -- and it does
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -304,7 +304,7 @@ static void check_mixed_reorders(void) {
     CHECK(wl > 0.0f);
     float d = wl - wr;  // same advances, summed in another order
     CHECK(d < 0.01f && d > -0.01f);
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 int main(void) {

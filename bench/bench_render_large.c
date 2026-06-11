@@ -55,12 +55,12 @@ static void scene(struct canvas *__single cv, int f) {
 }
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(DIM, DIM);
+    struct canvas *__single cv = canvas(DIM, DIM);
     int const len = DIM * DIM * 4;
     uint8_t *px = malloc((size_t)len);
     if (!cv || !px) {
         free(px);
-        canvas_destroy(cv);
+        canvas_free(cv);
         return 1;
     }
 
@@ -89,7 +89,7 @@ int main(void) {
     // throughput, comparable across canvas sizes).
     bench_report_throughput(secs, (double)DIM * (double)DIM * (double)FRAMES * (double)reps);
     free(px);
-    canvas_destroy(cv);
+    canvas_free(cv);
     fprintf(stderr, "sink=%.0f\n", sink);
     return 0;
 }

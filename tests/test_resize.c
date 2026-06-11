@@ -18,7 +18,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(8, 8);
+    struct canvas *__single cv = canvas(8, 8);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -59,7 +59,7 @@ int main(void) {
     canvas_read_rgba(cv, px, 8 * 8 * 4);
     CHECK(px_near(pixel_at(px, cap, 8, 7, 7), 0, 0, 255, 255, 1));  // still 8x8 blue
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

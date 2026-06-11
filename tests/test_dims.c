@@ -1,4 +1,4 @@
-// Dimension validation: canvas_create caps dimensions, and the image entry
+// Dimension validation: canvas caps dimensions, and the image entry
 // points reject caller-supplied (w,h)/(sw,sh) whose RGBA8 byte size would
 // overflow `int`.  Before the fix, `w * h * 4` overflowed signed int in these
 // guards, defeating them; under the debug variant's UBSan this whole test
@@ -16,18 +16,18 @@
 #define OVF 23171
 
 int main(void) {
-    // canvas_create bounds: rejects non-positive and oversized, accepts in-range.
-    CHECK(canvas_create(0, 10) == NULL);
-    CHECK(canvas_create(10, -1) == NULL);
-    CHECK(canvas_create(16385, 1) == NULL);
-    CHECK(canvas_create(1, 16385) == NULL);
-    CHECK(canvas_create(OVF, OVF) == NULL);
+    // canvas bounds: rejects non-positive and oversized, accepts in-range.
+    CHECK(canvas(0, 10) == NULL);
+    CHECK(canvas(10, -1) == NULL);
+    CHECK(canvas(16385, 1) == NULL);
+    CHECK(canvas(1, 16385) == NULL);
+    CHECK(canvas(OVF, OVF) == NULL);
 
-    struct canvas *__single cv = canvas_create(16384, 1);  // boundary value is accepted
+    struct canvas *__single cv = canvas(16384, 1);  // boundary value is accepted
     CHECK(cv != NULL);
-    canvas_destroy(cv);
+    canvas_free(cv);
 
-    cv = canvas_create(8, 8);
+    cv = canvas(8, 8);
     CHECK(cv != NULL);
 
     // get_image_data: an overflowing region must be rejected *before* the memset
@@ -51,6 +51,6 @@ int main(void) {
     canvas_put_image_data(cv, src, (int)sizeof src, OVF, OVF, 0, 0);
     CHECK(cv != NULL);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

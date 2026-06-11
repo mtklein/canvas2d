@@ -373,13 +373,13 @@ static void bitmap_drop(struct replay_blocks *__single b) {
 // never finished) and every installed path -- the parser owns them all; the
 // path ops borrow one only for the duration of the call.
 static void paths_drop(struct replay_blocks *__single b) {
-    canvas_path2d_destroy(b->pend_path);
+    canvas_path2d_free(b->pend_path);
     b->pend_path = NULL;
     b->pend_id = 0;
     b->pend_cmds = 0;
     b->pend_left = 0;
     for (int i = 0; i < CNVS_REC_PATHS_MAX; i++) {
-        canvas_path2d_destroy(b->paths[i]);
+        canvas_path2d_free(b->paths[i]);
         b->paths[i] = NULL;
     }
 }
@@ -659,7 +659,7 @@ static bool replay_path(struct replay_blocks *__single b,
     if (!at_eol(data, le, j)) {
         return false;
     }
-    struct canvas_path2d *__single p = canvas_path2d_create();
+    struct canvas_path2d *__single p = canvas_path2d();
     if (!p) {
         return false;  // OOM while rebuilding: stop replay
     }

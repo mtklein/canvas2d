@@ -4,7 +4,7 @@
 #include <math.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(32, 32);
+    struct canvas *__single cv = canvas(32, 32);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -43,6 +43,6 @@ int main(void) {
     CHECK(canvas_is_point_in_path(cv, 5.0f, 5.0f, CANVAS_NONZERO));   // -> device (15,15) in
     CHECK(!canvas_is_point_in_path(cv, -5.0f, -5.0f, CANVAS_NONZERO)); // -> device (5,5) out
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

@@ -20,7 +20,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -67,7 +67,7 @@ int main(void) {
     canvas_restore(cv);
     CHECK(is_identity(canvas_get_transform(cv)));
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

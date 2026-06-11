@@ -14,7 +14,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -135,7 +135,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 43, 35), 255, 0, 0, 255, 1));  // fillet arc
     CHECK(px_near(pixel_at(px, len, w, 48, 40), 0, 0, 0, 0, 1));      // corner cut away
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

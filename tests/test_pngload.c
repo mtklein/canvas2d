@@ -37,7 +37,7 @@ static void round_trip(struct canvas *__single cv, int w, int h,
 
 static void scene_solid(void) {
     int const w = 64, h = 48;
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -45,12 +45,12 @@ static void scene_solid(void) {
     canvas_set_fill_rgba(cv, 0.8f, 0.3f, 0.1f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     round_trip(cv, w, h, "build/test_pngload_solid.png");
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 static void scene_gradient(void) {
     int const w = 120, h = 90;
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -60,12 +60,12 @@ static void scene_gradient(void) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.9f, 0.8f, 0.1f, 0.5f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     round_trip(cv, w, h, "build/test_pngload_gradient.png");
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 static void scene_text(void) {
     int const w = 160, h = 60;
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -76,12 +76,12 @@ static void scene_text(void) {
     canvas_set_font_size(cv, 28.0f);
     canvas_fill_text(cv, "PNG \xE5\xBE\x80\xE8\xBF\x94", 8.0f, 40.0f);  // "PNG 往返"
     round_trip(cv, w, h, "build/test_pngload_text.png");
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 static void scene_emoji(void) {
     int const w = 80, h = 80;
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -91,7 +91,7 @@ static void scene_emoji(void) {
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 64.0f);  // rainbow U+1F308
     round_trip(cv, w, h, "build/test_pngload_emoji.png");
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Every committed gallery PNG loads with sane dimensions: the decoder accepts

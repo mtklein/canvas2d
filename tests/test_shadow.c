@@ -13,7 +13,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -98,7 +98,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 45, 45), 0, 0, 0, 0, 2));      // neither
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

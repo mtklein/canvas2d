@@ -20,7 +20,7 @@ int main(void) {
         0, 0, 255, 255,   255, 255, 0, 255,
     };
 
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -79,7 +79,7 @@ int main(void) {
     canvas_draw_image_subrect(cv, src, 2, 2, 0.0f, 0.0f, 1.0f, 1e30f,
                               0.0f, 3.0f, 3.0f, 1.0f);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

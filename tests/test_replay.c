@@ -17,7 +17,7 @@
 #define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(64, 48);
+    struct canvas *__single cv = canvas(64, 48);
     CHECK(cv != NULL);
 
     // A valid program: comments, blank lines, no trailing newline on the last line.
@@ -211,6 +211,6 @@ int main(void) {
         CHECK(cv != NULL);
     }
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

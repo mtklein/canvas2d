@@ -42,7 +42,7 @@ int main(void) {
         return TEST_REPORT();
     }
     fill_source(src, slen);
-    struct canvas *__single cv = canvas_create(16, 16);
+    struct canvas *__single cv = canvas(16, 16);
     CHECK(cv != NULL);
     if (!cv) {
         free(src);
@@ -92,7 +92,7 @@ int main(void) {
     canvas_read_rgba(cv, px, clen);
     CHECK(px_near(pixel_at(px, clen, 16, 4, 4), 0, 255, 0, 255, 1));  // still green
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(src);
     free(px);
     return TEST_REPORT();

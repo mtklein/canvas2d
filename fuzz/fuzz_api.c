@@ -103,7 +103,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
 
     int W = rd_range(&c, 1, 256), H = rd_range(&c, 1, 256);
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     if (!cv) {
         return 0;
     }
@@ -204,7 +204,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
         }
     }
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return 0;
 }
 

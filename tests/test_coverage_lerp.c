@@ -250,7 +250,7 @@ enum { NSRC = (int)(sizeof SRCS / sizeof SRCS[0]),
 
 static void part_a(void) {
     enum { N = 256 };  // one pixel per coverage byte
-    struct canvas *__single c = canvas_create(N, 1);
+    struct canvas *__single c = canvas(N, 1);
     cnvs_premul *dstt = malloc((size_t)N * sizeof *dstt);
     cnvs_premul *full = malloc((size_t)N * sizeof *full);
     cnvs_premul *fold = malloc((size_t)N * sizeof *fold);
@@ -335,7 +335,7 @@ static void part_a(void) {
         }
     }
 done:
-    canvas_destroy(c);
+    canvas_free(c);
     free(dstt);
     free(full);
     free(fold);
@@ -399,11 +399,11 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
                         float const *__counted_by(4) sc,
                         double const *__counted_by(W * H) cov,
                         errs *en, errs *eo) {
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     uint8_t *px = malloc((size_t)(W * H * 4));
     CHECK(cv && px);
     if (!cv || !px) {
-        canvas_destroy(cv);
+        canvas_free(cv);
         free(px);
         return;
     }
@@ -449,7 +449,7 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
             err_acc(eo, old, ref);
         }
     }
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
 }
 

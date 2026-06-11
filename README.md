@@ -371,7 +371,7 @@ flagship workload — see
 ## Public API (subset of Canvas 2D, snake_case)
 
 ```c
-canvas *cv = canvas_create(width, height);   // (write canvas *__single cv under -fbounds-safety)
+struct canvas *cv = canvas(width, height);   // (write struct canvas *__single cv under -fbounds-safety)
 canvas_resize(cv, width, height)                             // realloc + clear + reset
 canvas_is_context_lost                                        // always false (headless)
 canvas_save / canvas_restore / canvas_reset
@@ -390,14 +390,14 @@ canvas_clear_rect / fill_rect / stroke_rect
 canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / round_rect_radii / arc_to / close_path
 canvas_fill / canvas_stroke / canvas_clip / is_point_in_path / is_point_in_stroke
-canvas_path2d_create / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path
+canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas_path2d_free
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / load_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline / set_direction
 canvas_measure_text / measure_text_full / fill_text / fill_text_max / stroke_text / stroke_text_max  // Libian TC, UTF-8
-canvas_destroy(cv);
+canvas_free(cv);
 ```
 
 Coordinates are pixels, origin top-left, +y down — matching the web platform.

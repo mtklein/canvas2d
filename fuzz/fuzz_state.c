@@ -36,7 +36,7 @@ enum {
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
     struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
-    struct canvas *__single cv = canvas_create(40, 40);
+    struct canvas *__single cv = canvas(40, 40);
     if (!cv) { return 0; }
 
     uint8_t img[16 * 16 * 4];
@@ -84,7 +84,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             default: break;
         }
     }
-    canvas_destroy(cv);   // frees the whole state stack + cur mask + font
+    canvas_free(cv);   // frees the whole state stack + cur mask + font
     return 0;
 }
 

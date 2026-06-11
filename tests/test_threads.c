@@ -132,7 +132,7 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
 
     // A Path2D star spanning several tiles, filled even-odd then stroked.
-    struct canvas_path2d *__single star = canvas_path2d_create();
+    struct canvas_path2d *__single star = canvas_path2d();
     if (star) {
         for (int i = 0; i <= 10; i++) {
             float const r = (i & 1) ? 130.0f : 320.0f;
@@ -152,11 +152,11 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
         canvas_set_line_width(cv, 6.0f);
         canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
         canvas_stroke_path(cv, star);
-        canvas_path2d_destroy(star);
+        canvas_path2d_free(star);
     }
 
     // A Path2D ring used as a clip; pattern-strokes inside it.
-    struct canvas_path2d *__single ring = canvas_path2d_create();
+    struct canvas_path2d *__single ring = canvas_path2d();
     if (ring) {
         canvas_path2d_arc(ring, 260.0f, 200.0f, 150.0f, 0.0f, 6.2831853f, false);
         canvas_save(cv);
@@ -170,7 +170,7 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
             canvas_stroke(cv);
         }
         canvas_restore(cv);
-        canvas_path2d_destroy(ring);
+        canvas_path2d_free(ring);
     }
 }
 
@@ -233,7 +233,7 @@ static bool render_tile(int scene, int tile, uint8_t *__counted_by(len) out, int
     (void)len;
     int const tx = TILE * (tile % COLS);
     int const ty = TILE * (tile / COLS);
-    struct canvas *__single cv = canvas_create(TILE, TILE);
+    struct canvas *__single cv = canvas(TILE, TILE);
     if (!cv) {
         return false;
     }
@@ -251,7 +251,7 @@ static bool render_tile(int scene, int tile, uint8_t *__counted_by(len) out, int
         }
         free(px);
     }
-    canvas_destroy(cv);
+    canvas_free(cv);
     return ok;
 }
 

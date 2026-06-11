@@ -107,7 +107,7 @@ static void check_scene(scene_pair s) {
         return;
     }
 
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(ref);
@@ -155,7 +155,7 @@ static void check_scene(scene_pair s) {
 
     free(got);
     free(ref);
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // The scene list covers every committed gallery/*.canvas (and the directory

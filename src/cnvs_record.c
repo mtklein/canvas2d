@@ -55,7 +55,7 @@ struct cnvs_recorder {
     int npath;
 };
 
-struct cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path) {
+struct cnvs_recorder *__single cnvs_recorder_begin(char const *__null_terminated path) {
     FILE *f = fopen(path, "wb");
     if (!f) {
         return NULL;
@@ -70,7 +70,7 @@ struct cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated 
     return r;
 }
 
-void cnvs_recorder_close(struct cnvs_recorder *__single r) {
+void cnvs_recorder_end(struct cnvs_recorder *__single r) {
     if (!r) {
         return;
     }

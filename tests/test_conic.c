@@ -26,7 +26,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -57,7 +57,7 @@ int main(void) {
     CHECK(dom_red(pixel_at(px, len, W, 16, 28)));    // red moved to "down"
     CHECK(dom_white(pixel_at(px, len, W, 28, 16)));  // "right" is now white
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

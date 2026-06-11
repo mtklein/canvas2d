@@ -58,7 +58,7 @@ static void draw_some(struct canvas *__single cv, int seed) {
 
 int main(void) {
     for (int i = 0; i < 16; i++) {
-        struct canvas *__single cv = canvas_create(48, 48);
+        struct canvas *__single cv = canvas(48, 48);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -87,7 +87,7 @@ int main(void) {
         canvas_fill_text(cv, "\xF0\x9F\x99\x82", 4.0f, 40.0f);  // 🙂
         canvas_fill_text(cv, "\xF0\x9F\x99\x82", 20.0f, 40.0f);
 
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 
     // Record/replay ownership: the recorder's content-dedupe copies (one per
@@ -98,7 +98,7 @@ int main(void) {
     // truncated-block drop paths, which a failing replay exercises.
     for (int i = 0; i < 4; i++) {
         char const *__null_terminated path = "build/test_leak.canvas";
-        struct canvas *__single cv = canvas_create(48, 48);
+        struct canvas *__single cv = canvas(48, 48);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -111,17 +111,17 @@ int main(void) {
         canvas_draw_image(cv, src, 8, 8, 2.0f, 2.0f);
         canvas_set_fill_pattern(cv, src, 8, 8, CANVAS_REPEAT);
         canvas_fill_rect(cv, 0.0f, 0.0f, 24.0f, 24.0f);
-        struct canvas_path2d *__single p2 = canvas_path2d_create();
+        struct canvas_path2d *__single p2 = canvas_path2d();
         if (p2) {
             canvas_path2d_rect(p2, 4.0f, 4.0f, 20.0f, 20.0f);
             canvas_fill_path(cv, p2, CANVAS_NONZERO);
             canvas_stroke_path(cv, p2);  // dedupe hit: no second copy
-            canvas_path2d_destroy(p2);
+            canvas_path2d_free(p2);
         }
         canvas_fill_text(cv, "Ag", 4.0f, 40.0f);
-        canvas_destroy(cv);  // closes the recording, freeing its copies
+        canvas_free(cv);  // closes the recording, freeing its copies
 
-        struct canvas *__single rv = canvas_create(48, 48);
+        struct canvas *__single rv = canvas(48, 48);
         CHECK(rv != NULL);
         if (!rv) {
             continue;
@@ -133,7 +133,7 @@ int main(void) {
         CHECK(!cnvs_replay_text(rv, trunc_path, sizeof trunc_path - 1));
         static char const trunc_image[] = "image 0 1 1 12 1\n";
         CHECK(!cnvs_replay_text(rv, trunc_image, sizeof trunc_image - 1));
-        canvas_destroy(rv);  // frees the adopted image blocks
+        canvas_free(rv);  // frees the adopted image blocks
     }
     return TEST_REPORT();
 }

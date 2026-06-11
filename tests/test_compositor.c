@@ -64,7 +64,7 @@ static void source_over_vs_double(void) {
     cnvs_premul *__counted_by(n) dst = malloc((size_t)n * sizeof *dst);
     cnvs_premul *__counted_by(n) src = malloc((size_t)n * sizeof *src);
     cnvs_premul *__counted_by(n) out = malloc((size_t)n * sizeof *out);
-    struct canvas *__single c = canvas_create(N, N);
+    struct canvas *__single c = canvas(N, N);
     CHECK(dst != NULL && src != NULL && out != NULL && c != NULL);
     if (dst && src && out && c) {
         for (int y = 0; y < N; y++) {
@@ -105,7 +105,7 @@ static void source_over_vs_double(void) {
         }
         CHECK(max_delta <= 1);
     }
-    canvas_destroy(c);
+    canvas_free(c);
     free(dst);
     free(src);
     free(out);
@@ -126,7 +126,7 @@ static void solid_vs_tile(void) {
     cnvs_premul *__counted_by(n) want = malloc((size_t)n * sizeof *want);
     uint8_t *__counted_by(n) covp = malloc((size_t)n);
     uint8_t *__counted_by(n) mask = malloc((size_t)n);
-    struct canvas *__single c = canvas_create(W, H);
+    struct canvas *__single c = canvas(W, H);
     CHECK(dst && tile && got && want && covp && mask && c);
     if (dst && tile && got && want && covp && mask && c) {
         cnvs_premul const color =
@@ -162,7 +162,7 @@ static void solid_vs_tile(void) {
             }
         }
     }
-    canvas_destroy(c);
+    canvas_free(c);
     free(dst);
     free(tile);
     free(got);
@@ -174,7 +174,7 @@ static void solid_vs_tile(void) {
 int main(void) {
     int const w = 16, h = 16, len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single c = canvas_create(w, h);
+    struct canvas *__single c = canvas(w, h);
     CHECK(px != NULL);
     CHECK(c != NULL);
     if (!px || !c) {
@@ -257,7 +257,7 @@ int main(void) {
     free(opaque_red);
     free(half_green);
 
-    canvas_destroy(c);
+    canvas_free(c);
     free(px);
 
     source_over_vs_double();

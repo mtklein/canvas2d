@@ -31,12 +31,12 @@ static void draw_scene(struct canvas *__single cv) {
 // drawn again) on another -- the readback bytes must match exactly, and the
 // stats must prove the second draw never went back to the boundary.
 static void check_transparent(void) {
-    struct canvas *__single cold = canvas_create(W, H);
-    struct canvas *__single warm = canvas_create(W, H);
+    struct canvas *__single cold = canvas(W, H);
+    struct canvas *__single warm = canvas(W, H);
     CHECK(cold != NULL && warm != NULL);
     if (!cold || !warm) {
-        canvas_destroy(cold);
-        canvas_destroy(warm);
+        canvas_free(cold);
+        canvas_free(warm);
         return;
     }
     draw_scene(cold);
@@ -56,14 +56,14 @@ static void check_transparent(void) {
     canvas_get_image_data(warm, 0, 0, W, H, b, LEN);
     CHECK(memcmp(a, b, LEN) == 0);
 
-    canvas_destroy(cold);
-    canvas_destroy(warm);
+    canvas_free(cold);
+    canvas_free(warm);
 }
 
 // The measure-then-draw pattern real callers use, plus key correctness: a
 // different size or different bytes is a different key; the originals stay hot.
 static void check_keys(void) {
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -101,7 +101,7 @@ static void check_keys(void) {
     (void)canvas_measure_text(cv, "kerning");          // ...and the ltr one kept
     CHECK(c->shape_misses == 4 && c->shape_hits == 5);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Eviction: one entry past the bound pushes out the least-recently-used line.
@@ -115,12 +115,12 @@ static char const k_family[] = "Libian TC";  // the canvas's pinned family;
                                              // joins the boundary call, not the key
 
 static void check_eviction(void) {
-    struct canvas *__single churn = canvas_create(W, H);
-    struct canvas *__single fresh = canvas_create(W, H);
+    struct canvas *__single churn = canvas(W, H);
+    struct canvas *__single fresh = canvas(W, H);
     CHECK(churn != NULL && fresh != NULL);
     if (!churn || !fresh) {
-        canvas_destroy(churn);
-        canvas_destroy(fresh);
+        canvas_free(churn);
+        canvas_free(fresh);
         return;
     }
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(churn);
@@ -156,14 +156,14 @@ static void check_eviction(void) {
     canvas_get_image_data(fresh, 0, 0, W, H, b, LEN);
     CHECK(memcmp(a, b, LEN) == 0);
 
-    canvas_destroy(churn);
-    canvas_destroy(fresh);
+    canvas_free(churn);
+    canvas_free(fresh);
 }
 
 // The glyph-curve map: a repeated glyph is fetched once per (font, glyph), a
 // blank (the space) caches as "no outline", and a warm redraw adds no misses.
 static void check_glyph_once(void) {
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -181,14 +181,14 @@ static void check_glyph_once(void) {
     CHECK(c->glyph_misses == 2);
     CHECK(c->glyph_hits == 8);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Fallback interning: Hebrew falls back from the pinned (CJK) face to another
 // outline font, so two names intern and their glyph keys live side by side --
 // a second draw hits every one of them (no key collisions across fonts).
 static void check_fallback_fonts(void) {
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -203,18 +203,18 @@ static void check_fallback_fonts(void) {
     canvas_fill_text(cv, "A\xD7\x90", 2.0f, 30.0f);
     CHECK(c->glyph_misses == gmiss);  // both fonts' glyphs hit on the redraw
 
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // reset(): the cache goes back to its initial (empty) state -- documented with
 // the reset contract in canvas.c -- and a post-reset draw is cold but correct.
 static void check_reset(void) {
-    struct canvas *__single cv = canvas_create(W, H);
-    struct canvas *__single fresh = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single fresh = canvas(W, H);
     CHECK(cv != NULL && fresh != NULL);
     if (!cv || !fresh) {
-        canvas_destroy(cv);
-        canvas_destroy(fresh);
+        canvas_free(cv);
+        canvas_free(fresh);
         return;
     }
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
@@ -238,8 +238,8 @@ static void check_reset(void) {
     canvas_get_image_data(fresh, 0, 0, W, H, b, LEN);
     CHECK(memcmp(a, b, LEN) == 0);
 
-    canvas_destroy(cv);
-    canvas_destroy(fresh);
+    canvas_free(cv);
+    canvas_free(fresh);
 }
 
 int main(void) {

@@ -16,7 +16,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -48,7 +48,7 @@ int main(void) {
     // the coverage back.
     CHECK(pixel_at(px, len, W, (int)(cx + r + hw - 2.0f), 80).a > 250);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

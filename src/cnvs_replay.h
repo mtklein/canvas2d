@@ -16,7 +16,7 @@
 bool cnvs_replay_text(struct canvas *__single cv, char const *__counted_by(len) data, size_t len);
 
 // Adopt a malloc'd RGBA8 buffer rebuilt from a replayed `image` block: the
-// canvas owns it until canvas_destroy (implemented in canvas.c).  The canvas
+// canvas owns it until canvas_free (implemented in canvas.c).  The canvas
 // -- not the parser -- must own these because set_fill_pattern/
 // set_stroke_pattern BORROW their source, so a pattern set by a replayed
 // program has to stay valid after replay returns (and across reset(), which

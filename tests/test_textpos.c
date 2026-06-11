@@ -43,7 +43,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -88,7 +88,7 @@ int main(void) {
     CHECK(by < my && my < ty);     // middle strictly between
     CHECK(abs(iy - by) <= 1);      // ideographic ~ bottom (no BASE table)
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

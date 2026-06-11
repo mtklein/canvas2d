@@ -19,7 +19,7 @@ static void roundtrip_exhaustive(void) {
     int const rlen = RW * RH * 4;
     uint8_t *__counted_by(rlen) in = malloc((size_t)rlen);
     uint8_t *__counted_by(rlen) out = malloc((size_t)rlen);
-    struct canvas *__single cv = canvas_create(RW, RH);
+    struct canvas *__single cv = canvas(RW, RH);
     CHECK(in != NULL && out != NULL && cv != NULL);
     if (in && out && cv) {
         for (int y = 0; y < RH; y++) {
@@ -40,7 +40,7 @@ static void roundtrip_exhaustive(void) {
         CHECK(mismatched == 0);
     }
     if (cv) {
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(in);
     free(out);
@@ -91,7 +91,7 @@ int main(void) {
     int const H = 8;
     int const len = W * H * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
@@ -130,7 +130,7 @@ int main(void) {
             CHECK(px_near(pixel_at(px, len, W, 0, 0), 0, 255, 0, 255, 1));
             free(green);
         }
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     free(px);
     return TEST_REPORT();

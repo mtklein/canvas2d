@@ -12,7 +12,7 @@ static bool mat_near(canvas_matrix m, float a, float b, float c, float d,
 }
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(16, 16);
+    struct canvas *__single cv = canvas(16, 16);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -44,6 +44,6 @@ int main(void) {
     canvas_restore(cv);
     CHECK(mat_near(canvas_get_transform(cv), 1, 0, 0, 1, 4, 8));
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

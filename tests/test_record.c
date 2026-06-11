@@ -156,7 +156,7 @@ static void draw_program(struct canvas *__single cv) {
     // twice each for fill/stroke, so the content dedupe pins ONE `path` block
     // (the idempotence compare again) -- plus the two hit-test overloads,
     // which are queries and must record nothing.
-    struct canvas_path2d *__single p2 = canvas_path2d_create();
+    struct canvas_path2d *__single p2 = canvas_path2d();
     if (p2) {
         canvas_path2d_move_to(p2, 20.0f, 4.0f);
         canvas_path2d_line_to(p2, 30.0f, 4.0f);
@@ -182,7 +182,7 @@ static void draw_program(struct canvas *__single cv) {
         canvas_set_fill_rgba(cv, 0.9f, 0.4f, 0.1f, 1.0f);
         canvas_fill_rect(cv, 18.0f, 2.0f, 16.0f, 14.0f);
         canvas_restore(cv);
-        canvas_path2d_destroy(p2);
+        canvas_path2d_free(p2);
     }
 
     // A clip last, so a non-empty path region is exercised by the clip command.
@@ -213,21 +213,21 @@ int main(void) {
 
     // Opening an unwritable path records nothing and reports failure.
     {
-        struct canvas *__single bad = canvas_create(W, H);
+        struct canvas *__single bad = canvas(W, H);
         CHECK(bad != NULL);
         CHECK(!canvas_record_to(bad, "build/no_such_dir_xyzzy/out.canvas"));
-        canvas_destroy(bad);
+        canvas_free(bad);
     }
 
     // 1. Record a program to p1, capturing its pixels before destroy closes p1.
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p1));
         draw_program(cv);
         canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
-        canvas_destroy(cv);  // flush + close p1
+        canvas_free(cv);  // flush + close p1
     }
 
     // The program actually drew something (not a blank bitmap).
@@ -241,23 +241,23 @@ int main(void) {
 
     // 2. Pixel identity: replay p1 onto a fresh canvas; bitmaps match exactly.
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, p1));
         uint8_t replayed_px[NPX];
         canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 
     // 3. Text idempotence: replay p1 while recording into p2; p1 == p2 byte-for-
     // byte, proving record/replay are inverse on the canonical text form.
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p2));
         CHECK(canvas_replay_from(cv, p1));
-        canvas_destroy(cv);  // flush + close p2
+        canvas_free(cv);  // flush + close p2
 
         char a[1 << 14];
         char b[1 << 14];

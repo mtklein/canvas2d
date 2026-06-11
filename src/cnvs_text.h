@@ -236,7 +236,7 @@ struct cnvs_text_cache {
 };
 
 void cnvs_text_cache_init(struct cnvs_text_cache *__single c);   // an empty cache
-void cnvs_text_cache_clear(struct cnvs_text_cache *__single c);  // free entries -> empty;
+void cnvs_text_cache_reset(struct cnvs_text_cache *__single c);  // free entries -> empty;
                                                           // also the destructor (the
                                                           // struct owns no spine)
 
@@ -415,9 +415,9 @@ void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
 // box and baselines.  NULL on failure.  Like cnvs_shape, the name crosses the
 // boundary counted -- (bytes, len), no NUL contract.
 struct cnvs_font;
-struct cnvs_font *__single cnvs_font_create(char const *__counted_by(name_len) name,
+struct cnvs_font *__single cnvs_font(char const *__counted_by(name_len) name,
                                      int name_len, float size_px);
-void cnvs_font_destroy(struct cnvs_font *__single f);
+void cnvs_font_free(struct cnvs_font *__single f);
 
 // Font vertical metrics in user px: ascent and descent, both positive magnitudes
 // from the baseline.  Cheap (no glyph walk) -- for textBaseline positioning.

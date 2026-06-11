@@ -56,12 +56,12 @@ int main(void) {
     uint8_t *__counted_by(LEN) px = malloc((size_t)LEN);
     uint8_t *__counted_by(LEN) qx = malloc((size_t)LEN);
     CHECK(px && qx);
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!px || !qx || !cv) {
         free(px);
         free(qx);
-        if (cv) { canvas_destroy(cv); }
+        if (cv) { canvas_free(cv); }
         return TEST_REPORT();
     }
 
@@ -207,7 +207,7 @@ int main(void) {
     canvas_read_rgba(cv, qx, LEN);
     CHECK(memcmp(px, qx, (size_t)LEN) == 0);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     free(qx);
     return TEST_REPORT();

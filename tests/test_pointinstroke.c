@@ -4,7 +4,7 @@
 #include <math.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(80, 80);
+    struct canvas *__single cv = canvas(80, 80);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -51,6 +51,6 @@ int main(void) {
     CHECK(canvas_is_point_in_stroke(cv, 10.0f, 10.0f));    // -> device (20,20), on line
     CHECK(!canvas_is_point_in_stroke(cv, 10.0f, 30.0f));   // -> device (20,40), far off
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

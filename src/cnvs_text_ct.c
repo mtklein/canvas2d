@@ -304,7 +304,7 @@ struct cnvs_font {
     CTFontRef font;
 };
 
-struct cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px) {
+struct cnvs_font *cnvs_font(char const *name, int name_len, float size_px) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     if (!cfname) {
         return NULL;
@@ -323,7 +323,7 @@ struct cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px
     return f;
 }
 
-void cnvs_font_destroy(struct cnvs_font *f) {
+void cnvs_font_free(struct cnvs_font *f) {
     if (!f) {
         return;
     }

@@ -2,7 +2,7 @@
 #include "test_util.h"
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(8, 8);
+    struct canvas *__single cv = canvas(8, 8);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -17,6 +17,6 @@ int main(void) {
     canvas_reset(cv);
     CHECK(!canvas_is_context_lost(cv));
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

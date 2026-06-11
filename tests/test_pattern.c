@@ -23,7 +23,7 @@ int main(void) {
         255, 0, 0, 255,   0, 255, 0, 255,
         0, 0, 255, 255,   255, 255, 255, 255,
     };
-    struct canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -93,7 +93,7 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(is(px, len, 4, 4, 0, 255, 0, 255));  // still solid green
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

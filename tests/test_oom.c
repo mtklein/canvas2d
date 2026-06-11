@@ -168,7 +168,7 @@ static void scene_png(struct canvas *__single cv) {
 // Run `fn` with each of its allocations failing in turn; it must never crash, and
 // the canvas must stay usable afterwards.
 static void sweep(scene_fn fn) {
-    struct canvas *__single probe = canvas_create(W, H);
+    struct canvas *__single probe = canvas(W, H);
     CHECK(probe != NULL);
     if (!probe) {
         return;
@@ -176,11 +176,11 @@ static void sweep(scene_fn fn) {
     cnvs_oom_fail_at(0);
     fn(probe);
     int allocs = cnvs_oom_seen();
-    canvas_destroy(probe);
+    canvas_free(probe);
     CHECK(allocs > 0);  // the scene must allocate, or the sweep tests nothing
 
     for (int k = 1; k <= allocs; k++) {
-        struct canvas *__single cv = canvas_create(W, H);  // fresh -> stable alloc sequence
+        struct canvas *__single cv = canvas(W, H);  // fresh -> stable alloc sequence
         if (!cv) {
             continue;
         }
@@ -188,7 +188,7 @@ static void sweep(scene_fn fn) {
         fn(cv);                                      // k-th allocation fails
         cnvs_oom_fail_at(0);
         canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);  // still usable
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 }
 
@@ -207,20 +207,20 @@ int main(void) {
     sweep(scene_pointinpath);
     sweep(scene_png);
 
-    // canvas_create must itself fail to NULL under a single allocation failure
+    // canvas must itself fail to NULL under a single allocation failure
     // (rather than return a half-built canvas), for every alloc it makes.
     for (int k = 1; k <= 12; k++) {
         cnvs_oom_fail_at(k);
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         cnvs_oom_fail_at(0);
         if (cv) {
-            canvas_destroy(cv);  // k past create's alloc count -> a real canvas
+            canvas_free(cv);  // k past create's alloc count -> a real canvas
         }
     }
 
     // Sanity: with the injector disarmed everything still works end to end.
     cnvs_oom_fail_at(0);
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
@@ -228,7 +228,7 @@ int main(void) {
         uint8_t px[4];
         canvas_get_image_data(cv, W / 2, H / 2, 1, 1, px, 4);
         CHECK(px[0] > 250 && px[1] < 5 && px[2] < 5 && px[3] == 255);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     return TEST_REPORT();
 }

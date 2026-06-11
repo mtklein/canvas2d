@@ -151,7 +151,7 @@ static void check_round_trip(void) {
     memset(&m23, 0, sizeof m23);
     memset(&me, 0, sizeof me);
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -168,13 +168,13 @@ static void check_round_trip(void) {
         canvas_set_font_size(cv, 21.0f);
         we = canvas_measure_text(cv, "a\xF0\x9F\x8C\x88z");
         me = canvas_measure_text_full(cv, "a\xF0\x9F\x8C\x88z");
-        canvas_destroy(cv);  // flush + close the file
+        canvas_free(cv);  // flush + close the file
     }
     CHECK(w17 > 0.0f && w23 > w17 && we > 0.0f);
     CHECK(me.actual_bounding_box_ascent > 0.0f);  // the emoji ink measured
 
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -210,7 +210,7 @@ static void check_round_trip(void) {
         CHECK(c->shape_misses == 0);
         CHECK(c->glyph_misses == 0);
 
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 }
 
@@ -221,7 +221,7 @@ static void check_dedup(void) {
     char const *__null_terminated twice = "build/test_record_text_d2.canvas";
 
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -230,10 +230,10 @@ static void check_dedup(void) {
         canvas_set_font_size(cv, 16.0f);
         canvas_fill_text(cv, "echo", 4.0f, 24.0f);
         canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -244,7 +244,7 @@ static void check_dedup(void) {
         canvas_fill_text(cv, "echo", 4.0f, 48.0f);
         canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);
         canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 40.0f, 48.0f);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 
     // Static buffers: roomy enough even if a capture ever compressed badly.
@@ -285,7 +285,7 @@ static void check_dedup(void) {
 static void check_size(void) {
     char const *__null_terminated path = "build/test_record_text_z.canvas";
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -293,7 +293,7 @@ static void check_size(void) {
         CHECK(canvas_record_to(cv, path));
         canvas_set_font_size(cv, 32.0f);
         canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     static char buf[1 << 19];
     int n = slurp(path, buf, (int)sizeof buf);
@@ -358,7 +358,7 @@ static bool replay_fmt(struct canvas *__single cv, char const *__null_terminated
 // Strict parsing: malformed blocks stop replay (false) without corrupting the
 // canvas -- it draws normally afterwards.
 static void check_strict(void) {
-    struct canvas *__single cv = canvas_create(64, 48);
+    struct canvas *__single cv = canvas(64, 48);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -517,7 +517,7 @@ static void check_strict(void) {
     canvas_get_image_data(cv, 0, 0, 64, 48, px, (int)sizeof px);
     CHECK(px[0] == 255);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // xorshift32, run in 64-bit and masked back: the wrap is by design, so keep
@@ -556,7 +556,7 @@ static bool roundtrips(struct canvas *__single cv, FILE *__single f,
 // The float round-trip property: emit/parse identity over denormals, negative
 // zero, extremes, powers of two, and a large random sweep of bit patterns.
 static void check_float_round_trip(void) {
-    struct canvas *__single cv = canvas_create(8, 8);
+    struct canvas *__single cv = canvas(8, 8);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -565,7 +565,7 @@ static void check_float_round_trip(void) {
     FILE *__single f = fmemopen(line, sizeof line, "w");
     CHECK(f != NULL);
     if (!f) {
-        canvas_destroy(cv);
+        canvas_free(cv);
         return;
     }
 
@@ -625,7 +625,7 @@ static void check_float_round_trip(void) {
     CHECK(bad == 0);
 
     (void)fclose(f);
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // stroke_rect and fill_text_max -- the last two ops the gallery text scenes
@@ -639,7 +639,7 @@ static void check_new_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -669,11 +669,11 @@ static void check_new_ops(void) {
         canvas_fill_text_max(cv, "Condense me to fit", 4.0f, 88.0f, 60.0f);
         canvas_fill_text_max(cv, "free", 70.0f, 88.0f, -1.0f);
         canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
-        canvas_destroy(cv);  // flush + close
+        canvas_free(cv);  // flush + close
     }
 
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -688,11 +688,11 @@ static void check_new_ops(void) {
         uint8_t replayed_px[NPX];
         canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 
     // Strict parsing of the new op lines (the canvas still draws after each).
-    struct canvas *__single cv = canvas_create(32, 32);
+    struct canvas *__single cv = canvas(32, 32);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -709,7 +709,7 @@ static void check_new_ops(void) {
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // The shadow setters round-trip: a drop-shadowed fill_text (the gallery's emoji
@@ -722,7 +722,7 @@ static void check_shadow_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -738,10 +738,10 @@ static void check_shadow_ops(void) {
         canvas_set_font_size(cv, 28.0f);
         canvas_fill_text(cv, "shadow", 6.0f, 50.0f);
         canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -753,11 +753,11 @@ static void check_shadow_ops(void) {
         uint8_t replayed_px[NPX];
         canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 
     // Strict parse of the shadow op lines.
-    struct canvas *__single cv = canvas_create(32, 32);
+    struct canvas *__single cv = canvas(32, 32);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -768,7 +768,7 @@ static void check_shadow_ops(void) {
     CHECK(!REPLAY(cv, "set_shadow_color_rgba 0 0 0\n"));    // too few floats
     CHECK(!REPLAY(cv, "set_shadow_blur\n"));                // missing float
     CHECK(!REPLAY(cv, "set_shadow_offset_x 3 4\n"));        // trailing junk
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Direction rides the shape block: the same bytes drawn under ltr and then rtl
@@ -785,7 +785,7 @@ static void check_direction_blocks(void) {
     uint8_t recorded_px[NPX];
     float w_ltr = 0.0f, w_rtl = 0.0f;
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -801,7 +801,7 @@ static void check_direction_blocks(void) {
         canvas_fill_text(cv, mixed, 4.0f, 70.0f);   // same bytes, other paragraph
         w_rtl = canvas_measure_text(cv, mixed);
         canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
     CHECK(w_ltr > 0.0f && w_rtl > 0.0f);  // draw-measure agreement holds per
                                           // direction (same key, same line)
@@ -818,7 +818,7 @@ static void check_direction_blocks(void) {
     CHECK(count_lines(buf, n, "set_direction ") == 1);
 
     {
-        struct canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -841,7 +841,7 @@ static void check_direction_blocks(void) {
         canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         CHECK(feq_bits(canvas_measure_text(cv, mixed), w_rtl));
         CHECK(c->shape_misses == 0);
-        canvas_destroy(cv);
+        canvas_free(cv);
     }
 }
 

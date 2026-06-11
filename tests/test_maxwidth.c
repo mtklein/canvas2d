@@ -39,7 +39,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -89,7 +89,7 @@ int main(void) {
     CHECK(ws > 0);
     CHECK(ws < wn);  // narrower than the unconstrained fill
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

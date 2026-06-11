@@ -32,7 +32,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -71,7 +71,7 @@ int main(void) {
     CHECK(red(px, len, 20, 5));     // top of the inscribed circle
     CHECK(clear(px, len, 6, 6));    // corner well outside the circle
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

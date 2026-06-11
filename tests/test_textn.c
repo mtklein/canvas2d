@@ -23,9 +23,9 @@ static void setup(struct canvas *__single cv) {
 }
 
 int main(void) {
-    struct canvas *__single a = canvas_create(W, H);
-    struct canvas *__single b = canvas_create(W, H);
-    struct canvas *__single c = canvas_create(W, H);
+    struct canvas *__single a = canvas(W, H);
+    struct canvas *__single b = canvas(W, H);
+    struct canvas *__single c = canvas(W, H);
     CHECK(a != NULL);
     CHECK(b != NULL);
     CHECK(c != NULL);
@@ -53,8 +53,8 @@ int main(void) {
     CHECK(memcmp(pa, pc, sizeof pa) != 0);  // and "ABC" != "ABCDEF" (non-trivial)
 
     // stroke_text_n likewise matches stroke_text on the slice.
-    struct canvas *__single d = canvas_create(W, H);
-    struct canvas *__single e = canvas_create(W, H);
+    struct canvas *__single d = canvas(W, H);
+    struct canvas *__single e = canvas(W, H);
     CHECK(d != NULL);
     CHECK(e != NULL);
     setup(d);
@@ -67,7 +67,7 @@ int main(void) {
     CHECK(memcmp(pd, pe, sizeof pd) == 0);
 
     // A zero-length slice draws nothing (and must not read text at all).
-    struct canvas *__single f = canvas_create(W, H);
+    struct canvas *__single f = canvas(W, H);
     CHECK(f != NULL);
     setup(f);
     canvas_fill_text_n(f, buf, 0, 4.0f, 20.0f);
@@ -79,11 +79,11 @@ int main(void) {
     }
     CHECK(!any);
 
-    canvas_destroy(a);
-    canvas_destroy(b);
-    canvas_destroy(c);
-    canvas_destroy(d);
-    canvas_destroy(e);
-    canvas_destroy(f);
+    canvas_free(a);
+    canvas_free(b);
+    canvas_free(c);
+    canvas_free(d);
+    canvas_free(e);
+    canvas_free(f);
     return TEST_REPORT();
 }

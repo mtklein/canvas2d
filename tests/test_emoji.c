@@ -36,7 +36,7 @@ static void check_renders_in_color(void) {
         return;
     }
 
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -104,7 +104,7 @@ static void check_renders_in_color(void) {
     }
     CHECK(ascii_ink > 50);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
 }
 
@@ -214,7 +214,7 @@ static void check_halve_premul(void) {
 // Mip selection on a real capture: the smallest level >= the footprint in
 // both dimensions, the capture above the top level, 1x1 at the bottom.
 static void check_mip_select(void) {
-    struct canvas *__single cv = canvas_create(64, 64);
+    struct canvas *__single cv = canvas(64, 64);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -249,7 +249,7 @@ static void check_mip_select(void) {
             CHECK(m.len == m.w * m.h * 4);
         }
     }
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 // Draw an emoji at exactly the capture's size over white and read back: every
@@ -295,7 +295,7 @@ static void check_draw_matches_level(struct canvas *__single cv, float size_px,
 }
 
 static void check_draw_equivalence(void) {
-    struct canvas *__single cv = canvas_create(192, 192);
+    struct canvas *__single cv = canvas(192, 192);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -314,7 +314,7 @@ static void check_draw_equivalence(void) {
         CHECK(half.w == 80);
         check_draw_matches_level(cv, 80.0f, half, 16, 16);
     }
-    canvas_destroy(cv);
+    canvas_free(cv);
 }
 
 int main(void) {

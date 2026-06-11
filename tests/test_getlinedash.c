@@ -4,7 +4,7 @@
 #include <math.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(16, 16);
+    struct canvas *__single cv = canvas(16, 16);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -43,6 +43,6 @@ int main(void) {
     canvas_set_line_dash(cv, NULL, 0);
     CHECK(canvas_get_line_dash(cv, out, 8) == 0);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

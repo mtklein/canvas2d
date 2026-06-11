@@ -164,7 +164,7 @@ void cnvs_text_cache_init(struct cnvs_text_cache *__single c) {
     memset(c, 0, sizeof *c);  // empty slots: NULL pointers with zero counts
 }
 
-void cnvs_text_cache_clear(struct cnvs_text_cache *__single c) {
+void cnvs_text_cache_reset(struct cnvs_text_cache *__single c) {
     for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
         if (c->shape[i].s) {
             cnvs_shaped_free(c->shape[i].s);  // releases the runs' CTFontRefs too

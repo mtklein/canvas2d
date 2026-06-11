@@ -14,7 +14,7 @@ int main(void) {
     // A 2x1 source: left pixel red, right pixel blue.
     uint8_t src[8] = { 255, 0, 0, 255,  0, 0, 255, 255 };
 
-    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -46,7 +46,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, clen, W, 3, 20), 255, 0, 0, 255, 2));
     CHECK(px_near(pixel_at(px, clen, W, 37, 20), 0, 0, 255, 255, 2));
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

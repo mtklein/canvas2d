@@ -13,7 +13,7 @@
 #include <ptrcheck.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(64, 64);
+    struct canvas *__single cv = canvas(64, 64);
     CHECK(cv != NULL);
 
     // The reported crash value (finite, > INT_MAX) plus NaN/Inf and other huge
@@ -68,6 +68,6 @@ int main(void) {
     canvas_get_image_data(cv, 0, 0, 64, 64, px, (int)sizeof px);
     CHECK(px[0] == 128 || px[0] == 127);  // mid-grey was painted
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

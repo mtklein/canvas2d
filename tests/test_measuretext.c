@@ -4,7 +4,7 @@
 #include <math.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas_create(64, 64);
+    struct canvas *__single cv = canvas(64, 64);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -55,6 +55,6 @@ int main(void) {
     CHECK(e.actual_bounding_box_right == 0.0f);
     CHECK(e.font_bounding_box_ascent > 0.0f);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     return TEST_REPORT();
 }

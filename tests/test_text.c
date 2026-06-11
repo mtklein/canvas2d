@@ -28,7 +28,7 @@ int main(void) {
         return TEST_REPORT();
     }
 
-    struct canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -117,7 +117,7 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(ink_count(px, len, n, 128) > 50);
 
-    canvas_destroy(cv);
+    canvas_free(cv);
     free(px);
     return TEST_REPORT();
 }

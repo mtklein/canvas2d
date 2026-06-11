@@ -53,7 +53,7 @@ static float clamp01(float v) {
 
 // One RGBA8 buffer adopted from a replayed `image` block
 // (cnvs_canvas_own_image): a singly linked list the canvas frees only at
-// canvas_destroy.  Patterns borrow their source, so a replayed program's
+// canvas_free.  Patterns borrow their source, so a replayed program's
 // images must outlive replay -- and survive reset(), which restores drawing
 // state but does not invalidate the program's blocks mid-replay.
 struct cnvs_owned_image {
@@ -194,7 +194,7 @@ static void pattern_clear(struct cnvs_pattern *p) {
 
 // The initial drawing state (Canvas defaults): identity transform, opaque black
 // fill/stroke, source-over, 1px miter strokes, no dash, 10px text, open clip.
-// Shared by canvas_create and canvas_reset so the two can't drift.  Assigned
+// Shared by canvas and canvas_reset so the two can't drift.  Assigned
 // field by field (not an init list): a compound literal of side-effecting calls
 // has indeterminate evaluation order, which -fbounds-safety flags for a struct
 // carrying a __counted_by member.  Clearing the gradient scratch isn't needed
@@ -235,7 +235,7 @@ static void state_defaults(struct canvas_state *s) {
     s->clip_mask = NULL;
 }
 
-struct canvas *__single canvas_create(int width, int height) {
+struct canvas *__single canvas(int width, int height) {
     if (width <= 0 || height <= 0 ||
         width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
         return NULL;
@@ -268,11 +268,11 @@ struct canvas *__single canvas_create(int width, int height) {
     return cv;
 }
 
-void canvas_destroy(struct canvas *__single cv) {
+void canvas_free(struct canvas *__single cv) {
     if (!cv) {
         return;
     }
-    cnvs_recorder_close(cv->rec);  // flush and close any active recording
+    cnvs_recorder_end(cv->rec);  // flush and close any active recording
     free(cv->target);
     for (int i = 0; i < cv->stack_len; i++) {
         free(cv->stack[i].filters);
@@ -281,8 +281,8 @@ void canvas_destroy(struct canvas *__single cv) {
     free(cv->stack);
     free(cv->cur.filters);
     free(cv->cur.clip_mask);
-    cnvs_font_destroy(cv->font);
-    cnvs_text_cache_clear(&cv->text_cache);  // owned shaped lines + glyph curves
+    cnvs_font_free(cv->font);
+    cnvs_text_cache_reset(&cv->text_cache);  // owned shaped lines + glyph curves
     cnvs_path_free(&cv->path);
     cnvs_path_free(&cv->text_path);
     cnvs_verts_free(&cv->scratch_verts);
@@ -317,8 +317,8 @@ bool cnvs_canvas_own_image(struct canvas *__single cv,
 }
 
 bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated path) {
-    cnvs_recorder_close(cv->rec);  // stop any prior recording first
-    cv->rec = cnvs_recorder_open(path);
+    cnvs_recorder_end(cv->rec);  // stop any prior recording first
+    cv->rec = cnvs_recorder_begin(path);
     // A new file holds no blocks yet: forget what any prior recording emitted,
     // so warm cache entries serialize afresh into this one.
     cnvs_text_cache_unmark(&cv->text_cache);
@@ -418,7 +418,7 @@ void canvas_reset(struct canvas *__single cv) {
     // contract is "as if freshly created", and reset is the natural point for a
     // long-lived canvas to shed accumulated memory, so warm entries go (and
     // resize(), which resets, starts its new canvas cold like create() does).
-    cnvs_text_cache_clear(&cv->text_cache);
+    cnvs_text_cache_reset(&cv->text_cache);
     // Clear the whole bitmap to transparent black: a destination-out of a
     // unit-alpha splat leaves dst*(1 - 1) = 0 everywhere, with the clip open
     // (state_defaults just dropped the mask; no tile, so a reset can't fail
@@ -2575,8 +2575,8 @@ static char const k_font_family[] = "Libian TC";
 // Rebuild the cached font when the requested size changes; NULL on failure.
 static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
-        cnvs_font_destroy(cv->font);
-        cv->font = cnvs_font_create(k_font_family, (int)sizeof k_font_family - 1,
+        cnvs_font_free(cv->font);
+        cv->font = cnvs_font(k_font_family, (int)sizeof k_font_family - 1,
                                     cv->cur.font_size);
         cv->font_built_size = cv->cur.font_size;
     }
@@ -3450,11 +3450,11 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 // disturbing the canvas's own current path.  The command-list storage lives in
 // cnvs_path2d.h so the recorder can serialize a path as a `path` block.
 
-struct canvas_path2d *__single canvas_path2d_create(void) {
+struct canvas_path2d *__single canvas_path2d(void) {
     return calloc(1, sizeof(struct canvas_path2d));  // cmds=NULL, len=cap=0 (consistent)
 }
 
-void canvas_path2d_destroy(struct canvas_path2d *__single p) {
+void canvas_path2d_free(struct canvas_path2d *__single p) {
     if (!p) {
         return;
     }
