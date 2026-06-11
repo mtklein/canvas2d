@@ -133,7 +133,7 @@ void cnvs_cover_add_edge(cnvs_cover *c, int w, int h,
                          float x0, float y0, float x1, float y1) {
     float dir, xa, ya, xb, yb;
     if (y0 < y1) {
-        dir = 1.0f;
+        dir =  1.0f;
         xa = x0; ya = y0; xb = x1; yb = y1;
     } else if (y0 > y1) {
         dir = -1.0f;
@@ -234,8 +234,8 @@ void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
             memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
             v = prefix_sum8(v) + carry;               // inclusive prefix sum + carry-in
             covu8x8 b = cover_to_u8x8(rule, v);
-            memcpy(out + base + x, &b, sizeof b);      // bounds-checked vector store
-            carry = v[7];                              // running total through this block
+            memcpy(out + base + x, &b, sizeof b);     // bounds-checked vector store
+            carry = v[7];                             // running total through this block
         }
         float run = carry;
         for (; x < w; x++) {  // scalar tail: continue the running sum
