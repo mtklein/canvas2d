@@ -186,7 +186,7 @@ static char const *__null_terminated verb_token(enum cnvs_glyph_verb v,
 // The glyph key for one run, color (emoji) runs included -- captures key by
 // font name exactly as curves do: a replay-built run carries its interned id;
 // a live run interns through the boundary (idempotent).
-static int run_fid(struct cnvs_text_cache *__single c, cnvs_glyph_run const *__single run) {
+static int run_fid(struct cnvs_text_cache *__single c, struct cnvs_glyph_run const *__single run) {
     if (run->name_id >= 0) {
         return run->name_id;
     }
@@ -251,7 +251,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // lookup is the same one the draw is about to take, so a fresh glyph costs
     // its one boundary fetch here and hits from then on.
     for (int ri = 0; ri < s->nruns; ri++) {
-        cnvs_glyph_run const *__single run = &s->run[ri];
+        struct cnvs_glyph_run const *__single run = &s->run[ri];
         int fid = run_fid(c, run);
         if (run->is_color || fid < 0) {
             continue;  // emoji carry bitmap blocks below; unkeyable runs carry
@@ -303,7 +303,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // is deliberately NOT serialized: the capture alone is canonical, and
     // replay re-derives the levels in checked C at no format cost.
     for (int ri = 0; ri < s->nruns; ri++) {
-        cnvs_glyph_run const *__single run = &s->run[ri];
+        struct cnvs_glyph_run const *__single run = &s->run[ri];
         int const fid = run_fid(c, run);
         if (!run->is_color || fid < 0) {
             continue;
@@ -353,7 +353,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     }
     fputc('\n', r->f);
     for (int ri = 0; ri < s->nruns; ri++) {
-        cnvs_glyph_run const *__single run = &s->run[ri];
+        struct cnvs_glyph_run const *__single run = &s->run[ri];
         fprintf(r->f, "run %d %d %d %d", run_fid(c, run), run->rtl ? 1 : 0,
                 run->is_color ? 1 : 0, run->count);
         for (int i = 0; i < run->count; i++) {

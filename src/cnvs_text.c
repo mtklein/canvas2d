@@ -13,7 +13,7 @@ float cnvs_shaped_width(struct cnvs_shaped const *__single s) {
     }
     float w = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];
+        struct cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
             w += run.xadv[i];
         }
@@ -27,7 +27,7 @@ int cnvs_shaped_index_at_x(struct cnvs_shaped const *__single s, float x) {
     }
     float pen = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];  // glyphs are visual-order, so a single
+        struct cnvs_glyph_run const run = s->run[r];  // glyphs are visual-order, so a single
         for (int i = 0; i < run.count; i++) {  // left-to-right sweep works for RTL too
             if (x < pen + run.xadv[i]) {
                 int32_t const c = run.cluster[i];
@@ -48,7 +48,7 @@ float cnvs_shaped_x_at_index(struct cnvs_shaped const *__single s, int index) {
     }
     float pen = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];
+        struct cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
             if (run.cluster[i] == index) {
                 return pen;  // leading visual edge of the glyph at this logical index
@@ -68,7 +68,7 @@ int cnvs_shaped_selection(struct cnvs_shaped const *__single s, int lo, int hi,
     float pen = 0.0f, start = 0.0f;
     bool in = false;  // currently inside a selected visual run of glyphs
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];
+        struct cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
             bool const sel = run.cluster[i] >= lo && run.cluster[i] < hi;
             if (sel && !in) {
@@ -826,7 +826,7 @@ float cnvs_shaped_outline(struct cnvs_text_cache *__single cache,
     }
     float pen = ox;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];  // visual-order glyphs, so advancing the pen
+        struct cnvs_glyph_run const run = s->run[r];  // visual-order glyphs, so advancing the pen
         // The glyph key (color runs included -- captures key by name too): a
         // replay-built run carries its interned id; a live run resolves through
         // one name fetch per run, not per glyph.
@@ -881,7 +881,7 @@ void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
     bool any = false;
     float minx = 0.0f, maxx = 0.0f, miny = 0.0f, maxy = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];
+        struct cnvs_glyph_run const run = s->run[r];
         int fid = run.name_id >= 0 ? run.name_id
                                    : cnvs_text_cache_font(cache, run.font);
         for (int i = 0; i < run.count; i++) {

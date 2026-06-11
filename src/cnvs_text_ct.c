@@ -1,6 +1,6 @@
 // Core Text shaping shim.  Built without -fbounds-safety (configure.py BOUNDARY_C)
 // to bind the un-annotated CoreText headers; it shapes UTF-8 into glyph runs and
-// copies each run into checked-owned cnvs_glyph_run arrays for the checked core.
+// copies each run into checked-owned struct cnvs_glyph_run arrays for the checked core.
 // See docs/text-boundary.md.
 
 #include "cnvs_text.h"
@@ -61,7 +61,7 @@ void cnvs_shaped_free(struct cnvs_shaped *s) {
 // Copy one CTRun into the checked-owned dst.  The copy variants (CTRunGetGlyphs etc.)
 // always work, even when CTRunGet*Ptr returns NULL -- which it does for ligature runs
 // (a non-contiguous run), so the always-copy path is the robust boundary.
-static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
+static bool copy_run(CTRunRef run, struct cnvs_glyph_run *dst) {
     CFIndex gc = CTRunGetGlyphCount(run);
     dst->count = (int)gc;
     dst->rtl = (CTRunGetStatus(run) & kCTRunStatusRightToLeft) != 0;

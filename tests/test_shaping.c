@@ -24,7 +24,7 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
 
     bool clusters_ok = true, any_rtl = false;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run const run = s->run[r];
+        struct cnvs_glyph_run const run = s->run[r];
         CHECK(run.count > 0);
         any_rtl = any_rtl || run.rtl;
         for (int i = 0; i < run.count; i++) {

@@ -22,7 +22,7 @@
 // One shaped run: a single font and direction.  Glyphs are in visual (left-to-right)
 // order; cluster[i] is the logical UTF-16 index in the source for glyph i (so it
 // descends across an RTL run, and skips for a ligature that merged several chars).
-typedef struct {
+struct cnvs_glyph_run {
     uint16_t *__counted_by(count) glyph;    // glyph ids
     float *__counted_by(count) xadv;         // x advance per glyph, user px
     int32_t *__counted_by(count) cluster;    // source UTF-16 index per glyph (logical)
@@ -38,10 +38,10 @@ typedef struct {
                     // the cache by name id, no CTFontRef needed to draw.
     void *__single font;   // opaque CTFontRef for this run (font fallback),
                            // retained; NULL for a replay-built run
-} cnvs_glyph_run;
+};
 
 struct cnvs_shaped {
-    cnvs_glyph_run *__counted_by(nruns) run;
+    struct cnvs_glyph_run *__counted_by(nruns) run;
     int nruns;
     int utf16s;     // source length in UTF-16 units, the bound for cluster indices
     float size_px;  // font size the line was shaped at, user px (every run's font,

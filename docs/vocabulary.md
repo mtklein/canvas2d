@@ -505,3 +505,9 @@ for new code.
   canvas_clip(cv, rule), set_fill_rule and its state field gone, the
   format's fill/clip tokens carrying the rule by name, and
   canvas_create_image_data taking no canvas.
+- 2026-06-11: cnvs_glyph_run is TAGGED (`struct cnvs_glyph_run`) — the punted
+  50/50 resolved by Mike: "it's complex, got internal pointers."  Internal
+  pointers join the criterion: a by-value copy of such a struct is shallow
+  (copies share the arrays), so it is reference-flavored even where loops
+  copy it — complexity + internal pointers tag a type regardless of the
+  occasional value copy.

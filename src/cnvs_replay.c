@@ -887,7 +887,7 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     s->size_px = size;
     s->utf16s = (int)t16;
     if (nruns > 0) {
-        cnvs_glyph_run *runs = calloc((size_t)nruns, sizeof *runs);
+        struct cnvs_glyph_run *runs = calloc((size_t)nruns, sizeof *runs);
         if (!runs) {
             free(s);
             return false;
@@ -976,7 +976,7 @@ static bool replay_run(struct canvas *__single cv, struct replay_blocks *__singl
     } else if (!at_eol(data, le, j)) {
         return false;
     }
-    cnvs_glyph_run *run = &b->s->run[b->runs_done];
+    struct cnvs_glyph_run *run = &b->s->run[b->runs_done];
     run->glyph = g;
     run->xadv = adv;
     run->cluster = cl;
