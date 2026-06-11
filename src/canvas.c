@@ -72,24 +72,24 @@ enum cnvs_paint_kind {
 // (== w*h*4) bounds it for -fbounds-safety.  `to_pattern` maps a device point to
 // pattern-image space (the inverse of the CTM captured when the pattern was set),
 // so the pattern is pinned in device space like the gradients.
-typedef struct {
+struct cnvs_pattern {
     uint8_t const *__counted_by(len) data;
     int len;
     int w, h;
     enum canvas_pattern_repeat repeat;
     cnvs_mat to_pattern;
-} cnvs_pattern;
+};
 
 struct canvas_state {
     cnvs_mat ctm;
     cnvs_unpremul fill;
     enum cnvs_paint_kind fill_kind;
-    cnvs_gradient fill_grad;
-    cnvs_pattern fill_pattern;
+    struct cnvs_gradient fill_grad;
+    struct cnvs_pattern fill_pattern;
     cnvs_unpremul stroke;
     enum cnvs_paint_kind stroke_kind;
-    cnvs_gradient stroke_grad;
-    cnvs_pattern stroke_pattern;
+    struct cnvs_gradient stroke_grad;
+    struct cnvs_pattern stroke_pattern;
     float global_alpha;
     enum canvas_composite_op composite;  // globalCompositeOperation
     float line_width;
@@ -132,16 +132,16 @@ struct canvas {
     struct canvas_state *__counted_by(stack_cap) stack;
     int stack_len;
     int stack_cap;
-    cnvs_path path;
-    cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
-    cnvs_font *__single font;  // cached for cur.font_size; rebuilt when it changes
+    struct cnvs_path path;
+    struct cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
+    struct cnvs_font *__single font;  // cached for cur.font_size; rebuilt when it changes
     float font_built_size;
-    cnvs_text_cache text_cache;  // params->derived-data memo of Core Text results:
+    struct cnvs_text_cache text_cache;  // params->derived-data memo of Core Text results:
                                  // shaped lines + canonical glyph curves, checked
                                  // before the boundary is called (cnvs_text.h)
     cnvs_vec2 cur_user;  // current point in user space (path.cur is device space)
-    cnvs_verts scratch_verts;  // stroke triangle output, fed to the coverage rasterizer
-    cnvs_cover cover;
+    struct cnvs_verts scratch_verts;  // stroke triangle output, fed to the coverage rasterizer
+    struct cnvs_cover cover;
     uint8_t *__counted_by(cov_cap) cov;     // per-pixel coverage for the current op's bbox
     int cov_cap;
     cnvs_premul *__counted_by(tile_cap) tile;  // premultiplied tile for the current op's bbox
@@ -150,7 +150,7 @@ struct canvas {
     int trow_cap;
     cnvs_unpremul *__counted_by(crow_cap) crow;  // one row of gradient colours (vectorized stop lerp)
     int crow_cap;
-    cnvs_recorder *__single rec;  // NULL unless canvas_record_to is active
+    struct cnvs_recorder *__single rec;  // NULL unless canvas_record_to is active
     struct cnvs_owned_image *__single owned_images;  // replayed `image` blocks
     // Shadow scratch: a single-channel mask blurred in place (src/dst ping-pong
     // for the separable box passes), sized to the shadow's device region.  Each
@@ -170,11 +170,11 @@ struct canvas {
     int blur_tmp_cap;
 };
 
-static cnvs_vec2 xf(canvas *__single cv, float x, float y);
-static bool ensure_tile(canvas *__single cv, int npix);
+static cnvs_vec2 xf(struct canvas *__single cv, float x, float y);
+static bool ensure_tile(struct canvas *__single cv, int npix);
 static int sigma_box_radius(float sigma);
 static int shadow_offset(float v);
-static void draw_image_quad(canvas *__single cv,
+static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
@@ -183,7 +183,7 @@ static void draw_image_quad(canvas *__single cv,
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
 // be paired with a positive count under -fbounds-safety.  An empty pattern stays
 // consistent across the state copies that save/restore make.
-static void pattern_clear(cnvs_pattern *p) {
+static void pattern_clear(struct cnvs_pattern *p) {
     p->len = 0;
     p->data = NULL;
     p->w = 0;
@@ -235,7 +235,7 @@ static void state_defaults(struct canvas_state *s) {
     s->clip_mask = NULL;
 }
 
-canvas *__single canvas_create(int width, int height) {
+struct canvas *__single canvas_create(int width, int height) {
     if (width <= 0 || height <= 0 ||
         width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
         return NULL;
@@ -245,7 +245,7 @@ canvas *__single canvas_create(int width, int height) {
     if (!target) {
         return NULL;
     }
-    canvas *__single cv = calloc(1, sizeof *cv);
+    struct canvas *__single cv = calloc(1, sizeof *cv);
     if (!cv) {
         free(target);
         return NULL;
@@ -268,7 +268,7 @@ canvas *__single canvas_create(int width, int height) {
     return cv;
 }
 
-void canvas_destroy(canvas *__single cv) {
+void canvas_destroy(struct canvas *__single cv) {
     if (!cv) {
         return;
     }
@@ -303,7 +303,7 @@ void canvas_destroy(canvas *__single cv) {
     free(cv);
 }
 
-bool cnvs_canvas_own_image(canvas *__single cv,
+bool cnvs_canvas_own_image(struct canvas *__single cv,
                            uint8_t *__counted_by(len) px, int len) {
     struct cnvs_owned_image *__single node = calloc(1, sizeof *node);
     if (!node) {
@@ -316,7 +316,7 @@ bool cnvs_canvas_own_image(canvas *__single cv,
     return true;
 }
 
-bool canvas_record_to(canvas *__single cv, char const *__null_terminated path) {
+bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated path) {
     cnvs_recorder_close(cv->rec);  // stop any prior recording first
     cv->rec = cnvs_recorder_open(path);
     // A new file holds no blocks yet: forget what any prior recording emitted,
@@ -325,12 +325,12 @@ bool canvas_record_to(canvas *__single cv, char const *__null_terminated path) {
     return cv->rec != NULL;
 }
 
-bool canvas_is_context_lost(canvas *__single cv) {
+bool canvas_is_context_lost(struct canvas *__single cv) {
     (void)cv;
     return false;  // a headless renderer owns its backing store; never lost.
 }
 
-static bool stack_reserve(canvas *__single cv, int need) {
+static bool stack_reserve(struct canvas *__single cv, int need) {
     if (need <= cv->stack_cap) {
         return true;
     }
@@ -345,7 +345,7 @@ static bool stack_reserve(canvas *__single cv, int need) {
     return true;
 }
 
-void canvas_save(canvas *__single cv) {
+void canvas_save(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "save"); }
     if (!stack_reserve(cv, cv->stack_len + 1)) {
         return;
@@ -383,7 +383,7 @@ void canvas_save(canvas *__single cv) {
     cv->stack_len += 1;
 }
 
-void canvas_restore(canvas *__single cv) {
+void canvas_restore(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "restore"); }
     if (cv->stack_len > 0) {
         cv->stack_len -= 1;
@@ -393,7 +393,7 @@ void canvas_restore(canvas *__single cv) {
     }
 }
 
-void canvas_reset(canvas *__single cv) {
+void canvas_reset(struct canvas *__single cv) {
     // Recording continues across a reset: the cleared text cache means the
     // file's font-id space restarts with it (later text re-interns from 0 and
     // re-emits its blocks), which replay mirrors when it executes this line.
@@ -429,7 +429,7 @@ void canvas_reset(canvas *__single cv) {
                      NULL, NULL, 0, CANVAS_OP_DESTINATION_OUT);
 }
 
-bool canvas_resize(canvas *__single cv, int width, int height) {
+bool canvas_resize(struct canvas *__single cv, int width, int height) {
     if (width <= 0 || height <= 0 ||
         width > CANVAS_MAX_DIM || height > CANVAS_MAX_DIM) {
         return false;
@@ -457,46 +457,46 @@ bool canvas_resize(canvas *__single cv, int width, int height) {
     return true;
 }
 
-void canvas_translate(canvas *__single cv, float tx, float ty) {
+void canvas_translate(struct canvas *__single cv, float tx, float ty) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "translate", (float[]){ tx, ty }, 2); }
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_translate(tx, ty));
 }
 
-void canvas_scale(canvas *__single cv, float sx, float sy) {
+void canvas_scale(struct canvas *__single cv, float sx, float sy) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "scale", (float[]){ sx, sy }, 2); }
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_scale(sx, sy));
 }
 
-void canvas_rotate(canvas *__single cv, float radians) {
+void canvas_rotate(struct canvas *__single cv, float radians) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "rotate", (float[]){ radians }, 1); }
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, cnvs_mat_rotate(radians));
 }
 
-void canvas_transform(canvas *__single cv,
+void canvas_transform(struct canvas *__single cv,
                       float a, float b, float c, float d, float e, float f) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f }, 6); }
     cnvs_mat m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, m);
 }
 
-void canvas_set_transform(canvas *__single cv,
+void canvas_set_transform(struct canvas *__single cv,
                           float a, float b, float c, float d, float e, float f) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f }, 6); }
     cv->cur.ctm = (cnvs_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
 }
 
-void canvas_reset_transform(canvas *__single cv) {
+void canvas_reset_transform(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "reset_transform"); }
     cv->cur.ctm = cnvs_mat_identity();
 }
 
-canvas_matrix canvas_get_transform(canvas *__single cv) {
+canvas_matrix canvas_get_transform(struct canvas *__single cv) {
     cnvs_mat m = cv->cur.ctm;
     return (canvas_matrix){ .a = m.a, .b = m.b, .c = m.c,
                             .d = m.d, .e = m.e, .f = m.f };
 }
 
-void canvas_set_fill_rgba(canvas *__single cv, float r, float g, float b, float a) {
+void canvas_set_fill_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.fill = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.fill_kind = CNVS_PAINT_SOLID;
@@ -510,7 +510,7 @@ static float ctm_scale(cnvs_mat m) {
 
 // Initialise a gradient struct in device space (the CTM is baked in now); the
 // caller sets the matching paint kind to GRADIENT.
-static void grad_set_linear(canvas *__single cv, cnvs_gradient *gr,
+static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr,
                             float x0, float y0, float x1, float y1) {
     gr->kind = CNVS_GRAD_LINEAR;
     gr->p0 = xf(cv, x0, y0);
@@ -521,7 +521,7 @@ static void grad_set_linear(canvas *__single cv, cnvs_gradient *gr,
     gr->stop_count = 0;
 }
 
-static void grad_set_radial(canvas *__single cv, cnvs_gradient *gr, float x0,
+static void grad_set_radial(struct canvas *__single cv, struct cnvs_gradient *gr, float x0,
                             float y0, float r0, float x1, float y1, float r1) {
     float s = ctm_scale(cv->cur.ctm);
     gr->kind = CNVS_GRAD_RADIAL;
@@ -540,7 +540,7 @@ static float ctm_rotation(cnvs_mat m) {
     return atan2f(m.b, m.a);
 }
 
-static void grad_set_conic(canvas *__single cv, cnvs_gradient *gr,
+static void grad_set_conic(struct canvas *__single cv, struct cnvs_gradient *gr,
                            float start_angle, float cx, float cy) {
     gr->kind = CNVS_GRAD_CONIC;
     gr->p0 = xf(cv, cx, cy);  // centre in device space
@@ -555,7 +555,7 @@ static void grad_set_conic(canvas *__single cv, cnvs_gradient *gr,
 // via the inverse of the current CTM.  The (data, len) pair is set together so
 // -fbounds-safety can verify the __counted_by(len) invariant: src is itself
 // __counted_by(w*h*4), exactly the new len.
-static void pattern_set(canvas *__single cv, cnvs_pattern *p,
+static void pattern_set(struct canvas *__single cv, struct cnvs_pattern *p,
                         uint8_t const *__counted_by(w * h * 4) src, int w, int h,
                         enum canvas_pattern_repeat repeat) {
     p->data = src;
@@ -566,35 +566,35 @@ static void pattern_set(canvas *__single cv, cnvs_pattern *p,
     p->to_pattern = cnvs_mat_invert(cv->cur.ctm);  // device -> pattern image space
 }
 
-void canvas_set_fill_linear_gradient(canvas *__single cv,
+void canvas_set_fill_linear_gradient(struct canvas *__single cv,
                                      float x0, float y0, float x1, float y1) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_linear_gradient", (float[]){ x0, y0, x1, y1 }, 4); }
     grad_set_linear(cv, &cv->cur.fill_grad, x0, y0, x1, y1);
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_set_fill_radial_gradient(canvas *__single cv, float x0, float y0,
+void canvas_set_fill_radial_gradient(struct canvas *__single cv, float x0, float y0,
                                      float r0, float x1, float y1, float r1) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_radial_gradient", (float[]){ x0, y0, r0, x1, y1, r1 }, 6); }
     grad_set_radial(cv, &cv->cur.fill_grad, x0, y0, r0, x1, y1, r1);
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_set_fill_conic_gradient(canvas *__single cv, float start_angle,
+void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angle,
                                     float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_conic_gradient", (float[]){ start_angle, x, y }, 3); }
     grad_set_conic(cv, &cv->cur.fill_grad, start_angle, x, y);
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_add_fill_color_stop(canvas *__single cv, float offset,
+void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.fill_grad, clamp01(offset),
                            cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
 
-void canvas_set_fill_pattern(canvas *__single cv,
+void canvas_set_fill_pattern(struct canvas *__single cv,
                              uint8_t const *__counted_by(w * h * 4) src,
                              int w, int h, enum canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
@@ -610,35 +610,35 @@ void canvas_set_fill_pattern(canvas *__single cv,
     cv->cur.fill_kind = CNVS_PAINT_PATTERN;
 }
 
-void canvas_set_stroke_linear_gradient(canvas *__single cv,
+void canvas_set_stroke_linear_gradient(struct canvas *__single cv,
                                        float x0, float y0, float x1, float y1) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_linear_gradient", (float[]){ x0, y0, x1, y1 }, 4); }
     grad_set_linear(cv, &cv->cur.stroke_grad, x0, y0, x1, y1);
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_set_stroke_radial_gradient(canvas *__single cv, float x0, float y0,
+void canvas_set_stroke_radial_gradient(struct canvas *__single cv, float x0, float y0,
                                        float r0, float x1, float y1, float r1) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_radial_gradient", (float[]){ x0, y0, r0, x1, y1, r1 }, 6); }
     grad_set_radial(cv, &cv->cur.stroke_grad, x0, y0, r0, x1, y1, r1);
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_set_stroke_conic_gradient(canvas *__single cv, float start_angle,
+void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_angle,
                                       float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_conic_gradient", (float[]){ start_angle, x, y }, 3); }
     grad_set_conic(cv, &cv->cur.stroke_grad, start_angle, x, y);
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_add_stroke_color_stop(canvas *__single cv, float offset,
+void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, clamp01(offset),
                            cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
 }
 
-void canvas_set_stroke_pattern(canvas *__single cv,
+void canvas_set_stroke_pattern(struct canvas *__single cv,
                                uint8_t const *__counted_by(w * h * 4) src,
                                int w, int h, enum canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
@@ -652,12 +652,12 @@ void canvas_set_stroke_pattern(canvas *__single cv,
     cv->cur.stroke_kind = CNVS_PAINT_PATTERN;
 }
 
-void canvas_set_global_alpha(canvas *__single cv, float alpha) {
+void canvas_set_global_alpha(struct canvas *__single cv, float alpha) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_global_alpha", (float[]){ alpha }, 1); }
     cv->cur.global_alpha = clamp01(alpha);
 }
 
-void canvas_set_global_composite_operation(canvas *__single cv,
+void canvas_set_global_composite_operation(struct canvas *__single cv,
                                            enum canvas_composite_op op) {
     if ((int)op < 0 || (int)op >= CNVS_BLEND_MODE_COUNT) {
         return;
@@ -666,14 +666,14 @@ void canvas_set_global_composite_operation(canvas *__single cv,
     cv->cur.composite = op;
 }
 
-void canvas_set_shadow_color_rgba(canvas *__single cv,
+void canvas_set_shadow_color_rgba(struct canvas *__single cv,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.shadow_color =
         cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
 }
 
-void canvas_set_shadow_blur(canvas *__single cv, float blur) {
+void canvas_set_shadow_blur(struct canvas *__single cv, float blur) {
     if (isfinite(blur) && blur >= 0.0f) {  // spec: ignore negative / non-finite
         // The hook sits inside the guard: an ignored call records nothing
         // (and %.9g of a non-finite would not reparse anyway).
@@ -682,21 +682,21 @@ void canvas_set_shadow_blur(canvas *__single cv, float blur) {
     }
 }
 
-void canvas_set_shadow_offset_x(canvas *__single cv, float offset) {
+void canvas_set_shadow_offset_x(struct canvas *__single cv, float offset) {
     if (isfinite(offset)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_x", (float[]){ offset }, 1); }
         cv->cur.shadow_offset_x = offset;
     }
 }
 
-void canvas_set_shadow_offset_y(canvas *__single cv, float offset) {
+void canvas_set_shadow_offset_y(struct canvas *__single cv, float offset) {
     if (isfinite(offset)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_offset_y", (float[]){ offset }, 1); }
         cv->cur.shadow_offset_y = offset;
     }
 }
 
-void canvas_set_filter_none(canvas *__single cv) {
+void canvas_set_filter_none(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "set_filter_none"); }
     free(cv->cur.filters);
     cv->cur.filter_count = 0;
@@ -708,7 +708,7 @@ void canvas_set_filter_none(canvas *__single cv) {
 // call is dropped, leaving the list as it was (best-effort, like the path
 // builders).  Non-finite amounts never reach here -- each canvas_add_filter_*
 // ignores those calls outright, per spec.
-static void filter_append(canvas *__single cv, cnvs_filter f) {
+static void filter_append(struct canvas *__single cv, cnvs_filter f) {
     int n = cv->cur.filter_count;
     cnvs_filter *nf = realloc(cv->cur.filters, ((size_t)n + 1) * sizeof *nf);
     if (!nf) {
@@ -724,7 +724,7 @@ static float clamp_lo(float v) {
     return v < 0.0f ? 0.0f : v;
 }
 
-void canvas_add_filter_blur(canvas *__single cv, float px) {
+void canvas_add_filter_blur(struct canvas *__single cv, float px) {
     if (!isfinite(px) || px < 0.0f) {
         return;  // spec: ignore an unparseable (or negative) length
     }
@@ -740,21 +740,21 @@ void canvas_add_filter_blur(canvas *__single cv, float px) {
     }
 }
 
-void canvas_add_filter_brightness(canvas *__single cv, float amount) {
+void canvas_add_filter_brightness(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_brightness", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_brightness(clamp_lo(amount)));
     }
 }
 
-void canvas_add_filter_contrast(canvas *__single cv, float amount) {
+void canvas_add_filter_contrast(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_contrast", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_contrast(clamp_lo(amount)));
     }
 }
 
-void canvas_add_filter_drop_shadow(canvas *__single cv, float dx, float dy,
+void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float dy,
                                    float blur, float r, float g, float b,
                                    float a) {
     if (!isfinite(dx) || !isfinite(dy) || !isfinite(blur) || blur < 0.0f) {
@@ -780,49 +780,49 @@ void canvas_add_filter_drop_shadow(canvas *__single cv, float dx, float dy,
                           clamp01(b), clamp01(a)));
 }
 
-void canvas_add_filter_grayscale(canvas *__single cv, float amount) {
+void canvas_add_filter_grayscale(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_grayscale", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_grayscale(clamp01(amount)));
     }
 }
 
-void canvas_add_filter_hue_rotate(canvas *__single cv, float radians) {
+void canvas_add_filter_hue_rotate(struct canvas *__single cv, float radians) {
     if (isfinite(radians)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_hue_rotate", (float[]){ radians }, 1); }
         filter_append(cv, cnvs_filter_hue_rotate(radians));
     }
 }
 
-void canvas_add_filter_invert(canvas *__single cv, float amount) {
+void canvas_add_filter_invert(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_invert", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_invert(clamp01(amount)));
     }
 }
 
-void canvas_add_filter_opacity(canvas *__single cv, float amount) {
+void canvas_add_filter_opacity(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_opacity", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_opacity(clamp01(amount)));
     }
 }
 
-void canvas_add_filter_saturate(canvas *__single cv, float amount) {
+void canvas_add_filter_saturate(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_saturate", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_saturate(clamp_lo(amount)));
     }
 }
 
-void canvas_add_filter_sepia(canvas *__single cv, float amount) {
+void canvas_add_filter_sepia(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_sepia", (float[]){ amount }, 1); }
         filter_append(cv, cnvs_filter_sepia(clamp01(amount)));
     }
 }
 
-static cnvs_vec2 xf(canvas *__single cv, float x, float y) {
+static cnvs_vec2 xf(struct canvas *__single cv, float x, float y) {
     return cnvs_mat_apply(cv->cur.ctm, (cnvs_vec2){ .x = x, .y = y });
 }
 
@@ -834,7 +834,7 @@ typedef struct {
     int x, y, w, h;
 } cbbox;
 
-static cbbox points_bbox(canvas *__single cv,
+static cbbox points_bbox(struct canvas *__single cv,
                          cnvs_vec2 const *__counted_by(n) pts, int n, int margin) {
     if (n <= 0) {
         return (cbbox){ .x = 0, .y = 0, .w = 0, .h = 0 };
@@ -861,7 +861,7 @@ static cbbox points_bbox(canvas *__single cv,
     return b;
 }
 
-static bool ensure_tile(canvas *__single cv, int npix) {
+static bool ensure_tile(struct canvas *__single cv, int npix) {
     if (npix > cv->cov_cap) {
         uint8_t *nc = realloc(cv->cov, (size_t)npix);
         if (!nc) {
@@ -885,7 +885,7 @@ static bool ensure_tile(canvas *__single cv, int npix) {
 // current bbox: trow holds the solved parameters, crow the colours evaluated
 // from them.  Two caps so the (pointer, count) pairs update independently
 // under -fbounds-safety, like the shadow scratch pair.
-static bool ensure_grad_rows(canvas *__single cv, int w) {
+static bool ensure_grad_rows(struct canvas *__single cv, int w) {
     if (w > cv->trow_cap) {
         float *nr = realloc(cv->trow, (size_t)w * sizeof *nr);
         if (!nr) {
@@ -906,7 +906,7 @@ static bool ensure_grad_rows(canvas *__single cv, int w) {
 }
 
 // Grow the filter-blur scratch tile to at least npix pixels.
-static bool ensure_blur_tmp(canvas *__single cv, int npix) {
+static bool ensure_blur_tmp(struct canvas *__single cv, int npix) {
     if (npix > cv->blur_tmp_cap) {
         cnvs_premul *nt = realloc(cv->blur_tmp, (size_t)npix * sizeof *nt);
         if (!nt) {
@@ -929,7 +929,7 @@ static bool ensure_blur_tmp(canvas *__single cv, int npix) {
 // per side -- at most a somewhat larger tile, never a clipped shadow.  Capped
 // at a canvas dimension's worth -- a wider spread can't paint anything the
 // clamp to the canvas wouldn't cut anyway.
-static int filter_margin(canvas const *__single cv) {
+static int filter_margin(struct canvas const *__single cv) {
     int m = 0;
     for (int i = 0; i < cv->cur.filter_count; i++) {
         cnvs_filter const f = cv->cur.filters[i];
@@ -960,7 +960,7 @@ static int filter_margin(canvas const *__single cv) {
 // by filter_margin, so the shifted, blurred shadow has tile to land on.  If
 // the scratch can't grow the entry is skipped (the op paints shadowless),
 // like the other best-effort OOM paths.
-static void apply_drop_shadow(canvas *__single cv, cnvs_filter f, int w, int h) {
+static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, int h) {
     int const npix = w * h;
     if (!ensure_blur_tmp(cv, 2 * npix)) {
         return;
@@ -1015,7 +1015,7 @@ static void apply_drop_shadow(canvas *__single cv, cnvs_filter f, int w, int h) 
 // (emit_shadow), so no filter entry reaches it -- the canvas shadow keeps the
 // shape's sharp silhouette, the same approximation it makes for
 // semi-transparent paint, while a drop-shadow() lives inside the tile.
-static void apply_filters(canvas *__single cv, int w, int h) {
+static void apply_filters(struct canvas *__single cv, int w, int h) {
     int const count = cv->cur.filter_count;
     int const npix = w * h;
     int i = 0;
@@ -1045,12 +1045,12 @@ static void apply_filters(canvas *__single cv, int w, int h) {
 }
 
 // Add a path edge to the coverage rasterizer, translated into the tile's frame.
-static void cover_edge(canvas *__single cv, cbbox b, cnvs_vec2 p0, cnvs_vec2 p1) {
+static void cover_edge(struct canvas *__single cv, cbbox b, cnvs_vec2 p0, cnvs_vec2 p1) {
     cnvs_cover_add_edge(&cv->cover, b.w, b.h, p0.x - (float)b.x, p0.y - (float)b.y,
                         p1.x - (float)b.x, p1.y - (float)b.y);
 }
 
-static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
+static void cover_path_edges(struct canvas *__single cv, cbbox b, struct cnvs_path const *p) {
     for (int s = 0; s < p->sp_len; s++) {
         cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
@@ -1331,7 +1331,7 @@ static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 k) {
 // factor is 1); the over-family folds it into the source exactly as the fast
 // path does, every other mode blends at full strength and lerps toward the
 // destination (cov_lerp8).
-static void blend_region(canvas *__single cv, int x, int y, int w, int h,
+static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                          cnvs_premul const *__counted_by_or_null(w * h) tile,
                          cnvs_px8 splat,
                          uint8_t const *__counted_by_or_null(w * h) cov,
@@ -1406,7 +1406,7 @@ static void blend_region(canvas *__single cv, int x, int y, int w, int h,
     }
 }
 
-void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
+void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
                 cnvs_premul const *__counted_by(w * h) tile,
                 uint8_t const *__counted_by_or_null(w * h) cov,
                 uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
@@ -1463,7 +1463,7 @@ void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
     blend_region(cv, x, y, w, h, tile, zero, cov, clip, clip_len, mode);
 }
 
-void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
+void cnvs_blend_solid(struct canvas *__single cv, int x, int y, int w, int h,
                       cnvs_premul color,
                       uint8_t const *__counted_by_or_null(w * h) cov,
                       uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
@@ -1488,7 +1488,7 @@ void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
     blend_region(cv, x, y, w, h, NULL, splat, cov, clip, clip_len, mode);
 }
 
-void cnvs_blend_read(canvas *__single cv, cnvs_premul *__counted_by(len) out, int len) {
+void cnvs_blend_read(struct canvas *__single cv, cnvs_premul *__counted_by(len) out, int len) {
     if (!out || len < cv->target_len) {
         return;
     }
@@ -1540,7 +1540,7 @@ static foldv8 mat_apply8(cnvs_mat m, float8 x, float y) {
 // force the fold regardless: blur()/drop-shadow() consume the op's silhouette
 // from the tile's alpha, so coverage must be materialized before they run --
 // after a filter the coverage genuinely is source alpha.
-static bool shade_folds_coverage(canvas const *__single cv) {
+static bool shade_folds_coverage(struct canvas const *__single cv) {
     return coverage_folds(cv->cur.composite) ||
            cv->cur.filter_count > 0;
 }
@@ -1549,7 +1549,7 @@ static bool shade_folds_coverage(canvas const *__single cv) {
 // composite -- the shared tail of every tile-building paint loop.  `fold` is
 // the caller's shade_folds_coverage answer: a folded tile already carries the
 // op's coverage in its alpha; otherwise cv->cov rides to the blend's lerp.
-static void blend_tile(canvas *__single cv, cbbox b, bool fold) {
+static void blend_tile(struct canvas *__single cv, cbbox b, bool fold) {
     apply_filters(cv, b.w, b.h);
     cnvs_blend(cv, b.x, b.y, b.w, b.h, cv->tile, fold ? NULL : cv->cov,
                cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
@@ -1559,7 +1559,7 @@ static void blend_tile(canvas *__single cv, cbbox b, bool fold) {
 // alpha is paint_alpha * global_alpha * coverage when the composite mode folds
 // coverage (shade_folds_coverage); otherwise paint_alpha * global_alpha, with
 // cv->cov handed to the blend's lerp.
-static void paint_tile_solid(canvas *__single cv, cbbox b, cnvs_unpremul solid) {
+static void paint_tile_solid(struct canvas *__single cv, cbbox b, cnvs_unpremul solid) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
     // The colour planes are splats and every alpha factor but coverage is one
@@ -1601,8 +1601,8 @@ static void paint_tile_solid(canvas *__single cv, cbbox b, cnvs_unpremul solid) 
 
 // Paint the resolved coverage with a gradient; the same alpha fold as
 // paint_tile_solid, with the colour solved per pixel instead of splatted.
-static void paint_tile_gradient(canvas *__single cv, cbbox b,
-                                cnvs_gradient const *gr) {
+static void paint_tile_gradient(struct canvas *__single cv, cbbox b,
+                                struct cnvs_gradient const *gr) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
     if (ensure_grad_rows(cv, b.w)) {
@@ -1679,7 +1679,7 @@ static int wrap_idx(int i, int n, bool repeat) {
 // Sample a pattern at pattern-image coordinate (u, v), unpremultiplied into out.
 // A point outside the image on a non-repeating axis is transparent; otherwise the
 // per-tap indices wrap (repeat) or clamp (no-repeat).  Bilinear when `smooth`.
-static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
+static void pattern_sample(struct cnvs_pattern const *p, float u, float v, bool smooth,
                            float *__counted_by(4) out) {
     bool rx = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_X;
     bool ry = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_Y;
@@ -1725,7 +1725,7 @@ static void pattern_sample(cnvs_pattern const *p, float u, float v, bool smooth,
 // same {0,0,0,0} bits the skip leaves).  The samples land in f32 planes (they
 // are born f32 at the taps); sample alpha x global alpha folds there, narrows
 // once, and the coverage fold finishes in f16 like every shade path.
-static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const *p) {
+static void paint_tile_pattern(struct canvas *__single cv, cbbox b, struct cnvs_pattern const *p) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
@@ -1772,7 +1772,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
 }
 
 // Grow the two shadow ping-pong masks to at least n bytes each.
-static bool ensure_shadow(canvas *__single cv, int n) {
+static bool ensure_shadow(struct canvas *__single cv, int n) {
     if (n > cv->shadow_src_cap) {
         uint8_t *na = realloc(cv->shadow_src, (size_t)n);
         if (!na) {
@@ -1794,7 +1794,7 @@ static bool ensure_shadow(canvas *__single cv, int n) {
 
 // A shadow is cast when its colour is non-transparent and there is some blur or
 // offset (a zero-blur, zero-offset shadow would sit exactly under the shape).
-static bool shadow_active(canvas const *__single cv) {
+static bool shadow_active(struct canvas const *__single cv) {
     return (float)cv->cur.shadow_color.a > 0.0f &&
            (cv->cur.shadow_blur > 0.0f || cv->cur.shadow_offset_x != 0.0f ||
             cv->cur.shadow_offset_y != 0.0f);
@@ -1833,7 +1833,7 @@ static int shadow_offset(float v) {
 // the shadow colour (global alpha folded in), and composite it -- offset, under
 // the shape (which the caller paints next).  Blur and offset are device-space and
 // unaffected by the CTM, per spec.  All CPU-side, so both backends agree.
-static void emit_shadow(canvas *__single cv, cbbox b) {
+static void emit_shadow(struct canvas *__single cv, cbbox b) {
     if (!shadow_active(cv) || b.w <= 0 || b.h <= 0) {
         return;
     }
@@ -1917,7 +1917,7 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
 
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
 // on its kind.  The shadow, if any, is cast first so it lands under the shape.
-static void paint_fill(canvas *__single cv, cbbox b) {
+static void paint_fill(struct canvas *__single cv, cbbox b) {
     if (cv->cur.fill_kind == CNVS_PAINT_GRADIENT &&
         cnvs_gradient_paints_nothing(&cv->cur.fill_grad)) {
         return;
@@ -1930,7 +1930,7 @@ static void paint_fill(canvas *__single cv, cbbox b) {
     }
 }
 
-static void paint_stroke(canvas *__single cv, cbbox b) {
+static void paint_stroke(struct canvas *__single cv, cbbox b) {
     if (cv->cur.stroke_kind == CNVS_PAINT_GRADIENT &&
         cnvs_gradient_paints_nothing(&cv->cur.stroke_grad)) {
         return;
@@ -1943,7 +1943,7 @@ static void paint_stroke(canvas *__single cv, cbbox b) {
     }
 }
 
-void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) {
+void canvas_clear_rect(struct canvas *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "clear_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
@@ -1961,7 +1961,7 @@ void canvas_clear_rect(canvas *__single cv, float x, float y, float w, float h) 
                      CANVAS_OP_DESTINATION_OUT);
 }
 
-void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
+void canvas_fill_rect(struct canvas *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "fill_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
@@ -1978,31 +1978,31 @@ void canvas_fill_rect(canvas *__single cv, float x, float y, float w, float h) {
     paint_fill(cv, b);
 }
 
-void canvas_begin_path(canvas *__single cv) {
+void canvas_begin_path(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "begin_path"); }
     cnvs_path_reset(&cv->path);
 }
 
-void canvas_move_to(canvas *__single cv, float x, float y) {
+void canvas_move_to(struct canvas *__single cv, float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "move_to", (float[]){ x, y }, 2); }
     cnvs_path_move_to(&cv->path, xf(cv, x, y));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
-void canvas_line_to(canvas *__single cv, float x, float y) {
+void canvas_line_to(struct canvas *__single cv, float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "line_to", (float[]){ x, y }, 2); }
     cnvs_path_line_to(&cv->path, xf(cv, x, y));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
-void canvas_rect(canvas *__single cv, float x, float y, float w, float h) {
+void canvas_rect(struct canvas *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "rect", (float[]){ x, y, w, h }, 4); }
     cnvs_path_rect(&cv->path, xf(cv, x, y), xf(cv, x + w, y),
                    xf(cv, x + w, y + h), xf(cv, x, y + h));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
-void canvas_quadratic_curve_to(canvas *__single cv,
+void canvas_quadratic_curve_to(struct canvas *__single cv,
                                float cpx, float cpy, float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "quadratic_curve_to", (float[]){ cpx, cpy, x, y }, 4); }
     cnvs_path_quad_to(&cv->path, xf(cv, cpx, cpy), xf(cv, x, y),
@@ -2010,7 +2010,7 @@ void canvas_quadratic_curve_to(canvas *__single cv,
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
-void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
+void canvas_bezier_curve_to(struct canvas *__single cv, float c1x, float c1y,
                             float c2x, float c2y, float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "bezier_curve_to", (float[]){ c1x, c1y, c2x, c2y, x, y }, 6); }
     cnvs_path_cubic_to(&cv->path, xf(cv, c1x, c1y), xf(cv, c2x, c2y),
@@ -2018,7 +2018,7 @@ void canvas_bezier_curve_to(canvas *__single cv, float c1x, float c1y,
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
-void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
+void canvas_ellipse(struct canvas *__single cv, float x, float y, float rx, float ry,
                     float rotation, float start_angle, float end_angle,
                     bool anticlockwise) {
     if (cv->rec) {
@@ -2075,7 +2075,7 @@ void canvas_ellipse(canvas *__single cv, float x, float y, float rx, float ry,
     };
 }
 
-void canvas_arc(canvas *__single cv, float x, float y, float radius,
+void canvas_arc(struct canvas *__single cv, float x, float y, float radius,
                 float start_angle, float end_angle, bool anticlockwise) {
     // Record `arc` as itself, then swallow the canvas_ellipse it expands to.
     if (cv->rec) {
@@ -2089,7 +2089,7 @@ void canvas_arc(canvas *__single cv, float x, float y, float radius,
     cnvs_rec_leave(cv->rec);
 }
 
-void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
+void canvas_round_rect(struct canvas *__single cv, float x, float y, float w, float h,
                        float radius) {
     // Record `round_rect` as itself, then swallow the move_to/arc/close_path it
     // expands to (no early returns between enter and leave).
@@ -2124,7 +2124,7 @@ static float radii_fit(float f, float len, float sum) {
     return g < f ? g : f;
 }
 
-static void round_rect_radii_impl(canvas *__single cv, float x, float y,
+static void round_rect_radii_impl(struct canvas *__single cv, float x, float y,
                                   float w, float h,
                                   float tl_x, float tl_y, float tr_x, float tr_y,
                                   float br_x, float br_y, float bl_x, float bl_y) {
@@ -2164,7 +2164,7 @@ static void round_rect_radii_impl(canvas *__single cv, float x, float y,
     canvas_close_path(cv);
 }
 
-void canvas_round_rect_radii(canvas *__single cv, float x, float y,
+void canvas_round_rect_radii(struct canvas *__single cv, float x, float y,
                              float w, float h,
                              float tl_x, float tl_y, float tr_x, float tr_y,
                              float br_x, float br_y, float bl_x, float bl_y) {
@@ -2182,7 +2182,7 @@ void canvas_round_rect_radii(canvas *__single cv, float x, float y,
     cnvs_rec_leave(cv->rec);
 }
 
-static void arc_to_impl(canvas *__single cv, float x1, float y1, float x2, float y2,
+static void arc_to_impl(struct canvas *__single cv, float x1, float y1, float x2, float y2,
                         float radius) {
     if (!cv->path.has_cur) {
         canvas_move_to(cv, x1, y1);
@@ -2234,7 +2234,7 @@ static void arc_to_impl(canvas *__single cv, float x1, float y1, float x2, float
     cv->cur_user = (cnvs_vec2){ .x = t2x, .y = t2y };
 }
 
-void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
+void canvas_arc_to(struct canvas *__single cv, float x1, float y1, float x2, float y2,
                    float radius) {
     // Record `arc_to` as itself, then swallow the line_to/arc its impl issues.
     // The wrapper is single-exit, so leave always balances enter even though the
@@ -2247,12 +2247,12 @@ void canvas_arc_to(canvas *__single cv, float x1, float y1, float x2, float y2,
     cnvs_rec_leave(cv->rec);
 }
 
-void canvas_close_path(canvas *__single cv) {
+void canvas_close_path(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "close_path"); }
     cnvs_path_close(&cv->path);
 }
 
-void canvas_set_fill_rule(canvas *__single cv, enum canvas_fill_rule rule) {
+void canvas_set_fill_rule(struct canvas *__single cv, enum canvas_fill_rule rule) {
     if (cv->rec) { cnvs_rec_fill_rule(cv->rec, rule); }
     switch (rule) {
         case CANVAS_NONZERO: cv->cur.fill_rule = CNVS_NONZERO; break;
@@ -2262,7 +2262,7 @@ void canvas_set_fill_rule(canvas *__single cv, enum canvas_fill_rule rule) {
 
 // Rasterize a device-space path under `rule` and paint it with the fill paint
 // over its clamped bbox.
-static void fill_device_path(canvas *__single cv, cnvs_path const *p,
+static void fill_device_path(struct canvas *__single cv, struct cnvs_path const *p,
                              enum cnvs_fill_rule rule) {
     cbbox b = points_bbox(cv, p->pts, p->pt_len, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
@@ -2274,7 +2274,7 @@ static void fill_device_path(canvas *__single cv, cnvs_path const *p,
     paint_fill(cv, b);
 }
 
-void canvas_fill(canvas *__single cv) {
+void canvas_fill(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "fill"); }
     fill_device_path(cv, &cv->path, cv->cur.fill_rule);
 }
@@ -2285,7 +2285,7 @@ void canvas_fill(canvas *__single cv) {
 // count is the crossing number (even-odd rule).  The half-open vertical test
 // (a.y <= q.y < b.y for an upward edge, and the reverse for downward) counts each
 // shared vertex exactly once.
-static bool path_contains(cnvs_path const *p, cnvs_vec2 q, enum cnvs_fill_rule rule) {
+static bool path_contains(struct cnvs_path const *p, cnvs_vec2 q, enum cnvs_fill_rule rule) {
     int wn = 0;   // winding number  (nonzero rule)
     int cn = 0;   // crossing number (even-odd rule)
     for (int s = 0; s < p->sp_len; s++) {
@@ -2316,7 +2316,7 @@ static bool path_contains(cnvs_path const *p, cnvs_vec2 q, enum cnvs_fill_rule r
     return rule == CNVS_EVENODD ? (cn & 1) != 0 : wn != 0;
 }
 
-bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
+bool canvas_is_point_in_path(struct canvas *__single cv, float x, float y,
                              enum canvas_fill_rule rule) {
     if (!isfinite(x) || !isfinite(y)) {
         return false;
@@ -2325,7 +2325,7 @@ bool canvas_is_point_in_path(canvas *__single cv, float x, float y,
     return path_contains(&cv->path, xf(cv, x, y), r);
 }
 
-void canvas_clip(canvas *__single cv) {
+void canvas_clip(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "clip"); }
     int n = cv->width * cv->height;
     uint8_t *nm = malloc((size_t)n);
@@ -2359,18 +2359,18 @@ void canvas_clip(canvas *__single cv) {
     cv->cur.clip_len = n;
 }
 
-void canvas_set_stroke_rgba(canvas *__single cv, float r, float g, float b, float a) {
+void canvas_set_stroke_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.stroke = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
     cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
 
-void canvas_set_line_width(canvas *__single cv, float width) {
+void canvas_set_line_width(struct canvas *__single cv, float width) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_width", (float[]){ width }, 1); }
     cv->cur.line_width = width;
 }
 
-void canvas_set_line_join(canvas *__single cv, enum canvas_line_join join) {
+void canvas_set_line_join(struct canvas *__single cv, enum canvas_line_join join) {
     if (cv->rec) { cnvs_rec_line_join(cv->rec, join); }
     switch (join) {
         case CANVAS_JOIN_MITER: cv->cur.line_join = CNVS_JOIN_MITER; break;
@@ -2379,7 +2379,7 @@ void canvas_set_line_join(canvas *__single cv, enum canvas_line_join join) {
     }
 }
 
-void canvas_set_line_cap(canvas *__single cv, enum canvas_line_cap cap) {
+void canvas_set_line_cap(struct canvas *__single cv, enum canvas_line_cap cap) {
     if (cv->rec) { cnvs_rec_line_cap(cv->rec, cap); }
     switch (cap) {
         case CANVAS_CAP_BUTT:   cv->cur.line_cap = CNVS_CAP_BUTT;   break;
@@ -2388,12 +2388,12 @@ void canvas_set_line_cap(canvas *__single cv, enum canvas_line_cap cap) {
     }
 }
 
-void canvas_set_miter_limit(canvas *__single cv, float limit) {
+void canvas_set_miter_limit(struct canvas *__single cv, float limit) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_miter_limit", (float[]){ limit }, 1); }
     cv->cur.miter_limit = limit;
 }
 
-void canvas_set_line_dash(canvas *__single cv,
+void canvas_set_line_dash(struct canvas *__single cv,
                           float const *__counted_by(count) pattern, int count) {
     // Clamp into a separate variable: mutating `count` would desync the
     // __counted_by(count) bound on `pattern`.
@@ -2410,7 +2410,7 @@ void canvas_set_line_dash(canvas *__single cv,
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_dash", cv->cur.dash, m); }
 }
 
-int canvas_get_line_dash(canvas *__single cv,
+int canvas_get_line_dash(struct canvas *__single cv,
                          float *__counted_by(cap) out, int cap) {
     int n = cv->cur.dash_count;
     // Copy at most `cap` entries; never write past the caller's buffer, and never
@@ -2422,14 +2422,14 @@ int canvas_get_line_dash(canvas *__single cv,
     return n;
 }
 
-void canvas_set_line_dash_offset(canvas *__single cv, float offset) {
+void canvas_set_line_dash_offset(struct canvas *__single cv, float offset) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_dash_offset", (float[]){ offset }, 1); }
     cv->cur.dash_offset = offset;
 }
 
 // Build the stroke triangles for `p` into cv->scratch_verts under the current
 // line styles (width/join/cap/dash, CTM scale baked in).  False on alloc failure.
-static bool build_stroke_verts(canvas *__single cv, cnvs_path const *p) {
+static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path const *p) {
     cnvs_verts_reset(&cv->scratch_verts);
     // Line width and dash lengths are in user units; bake the CTM scale in.
     float scale = ctm_scale(cv->cur.ctm);
@@ -2463,7 +2463,7 @@ static bool build_stroke_verts(canvas *__single cv, cnvs_path const *p) {
     return true;
 }
 
-static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
+static void stroke_device_path(struct canvas *__single cv, struct cnvs_path const *p) {
     if (!build_stroke_verts(cv, p) || cv->scratch_verts.len < 3) {
         return;
     }
@@ -2493,7 +2493,7 @@ static void stroke_device_path(canvas *__single cv, cnvs_path const *p) {
     paint_stroke(cv, b);
 }
 
-void canvas_stroke(canvas *__single cv) {
+void canvas_stroke(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "stroke"); }
     stroke_device_path(cv, &cv->path);
 }
@@ -2520,7 +2520,7 @@ static bool point_in_tri(cnvs_vec2 q, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
 
 // Whether q lies in the stroke triangles currently in cv->scratch_verts (their
 // union -- inside any triangle counts).
-static bool stroke_verts_contain(canvas *__single cv, cnvs_vec2 q) {
+static bool stroke_verts_contain(struct canvas *__single cv, cnvs_vec2 q) {
     for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
         if (point_in_tri(q, cv->scratch_verts.data[i], cv->scratch_verts.data[i + 1],
                          cv->scratch_verts.data[i + 2])) {
@@ -2530,7 +2530,7 @@ static bool stroke_verts_contain(canvas *__single cv, cnvs_vec2 q) {
     return false;
 }
 
-bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
+bool canvas_is_point_in_stroke(struct canvas *__single cv, float x, float y) {
     if (!isfinite(x) || !isfinite(y)) {
         return false;
     }
@@ -2542,14 +2542,14 @@ bool canvas_is_point_in_stroke(canvas *__single cv, float x, float y) {
     return stroke_verts_contain(cv, xf(cv, x, y));
 }
 
-void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h) {
+void canvas_stroke_rect(struct canvas *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "stroke_rect", (float[]){ x, y, w, h }, 4); }
     if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h)) {
         return;  // Canvas spec: non-finite args paint nothing.
     }
     // strokeRect builds and strokes its own rectangle without touching the
     // current path; the corners go through the CTM exactly as fill_rect's quad.
-    cnvs_path rp;
+    struct cnvs_path rp;
     cnvs_path_init(&rp);
     if (w == 0.0f && h == 0.0f) {
         // Spec: a single-point subpath.  Our stroker emits nothing for a
@@ -2573,7 +2573,7 @@ void canvas_stroke_rect(canvas *__single cv, float x, float y, float w, float h)
 static char const k_font_family[] = "Libian TC";
 
 // Rebuild the cached font when the requested size changes; NULL on failure.
-static cnvs_font *__single ensure_font(canvas *__single cv) {
+static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
         cnvs_font_destroy(cv->font);
         cv->font = cnvs_font_create(k_font_family, (int)sizeof k_font_family - 1,
@@ -2590,7 +2590,7 @@ static cnvs_font *__single ensure_font(canvas *__single cv) {
 // and replay place baselines bit-identically.  Populated from a live font
 // handle on first use.  False only when no record exists and the font can't
 // be built (then there are no metrics to give).
-static bool canvas_vmetrics(canvas *__single cv, float *__single ascent,
+static bool canvas_vmetrics(struct canvas *__single cv, float *__single ascent,
                             float *__single descent) {
     float size = cv->cur.font_size;
     int fid = cnvs_text_cache_intern(&cv->text_cache, k_font_family,
@@ -2601,7 +2601,7 @@ static bool canvas_vmetrics(canvas *__single cv, float *__single ascent,
         *descent = d1 * size;
         return true;
     }
-    cnvs_font *__single f = ensure_font(cv);
+    struct cnvs_font *__single f = ensure_font(cv);
     if (!f) {
         return false;
     }
@@ -2620,12 +2620,12 @@ static bool canvas_vmetrics(canvas *__single cv, float *__single ascent,
     return true;
 }
 
-void canvas_set_font_size(canvas *__single cv, float px) {
+void canvas_set_font_size(struct canvas *__single cv, float px) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_font_size", (float[]){ px }, 1); }
     cv->cur.font_size = px > 0.0f ? px : 0.0f;
 }
 
-void canvas_set_text_align(canvas *__single cv, enum canvas_text_align align) {
+void canvas_set_text_align(struct canvas *__single cv, enum canvas_text_align align) {
     switch (align) {
         case CANVAS_ALIGN_START:
         case CANVAS_ALIGN_END:
@@ -2638,7 +2638,7 @@ void canvas_set_text_align(canvas *__single cv, enum canvas_text_align align) {
     }
 }
 
-void canvas_set_direction(canvas *__single cv, enum canvas_direction dir) {
+void canvas_set_direction(struct canvas *__single cv, enum canvas_direction dir) {
     switch (dir) {
         case CANVAS_DIRECTION_LTR:
         case CANVAS_DIRECTION_RTL:
@@ -2648,7 +2648,7 @@ void canvas_set_direction(canvas *__single cv, enum canvas_direction dir) {
     }
 }
 
-void canvas_set_text_baseline(canvas *__single cv, enum canvas_text_baseline baseline) {
+void canvas_set_text_baseline(struct canvas *__single cv, enum canvas_text_baseline baseline) {
     switch (baseline) {
         case CANVAS_BASELINE_ALPHABETIC:
         case CANVAS_BASELINE_TOP:
@@ -2682,7 +2682,7 @@ static float text_align_frac(enum canvas_text_align a, enum canvas_direction dir
 // from the font's ascent/descent (no BASE table: hanging ~ top, ideographic ~
 // bottom).  The metrics come through the cached vmetrics record, so a replayed
 // program needs no font handle to place a baseline.
-static float text_baseline_offset(canvas *__single cv) {
+static float text_baseline_offset(struct canvas *__single cv) {
     if (cv->cur.text_baseline == CANVAS_BASELINE_ALPHABETIC) {
         return 0.0f;
     }
@@ -2709,7 +2709,7 @@ static float text_baseline_offset(canvas *__single cv) {
 // way it draws under either direction.  NULL on failure.  The result is
 // BORROWED from the cache (do not free); it stays valid until the next shape
 // lookup, and every caller is done with it before making another.
-static cnvs_shaped const *__single shape_text(canvas *__single cv,
+static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                               char const *__counted_by(len) text,
                                               int len) {
     return cnvs_text_cache_shape(&cv->text_cache, k_font_family,
@@ -2728,7 +2728,7 @@ static cnvs_shaped const *__single shape_text(canvas *__single cv,
 // [ink_x0, ink_x0 + cap_w] x [ink_y0, ink_y0 + cap_h] in capture px (y up,
 // baseline-relative); scaling by size_px / CNVS_CAPTURE_EM and pinning to the
 // pen maps it to user space.
-static void draw_glyph_capture(canvas *__single cv, cnvs_glyph_slot *__single slot,
+static void draw_glyph_capture(struct canvas *__single cv, struct cnvs_glyph_slot *__single slot,
                                float pen_x, float baseline_y, float size_px) {
     float const k = size_px / (float)CNVS_CAPTURE_EM;
     float const dw = (float)slot->cap_w * k;
@@ -2757,7 +2757,7 @@ static void draw_glyph_capture(canvas *__single cv, cnvs_glyph_slot *__single sl
 // the run still has its boundary handle: ask the boundary for the ink box,
 // draw into a checked RGBA8 buffer at device size, unpremultiply, then
 // composite through the CTM with canvas_draw_image_subrect.
-static void draw_color_glyph(canvas *__single cv, void *__single font,
+static void draw_color_glyph(struct canvas *__single cv, void *__single font,
                              uint16_t glyph, float pen_x, float baseline_y) {
     float x0, y0, x1, y1;
     cnvs_glyph_bounds(font, glyph, &x0, &y0, &x1, &y1);
@@ -2803,7 +2803,7 @@ static void draw_color_glyph(canvas *__single cv, void *__single font,
 // cnvs_shaped_outline's color-glyph callback context: the canvas plus the size
 // the line was shaped at (the capture px scale's numerator).
 struct color_glyph_ctx {
-    canvas *__single cv;
+    struct canvas *__single cv;
     float size_px;
 };
 
@@ -2818,7 +2818,7 @@ struct color_glyph_ctx {
 static void paint_color_glyph(void *__single ctx, int fid, void *__single font,
                               uint16_t glyph, float pen_x, float baseline_y) {
     struct color_glyph_ctx *__single cc = ctx;
-    cnvs_glyph_slot *__single slot =
+    struct cnvs_glyph_slot *__single slot =
         cnvs_text_cache_color(&cc->cv->text_cache, fid, font, glyph);
     if (slot) {
         if (slot->cap_w > 0) {
@@ -2837,7 +2837,7 @@ static void paint_color_glyph(void *__single ctx, int fid, void *__single font,
 // during shaping.  One run/pen walk serves outlines and emoji alike:
 // cnvs_shaped_outline does the layout and hands color glyphs back through the
 // callback above.
-static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
+static void paint_shaped(struct canvas *__single cv, struct cnvs_shaped const *__single s,
                          float ox, float oy, cnvs_mat to_device, bool stroke) {
     cnvs_path_reset(&cv->text_path);
     struct color_glyph_ctx cc = { .cv = cv, .size_px = s->size_px };
@@ -2853,12 +2853,12 @@ static void paint_shaped(canvas *__single cv, cnvs_shaped const *__single s,
 // Shape once, place by textAlign/textBaseline (condensing to max_width if finite and
 // positive), and paint.  One shaped line drives both the alignment advance and the
 // glyphs, so emoji and fallback runs are measured the same way they are drawn.
-static void do_text(canvas *__single cv, char const *__counted_by(len) text, int len,
+static void do_text(struct canvas *__single cv, char const *__counted_by(len) text, int len,
                     float x, float y, float max_width, bool stroke) {
     if (!isfinite(x) || !isfinite(y)) {
         return;  // spec: fillText/strokeText with non-finite coordinates draw
     }            // nothing (and an inf pen would poison every glyph point)
-    cnvs_shaped const *__single s = shape_text(cv, text, len);
+    struct cnvs_shaped const *__single s = shape_text(cv, text, len);
     if (!s) {
         return;
     }
@@ -2880,17 +2880,17 @@ static void do_text(canvas *__single cv, char const *__counted_by(len) text, int
     paint_shaped(cv, s, ox, oy, td, stroke);
 }
 
-float canvas_measure_text(canvas *__single cv, char const *__null_terminated text) {
+float canvas_measure_text(struct canvas *__single cv, char const *__null_terminated text) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    cnvs_shaped const *__single s = shape_text(cv, t, len);
+    struct cnvs_shaped const *__single s = shape_text(cv, t, len);
     if (!s) {
         return 0.0f;
     }
     return cnvs_shaped_width(s);
 }
 
-canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
+canvas_text_metrics canvas_measure_text_full(struct canvas *__single cv,
                                              char const *__null_terminated text) {
     canvas_text_metrics m;
     memset(&m, 0, sizeof m);  // all-zero if the font/shaping can't be built
@@ -2898,7 +2898,7 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
     bool have_vm = canvas_vmetrics(cv, &a, &d);  // cached: no font handle needed
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
-    cnvs_shaped const *__single s = shape_text(cv, t, len);
+    struct cnvs_shaped const *__single s = shape_text(cv, t, len);
     if (have_vm && s) {
         cnvs_text_metrics tm;  // fallback-aware: each glyph in its run's font
         cnvs_shaped_metrics(&cv->text_cache, s, cv->cur.font_size, a, d, &tm);
@@ -2920,7 +2920,7 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
 
 // The per-canvas text cache, for tests and stats -- declared in cnvs_text.h so
 // it stays off the public canvas.h surface (tests include internal headers).
-cnvs_text_cache *__single cnvs_canvas_text_cache(canvas *__single cv) {
+struct cnvs_text_cache *__single cnvs_canvas_text_cache(struct canvas *__single cv) {
     return &cv->text_cache;
 }
 
@@ -2930,7 +2930,7 @@ cnvs_text_cache *__single cnvs_canvas_text_cache(canvas *__single cv) {
 // the not-yet-emitted font/glyph/shape blocks ahead of the op line.  The
 // recorded program is self-contained: replay rebuilds the cache from the
 // blocks and draws with no text boundary at all.
-static void record_text_blocks(canvas *__single cv,
+static void record_text_blocks(struct canvas *__single cv,
                                char const *__counted_by(len) text, int len) {
     float a = 0.0f, d = 0.0f;
     (void)canvas_vmetrics(cv, &a, &d);  // intern the family + its vmetrics
@@ -2939,7 +2939,7 @@ static void record_text_blocks(canvas *__single cv,
                          cv->cur.direction == CANVAS_DIRECTION_RTL, text, len);
 }
 
-void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
+void canvas_fill_text_n(struct canvas *__single cv, char const *__counted_by(len) text,
                         int len, float x, float y) {
     if (cv->rec) {
         record_text_blocks(cv, text, len);
@@ -2948,14 +2948,14 @@ void canvas_fill_text_n(canvas *__single cv, char const *__counted_by(len) text,
     do_text(cv, text, len, x, y, -1.0f, false);
 }
 
-void canvas_fill_text(canvas *__single cv, char const *__null_terminated text,
+void canvas_fill_text(struct canvas *__single cv, char const *__null_terminated text,
                       float x, float y) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_fill_text_n(cv, t, len, x, y);
 }
 
-void canvas_fill_text_max_n(canvas *__single cv, char const *__counted_by(len) text,
+void canvas_fill_text_max_n(struct canvas *__single cv, char const *__counted_by(len) text,
                             int len, float x, float y, float max_width) {
     if (cv->rec) {
         record_text_blocks(cv, text, len);
@@ -2964,14 +2964,14 @@ void canvas_fill_text_max_n(canvas *__single cv, char const *__counted_by(len) t
     do_text(cv, text, len, x, y, max_width, false);
 }
 
-void canvas_fill_text_max(canvas *__single cv, char const *__null_terminated text,
+void canvas_fill_text_max(struct canvas *__single cv, char const *__null_terminated text,
                           float x, float y, float max_width) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_fill_text_max_n(cv, t, len, x, y, max_width);
 }
 
-void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) text,
+void canvas_stroke_text_n(struct canvas *__single cv, char const *__counted_by(len) text,
                           int len, float x, float y) {
     if (cv->rec) {
         record_text_blocks(cv, text, len);
@@ -2980,14 +2980,14 @@ void canvas_stroke_text_n(canvas *__single cv, char const *__counted_by(len) tex
     do_text(cv, text, len, x, y, -1.0f, true);
 }
 
-void canvas_stroke_text(canvas *__single cv, char const *__null_terminated text,
+void canvas_stroke_text(struct canvas *__single cv, char const *__null_terminated text,
                         float x, float y) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_stroke_text_n(cv, t, len, x, y);
 }
 
-void canvas_stroke_text_max_n(canvas *__single cv,
+void canvas_stroke_text_max_n(struct canvas *__single cv,
                               char const *__counted_by(len) text,
                               int len, float x, float y, float max_width) {
     if (cv->rec) {
@@ -2997,7 +2997,7 @@ void canvas_stroke_text_max_n(canvas *__single cv,
     do_text(cv, text, len, x, y, max_width, true);
 }
 
-void canvas_stroke_text_max(canvas *__single cv, char const *__null_terminated text,
+void canvas_stroke_text_max(struct canvas *__single cv, char const *__null_terminated text,
                             float x, float y, float max_width) {
     int len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
@@ -3050,12 +3050,12 @@ static void sample_src_nearest(uint8_t const *__counted_by(slen) src, int slen,
     }
 }
 
-void canvas_set_image_smoothing_enabled(canvas *__single cv, bool enabled) {
+void canvas_set_image_smoothing_enabled(struct canvas *__single cv, bool enabled) {
     if (cv->rec) { cnvs_rec_floats_bool(cv->rec, "set_image_smoothing_enabled", NULL, 0, enabled); }
     cv->cur.image_smoothing_enabled = enabled;
 }
 
-void canvas_set_image_smoothing_quality(canvas *__single cv,
+void canvas_set_image_smoothing_quality(struct canvas *__single cv,
                                         enum canvas_image_smoothing_quality quality) {
     switch (quality) {
         case CANVAS_SMOOTHING_LOW:
@@ -3075,7 +3075,7 @@ void canvas_set_image_smoothing_quality(canvas *__single cv,
 // true = premultiplied, the canonical emoji capture -- bilinear interpolation
 // of premultiplied bytes is fringe-free, and the sample just scales by
 // alpha * coverage on its way into the premultiplied tile.
-static void draw_image_quad(canvas *__single cv,
+static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
@@ -3181,7 +3181,7 @@ static void draw_image_quad(canvas *__single cv,
                cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
 }
 
-void canvas_draw_image_subrect(canvas *__single cv,
+void canvas_draw_image_subrect(struct canvas *__single cv,
                                uint8_t const *__counted_by(sw * sh * 4) src,
                                int sw, int sh, float sx, float sy,
                                float sww, float shh, float dx, float dy,
@@ -3204,7 +3204,7 @@ void canvas_draw_image_subrect(canvas *__single cv,
                     dx, dy, dw, dh, false);
 }
 
-void canvas_draw_image(canvas *__single cv,
+void canvas_draw_image(struct canvas *__single cv,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy) {
     // Record `draw_image` as itself, then swallow the subrect form it
@@ -3223,7 +3223,7 @@ void canvas_draw_image(canvas *__single cv,
     cnvs_rec_leave(cv->rec);
 }
 
-void canvas_draw_image_scaled(canvas *__single cv,
+void canvas_draw_image_scaled(struct canvas *__single cv,
                               uint8_t const *__counted_by(sw * sh * 4) src,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh) {
@@ -3270,7 +3270,7 @@ static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
 // eight pixels per step over channel planes with st4 re-interleaving at the
 // RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same block gathered.
 // write_png and get_image_data read back through this same entry point.
-void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
+void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
     }
@@ -3287,7 +3287,7 @@ void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int l
     }
 }
 
-bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
+bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated path) {
     int const len = cv->width * cv->height * 4;
     uint8_t *__counted_by_or_null(len) out = malloc((size_t)len);
     if (!out) {
@@ -3305,7 +3305,7 @@ canvas_load_png(char const *__null_terminated path,
     return cnvs_png_read(path, w, h, len);
 }
 
-void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
+void canvas_get_image_data(struct canvas *__single cv, int x, int y, int w, int h,
                            uint8_t *__counted_by(len) out, int len) {
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
         return;
@@ -3322,7 +3322,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
 }
 
 uint8_t *__counted_by_or_null(*len)
-canvas_create_image_data(canvas *__single cv, int sw, int sh, int *__single len) {
+canvas_create_image_data(struct canvas *__single cv, int sw, int sh, int *__single len) {
     (void)cv;  // image data is independent of canvas contents (no colorSpace here)
     if (!rgba8_dims_ok(sw, sh)) {
         *len = 0;
@@ -3344,7 +3344,7 @@ canvas_create_image_data(canvas *__single cv, int sw, int sh, int *__single len)
 // at (dx+col, dy+row).  Overwrites (no blending) and ignores the clip, clipped to
 // the canvas.  The caller guarantees the sub-rect lies within the source
 // ([0,w] x [0,h]) with sw, sh > 0, and len >= w*h*4.
-static void put_image_sub(canvas *__single cv,
+static void put_image_sub(struct canvas *__single cv,
                           uint8_t const *__counted_by(len) data, int len,
                           int w, int dx, int dy, int sx, int sy, int sw, int sh) {
     (void)len;
@@ -3389,7 +3389,7 @@ static void put_image_sub(canvas *__single cv,
                CANVAS_OP_COPY);
 }
 
-void canvas_put_image_data(canvas *__single cv,
+void canvas_put_image_data(struct canvas *__single cv,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy) {
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
@@ -3407,7 +3407,7 @@ void canvas_put_image_data(canvas *__single cv,
     put_image_sub(cv, data, len, w, dx, dy, 0, 0, w, h);
 }
 
-void canvas_put_image_data_dirty(canvas *__single cv,
+void canvas_put_image_data_dirty(struct canvas *__single cv,
                                  uint8_t const *__counted_by(len) data, int len,
                                  int w, int h, int dx, int dy,
                                  int dirty_x, int dirty_y,
@@ -3450,11 +3450,11 @@ void canvas_put_image_data_dirty(canvas *__single cv,
 // disturbing the canvas's own current path.  The command-list storage lives in
 // cnvs_path2d.h so the recorder can serialize a path as a `path` block.
 
-canvas_path2d *__single canvas_path2d_create(void) {
-    return calloc(1, sizeof(canvas_path2d));  // cmds=NULL, len=cap=0 (consistent)
+struct canvas_path2d *__single canvas_path2d_create(void) {
+    return calloc(1, sizeof(struct canvas_path2d));  // cmds=NULL, len=cap=0 (consistent)
 }
 
-void canvas_path2d_destroy(canvas_path2d *__single p) {
+void canvas_path2d_destroy(struct canvas_path2d *__single p) {
     if (!p) {
         return;
     }
@@ -3462,7 +3462,7 @@ void canvas_path2d_destroy(canvas_path2d *__single p) {
     free(p);
 }
 
-static void p2d_push(canvas_path2d *__single p, p2d_cmd c) {
+static void p2d_push(struct canvas_path2d *__single p, p2d_cmd c) {
     if (p->len >= p->cap) {
         int nc = cnvs_grow_cap(p->cap, p->len + 1);
         p2d_cmd *ncmds = realloc(p->cmds, (size_t)nc * sizeof *ncmds);
@@ -3476,32 +3476,32 @@ static void p2d_push(canvas_path2d *__single p, p2d_cmd c) {
     p->len += 1;
 }
 
-void canvas_path2d_move_to(canvas_path2d *__single p, float x, float y) {
+void canvas_path2d_move_to(struct canvas_path2d *__single p, float x, float y) {
     p2d_push(p, (p2d_cmd){ .op = P2D_MOVE, .a = { x, y } });
 }
 
-void canvas_path2d_line_to(canvas_path2d *__single p, float x, float y) {
+void canvas_path2d_line_to(struct canvas_path2d *__single p, float x, float y) {
     p2d_push(p, (p2d_cmd){ .op = P2D_LINE, .a = { x, y } });
 }
 
-void canvas_path2d_quadratic_curve_to(canvas_path2d *__single p,
+void canvas_path2d_quadratic_curve_to(struct canvas_path2d *__single p,
                                       float cpx, float cpy, float x, float y) {
     p2d_push(p, (p2d_cmd){ .op = P2D_QUAD, .a = { cpx, cpy, x, y } });
 }
 
-void canvas_path2d_bezier_curve_to(canvas_path2d *__single p, float c1x, float c1y,
+void canvas_path2d_bezier_curve_to(struct canvas_path2d *__single p, float c1x, float c1y,
                                    float c2x, float c2y, float x, float y) {
     p2d_push(p, (p2d_cmd){ .op = P2D_CUBIC, .a = { c1x, c1y, c2x, c2y, x, y } });
 }
 
-void canvas_path2d_arc(canvas_path2d *__single p, float x, float y, float radius,
+void canvas_path2d_arc(struct canvas_path2d *__single p, float x, float y, float radius,
                        float start_angle, float end_angle, bool anticlockwise) {
     p2d_push(p, (p2d_cmd){ .op = P2D_ARC,
                            .a = { x, y, radius, start_angle, end_angle },
                            .ccw = anticlockwise });
 }
 
-void canvas_path2d_ellipse(canvas_path2d *__single p, float x, float y,
+void canvas_path2d_ellipse(struct canvas_path2d *__single p, float x, float y,
                            float rx, float ry, float rotation,
                            float start_angle, float end_angle, bool anticlockwise) {
     p2d_push(p, (p2d_cmd){ .op = P2D_ELLIPSE,
@@ -3509,27 +3509,27 @@ void canvas_path2d_ellipse(canvas_path2d *__single p, float x, float y,
                            .ccw = anticlockwise });
 }
 
-void canvas_path2d_arc_to(canvas_path2d *__single p, float x1, float y1,
+void canvas_path2d_arc_to(struct canvas_path2d *__single p, float x1, float y1,
                           float x2, float y2, float radius) {
     p2d_push(p, (p2d_cmd){ .op = P2D_ARC_TO, .a = { x1, y1, x2, y2, radius } });
 }
 
-void canvas_path2d_rect(canvas_path2d *__single p, float x, float y,
+void canvas_path2d_rect(struct canvas_path2d *__single p, float x, float y,
                         float w, float h) {
     p2d_push(p, (p2d_cmd){ .op = P2D_RECT, .a = { x, y, w, h } });
 }
 
-void canvas_path2d_round_rect(canvas_path2d *__single p, float x, float y,
+void canvas_path2d_round_rect(struct canvas_path2d *__single p, float x, float y,
                               float w, float h, float radius) {
     p2d_push(p, (p2d_cmd){ .op = P2D_ROUND_RECT, .a = { x, y, w, h, radius } });
 }
 
-void canvas_path2d_close_path(canvas_path2d *__single p) {
+void canvas_path2d_close_path(struct canvas_path2d *__single p) {
     p2d_push(p, (p2d_cmd){ .op = P2D_CLOSE });
 }
 
-void canvas_path2d_add_path(canvas_path2d *__single dst,
-                            canvas_path2d const *__single src) {
+void canvas_path2d_add_path(struct canvas_path2d *__single dst,
+                            struct canvas_path2d const *__single src) {
     for (int i = 0; i < src->len; i++) {
         p2d_push(dst, src->cmds[i]);
     }
@@ -3537,7 +3537,7 @@ void canvas_path2d_add_path(canvas_path2d *__single dst,
 
 // Replay a Path2D's commands into cv->path through the canvas path methods (which
 // transform each coordinate by the current CTM and flatten curves at device tol).
-static void p2d_replay(canvas *__single cv, canvas_path2d const *__single p) {
+static void p2d_replay(struct canvas *__single cv, struct canvas_path2d const *__single p) {
     for (int i = 0; i < p->len; i++) {
         p2d_cmd c = p->cmds[i];
         float const *a = c.a;
@@ -3564,11 +3564,11 @@ static void p2d_replay(canvas *__single cv, canvas_path2d const *__single p) {
 // fresh one in its place; swap_out frees the scratch and restores the original.
 // Every Path2D draw and hit-test runs between the two.
 struct p2d_scratch {
-    cnvs_path path;
+    struct cnvs_path path;
     cnvs_vec2 user;
 };
 
-static void p2d_swap_in(canvas *__single cv, canvas_path2d const *__single p,
+static void p2d_swap_in(struct canvas *__single cv, struct canvas_path2d const *__single p,
                         struct p2d_scratch *__single sv) {
     sv->path = cv->path;
     sv->user = cv->cur_user;
@@ -3576,13 +3576,13 @@ static void p2d_swap_in(canvas *__single cv, canvas_path2d const *__single p,
     p2d_replay(cv, p);
 }
 
-static void p2d_swap_out(canvas *__single cv, struct p2d_scratch *__single sv) {
+static void p2d_swap_out(struct canvas *__single cv, struct p2d_scratch *__single sv) {
     cnvs_path_free(&cv->path);
     cv->path = sv->path;
     cv->cur_user = sv->user;
 }
 
-void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
+void canvas_fill_path(struct canvas *__single cv, struct canvas_path2d const *__single p,
                       enum canvas_fill_rule rule) {
     // Record `fill_path <id> <rule>` against the path's numbered block, then
     // swallow the public path methods p2d_replay drives -- the file keeps the
@@ -3600,7 +3600,7 @@ void canvas_fill_path(canvas *__single cv, canvas_path2d const *__single p,
     cnvs_rec_leave(cv->rec);
 }
 
-void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
+void canvas_stroke_path(struct canvas *__single cv, struct canvas_path2d const *__single p) {
     if (cv->rec) {
         int const id = cnvs_rec_path(cv->rec, p);
         if (id >= 0) { cnvs_rec_path_op(cv->rec, "stroke_path", id); }
@@ -3613,7 +3613,7 @@ void canvas_stroke_path(canvas *__single cv, canvas_path2d const *__single p) {
     cnvs_rec_leave(cv->rec);
 }
 
-void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
+void canvas_clip_path(struct canvas *__single cv, struct canvas_path2d const *__single p,
                       enum canvas_fill_rule rule) {
     if (cv->rec) {
         int const id = cnvs_rec_path(cv->rec, p);
@@ -3632,7 +3632,7 @@ void canvas_clip_path(canvas *__single cv, canvas_path2d const *__single p,
     cnvs_rec_leave(cv->rec);
 }
 
-bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__single p,
+bool canvas_is_point_in_path2d(struct canvas *__single cv, struct canvas_path2d const *__single p,
                                float x, float y, enum canvas_fill_rule rule) {
     if (!isfinite(x) || !isfinite(y)) {
         return false;
@@ -3647,8 +3647,8 @@ bool canvas_is_point_in_path2d(canvas *__single cv, canvas_path2d const *__singl
     return inside;
 }
 
-bool canvas_is_point_in_stroke_path(canvas *__single cv,
-                                    canvas_path2d const *__single p,
+bool canvas_is_point_in_stroke_path(struct canvas *__single cv,
+                                    struct canvas_path2d const *__single p,
                                     float x, float y) {
     if (!isfinite(x) || !isfinite(y)) {
         return false;

@@ -96,7 +96,7 @@ static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
 typedef uint8_t pngu8x16 __attribute__((ext_vector_type(16)));
 
 // Up-filter one row: out[i] = cur[i] - prev[i] mod 256.  Whole-vector ops via
-// the memcpy idiom -- one bounds check per 16-byte block (the cnvs_cover
+// the memcpy idiom -- one bounds check per 16-byte block (the struct cnvs_cover
 // resolve / blur pattern) -- then a scalar tail.  Lane subtraction wraps mod
 // 256 by design (PNG filter arithmetic); the scalar tail's operands promote to
 // int, so there is no unsigned wrap for -fsanitize=integer to flag.

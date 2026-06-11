@@ -14,24 +14,24 @@
 
 enum cnvs_fill_rule { CNVS_NONZERO, CNVS_EVENODD };
 
-typedef struct {
+struct cnvs_cover {
     float *__counted_by(cap) acc;  // w*h signed-area accumulation, reused across calls
     int cap;
-} cnvs_cover;
+};
 
-void cnvs_cover_free(cnvs_cover *c);
+void cnvs_cover_free(struct cnvs_cover *c);
 
 // Zero the accumulation for a w*h raster (growing the buffer as needed).  False
 // only on allocation failure.
-bool cnvs_cover_reset(cnvs_cover *c, int w, int h);
+bool cnvs_cover_reset(struct cnvs_cover *c, int w, int h);
 
 // Accumulate one path edge (a device-space line segment).  Horizontal segments
 // contribute nothing; segments are clipped to the raster.
-void cnvs_cover_add_edge(cnvs_cover *c, int w, int h,
+void cnvs_cover_add_edge(struct cnvs_cover *c, int w, int h,
                          float x0, float y0, float x1, float y1);
 
 // Resolve the accumulation to per-pixel coverage (0..255) under `rule`, into
 // `out` (length w*h, row-major top-first).  Consumes the accumulator (it is
 // rewritten to the per-row prefix sums in place), so reset() before reusing `c`.
-void cnvs_cover_resolve(cnvs_cover *c, int w, int h, enum cnvs_fill_rule rule,
+void cnvs_cover_resolve(struct cnvs_cover *c, int w, int h, enum cnvs_fill_rule rule,
                         uint8_t *__counted_by(w * h) out);

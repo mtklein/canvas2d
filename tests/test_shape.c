@@ -14,7 +14,7 @@
 // positive, and hit-tests round-trip to valid source indices.  expect_rtl requires
 // at least one run to report right-to-left.
 static void check_shape(char const *__counted_by(len) text, int len, bool expect_rtl) {
-    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, false, text, len);
+    struct cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, false, text, len);
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -52,7 +52,7 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
 // Font fallback: a mixed Latin+emoji string must use >= 2 distinct fonts across its
 // runs, and the boundary must fill the name buffer within the caller's cap.
 static void check_fallback(void) {
-    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, false, S("A\xF0\x9F\x98\x80Z"));  // A 😀 Z
+    struct cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, false, S("A\xF0\x9F\x98\x80Z"));  // A 😀 Z
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -86,10 +86,10 @@ static void check_fallback(void) {
 // Latin text produces geometry; a color-emoji glyph has an advance but NO outline
 // path -- the gap that the bitmap boundary will fill.
 static void check_outline(void) {
-    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 40.0f, false, S("ffi"));
+    struct cnvs_shaped *s = cnvs_shape(S("Helvetica"), 40.0f, false, S("ffi"));
     CHECK(s != NULL);
     if (s) {
-        cnvs_path p;
+        struct cnvs_path p;
         cnvs_path_init(&p);
         float w = cnvs_shaped_outline(NULL, s, 0.0f, 0.0f, cnvs_mat_identity(),
                                       0.25f, &p, NULL, NULL);
@@ -99,10 +99,10 @@ static void check_outline(void) {
         cnvs_shaped_free(s);
     }
 
-    cnvs_shaped *e = cnvs_shape(S("Helvetica"), 40.0f, false, S("\xF0\x9F\x98\x80"));  // lone emoji
+    struct cnvs_shaped *e = cnvs_shape(S("Helvetica"), 40.0f, false, S("\xF0\x9F\x98\x80"));  // lone emoji
     CHECK(e != NULL);
     if (e) {
-        cnvs_path p;
+        struct cnvs_path p;
         cnvs_path_init(&p);
         float w = cnvs_shaped_outline(NULL, e, 0.0f, 0.0f, cnvs_mat_identity(),
                                       0.25f, &p, NULL, NULL);
@@ -116,7 +116,7 @@ static void check_outline(void) {
 // Color emoji: no outline, so it must be drawn into a pixel buffer.  The checked
 // core owns the __counted_by(w*h*4) buffer; the boundary fills it via CGBitmapContext.
 static void check_emoji_draw(void) {
-    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 40.0f, false, S("\xF0\x9F\x98\x80"));  // 😀
+    struct cnvs_shaped *s = cnvs_shape(S("Helvetica"), 40.0f, false, S("\xF0\x9F\x98\x80"));  // 😀
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -151,7 +151,7 @@ static void check_emoji_draw(void) {
 }
 
 static void check_bidi(void) {
-    cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, false, S("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
+    struct cnvs_shaped *s = cnvs_shape(S("Helvetica"), 20.0f, false, S("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
     CHECK(s != NULL);
     if (!s) {
         return;
@@ -190,9 +190,9 @@ static void check_paragraph_direction(void) {
     // "Hi שלום!": under an ltr paragraph the Latin leads (the 'H' is the
     // leftmost glyph); under rtl the whole line reorders and the 'H' moves
     // right of the Hebrew.
-    cnvs_shaped *ltr = cnvs_shape(S("Helvetica"), 20.0f, false,
+    struct cnvs_shaped *ltr = cnvs_shape(S("Helvetica"), 20.0f, false,
                                   S("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
-    cnvs_shaped *rtl = cnvs_shape(S("Helvetica"), 20.0f, true,
+    struct cnvs_shaped *rtl = cnvs_shape(S("Helvetica"), 20.0f, true,
                                   S("Hi \xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
     CHECK(ltr != NULL && rtl != NULL);
     if (ltr && rtl) {
@@ -212,9 +212,9 @@ static void check_paragraph_direction(void) {
     // base-direction side -- visual right (x > 0) under ltr, visual left
     // (x == 0) under rtl.  This is exactly the case first-strong would get
     // wrong for direction=ltr, so it also pins that the base is explicit.
-    cnvs_shaped *nl = cnvs_shape(S("Helvetica"), 20.0f, false,
+    struct cnvs_shaped *nl = cnvs_shape(S("Helvetica"), 20.0f, false,
                                  S("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
-    cnvs_shaped *nr = cnvs_shape(S("Helvetica"), 20.0f, true,
+    struct cnvs_shaped *nr = cnvs_shape(S("Helvetica"), 20.0f, true,
                                  S("\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D!"));
     CHECK(nl != NULL && nr != NULL);
     if (nl && nr) {

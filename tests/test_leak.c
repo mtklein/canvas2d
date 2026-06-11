@@ -18,7 +18,7 @@
 #include <ptrcheck.h>
 #include <stdint.h>
 
-static void draw_some(canvas *__single cv, int seed) {
+static void draw_some(struct canvas *__single cv, int seed) {
     canvas_save(cv);
     canvas_translate(cv, (float)(seed % 7), (float)(seed % 5));
     canvas_rotate(cv, 0.1f * (float)seed);
@@ -58,7 +58,7 @@ static void draw_some(canvas *__single cv, int seed) {
 
 int main(void) {
     for (int i = 0; i < 16; i++) {
-        canvas *__single cv = canvas_create(48, 48);
+        struct canvas *__single cv = canvas_create(48, 48);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -98,7 +98,7 @@ int main(void) {
     // truncated-block drop paths, which a failing replay exercises.
     for (int i = 0; i < 4; i++) {
         char const *__null_terminated path = "build/test_leak.canvas";
-        canvas *__single cv = canvas_create(48, 48);
+        struct canvas *__single cv = canvas_create(48, 48);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -111,7 +111,7 @@ int main(void) {
         canvas_draw_image(cv, src, 8, 8, 2.0f, 2.0f);
         canvas_set_fill_pattern(cv, src, 8, 8, CANVAS_REPEAT);
         canvas_fill_rect(cv, 0.0f, 0.0f, 24.0f, 24.0f);
-        canvas_path2d *__single p2 = canvas_path2d_create();
+        struct canvas_path2d *__single p2 = canvas_path2d_create();
         if (p2) {
             canvas_path2d_rect(p2, 4.0f, 4.0f, 20.0f, 20.0f);
             canvas_fill_path(cv, p2, CANVAS_NONZERO);
@@ -121,7 +121,7 @@ int main(void) {
         canvas_fill_text(cv, "Ag", 4.0f, 40.0f);
         canvas_destroy(cv);  // closes the recording, freeing its copies
 
-        canvas *__single rv = canvas_create(48, 48);
+        struct canvas *__single rv = canvas_create(48, 48);
         CHECK(rv != NULL);
         if (!rv) {
             continue;

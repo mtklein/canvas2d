@@ -19,7 +19,7 @@
 #include <string.h>
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
-    canvas *__single cv = canvas_create(96, 48);
+    struct canvas *__single cv = canvas_create(96, 48);
     if (!cv) {
         return 0;
     }

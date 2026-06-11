@@ -48,7 +48,7 @@
 // fill and stroke.  Coordinates are simple decimals; the text round-trips by
 // design.  The emoji line proves the bitmap blocks earn their keep: replay
 // draws it from the serialized capture, fontless and boundary-free.
-static void draw_text_scene(canvas *__single cv) {
+static void draw_text_scene(struct canvas *__single cv) {
     canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.9f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
@@ -151,7 +151,7 @@ static void check_round_trip(void) {
     memset(&m23, 0, sizeof m23);
     memset(&me, 0, sizeof me);
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -174,7 +174,7 @@ static void check_round_trip(void) {
     CHECK(me.actual_bounding_box_ascent > 0.0f);  // the emoji ink measured
 
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -184,7 +184,7 @@ static void check_round_trip(void) {
         // The proof of self-containment: every text lookup during replay hit
         // the cache the blocks pre-populated -- the boundary was never asked
         // to shape a line or fetch a glyph.
-        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
         CHECK(c->shape_misses == 0);
         CHECK(c->glyph_misses == 0);
         CHECK(c->shape_hits > 0);
@@ -221,7 +221,7 @@ static void check_dedup(void) {
     char const *__null_terminated twice = "build/test_record_text_d2.canvas";
 
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -233,7 +233,7 @@ static void check_dedup(void) {
         canvas_destroy(cv);
     }
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -285,7 +285,7 @@ static void check_dedup(void) {
 static void check_size(void) {
     char const *__null_terminated path = "build/test_record_text_z.canvas";
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -335,7 +335,7 @@ static int b64enc(char *__counted_by(cap) out, int cap,
 // the recorder writes with; snprintf's -fbounds-safety macro form trips
 // -Wgnu-statement-expression) and replay it, returning the parse verdict.
 __attribute__((format(printf, 2, 3)))
-static bool replay_fmt(canvas *__single cv, char const *__null_terminated fmt,
+static bool replay_fmt(struct canvas *__single cv, char const *__null_terminated fmt,
                        ...) {
     static char prog[1024];
     FILE *__single f = fmemopen(prog, sizeof prog, "w");
@@ -358,7 +358,7 @@ static bool replay_fmt(canvas *__single cv, char const *__null_terminated fmt,
 // Strict parsing: malformed blocks stop replay (false) without corrupting the
 // canvas -- it draws normally afterwards.
 static void check_strict(void) {
-    canvas *__single cv = canvas_create(64, 48);
+    struct canvas *__single cv = canvas_create(64, 48);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -536,7 +536,7 @@ static uint32_t xorshift32(uint32_t *__single s) {
 // libc formatter cnvs_record.c writes with, via an in-memory FILE) and the
 // replay parser's number reader (a set_transform line, read back via
 // get_transform): the reparsed float32 must be bit-identical.
-static bool roundtrips(canvas *__single cv, FILE *__single f,
+static bool roundtrips(struct canvas *__single cv, FILE *__single f,
                        char const *__counted_by(cap) line, int cap, float v) {
     rewind(f);
     fprintf(f, "set_transform %.9g 0 0 1 0 0\n", (double)v);
@@ -556,7 +556,7 @@ static bool roundtrips(canvas *__single cv, FILE *__single f,
 // The float round-trip property: emit/parse identity over denormals, negative
 // zero, extremes, powers of two, and a large random sweep of bit patterns.
 static void check_float_round_trip(void) {
-    canvas *__single cv = canvas_create(8, 8);
+    struct canvas *__single cv = canvas_create(8, 8);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -639,7 +639,7 @@ static void check_new_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -673,13 +673,13 @@ static void check_new_ops(void) {
     }
 
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
         CHECK(canvas_replay_from(cv, path));
-        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
         CHECK(c->shape_misses == 0);  // fill_text_max replayed boundary-free
         CHECK(c->glyph_misses == 0);
         CHECK(c->shape_hits > 0);
@@ -692,7 +692,7 @@ static void check_new_ops(void) {
     }
 
     // Strict parsing of the new op lines (the canvas still draws after each).
-    canvas *__single cv = canvas_create(32, 32);
+    struct canvas *__single cv = canvas_create(32, 32);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -722,7 +722,7 @@ static void check_shadow_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -741,13 +741,13 @@ static void check_shadow_ops(void) {
         canvas_destroy(cv);
     }
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
         CHECK(canvas_replay_from(cv, path));
-        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
         CHECK(c->shape_misses == 0);
         CHECK(c->glyph_misses == 0);
         uint8_t replayed_px[NPX];
@@ -757,7 +757,7 @@ static void check_shadow_ops(void) {
     }
 
     // Strict parse of the shadow op lines.
-    canvas *__single cv = canvas_create(32, 32);
+    struct canvas *__single cv = canvas_create(32, 32);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -785,7 +785,7 @@ static void check_direction_blocks(void) {
     uint8_t recorded_px[NPX];
     float w_ltr = 0.0f, w_rtl = 0.0f;
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -818,13 +818,13 @@ static void check_direction_blocks(void) {
     CHECK(count_lines(buf, n, "set_direction ") == 1);
 
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
         CHECK(canvas_replay_from(cv, path));
-        cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
         CHECK(c->shape_misses == 0);  // both lines came from their blocks
         CHECK(c->glyph_misses == 0);
         CHECK(c->shape_hits > 0);

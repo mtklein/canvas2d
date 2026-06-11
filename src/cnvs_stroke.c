@@ -37,7 +37,7 @@ static void stage_quad(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 a0, cnvs_vec2
 }
 
 // Rectangle from p0 to p1 offset by +/-nrm, as two triangles.
-static bool emit_quad(cnvs_verts *out, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 nrm) {
+static bool emit_quad(struct cnvs_verts *out, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 nrm) {
     cnvs_vec2 a0 = { .x = p0.x + nrm.x, .y = p0.y + nrm.y };
     cnvs_vec2 b0 = { .x = p0.x - nrm.x, .y = p0.y - nrm.y };
     cnvs_vec2 a1 = { .x = p1.x + nrm.x, .y = p1.y + nrm.y };
@@ -70,7 +70,7 @@ static int disc_segs(float r) {
 // Vertices come from a rotation recurrence: sin/cos of the step once, then a
 // 2x2 rotation per vertex; the recurrence's drift over the worst-case 64
 // segments stays far below the coverage quantizer.
-static bool emit_disc(cnvs_verts *out, cnvs_vec2 c, float r) {
+static bool emit_disc(struct cnvs_verts *out, cnvs_vec2 c, float r) {
     int segs = disc_segs(r);
     cnvs_vec2 stage[3 * 64];
     float const step = TAU / (float)segs;
@@ -127,7 +127,7 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
 // stage[k..] (wedge joins) or landed directly (round joins -- the staged verts
 // flush first so emission order holds).  Returns the new stage cursor, or -1
 // on allocation failure.
-static int join_at(cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
+static int join_at(struct cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
                    cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1, float hw,
                    enum cnvs_line_join join, float miter_limit) {
     float cross = d0.x * d1.y - d0.y * d1.x;
@@ -144,7 +144,7 @@ static int join_at(cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
 }
 
 // Fill the join at vertex v between incoming dir d0 and outgoing dir d1.
-static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
+static bool emit_join(struct cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
                       float hw, enum cnvs_line_join join, float miter_limit) {
     cnvs_vec2 stage[48];
     int k = join_at(out, stage, 0, v, d0, d1, hw, join, miter_limit);
@@ -152,7 +152,7 @@ static bool emit_join(cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
 }
 
 // Cap at open end `e`, with `capdir` pointing outward along the line.
-static bool emit_cap(cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir, float hw,
+static bool emit_cap(struct cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir, float hw,
                      enum cnvs_line_cap cap) {
     if (cap == CNVS_CAP_BUTT) {
         return true;
@@ -167,7 +167,7 @@ static bool emit_cap(cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir, float hw,
 
 bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
                           float half_width, enum cnvs_line_join join, enum cnvs_line_cap cap,
-                          float miter_limit, cnvs_verts *out) {
+                          float miter_limit, struct cnvs_verts *out) {
     if (n < 2 || half_width <= 0.0f) {
         return true;
     }
@@ -407,7 +407,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
 
 bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
                         float half_width, float const *__counted_by(ndash) dash,
-                        int ndash, float dash_offset, cnvs_verts *out) {
+                        int ndash, float dash_offset, struct cnvs_verts *out) {
     if (n < 2 || half_width <= 0.0f || ndash <= 0) {
         return true;
     }

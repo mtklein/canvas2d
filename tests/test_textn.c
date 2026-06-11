@@ -16,16 +16,16 @@
 #define H 32
 #define NPX (W * H * 4)
 
-static void setup(canvas *__single cv) {
+static void setup(struct canvas *__single cv) {
     canvas_set_font_size(cv, 16.0f);
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
 int main(void) {
-    canvas *__single a = canvas_create(W, H);
-    canvas *__single b = canvas_create(W, H);
-    canvas *__single c = canvas_create(W, H);
+    struct canvas *__single a = canvas_create(W, H);
+    struct canvas *__single b = canvas_create(W, H);
+    struct canvas *__single c = canvas_create(W, H);
     CHECK(a != NULL);
     CHECK(b != NULL);
     CHECK(c != NULL);
@@ -53,8 +53,8 @@ int main(void) {
     CHECK(memcmp(pa, pc, sizeof pa) != 0);  // and "ABC" != "ABCDEF" (non-trivial)
 
     // stroke_text_n likewise matches stroke_text on the slice.
-    canvas *__single d = canvas_create(W, H);
-    canvas *__single e = canvas_create(W, H);
+    struct canvas *__single d = canvas_create(W, H);
+    struct canvas *__single e = canvas_create(W, H);
     CHECK(d != NULL);
     CHECK(e != NULL);
     setup(d);
@@ -67,7 +67,7 @@ int main(void) {
     CHECK(memcmp(pd, pe, sizeof pd) == 0);
 
     // A zero-length slice draws nothing (and must not read text at all).
-    canvas *__single f = canvas_create(W, H);
+    struct canvas *__single f = canvas_create(W, H);
     CHECK(f != NULL);
     setup(f);
     canvas_fill_text_n(f, buf, 0, 4.0f, 20.0f);

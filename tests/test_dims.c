@@ -23,7 +23,7 @@ int main(void) {
     CHECK(canvas_create(1, 16385) == NULL);
     CHECK(canvas_create(OVF, OVF) == NULL);
 
-    canvas *__single cv = canvas_create(16384, 1);  // boundary value is accepted
+    struct canvas *__single cv = canvas_create(16384, 1);  // boundary value is accepted
     CHECK(cv != NULL);
     canvas_destroy(cv);
 

@@ -107,7 +107,7 @@ static void check_scene(scene_pair s) {
         return;
     }
 
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(ref);
@@ -124,7 +124,7 @@ static void check_scene(scene_pair s) {
     // captures bump glyph_misses on a boundary fetch) came from the program's
     // embedded blocks.  A nonzero miss is a Core Text fallback -- exactly what a
     // fontless machine cannot do.  (Trivially zero for a scene with no text.)
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     CHECK(c->shape_misses == 0);
     CHECK(c->glyph_misses == 0);
     if (s.text) {

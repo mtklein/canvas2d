@@ -7,7 +7,7 @@
 // bounds-checked against the counts the boundary handed over; the cluster value is
 // range-checked against the source length before it is trusted as an index.
 
-float cnvs_shaped_width(cnvs_shaped const *__single s) {
+float cnvs_shaped_width(struct cnvs_shaped const *__single s) {
     if (!s) {
         return 0.0f;
     }
@@ -21,7 +21,7 @@ float cnvs_shaped_width(cnvs_shaped const *__single s) {
     return w;
 }
 
-int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x) {
+int cnvs_shaped_index_at_x(struct cnvs_shaped const *__single s, float x) {
     if (!s) {
         return -1;
     }
@@ -42,7 +42,7 @@ int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x) {
     return -1;
 }
 
-float cnvs_shaped_x_at_index(cnvs_shaped const *__single s, int index) {
+float cnvs_shaped_x_at_index(struct cnvs_shaped const *__single s, int index) {
     if (!s) {
         return 0.0f;
     }
@@ -59,7 +59,7 @@ float cnvs_shaped_x_at_index(cnvs_shaped const *__single s, int index) {
     return pen;  // index past the last glyph -> end of the line
 }
 
-int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
+int cnvs_shaped_selection(struct cnvs_shaped const *__single s, int lo, int hi,
                           cnvs_xspan *__counted_by(max) out, int max) {
     if (!s || max <= 0 || hi <= lo) {
         return 0;
@@ -123,7 +123,7 @@ static cnvs_vec2 place(struct glyph_place const *g, cnvs_vec2 fu) {
 static void walk_curves(enum cnvs_glyph_verb const *__counted_by(nv) verb, int nv,
                         cnvs_vec2 const *__counted_by(np) pt, int np,
                         struct glyph_place const *__single g, float tol,
-                        cnvs_path *__single out) {
+                        struct cnvs_path *__single out) {
     int ip = 0;
     for (int iv = 0; iv < nv; iv++) {
         enum cnvs_glyph_verb v = verb[iv];
@@ -160,11 +160,11 @@ static void walk_curves(enum cnvs_glyph_verb const *__counted_by(nv) verb, int n
 // stored bytes are exactly what the boundary handed back -- a hit replays them
 // through the same checked math a miss runs.
 
-void cnvs_text_cache_init(cnvs_text_cache *__single c) {
+void cnvs_text_cache_init(struct cnvs_text_cache *__single c) {
     memset(c, 0, sizeof *c);  // empty slots: NULL pointers with zero counts
 }
 
-void cnvs_text_cache_clear(cnvs_text_cache *__single c) {
+void cnvs_text_cache_clear(struct cnvs_text_cache *__single c) {
     for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
         if (c->shape[i].s) {
             cnvs_shaped_free(c->shape[i].s);  // releases the runs' CTFontRefs too
@@ -191,8 +191,8 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c) {
 
 // The slot a fresh shaped line lands in: the first empty slot, else the
 // least-recently-used one.
-static cnvs_shape_slot *__single shape_lru_victim(cnvs_text_cache *__single c) {
-    cnvs_shape_slot *victim = &c->shape[0];
+static struct cnvs_shape_slot *__single shape_lru_victim(struct cnvs_text_cache *__single c) {
+    struct cnvs_shape_slot *victim = &c->shape[0];
     for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
         if (!c->shape[i].s) {
             return &c->shape[i];
@@ -204,10 +204,10 @@ static cnvs_shape_slot *__single shape_lru_victim(cnvs_text_cache *__single c) {
     return victim;
 }
 
-cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
+struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, char const *__counted_by(len) text, int len) {
-    cnvs_shape_slot *__single hit = cnvs_text_cache_shape_slot(c, size_px, rtl,
+    struct cnvs_shape_slot *__single hit = cnvs_text_cache_shape_slot(c, size_px, rtl,
                                                                text, len);
     if (hit) {
         hit->stamp = ++c->tick;
@@ -224,7 +224,7 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
         return NULL;
     }
     memcpy(copy, text, (size_t)len);
-    cnvs_shaped *__single s = cnvs_shape(name, name_len, size_px, rtl, text, len);
+    struct cnvs_shaped *__single s = cnvs_shape(name, name_len, size_px, rtl, text, len);
     if (!s) {
         free(copy);
         return NULL;  // boundary failure: nothing to cache, nothing to draw
@@ -234,7 +234,7 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
     // never nest, so no borrow is alive across an insert.
     uint32_t size_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
-    cnvs_shape_slot *victim = shape_lru_victim(c);
+    struct cnvs_shape_slot *victim = shape_lru_victim(c);
     if (victim->s) {
         cnvs_shaped_free(victim->s);
         free(victim->text);
@@ -249,7 +249,7 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
     return s;                 // serialized into any active recording
 }
 
-int cnvs_text_cache_intern(cnvs_text_cache *__single c,
+int cnvs_text_cache_intern(struct cnvs_text_cache *__single c,
                            char const *__counted_by(len) name, int len) {
     if (!c || len <= 0) {
         return -1;
@@ -275,7 +275,7 @@ int cnvs_text_cache_intern(cnvs_text_cache *__single c,
     return c->nfonts - 1;
 }
 
-int cnvs_text_cache_font(cnvs_text_cache *__single c, void *__single font) {
+int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font) {
     if (!c || !font) {
         return -1;
     }
@@ -295,7 +295,7 @@ int cnvs_text_cache_font(cnvs_text_cache *__single c, void *__single font) {
     return fid;
 }
 
-void cnvs_text_cache_set_vmetrics(cnvs_text_cache *__single c, int fid,
+void cnvs_text_cache_set_vmetrics(struct cnvs_text_cache *__single c, int fid,
                                   float asc1, float desc1) {
     if (!c || fid < 0 || fid >= c->nfonts || c->font[fid].has_vm) {
         return;  // first value wins: live and replayed values agree by design
@@ -305,7 +305,7 @@ void cnvs_text_cache_set_vmetrics(cnvs_text_cache *__single c, int fid,
     c->font[fid].has_vm = true;
 }
 
-bool cnvs_text_cache_get_vmetrics(cnvs_text_cache *__single c, int fid,
+bool cnvs_text_cache_get_vmetrics(struct cnvs_text_cache *__single c, int fid,
                                   float *__single asc1, float *__single desc1) {
     if (!c || fid < 0 || fid >= c->nfonts || !c->font[fid].has_vm) {
         return false;
@@ -333,14 +333,14 @@ static uint32_t mix32(uint32_t h) {
 // would insert.  NULL only when the table hasn't been built.  Inserts stop at
 // CNVS_GLYPH_CACHE_N < CNVS_GLYPH_TABLE_N entries, so an unused slot always
 // terminates the probe.
-static cnvs_glyph_slot *__single glyph_probe(cnvs_text_cache *__single c,
+static struct cnvs_glyph_slot *__single glyph_probe(struct cnvs_text_cache *__single c,
                                              uint32_t key) {
     if (c->glyph_cap == 0) {
         return NULL;
     }
     uint32_t mask = (uint32_t)c->glyph_cap - 1u;
     for (uint32_t i = mix32(key) & mask;; i = (i + 1u) & mask) {
-        cnvs_glyph_slot *slot = &c->glyph[i];
+        struct cnvs_glyph_slot *slot = &c->glyph[i];
         if (!slot->used || slot->key == key) {
             return slot;
         }
@@ -349,9 +349,9 @@ static cnvs_glyph_slot *__single glyph_probe(cnvs_text_cache *__single c,
 
 // Build the glyph table on the first miss or insert that needs it; false when
 // it (still) doesn't exist -- a failed build just retries on the next call.
-static bool glyph_table_ensure(cnvs_text_cache *__single c) {
+static bool glyph_table_ensure(struct cnvs_text_cache *__single c) {
     if (c->glyph_cap == 0) {
-        cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
+        struct cnvs_glyph_slot *t = calloc(CNVS_GLYPH_TABLE_N, sizeof *t);
         if (t) {
             c->glyph = t;
             c->glyph_cap = CNVS_GLYPH_TABLE_N;
@@ -360,13 +360,13 @@ static bool glyph_table_ensure(cnvs_text_cache *__single c) {
     return c->glyph_cap != 0;
 }
 
-cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
+struct cnvs_glyph_slot *__single cnvs_text_cache_glyph(struct cnvs_text_cache *__single c,
         int fid, void *__single font, uint16_t glyph, float size_px) {
     if (!c || fid < 0) {
         return NULL;
     }
     uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
-    cnvs_glyph_slot *slot = glyph_probe(c, key);
+    struct cnvs_glyph_slot *slot = glyph_probe(c, key);
     if (slot && slot->used) {
         c->glyph_hits++;
         return slot;
@@ -455,7 +455,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
     return slot;
 }
 
-void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
+void cnvs_text_cache_put_glyph(struct cnvs_text_cache *__single c, int fid,
         uint16_t glyph, enum cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
         cnvs_vec2 *__counted_by(npts) pt, int npts, float upem,
         float ink_x0, float ink_y0, float ink_x1, float ink_y1) {
@@ -466,7 +466,7 @@ void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
     }
     (void)glyph_table_ensure(c);  // first insert builds it, like a live miss
     uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
-    cnvs_glyph_slot *slot = glyph_probe(c, key);
+    struct cnvs_glyph_slot *slot = glyph_probe(c, key);
     if (!slot || slot->used || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
         free(verb);  // an existing entry wins (replay onto a warm canvas), and
         free(pt);    // a full table is the usual best-effort degradation
@@ -494,13 +494,13 @@ void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
 // sampled from then on.  The pyramid is checked-C derived data: repeated 2x2
 // box halving of the capture, rebuilt on demand, never serialized.
 
-cnvs_glyph_slot *__single cnvs_text_cache_color(cnvs_text_cache *__single c,
+struct cnvs_glyph_slot *__single cnvs_text_cache_color(struct cnvs_text_cache *__single c,
         int fid, void *__single font, uint16_t glyph) {
     if (!c || fid < 0) {
         return NULL;
     }
     uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
-    cnvs_glyph_slot *slot = glyph_probe(c, key);
+    struct cnvs_glyph_slot *slot = glyph_probe(c, key);
     if (slot && slot->used) {
         c->glyph_hits++;
         return slot;
@@ -558,7 +558,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_color(cnvs_text_cache *__single c,
     return slot;
 }
 
-void cnvs_text_cache_put_capture(cnvs_text_cache *__single c, int fid,
+void cnvs_text_cache_put_capture(struct cnvs_text_cache *__single c, int fid,
         uint16_t glyph, uint8_t *__counted_by(len) px, int len, int w, int h,
         float ink_x0, float ink_y0, float ink_x1, float ink_y1) {
     if (!c || fid < 0 || !px || w <= 0 || h <= 0 || len != w * h * 4) {
@@ -567,7 +567,7 @@ void cnvs_text_cache_put_capture(cnvs_text_cache *__single c, int fid,
     }
     (void)glyph_table_ensure(c);  // first insert builds it, like a live miss
     uint32_t key = ((uint32_t)fid << 16) | (uint32_t)glyph;
-    cnvs_glyph_slot *slot = glyph_probe(c, key);
+    struct cnvs_glyph_slot *slot = glyph_probe(c, key);
     if (!slot || slot->used || c->glyph_count >= CNVS_GLYPH_CACHE_N) {
         free(px);  // an existing entry wins (replay onto a warm canvas), and
         return;    // a full table is the usual best-effort degradation
@@ -613,7 +613,7 @@ void cnvs_mip_halve(uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh
 // Build the whole pyramid under `slot`'s capture: ceil-halve until 1x1.  Best
 // effort -- a failed allocation keeps the prefix built so far, and selection
 // then degrades to the coarsest available level (worst case the capture).
-static void build_mips(cnvs_glyph_slot *__single slot) {
+static void build_mips(struct cnvs_glyph_slot *__single slot) {
     if (slot->nmips > 0 || slot->cap_w <= 0) {
         return;  // built (even partially), or nothing to derive from
     }
@@ -658,7 +658,7 @@ static void build_mips(cnvs_glyph_slot *__single slot) {
     slot->nmips = built;
 }
 
-cnvs_mip cnvs_glyph_mip(cnvs_glyph_slot *__single slot, float footprint) {
+cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint) {
     cnvs_mip pick = { .px = NULL, .len = 0, .w = 0, .h = 0 };
     if (!slot || slot->cap_w <= 0) {
         return pick;
@@ -681,7 +681,7 @@ cnvs_mip cnvs_glyph_mip(cnvs_glyph_slot *__single slot, float footprint) {
     return pick;
 }
 
-cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c,
+struct cnvs_shape_slot *__single cnvs_text_cache_shape_slot(struct cnvs_text_cache *__single c,
         float size_px, bool rtl, char const *__counted_by(len) text, int len) {
     if (!c || len < 0) {
         return NULL;
@@ -689,7 +689,7 @@ cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c
     uint32_t size_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
     for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        cnvs_shape_slot *slot = &c->shape[i];
+        struct cnvs_shape_slot *slot = &c->shape[i];
         if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
             slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
             return slot;
@@ -698,9 +698,9 @@ cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c
     return NULL;
 }
 
-void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
+void cnvs_text_cache_put_shape(struct cnvs_text_cache *__single c, float size_px,
         bool rtl, char const *__counted_by(len) text, int len,
-        cnvs_shaped *__single s) {
+        struct cnvs_shaped *__single s) {
     if (!c || !s || len < 0) {
         cnvs_shaped_free(s);
         return;
@@ -715,7 +715,7 @@ void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
     // Replace an existing entry for the key (a re-recorded shape block after
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.
-    cnvs_shape_slot *victim = cnvs_text_cache_shape_slot(c, size_px, rtl, text,
+    struct cnvs_shape_slot *victim = cnvs_text_cache_shape_slot(c, size_px, rtl, text,
                                                          len);
     if (!victim) {
         victim = shape_lru_victim(c);
@@ -735,7 +735,7 @@ void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
     victim->emitted = false;
 }
 
-void cnvs_text_cache_unmark(cnvs_text_cache *__single c) {
+void cnvs_text_cache_unmark(struct cnvs_text_cache *__single c) {
     if (!c) {
         return;
     }
@@ -755,7 +755,7 @@ void cnvs_text_cache_unmark(cnvs_text_cache *__single c) {
 // the degradation glyph_outline_cached takes when the cache can't serve.
 static void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_px,
                                float ox, float oy, cnvs_mat to_device, float tol,
-                               cnvs_path *__single out) {
+                               struct cnvs_path *__single out) {
     // Stack buffers cover the typical glyph; a rare complex one takes the
     // grow-and-refetch path (cnvs_glyph_curves reports the true counts).
     enum { VSTACK = 256, PSTACK = 512 };
@@ -797,12 +797,12 @@ static void cnvs_glyph_outline(void *__single font, uint16_t glyph, float size_p
 // cnvs_glyph_outline) fetches and walks without remembering.  A replay-built
 // run (font == NULL) whose glyph block is missing has nothing to draw and
 // contributes only its advance.
-static void glyph_outline_cached(cnvs_text_cache *__single c, int fid,
+static void glyph_outline_cached(struct cnvs_text_cache *__single c, int fid,
                                  void *__single font, uint16_t glyph,
                                  float size_px, float ox, float oy,
                                  cnvs_mat to_device, float tol,
-                                 cnvs_path *__single out) {
-    cnvs_glyph_slot *slot = cnvs_text_cache_glyph(c, fid, font, glyph, size_px);
+                                 struct cnvs_path *__single out) {
+    struct cnvs_glyph_slot *slot = cnvs_text_cache_glyph(c, fid, font, glyph, size_px);
     if (slot) {
         if (slot->upem > 0.0f && slot->nverbs > 0) {
             struct glyph_place g = { .to_device = to_device, .ox = ox, .oy = oy,
@@ -817,9 +817,9 @@ static void glyph_outline_cached(cnvs_text_cache *__single c, int fid,
     }
 }
 
-float cnvs_shaped_outline(cnvs_text_cache *__single cache,
-                          cnvs_shaped const *__single s, float ox, float oy,
-                          cnvs_mat to_device, float tol, cnvs_path *__single out,
+float cnvs_shaped_outline(struct cnvs_text_cache *__single cache,
+                          struct cnvs_shaped const *__single s, float ox, float oy,
+                          cnvs_mat to_device, float tol, struct cnvs_path *__single out,
                           cnvs_color_glyph_fn color, void *__single ctx) {
     if (!s) {
         return 0.0f;
@@ -856,8 +856,8 @@ float cnvs_shaped_outline(cnvs_text_cache *__single cache,
 // capture-px box by size_px/CNVS_CAPTURE_EM.  When the cache can't serve, a
 // run that still has its font handle measures through a live
 // cnvs_glyph_bounds, and a handle-less run's glyph adds no ink.
-void cnvs_shaped_metrics(cnvs_text_cache *__single cache,
-                         cnvs_shaped const *__single s, float size_px,
+void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
+                         struct cnvs_shaped const *__single s, float size_px,
                          float ascent_px, float descent_px,
                          cnvs_text_metrics *__single m) {
     memset(m, 0, sizeof *m);
@@ -886,7 +886,7 @@ void cnvs_shaped_metrics(cnvs_text_cache *__single cache,
                                    : cnvs_text_cache_font(cache, run.font);
         for (int i = 0; i < run.count; i++) {
             float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
-            cnvs_glyph_slot *slot = run.is_color
+            struct cnvs_glyph_slot *slot = run.is_color
                 ? cnvs_text_cache_color(cache, fid, run.font, run.glyph[i])
                 : cnvs_text_cache_glyph(cache, fid, run.font, run.glyph[i],
                                         size_px);

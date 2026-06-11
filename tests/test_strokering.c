@@ -16,7 +16,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas_create(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

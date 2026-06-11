@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // Fill a fresh red round-rect-radii path and read the canvas back.
-static void draw(canvas *__single cv, uint8_t *__counted_by(len) px, int len,
+static void draw(struct canvas *__single cv, uint8_t *__counted_by(len) px, int len,
                  float x, float y, float w, float h,
                  float tl_x, float tl_y, float tr_x, float tr_y,
                  float br_x, float br_y, float bl_x, float bl_y) {
@@ -32,7 +32,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

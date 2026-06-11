@@ -18,8 +18,8 @@
 
 // The emoji capture slot the canvas holds after drawing one emoji: scan the
 // glyph table for the (single) entry carrying a capture.
-static cnvs_glyph_slot *__single find_capture(canvas *__single cv) {
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+static struct cnvs_glyph_slot *__single find_capture(struct canvas *__single cv) {
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     for (int i = 0; i < c->glyph_cap; i++) {
         if (c->glyph[i].used && c->glyph[i].cap_w > 0) {
             return &c->glyph[i];
@@ -36,7 +36,7 @@ static void check_renders_in_color(void) {
         return;
     }
 
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -68,7 +68,7 @@ static void check_renders_in_color(void) {
 
     // One capture, fetched once: the draw above cost one boundary
     // rasterization; a second draw (any size) reuses the same bytes.
-    cnvs_glyph_slot *__single slot = find_capture(cv);
+    struct cnvs_glyph_slot *__single slot = find_capture(cv);
     CHECK(slot != NULL);
     if (slot) {
         CHECK(slot->cap_w == CNVS_CAPTURE_EM && slot->cap_h == CNVS_CAPTURE_EM);
@@ -78,7 +78,7 @@ static void check_renders_in_color(void) {
         if (snap) {
             memcpy(snap, slot->capture, (size_t)slot->cap_len);
             uint8_t const *before = slot->capture;
-            cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+            struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
             int miss = c->glyph_misses;
             canvas_set_font_size(cv, 23.0f);
             canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 40.0f);
@@ -214,14 +214,14 @@ static void check_halve_premul(void) {
 // Mip selection on a real capture: the smallest level >= the footprint in
 // both dimensions, the capture above the top level, 1x1 at the bottom.
 static void check_mip_select(void) {
-    canvas *__single cv = canvas_create(64, 64);
+    struct canvas *__single cv = canvas_create(64, 64);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
     canvas_set_font_size(cv, 32.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
-    cnvs_glyph_slot *__single slot = find_capture(cv);
+    struct cnvs_glyph_slot *__single slot = find_capture(cv);
     CHECK(slot != NULL);
     if (slot) {
         // 160 halves 8 times: 80 40 20 10 5 3 2 1.
@@ -258,7 +258,7 @@ static void check_mip_select(void) {
 // same at half size against the level-1 mip -- the level the footprint rule
 // selects.  `against` is the level to compare with; (ox, oy) places the
 // glyph's buffer at integer device coords so sampling lands on pixel centres.
-static void check_draw_matches_level(canvas *__single cv, float size_px,
+static void check_draw_matches_level(struct canvas *__single cv, float size_px,
                                      cnvs_mip lvl, int ox, int oy) {
     int const w = 192, len = 192 * 192 * 4;
     static uint8_t px[192 * 192 * 4];
@@ -295,14 +295,14 @@ static void check_draw_matches_level(canvas *__single cv, float size_px,
 }
 
 static void check_draw_equivalence(void) {
-    canvas *__single cv = canvas_create(192, 192);
+    struct canvas *__single cv = canvas_create(192, 192);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
     canvas_set_font_size(cv, 40.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // populate the capture
-    cnvs_glyph_slot *__single slot = find_capture(cv);
+    struct cnvs_glyph_slot *__single slot = find_capture(cv);
     CHECK(slot != NULL);
     if (slot) {
         // At 160px device size the dest quad is the capture, texel for texel.

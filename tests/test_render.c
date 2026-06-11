@@ -15,7 +15,7 @@ int main(void) {
     }
 
     // Whole canvas opaque red, then clearRect a sub-region.
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
@@ -32,7 +32,7 @@ int main(void) {
     }
 
     // 50% blue over red -> ~(128, 0, 128, 255).
-    canvas *__single cb = canvas_create(w, h);
+    struct canvas *__single cb = canvas_create(w, h);
     CHECK(cb != NULL);
     if (cb) {
         canvas_set_fill_rgba(cb, 1.0f, 0.0f, 0.0f, 1.0f);

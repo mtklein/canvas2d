@@ -19,19 +19,19 @@
 // the pixels for the content compare (the caller's buffer is borrowed and may
 // be freed or mutated between the ops that reference it).  The entry's index
 // is its file-local id.
-typedef struct {
+struct rec_image {
     uint8_t *__counted_by(len) px;
     int len;
     int w, h;
-} rec_image;
+};
 
 // Likewise one `path` block: an owned copy of the Path2D's command list --
 // content, not pointer identity, is the key, since the caller's object may be
 // mutated (or freed and another allocated at the same address) between draws.
-typedef struct {
+struct rec_path {
     p2d_cmd *__counted_by(len) cmds;
     int len;
-} rec_path;
+};
 
 // The text format's enum spellings (cnvs_record.h): written here, parsed by
 // cnvs_replay.c, one table for both directions.
@@ -49,18 +49,18 @@ char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
 struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
-    rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
+    struct rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
     int nimg;
-    rec_path path[CNVS_REC_PATHS_MAX];   // [0, npath) are its path blocks
+    struct rec_path path[CNVS_REC_PATHS_MAX];   // [0, npath) are its path blocks
     int npath;
 };
 
-cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path) {
+struct cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path) {
     FILE *f = fopen(path, "wb");
     if (!f) {
         return NULL;
     }
-    cnvs_recorder *__single r = calloc(1, sizeof *r);
+    struct cnvs_recorder *__single r = calloc(1, sizeof *r);
     if (!r) {
         (void)fclose(f);
         return NULL;
@@ -70,7 +70,7 @@ cnvs_recorder *__single cnvs_recorder_open(char const *__null_terminated path) {
     return r;
 }
 
-void cnvs_recorder_close(cnvs_recorder *__single r) {
+void cnvs_recorder_close(struct cnvs_recorder *__single r) {
     if (!r) {
         return;
     }
@@ -84,13 +84,13 @@ void cnvs_recorder_close(cnvs_recorder *__single r) {
     free(r);
 }
 
-void cnvs_rec_enter(cnvs_recorder *__single r) {
+void cnvs_rec_enter(struct cnvs_recorder *__single r) {
     if (r) {
         r->suspend++;
     }
 }
 
-void cnvs_rec_leave(cnvs_recorder *__single r) {
+void cnvs_rec_leave(struct cnvs_recorder *__single r) {
     if (r) {
         r->suspend--;
     }
@@ -103,7 +103,7 @@ static void put_floats(FILE *__single f, float const *__counted_by(n) v, int n) 
     }
 }
 
-void cnvs_rec_op(cnvs_recorder *__single r, char const *__null_terminated name) {
+void cnvs_rec_op(struct cnvs_recorder *__single r, char const *__null_terminated name) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -111,7 +111,7 @@ void cnvs_rec_op(cnvs_recorder *__single r, char const *__null_terminated name) 
     fputc('\n', r->f);
 }
 
-void cnvs_rec_floats(cnvs_recorder *__single r, char const *__null_terminated name,
+void cnvs_rec_floats(struct cnvs_recorder *__single r, char const *__null_terminated name,
                      float const *__counted_by(n) v, int n) {
     if (!r || r->suspend != 0) {
         return;
@@ -121,7 +121,7 @@ void cnvs_rec_floats(cnvs_recorder *__single r, char const *__null_terminated na
     fputc('\n', r->f);
 }
 
-void cnvs_rec_floats_bool(cnvs_recorder *__single r, char const *__null_terminated name,
+void cnvs_rec_floats_bool(struct cnvs_recorder *__single r, char const *__null_terminated name,
                           float const *__counted_by(n) v, int n, bool flag) {
     if (!r || r->suspend != 0) {
         return;
@@ -132,7 +132,7 @@ void cnvs_rec_floats_bool(cnvs_recorder *__single r, char const *__null_terminat
     fputc('\n', r->f);
 }
 
-void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name,
+void cnvs_rec_text(struct cnvs_recorder *__single r, char const *__null_terminated name,
                    float x, float y, char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0) {
         return;
@@ -149,7 +149,7 @@ void cnvs_rec_text(cnvs_recorder *__single r, char const *__null_terminated name
     fputc('\n', r->f);
 }
 
-void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated name,
+void cnvs_rec_text_max(struct cnvs_recorder *__single r, char const *__null_terminated name,
                        float x, float y, float max_width,
                        char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0) {
@@ -186,7 +186,7 @@ static char const *__null_terminated verb_token(enum cnvs_glyph_verb v,
 // The glyph key for one run, color (emoji) runs included -- captures key by
 // font name exactly as curves do: a replay-built run carries its interned id;
 // a live run interns through the boundary (idempotent).
-static int run_fid(cnvs_text_cache *__single c, cnvs_glyph_run const *__single run) {
+static int run_fid(struct cnvs_text_cache *__single c, cnvs_glyph_run const *__single run) {
     if (run->name_id >= 0) {
         return run->name_id;
     }
@@ -219,18 +219,18 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
     fputc('\n', f);
 }
 
-void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c,
+void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
                           float size_px, bool rtl,
                           char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0 || !c) {
         return;
     }
-    cnvs_shape_slot *__single slot = cnvs_text_cache_shape_slot(c, size_px, rtl,
+    struct cnvs_shape_slot *__single slot = cnvs_text_cache_shape_slot(c, size_px, rtl,
                                                                 text, len);
     if (!slot || slot->emitted) {
         return;  // not cached (shaping failed: nothing to carry), or this
     }            // recording already wrote this line's blocks
-    cnvs_shaped const *__single s = slot->s;
+    struct cnvs_shaped const *__single s = slot->s;
     // Intern every run's font first, so the font blocks land (in id order,
     // which is intern order: declared before use) ahead of any glyph or run
     // line that references them.
@@ -257,7 +257,7 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
             continue;  // emoji carry bitmap blocks below; unkeyable runs carry
         }              // nothing and replay degrades them to blank advances
         for (int i = 0; i < run->count; i++) {
-            cnvs_glyph_slot *__single g =
+            struct cnvs_glyph_slot *__single g =
                 cnvs_text_cache_glyph(c, fid, run->font, run->glyph[i], size_px);
             if (!g || g->emitted) {
                 continue;
@@ -309,7 +309,7 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
             continue;
         }
         for (int i = 0; i < run->count; i++) {
-            cnvs_glyph_slot *__single g =
+            struct cnvs_glyph_slot *__single g =
                 cnvs_text_cache_color(c, fid, run->font, run->glyph[i]);
             if (!g || g->emitted || g->cap_w <= 0) {
                 continue;
@@ -340,7 +340,7 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
             g->emitted = true;
         }
     }
-    // The shaped line itself: everything cnvs_shaped carries, so replay
+    // The shaped line itself: everything struct cnvs_shaped carries, so replay
     // rebuilds it without shaping.  The rtl token is the paragraph direction
     // half of the cache key -- the same bytes shape differently under ltr and
     // rtl, so replay must key its insert with it or the two would alias.  The
@@ -365,7 +365,7 @@ void cnvs_rec_text_blocks(cnvs_recorder *__single r, cnvs_text_cache *__single c
     slot->emitted = true;
 }
 
-int cnvs_rec_image(cnvs_recorder *__single r,
+int cnvs_rec_image(struct cnvs_recorder *__single r,
                    uint8_t const *__counted_by(len) px, int len, int w, int h) {
     if (!r || r->suspend != 0) {
         return -1;
@@ -423,7 +423,7 @@ int cnvs_rec_image(cnvs_recorder *__single r,
     return id;
 }
 
-void cnvs_rec_image_floats(cnvs_recorder *__single r,
+void cnvs_rec_image_floats(struct cnvs_recorder *__single r,
                            char const *__null_terminated name, int id,
                            float const *__counted_by(n) v, int n) {
     if (!r || r->suspend != 0) {
@@ -435,7 +435,7 @@ void cnvs_rec_image_floats(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_image_ints(cnvs_recorder *__single r,
+void cnvs_rec_image_ints(struct cnvs_recorder *__single r,
                          char const *__null_terminated name, int id,
                          int const *__counted_by(n) v, int n) {
     if (!r || r->suspend != 0) {
@@ -449,7 +449,7 @@ void cnvs_rec_image_ints(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_pattern(cnvs_recorder *__single r,
+void cnvs_rec_pattern(struct cnvs_recorder *__single r,
                       char const *__null_terminated name, int id,
                       enum canvas_pattern_repeat repeat) {
     if (!r || r->suspend != 0) {
@@ -500,7 +500,7 @@ static bool path_cmds_eq(p2d_cmd const *__counted_by(n) a,
     return true;
 }
 
-int cnvs_rec_path(cnvs_recorder *__single r, canvas_path2d const *__single p) {
+int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *__single p) {
     if (!r || r->suspend != 0) {
         return -1;
     }
@@ -547,7 +547,7 @@ int cnvs_rec_path(cnvs_recorder *__single r, canvas_path2d const *__single p) {
     return id;
 }
 
-void cnvs_rec_path_op(cnvs_recorder *__single r,
+void cnvs_rec_path_op(struct cnvs_recorder *__single r,
                       char const *__null_terminated name, int id) {
     if (!r || r->suspend != 0) {
         return;
@@ -557,7 +557,7 @@ void cnvs_rec_path_op(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_path_rule(cnvs_recorder *__single r,
+void cnvs_rec_path_rule(struct cnvs_recorder *__single r,
                         char const *__null_terminated name, int id,
                         enum canvas_fill_rule rule) {
     if (!r || r->suspend != 0) {
@@ -569,7 +569,7 @@ void cnvs_rec_path_rule(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name,
+void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminated name,
                    int const *__counted_by(n) v, int n) {
     if (!r || r->suspend != 0) {
         return;
@@ -581,7 +581,7 @@ void cnvs_rec_ints(cnvs_recorder *__single r, char const *__null_terminated name
     fputc('\n', r->f);
 }
 
-void cnvs_rec_fill_rule(cnvs_recorder *__single r, enum canvas_fill_rule rule) {
+void cnvs_rec_fill_rule(struct cnvs_recorder *__single r, enum canvas_fill_rule rule) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -590,7 +590,7 @@ void cnvs_rec_fill_rule(cnvs_recorder *__single r, enum canvas_fill_rule rule) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
+void cnvs_rec_smoothing_quality(struct cnvs_recorder *__single r,
                                 enum canvas_image_smoothing_quality quality) {
     if (!r || r->suspend != 0) {
         return;
@@ -606,7 +606,7 @@ void cnvs_rec_smoothing_quality(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_line_join(cnvs_recorder *__single r, enum canvas_line_join join) {
+void cnvs_rec_line_join(struct cnvs_recorder *__single r, enum canvas_line_join join) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -621,7 +621,7 @@ void cnvs_rec_line_join(cnvs_recorder *__single r, enum canvas_line_join join) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_line_cap(cnvs_recorder *__single r, enum canvas_line_cap cap) {
+void cnvs_rec_line_cap(struct cnvs_recorder *__single r, enum canvas_line_cap cap) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -636,7 +636,7 @@ void cnvs_rec_line_cap(cnvs_recorder *__single r, enum canvas_line_cap cap) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_text_align(cnvs_recorder *__single r, enum canvas_text_align align) {
+void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_align align) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -653,7 +653,7 @@ void cnvs_rec_text_align(cnvs_recorder *__single r, enum canvas_text_align align
     fputc('\n', r->f);
 }
 
-void cnvs_rec_text_baseline(cnvs_recorder *__single r,
+void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
                             enum canvas_text_baseline baseline) {
     if (!r || r->suspend != 0) {
         return;
@@ -672,7 +672,7 @@ void cnvs_rec_text_baseline(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-void cnvs_rec_direction(cnvs_recorder *__single r, enum canvas_direction dir) {
+void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction dir) {
     if (!r || r->suspend != 0) {
         return;
     }
@@ -681,7 +681,7 @@ void cnvs_rec_direction(cnvs_recorder *__single r, enum canvas_direction dir) {
     fputc('\n', r->f);
 }
 
-void cnvs_rec_composite(cnvs_recorder *__single r, enum canvas_composite_op op) {
+void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_op op) {
     if (!r || r->suspend != 0) {
         return;
     }

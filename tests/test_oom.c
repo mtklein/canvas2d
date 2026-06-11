@@ -16,9 +16,9 @@
 
 enum { W = 32, H = 32 };
 
-typedef void (*scene_fn)(canvas *__single cv);
+typedef void (*scene_fn)(struct canvas *__single cv);
 
-static void scene_fill(canvas *__single cv) {
+static void scene_fill(struct canvas *__single cv) {
     canvas_begin_path(cv);
     canvas_move_to(cv, 4.0f, 4.0f);
     canvas_line_to(cv, 28.0f, 6.0f);
@@ -28,7 +28,7 @@ static void scene_fill(canvas *__single cv) {
     canvas_fill(cv);
 }
 
-static void scene_curve(canvas *__single cv) {
+static void scene_curve(struct canvas *__single cv) {
     canvas_begin_path(cv);
     canvas_move_to(cv, 2.0f, 16.0f);
     canvas_bezier_curve_to(cv, 10.0f, 0.0f, 22.0f, 32.0f, 30.0f, 16.0f);
@@ -36,14 +36,14 @@ static void scene_curve(canvas *__single cv) {
     canvas_fill(cv);
 }
 
-static void scene_gradient(canvas *__single cv) {
+static void scene_gradient(struct canvas *__single cv) {
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 }
 
-static void scene_stroke(canvas *__single cv) {
+static void scene_stroke(struct canvas *__single cv) {
     canvas_begin_path(cv);
     canvas_move_to(cv, 2.0f, 2.0f);
     canvas_line_to(cv, 30.0f, 8.0f);
@@ -53,7 +53,7 @@ static void scene_stroke(canvas *__single cv) {
     canvas_stroke(cv);
 }
 
-static void scene_image(canvas *__single cv) {
+static void scene_image(struct canvas *__single cv) {
     uint8_t buf[16 * 16 * 4];
     canvas_get_image_data(cv, 0, 0, 16, 16, buf, (int)sizeof buf);
     canvas_put_image_data(cv, buf, (int)sizeof buf, 16, 16, 4, 4);
@@ -66,7 +66,7 @@ static void scene_image(canvas *__single cv) {
 
 // Clipping: build a clip mask, then paint through it (exercises the canvas's
 // clip-mask allocation and the clip stack).
-static void scene_clip(canvas *__single cv) {
+static void scene_clip(struct canvas *__single cv) {
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_arc(cv, 16.0f, 16.0f, 12.0f, 0.0f, 6.2831853f, false);
@@ -86,7 +86,7 @@ static void scene_clip(canvas *__single cv) {
 // capture allocation falls back to the per-draw boundary render (whose own
 // buffer may then fail too -> a blank glyph); a failed pyramid level samples
 // the coarsest level that did build, worst case the capture itself.
-static void scene_text(canvas *__single cv) {
+static void scene_text(struct canvas *__single cv) {
     canvas_set_font_size(cv, 14.0f);
     canvas_set_fill_rgba(cv, 0.9f, 0.9f, 0.95f, 1.0f);
     canvas_fill_text(cv, "Ag", 2.0f, 20.0f);
@@ -98,7 +98,7 @@ static void scene_text(canvas *__single cv) {
 }
 
 // Image pattern fill (createPattern path): a small tile sampled under the CTM.
-static void scene_pattern(canvas *__single cv) {
+static void scene_pattern(struct canvas *__single cv) {
     uint8_t tile[4 * 4 * 4];
     for (int i = 0; i < (int)sizeof tile; i++) {
         tile[i] = (uint8_t)(i * 11);
@@ -109,7 +109,7 @@ static void scene_pattern(canvas *__single cv) {
 
 // Dashed stroke: the dash pattern is copied into the canvas state, then stroking
 // walks it.
-static void scene_dash(canvas *__single cv) {
+static void scene_dash(struct canvas *__single cv) {
     float const dash[4] = { 5.0f, 3.0f, 2.0f, 3.0f };
     canvas_set_line_dash(cv, dash, 4);
     canvas_set_line_width(cv, 2.0f);
@@ -121,7 +121,7 @@ static void scene_dash(canvas *__single cv) {
 }
 
 // save/restore nesting grows the state stack.
-static void scene_savestack(canvas *__single cv) {
+static void scene_savestack(struct canvas *__single cv) {
     for (int i = 0; i < 12; i++) {
         canvas_save(cv);
         canvas_translate(cv, 1.0f, 1.0f);
@@ -136,7 +136,7 @@ static void scene_savestack(canvas *__single cv) {
 // restore/set_filter_none's frees), the per-tile apply, and the spatial
 // entries' scratch tile -- blur()'s ping-pong half and drop-shadow()'s
 // two-tile growth (whose failed allocation must skip that entry, not the op).
-static void scene_filter(canvas *__single cv) {
+static void scene_filter(struct canvas *__single cv) {
     canvas_add_filter_grayscale(cv, 1.0f);
     canvas_add_filter_brightness(cv, 1.2f);
     canvas_save(cv);
@@ -150,7 +150,7 @@ static void scene_filter(canvas *__single cv) {
 }
 
 // isPointInPath flattens the current path to test containment.
-static void scene_pointinpath(canvas *__single cv) {
+static void scene_pointinpath(struct canvas *__single cv) {
     canvas_begin_path(cv);
     canvas_arc(cv, 16.0f, 16.0f, 10.0f, 0.0f, 6.2831853f, false);
     (void)canvas_is_point_in_path(cv, 16.0f, 16.0f, CANVAS_NONZERO);
@@ -159,7 +159,7 @@ static void scene_pointinpath(canvas *__single cv) {
 
 // PNG encode: exercises cnvs_png's raw/zlib buffer allocations (two of the sites
 // fixed alongside this harness).  Output is discarded.
-static void scene_png(canvas *__single cv) {
+static void scene_png(struct canvas *__single cv) {
     canvas_set_fill_rgba(cv, 0.3f, 0.5f, 0.7f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     (void)canvas_write_png(cv, "/dev/null");
@@ -168,7 +168,7 @@ static void scene_png(canvas *__single cv) {
 // Run `fn` with each of its allocations failing in turn; it must never crash, and
 // the canvas must stay usable afterwards.
 static void sweep(scene_fn fn) {
-    canvas *__single probe = canvas_create(W, H);
+    struct canvas *__single probe = canvas_create(W, H);
     CHECK(probe != NULL);
     if (!probe) {
         return;
@@ -180,7 +180,7 @@ static void sweep(scene_fn fn) {
     CHECK(allocs > 0);  // the scene must allocate, or the sweep tests nothing
 
     for (int k = 1; k <= allocs; k++) {
-        canvas *__single cv = canvas_create(W, H);  // fresh -> stable alloc sequence
+        struct canvas *__single cv = canvas_create(W, H);  // fresh -> stable alloc sequence
         if (!cv) {
             continue;
         }
@@ -211,7 +211,7 @@ int main(void) {
     // (rather than return a half-built canvas), for every alloc it makes.
     for (int k = 1; k <= 12; k++) {
         cnvs_oom_fail_at(k);
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         cnvs_oom_fail_at(0);
         if (cv) {
             canvas_destroy(cv);  // k past create's alloc count -> a real canvas
@@ -220,7 +220,7 @@ int main(void) {
 
     // Sanity: with the injector disarmed everything still works end to end.
     cnvs_oom_fail_at(0);
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);

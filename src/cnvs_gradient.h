@@ -20,37 +20,37 @@ typedef struct {
 
 // Coordinates and radii are device space (the CTM is baked in when the gradient
 // is created).
-typedef struct {
+struct cnvs_gradient {
     enum cnvs_grad_kind kind;
     cnvs_vec2 p0, p1;
     float r0, r1;
     float angle;   // conic: start angle (radians), device space; unused otherwise
     cnvs_stop stops[CNVS_MAX_STOPS];
     int stop_count;
-} cnvs_gradient;
+};
 
 // Insert a stop in offset order (offset clamped to [0,1]); a no-op once full.
-void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color);
+void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremul color);
 
 // Colour at parameter t (clamped to [0,1]), piecewise-linear across the stops.
 // With no stops the result is transparent black.
-cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t);
+cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t);
 
 // Per spec, a zero-length linear gradient and a radial gradient whose two
 // circles coincide paint NOTHING (the whole draw is skipped).  Exact ==, not
 // epsilon: a tiny-but-nonzero gradient still paints.
-bool cnvs_gradient_paints_nothing(cnvs_gradient const *gr);
+bool cnvs_gradient_paints_nothing(struct cnvs_gradient const *gr);
 
 // Gradient parameter for a device-space point, written to *t (clamped to
 // [0,1]).  Returns false when a radial point lies outside the gradient (no
 // circle in the family passes through it) -- such samples paint transparent.
-bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t);
+bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__single t);
 
 // Vectorized parameter solve for a horizontal run of `n` pixel centres
 // (x0 + i + 0.5, y).  Fills t_out[i] with the parameter in [0,1], or -1 where the
 // point has no parameter (radial "outside") so the caller paints transparent.
 // Equivalent to calling cnvs_gradient_param per pixel, 8 wide along the row.
-void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
+void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out);
 
 // Vectorized colour evaluation for a row of solved parameters (the other half
@@ -62,10 +62,10 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
 // (docs/decisions/gradient-eval.md), so per-pixel cost is flat in practice for
 // the 2-5 stops gradients actually have, and there is no per-fill ramp build
 // or table to size.
-void cnvs_gradient_color_row(cnvs_gradient const *gr,
+void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
                              float const *__counted_by(n) t, int n,
                              cnvs_unpremul *__counted_by(n) out);
 
 // Unpremultiplied colour to paint at a device-space point, with `alpha` (global
 // alpha) folded into the result's alpha.
-cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha);
+cnvs_unpremul cnvs_gradient_sample(struct cnvs_gradient const *gr, cnvs_vec2 p, float alpha);

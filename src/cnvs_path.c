@@ -5,7 +5,7 @@
 #include <math.h>
 #include <stdlib.h>
 
-void cnvs_path_init(cnvs_path *p) {
+void cnvs_path_init(struct cnvs_path *p) {
     p->pts = NULL;
     p->pt_len = 0;
     p->pt_cap = 0;
@@ -16,19 +16,19 @@ void cnvs_path_init(cnvs_path *p) {
     p->cur = (cnvs_vec2){ .x = 0.0f, .y = 0.0f };
 }
 
-void cnvs_path_free(cnvs_path *p) {
+void cnvs_path_free(struct cnvs_path *p) {
     free(p->pts);
     free(p->subs);
     cnvs_path_init(p);
 }
 
-void cnvs_path_reset(cnvs_path *p) {
+void cnvs_path_reset(struct cnvs_path *p) {
     p->pt_len = 0;
     p->sp_len = 0;
     p->has_cur = false;
 }
 
-static bool pts_reserve(cnvs_path *p, int need) {
+static bool pts_reserve(struct cnvs_path *p, int need) {
     if (need <= p->pt_cap) {
         return true;
     }
@@ -42,7 +42,7 @@ static bool pts_reserve(cnvs_path *p, int need) {
     return true;
 }
 
-static bool subs_reserve(cnvs_path *p, int need) {
+static bool subs_reserve(struct cnvs_path *p, int need) {
     if (need <= p->sp_cap) {
         return true;
     }
@@ -56,7 +56,7 @@ static bool subs_reserve(cnvs_path *p, int need) {
     return true;
 }
 
-bool cnvs_path_move_to(cnvs_path *p, cnvs_vec2 pt) {
+bool cnvs_path_move_to(struct cnvs_path *p, cnvs_vec2 pt) {
     if (!subs_reserve(p, p->sp_len + 1) || !pts_reserve(p, p->pt_len + 1)) {
         return false;
     }
@@ -70,7 +70,7 @@ bool cnvs_path_move_to(cnvs_path *p, cnvs_vec2 pt) {
     return true;
 }
 
-bool cnvs_path_line_to(cnvs_path *p, cnvs_vec2 pt) {
+bool cnvs_path_line_to(struct cnvs_path *p, cnvs_vec2 pt) {
     if (!p->has_cur) {
         return cnvs_path_move_to(p, pt);
     }
@@ -84,7 +84,7 @@ bool cnvs_path_line_to(cnvs_path *p, cnvs_vec2 pt) {
     return true;
 }
 
-bool cnvs_path_close(cnvs_path *p) {
+bool cnvs_path_close(struct cnvs_path *p) {
     if (p->sp_len > 0) {
         cnvs_subpath s = p->subs[p->sp_len - 1];
         p->subs[p->sp_len - 1].closed = true;
@@ -96,7 +96,7 @@ bool cnvs_path_close(cnvs_path *p) {
     return true;
 }
 
-bool cnvs_path_rect(cnvs_path *p,
+bool cnvs_path_rect(struct cnvs_path *p,
                     cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c, cnvs_vec2 d) {
     if (!subs_reserve(p, p->sp_len + 1) || !pts_reserve(p, p->pt_len + 4)) {
         return false;
@@ -143,7 +143,7 @@ static float chord_len2(cnvs_vec2 a, cnvs_vec2 b) {
 // emitted points PER CURVE, which a text line full of curves multiplies into
 // a multi-GB path.  Identical behavior for finite inputs; degenerate curves
 // emit one segment, like any flat curve.
-static bool quad_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
+static bool quad_rec(struct cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                      float tol2, int depth) {
     if (depth >= 16 || !(cross_chord2(p0, p2, p1) > tol2 * chord_len2(p0, p2))) {
         return cnvs_path_line_to(p, p2);
@@ -155,14 +155,14 @@ static bool quad_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
            quad_rec(p, m, p12, p2, tol2, depth + 1);
 }
 
-bool cnvs_path_quad_to(cnvs_path *p, cnvs_vec2 ctrl, cnvs_vec2 end, float tol) {
+bool cnvs_path_quad_to(struct cnvs_path *p, cnvs_vec2 ctrl, cnvs_vec2 end, float tol) {
     if (!p->has_cur && !cnvs_path_move_to(p, ctrl)) {
         return false;
     }
     return quad_rec(p, p->cur, ctrl, end, tol * tol, 0);
 }
 
-static bool cubic_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
+static bool cubic_rec(struct cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                       cnvs_vec2 p3, float tol2, int depth) {
     float d = cross_chord2(p0, p3, p1) + cross_chord2(p0, p3, p2);
     if (depth >= 18 || !(d > tol2 * chord_len2(p0, p3))) {  // !(>): NaN is
@@ -178,7 +178,7 @@ static bool cubic_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
            cubic_rec(p, m, p123, p23, p3, tol2, depth + 1);
 }
 
-bool cnvs_path_cubic_to(cnvs_path *p, cnvs_vec2 c1, cnvs_vec2 c2,
+bool cnvs_path_cubic_to(struct cnvs_path *p, cnvs_vec2 c1, cnvs_vec2 c2,
                         cnvs_vec2 end, float tol) {
     if (!p->has_cur && !cnvs_path_move_to(p, c1)) {
         return false;

@@ -19,7 +19,7 @@ static void roundtrip_exhaustive(void) {
     int const rlen = RW * RH * 4;
     uint8_t *__counted_by(rlen) in = malloc((size_t)rlen);
     uint8_t *__counted_by(rlen) out = malloc((size_t)rlen);
-    canvas *__single cv = canvas_create(RW, RH);
+    struct canvas *__single cv = canvas_create(RW, RH);
     CHECK(in != NULL && out != NULL && cv != NULL);
     if (in && out && cv) {
         for (int y = 0; y < RH; y++) {
@@ -91,7 +91,7 @@ int main(void) {
     int const H = 8;
     int const len = W * H * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);

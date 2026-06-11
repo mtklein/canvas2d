@@ -10,7 +10,7 @@
 // Render "Hi" with the given align/baseline at (x0,y0) on a white ground in black
 // and report the ink bounding box (pixels with a dark red channel).  Returns the
 // ink pixel count.
-static long ink_bbox(canvas *__single cv, uint8_t *__counted_by(len) px, int len,
+static long ink_bbox(struct canvas *__single cv, uint8_t *__counted_by(len) px, int len,
                      enum canvas_text_align align, enum canvas_text_baseline base,
                      float x0, float y0,
                      int *__single ixmin, int *__single iymin) {
@@ -43,7 +43,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

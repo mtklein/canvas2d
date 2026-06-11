@@ -1,6 +1,6 @@
 #pragma once
 
-// Path2D's recorded command list -- the user-space commands a canvas_path2d
+// Path2D's recorded command list -- the user-space commands a struct canvas_path2d
 // holds, shared between canvas.c (which builds them and replays them through
 // the canvas path methods at draw time) and the record/replay pair
 // (cnvs_record.c serializes a path as a numbered `path` block when

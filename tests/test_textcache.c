@@ -1,4 +1,4 @@
-// The params -> derived-data text lookup (cnvs_text_cache in src/cnvs_text.h):
+// The params -> derived-data text lookup (struct cnvs_text_cache in src/cnvs_text.h):
 // a per-canvas memo of Core Text boundary results, checked before the boundary
 // is called.  Pinned here: transparency (a warm cache renders byte-identical to
 // a cold one), the measure-then-draw hit pattern, key correctness (size bits +
@@ -19,7 +19,7 @@ enum { W = 96, H = 48, LEN = W * H * 4 };
 
 // A small text scene mixing outline glyphs (with a repeat and a space) and a
 // color-emoji fallback run.
-static void draw_scene(canvas *__single cv) {
+static void draw_scene(struct canvas *__single cv) {
     canvas_set_font_size(cv, 18.0f);
     canvas_set_fill_rgba(cv, 0.10f, 0.20f, 0.30f, 1.0f);
     canvas_fill_text(cv, "Waffle fan", 4.0f, 22.0f);
@@ -31,8 +31,8 @@ static void draw_scene(canvas *__single cv) {
 // drawn again) on another -- the readback bytes must match exactly, and the
 // stats must prove the second draw never went back to the boundary.
 static void check_transparent(void) {
-    canvas *__single cold = canvas_create(W, H);
-    canvas *__single warm = canvas_create(W, H);
+    struct canvas *__single cold = canvas_create(W, H);
+    struct canvas *__single warm = canvas_create(W, H);
     CHECK(cold != NULL && warm != NULL);
     if (!cold || !warm) {
         canvas_destroy(cold);
@@ -43,7 +43,7 @@ static void check_transparent(void) {
 
     draw_scene(warm);  // populate the caches
     canvas_clear_rect(warm, 0.0f, 0.0f, (float)W, (float)H);
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(warm);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(warm);
     int smiss = c->shape_misses, gmiss = c->glyph_misses;
     draw_scene(warm);  // every lookup must hit
     CHECK(c->shape_misses == smiss);
@@ -63,12 +63,12 @@ static void check_transparent(void) {
 // The measure-then-draw pattern real callers use, plus key correctness: a
 // different size or different bytes is a different key; the originals stay hot.
 static void check_keys(void) {
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     canvas_set_font_size(cv, 20.0f);
 
     canvas_fill_text(cv, "kerning", 4.0f, 30.0f);
@@ -115,15 +115,15 @@ static char const k_family[] = "Libian TC";  // the canvas's pinned family;
                                              // joins the boundary call, not the key
 
 static void check_eviction(void) {
-    canvas *__single churn = canvas_create(W, H);
-    canvas *__single fresh = canvas_create(W, H);
+    struct canvas *__single churn = canvas_create(W, H);
+    struct canvas *__single fresh = canvas_create(W, H);
     CHECK(churn != NULL && fresh != NULL);
     if (!churn || !fresh) {
         canvas_destroy(churn);
         canvas_destroy(fresh);
         return;
     }
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(churn);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(churn);
     canvas_set_font_size(churn, 16.0f);
 
     float w0 = canvas_measure_text(churn, "s0");
@@ -163,12 +163,12 @@ static void check_eviction(void) {
 // The glyph-curve map: a repeated glyph is fetched once per (font, glyph), a
 // blank (the space) caches as "no outline", and a warm redraw adds no misses.
 static void check_glyph_once(void) {
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     canvas_set_font_size(cv, 20.0f);
 
     canvas_fill_text(cv, "AA AA", 2.0f, 30.0f);  // two distinct glyphs: 'A', ' '
@@ -188,12 +188,12 @@ static void check_glyph_once(void) {
 // outline font, so two names intern and their glyph keys live side by side --
 // a second draw hits every one of them (no key collisions across fonts).
 static void check_fallback_fonts(void) {
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     canvas_set_font_size(cv, 20.0f);
 
     canvas_fill_text(cv, "A\xD7\x90", 2.0f, 30.0f);  // A + aleph
@@ -209,15 +209,15 @@ static void check_fallback_fonts(void) {
 // reset(): the cache goes back to its initial (empty) state -- documented with
 // the reset contract in canvas.c -- and a post-reset draw is cold but correct.
 static void check_reset(void) {
-    canvas *__single cv = canvas_create(W, H);
-    canvas *__single fresh = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single fresh = canvas_create(W, H);
     CHECK(cv != NULL && fresh != NULL);
     if (!cv || !fresh) {
         canvas_destroy(cv);
         canvas_destroy(fresh);
         return;
     }
-    cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     canvas_set_font_size(cv, 18.0f);
     canvas_fill_text(cv, "Reset", 4.0f, 30.0f);
     CHECK(c->shape_misses > 0 && c->glyph_count > 0 && c->nfonts > 0);

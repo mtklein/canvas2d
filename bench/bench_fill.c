@@ -16,11 +16,11 @@
 #define DIM 512
 
 int main(void) {
-    cnvs_path path;
+    struct cnvs_path path;
     cnvs_path_init(&path);
     bench_stars(&path, STARS, (float)DIM, (float)DIM);
 
-    cnvs_cover cover = { .acc = NULL, .cap = 0 };
+    struct cnvs_cover cover = { .acc = NULL, .cap = 0 };
     int const cov_cap = DIM * DIM;
     uint8_t *cov = malloc((size_t)cov_cap);
     double sink = 0.0;

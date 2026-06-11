@@ -4,7 +4,7 @@
 #include <math.h>
 
 int main(void) {
-    canvas *__single cv = canvas_create(16, 16);
+    struct canvas *__single cv = canvas_create(16, 16);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();

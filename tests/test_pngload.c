@@ -14,7 +14,7 @@
 #include <string.h>
 
 // Render -> write -> load -> compare for one already-drawn canvas.
-static void round_trip(canvas *__single cv, int w, int h,
+static void round_trip(struct canvas *__single cv, int w, int h,
                        char const *__null_terminated path) {
     int const len = w * h * 4;
     uint8_t *__counted_by_or_null(len) px = malloc((size_t)len);
@@ -37,7 +37,7 @@ static void round_trip(canvas *__single cv, int w, int h,
 
 static void scene_solid(void) {
     int const w = 64, h = 48;
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -50,7 +50,7 @@ static void scene_solid(void) {
 
 static void scene_gradient(void) {
     int const w = 120, h = 90;
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -65,7 +65,7 @@ static void scene_gradient(void) {
 
 static void scene_text(void) {
     int const w = 160, h = 60;
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -81,7 +81,7 @@ static void scene_text(void) {
 
 static void scene_emoji(void) {
     int const w = 80, h = 80;
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         return;

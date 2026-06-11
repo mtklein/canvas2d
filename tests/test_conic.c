@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // A conic at (cx,cy): red @0, green @0.25, blue @0.5, white @0.75, red @1.
-static void setup_conic(canvas *__single cv, float start, float cx, float cy) {
+static void setup_conic(struct canvas *__single cv, float start, float cx, float cy) {
     canvas_set_fill_conic_gradient(cv, start, cx, cy);
     canvas_add_fill_color_stop(cv, 0.00f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, 0.25f, 0.0f, 1.0f, 0.0f, 1.0f);
@@ -26,7 +26,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas_create(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

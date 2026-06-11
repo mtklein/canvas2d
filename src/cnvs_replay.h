@@ -13,7 +13,7 @@
 #include <ptrcheck.h>
 #include <stddef.h>
 
-bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, size_t len);
+bool cnvs_replay_text(struct canvas *__single cv, char const *__counted_by(len) data, size_t len);
 
 // Adopt a malloc'd RGBA8 buffer rebuilt from a replayed `image` block: the
 // canvas owns it until canvas_destroy (implemented in canvas.c).  The canvas
@@ -23,5 +23,5 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
 // restores drawing state but does not invalidate the program's blocks).
 // Returns false, adopting nothing, when the bookkeeping node cannot be
 // allocated; the caller still owns (and frees) the buffer.
-bool cnvs_canvas_own_image(canvas *__single cv,
+bool cnvs_canvas_own_image(struct canvas *__single cv,
                            uint8_t *__counted_by(len) px, int len);

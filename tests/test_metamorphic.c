@@ -18,7 +18,7 @@ enum { W = 16, H = 16, LEN = W * H * 4 };
 // Composite layer 1 (r1,g1,b1,a1) over layer 2 (r2,g2,b2,a2): paint layer 2 on a
 // cleared canvas, then layer 1 under `op`; return the centre pixel.  Either layer
 // may be translucent.
-static struct px4 over(canvas *__single cv, uint8_t *__counted_by(LEN) px,
+static struct px4 over(struct canvas *__single cv, uint8_t *__counted_by(LEN) px,
                        enum canvas_composite_op op,
                        float r1, float g1, float b1, float a1,
                        float r2, float g2, float b2, float a2) {
@@ -34,7 +34,7 @@ static struct px4 over(canvas *__single cv, uint8_t *__counted_by(LEN) px,
 }
 
 // Opaque backdrop (br,bg,bb), then (sr,sg,sb,sa) under `op`; centre pixel.
-static struct px4 blend(canvas *__single cv, uint8_t *__counted_by(LEN) px,
+static struct px4 blend(struct canvas *__single cv, uint8_t *__counted_by(LEN) px,
                         enum canvas_composite_op op, float br, float bg, float bb,
                         float sr, float sg, float sb, float sa) {
     return over(cv, px, op, sr, sg, sb, sa, br, bg, bb, 1.0f);
@@ -56,7 +56,7 @@ int main(void) {
     uint8_t *__counted_by(LEN) px = malloc((size_t)LEN);
     uint8_t *__counted_by(LEN) qx = malloc((size_t)LEN);
     CHECK(px && qx);
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!px || !qx || !cv) {
         free(px);

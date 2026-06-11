@@ -1,9 +1,9 @@
-// Unit tests for cnvs_path's state machine and curve flattening.  test_path.c
+// Unit tests for struct cnvs_path's state machine and curve flattening.  test_path.c
 // drives the path through the canvas API, which always establishes a current
 // point first and flattens at a fixed tolerance -- so the "no current point"
 // branches (line_to/quad_to/cubic_to before any move_to), close-on-empty, and the
-// flatten flat/recurse/depth-cap branches go untaken (cnvs_path was 89% lines but
-// 54% branches).  Drive cnvs_path directly to reach them.  Includes the internal
+// flatten flat/recurse/depth-cap branches go untaken (struct cnvs_path was 89% lines but
+// 54% branches).  Drive struct cnvs_path directly to reach them.  Includes the internal
 // header, like test_mem.c.  (The remaining uncovered branches are the realloc
 // failure guards in move_to/rect/*_reserve -- unreachable without malloc fault
 // injection, so not chased here.)
@@ -19,7 +19,7 @@ static cnvs_vec2 v(float x, float y) {
 }
 
 int main(void) {
-    cnvs_path p;
+    struct cnvs_path p;
     cnvs_path_init(&p);
 
     // line_to with no current point starts the subpath (the !has_cur branch).

@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-static void add_poly(cnvs_cover *c, int w, int h,
+static void add_poly(struct cnvs_cover *c, int w, int h,
                      float const *__counted_by(2 * n) pts, int n) {
     for (int i = 0; i < n; i++) {
         int j = (i + 1) % n;
@@ -18,7 +18,7 @@ static int cov(uint8_t const *__counted_by(len) px, int len, int w, int x, int y
 }
 
 int main(void) {
-    cnvs_cover c = { .acc = NULL, .cap = 0 };
+    struct cnvs_cover c = { .acc = NULL, .cap = 0 };
 
     // Right triangle (0,0)-(16,0)-(0,16): inside is x+y <= 16.
     {

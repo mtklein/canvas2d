@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static bool verts_reserve(cnvs_verts *v, int need) {
+static bool verts_reserve(struct cnvs_verts *v, int need) {
     if (need <= v->cap) {
         return true;
     }
@@ -19,7 +19,7 @@ static bool verts_reserve(cnvs_verts *v, int need) {
     return true;
 }
 
-bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int k) {
+bool cnvs_verts_append(struct cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int k) {
     if (k <= 0) {
         return true;
     }
@@ -53,11 +53,11 @@ bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int 
     return true;
 }
 
-void cnvs_verts_reset(cnvs_verts *v) {
+void cnvs_verts_reset(struct cnvs_verts *v) {
     v->len = 0;
 }
 
-void cnvs_verts_free(cnvs_verts *v) {
+void cnvs_verts_free(struct cnvs_verts *v) {
     free(v->data);
     v->data = NULL;
     v->len = 0;

@@ -24,7 +24,7 @@ static int gallery_reps(void) {
     return reps < 1 ? 1 : reps;
 }
 
-static void save(canvas *__single cv, char const *__null_terminated path) {
+static void save(struct canvas *__single cv, char const *__null_terminated path) {
     if (!g_skip_save && !canvas_write_png(cv, path)) {
         (void)fprintf(stderr, "gallery: write failed: %s\n", path);
     }
@@ -41,13 +41,13 @@ static void save(canvas *__single cv, char const *__null_terminated path) {
 // drawImage/putImageData/pattern sources, path blocks for the Path2D draws --
 // so it replays on a machine without the fonts: the determinism gate
 // (tests/test_replay_gallery.c) replays each one and byte-compares to the PNG.
-static void record_scene(canvas *__single cv, char const *__null_terminated path) {
+static void record_scene(struct canvas *__single cv, char const *__null_terminated path) {
     if (!g_skip_save && !canvas_record_to(cv, path)) {
         (void)fprintf(stderr, "gallery: record failed: %s\n", path);
     }
 }
 
-static void star(canvas *__single cv, float cx, float cy, float r) {
+static void star(struct canvas *__single cv, float cx, float cy, float r) {
     canvas_begin_path(cv);
     for (int i = 0; i < 5; i++) {
         float a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
@@ -62,7 +62,7 @@ static void star(canvas *__single cv, float cx, float cy, float r) {
 
 // Transforms, alpha, filled curves/arcs, and strokes.
 static void shapes(void) {
-    canvas *__single c = canvas_create(240, 180);
+    struct canvas *__single c = canvas_create(240, 180);
     if (!c) {
         return;
     }
@@ -118,7 +118,7 @@ static void shapes(void) {
 
 // Winding rules: a donut (nonzero hole) and a pentagram filled both ways.
 static void winding(void) {
-    canvas *__single c = canvas_create(300, 120);
+    struct canvas *__single c = canvas_create(300, 120);
     if (!c) {
         return;
     }
@@ -152,7 +152,7 @@ static void winding(void) {
 
 // Line dashing: a few patterns, an offset, and a dashed circle.
 static void dashes(void) {
-    canvas *__single c = canvas_create(260, 120);
+    struct canvas *__single c = canvas_create(260, 120);
     if (!c) {
         return;
     }
@@ -199,7 +199,7 @@ static void dashes(void) {
 
 // getImageData / putImageData: capture a motif and stamp copies of it.
 static void imagedata(void) {
-    canvas *__single c = canvas_create(240, 90);
+    struct canvas *__single c = canvas_create(240, 90);
     if (!c) {
         return;
     }
@@ -230,7 +230,7 @@ static void imagedata(void) {
 // Line joins (miter / round / bevel) on sharp Vs, and caps (butt / round /
 // square) on short segments.
 static void joinscaps(void) {
-    canvas *__single c = canvas_create(280, 160);
+    struct canvas *__single c = canvas_create(280, 160);
     if (!c) {
         return;
     }
@@ -270,7 +270,7 @@ static void joinscaps(void) {
 
 // Path primitives: a filled ellipse, a rounded rectangle, and an arcTo fillet.
 static void paths(void) {
-    canvas *__single c = canvas_create(280, 170);
+    struct canvas *__single c = canvas_create(280, 170);
     if (!c) {
         return;
     }
@@ -310,7 +310,7 @@ static void paths(void) {
 // bigger than its 36px height -- the CSS overlap rule scales them down to a clean
 // half-height pill.
 static void roundrect(void) {
-    canvas *__single c = canvas_create(548, 232);
+    struct canvas *__single c = canvas_create(548, 232);
     if (!c) {
         return;
     }
@@ -379,7 +379,7 @@ static void roundrect(void) {
 // a gradient stroke, and the degenerate zero-extent rect (which strokes a line).
 static void strokerect(void) {
     float const margin = 12.0f, cw = 148.0f, ch = 104.0f;
-    canvas *__single c = canvas_create(468, 232);
+    struct canvas *__single c = canvas_create(468, 232);
     if (!c) {
         return;
     }
@@ -451,7 +451,7 @@ static void strokerect(void) {
 // wheel, a hard-stop "pie" (coincident stop offsets make crisp sector edges), and
 // a conic-gradient *stroke* ring around a two-tone conic medallion.
 static void conic(void) {
-    canvas *__single c = canvas_create(440, 176);
+    struct canvas *__single c = canvas_create(440, 176);
     if (!c) {
         return;
     }
@@ -556,7 +556,7 @@ static void make_tile(uint8_t *__counted_by(32 * 32 * 4) t) {
 // createPattern: the same tile under each repeat mode (the un-tiled axes leave the
 // dark ground showing), then the pattern used as a fill paint for a headline.
 static void pattern(void) {
-    canvas *__single c = canvas_create(474, 212);
+    struct canvas *__single c = canvas_create(474, 212);
     if (!c) {
         return;
     }
@@ -603,7 +603,7 @@ static void pattern(void) {
 // imageSmoothingEnabled: the same 16x16 pixel-art source upscaled 8.75x with
 // smoothing off (crisp nearest-neighbour blocks) and on (bilinear blend).
 static void smoothing(void) {
-    canvas *__single c = canvas_create(440, 210);
+    struct canvas *__single c = canvas_create(440, 210);
     if (!c) {
         return;
     }
@@ -661,7 +661,7 @@ static void smoothing(void) {
 // word names its own alignment).  Bottom: "Hg" set six ways against one horizontal
 // baseline guide, so each mode's vertical shift is visible.
 static void textgrid(void) {
-    canvas *__single c = canvas_create(520, 256);
+    struct canvas *__single c = canvas_create(520, 256);
     if (!c) {
         return;
     }
@@ -740,7 +740,7 @@ static void textgrid(void) {
 // -- the tight actual bounding box, the looser font bounding box, the advance
 // width, the hanging/alphabetic/ideographic baselines, and the origin point.
 static void textmetrics(void) {
-    canvas *__single c = canvas_create(560, 250);
+    struct canvas *__single c = canvas_create(560, 250);
     if (!c) {
         return;
     }
@@ -834,7 +834,7 @@ static void textmetrics(void) {
 // maxWidth: the same phrase drawn unconstrained (it overflows the right marker)
 // and with a maxWidth equal to the marked span (condensed horizontally to fit).
 static void textmaxwidth(void) {
-    canvas *__single c = canvas_create(520, 188);
+    struct canvas *__single c = canvas_create(520, 188);
     if (!c) {
         return;
     }
@@ -909,7 +909,7 @@ static void textmaxwidth(void) {
 // isPointInStroke on a thick ring (only points within the stroke band hit).  All
 // queries run first -- drawing the dots replaces the current path.
 static void hittest(void) {
-    canvas *__single c = canvas_create(480, 262);
+    struct canvas *__single c = canvas_create(480, 262);
     if (!c) {
         return;
     }
@@ -991,7 +991,7 @@ static void hittest(void) {
 // it whole on the left, and on the right write only a checkerboard of dirty
 // sub-rects (the same image origin, so the tiles register into one picture).
 static void dirtyrect(void) {
-    canvas *__single c = canvas_create(518, 210);
+    struct canvas *__single c = canvas_create(518, 210);
     if (!c) {
         return;
     }
@@ -1053,7 +1053,7 @@ static void dirtyrect(void) {
 // Right, add_path composes a ring with its hole for an even-odd fill, and a star
 // Path2D is stroked in the hole.
 static void path2d_demo(void) {
-    canvas *__single c = canvas_create(500, 240);
+    struct canvas *__single c = canvas_create(500, 240);
     if (!c) {
         return;
     }
@@ -1062,7 +1062,7 @@ static void path2d_demo(void) {
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 240.0f);
 
     // One petal, built once around the origin, drawn under many transforms.
-    canvas_path2d *__single petal = canvas_path2d_create();
+    struct canvas_path2d *__single petal = canvas_path2d_create();
     if (petal) {
         canvas_path2d_move_to(petal, 0.0f, 0.0f);
         canvas_path2d_bezier_curve_to(petal, 32.0f, -26.0f, 24.0f, -76.0f, 0.0f, -88.0f);
@@ -1087,8 +1087,8 @@ static void path2d_demo(void) {
     }
 
     // add_path: a ring and its hole composed into one path, filled even-odd.
-    canvas_path2d *__single ring = canvas_path2d_create();
-    canvas_path2d *__single hole = canvas_path2d_create();
+    struct canvas_path2d *__single ring = canvas_path2d_create();
+    struct canvas_path2d *__single hole = canvas_path2d_create();
     if (ring && hole) {
         canvas_path2d_arc(ring, 365.0f, 116.0f, 54.0f, 0.0f, TAU, false);
         canvas_path2d_arc(hole, 365.0f, 116.0f, 32.0f, 0.0f, TAU, false);
@@ -1106,7 +1106,7 @@ static void path2d_demo(void) {
     }
 
     // A star Path2D, stroked in the hole.
-    canvas_path2d *__single starp = canvas_path2d_create();
+    struct canvas_path2d *__single starp = canvas_path2d_create();
     if (starp) {
         for (int i = 0; i < 5; i++) {
             float a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
@@ -1137,7 +1137,7 @@ static void path2d_demo(void) {
 
 // Paint a transparency checkerboard *behind* whatever is already in [x,y,w,h]
 // (destination-over), so a Porter-Duff result's transparent areas read clearly.
-static void checker_behind(canvas *__single c, float x, float y, float w, float h) {
+static void checker_behind(struct canvas *__single c, float x, float y, float w, float h) {
     canvas_set_global_composite_operation(c, CANVAS_OP_DESTINATION_OVER);
     int const t = 13;
     for (int j = 0; (float)(j * t) < h; j++) {
@@ -1154,12 +1154,12 @@ static void checker_behind(canvas *__single c, float x, float y, float w, float 
     canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
 }
 
-static void pd_dst(canvas *__single c, float ox, float oy) {  // blue square
+static void pd_dst(struct canvas *__single c, float ox, float oy) {  // blue square
     canvas_set_fill_rgba(c, 0.20f, 0.55f, 0.90f, 1.0f);
     canvas_fill_rect(c, ox + 16.0f, oy + 12.0f, 50.0f, 50.0f);
 }
 
-static void pd_src(canvas *__single c, float ox, float oy) {  // orange disc
+static void pd_src(struct canvas *__single c, float ox, float oy) {  // orange disc
     canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, ox + 62.0f, oy + 52.0f, 27.0f, 0.0f, TAU, false);
@@ -1172,7 +1172,7 @@ static void pd_src(canvas *__single c, float ox, float oy) {  // orange disc
 // checkerboard behind so the surviving regions read.  A legend names the shapes.
 static void porterduff(void) {
     float const M = 16.0f, cellW = 118.0f, cellH = 99.0f;
-    canvas *__single c = canvas_create(504, 329);
+    struct canvas *__single c = canvas_create(504, 329);
     if (!c) {
         return;
     }
@@ -1241,7 +1241,7 @@ static void porterduff(void) {
 static void subrect(void) {
     int const AW = 160, AH = 80;  // 4x2 tiles of 40px
     uint8_t atlas[160 * 80 * 4];
-    canvas *__single ac = canvas_create(AW, AH);
+    struct canvas *__single ac = canvas_create(AW, AH);
     if (ac) {
         for (int k = 0; k < 8; k++) {
             int tx = k % 4, ty = k / 4;
@@ -1280,7 +1280,7 @@ static void subrect(void) {
         canvas_destroy(ac);
     }
 
-    canvas *__single c = canvas_create(468, 196);
+    struct canvas *__single c = canvas_create(468, 196);
     if (!c) {
         return;
     }
@@ -1327,7 +1327,7 @@ static void subrect(void) {
 // One motif (a teal square with a gold "F") centred at the origin; the caller's
 // transform deforms it.  "F" has no symmetry, so reflection and shear read at a
 // glance.
-static void affine_motif(canvas *__single c) {
+static void affine_motif(struct canvas *__single c) {
     canvas_set_fill_rgba(c, 0.25f, 0.70f, 0.78f, 0.85f);
     canvas_fill_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
     canvas_set_stroke_rgba(c, 0.95f, 0.97f, 1.0f, 0.95f);
@@ -1345,7 +1345,7 @@ static void affine_motif(canvas *__single c) {
 // it (dashed), so the shear / scale / reflection is visible.
 static void affine(void) {
     float const M = 14.0f, cellW = 150.0f, cellH = 122.0f;
-    canvas *__single c = canvas_create(478, 272);
+    struct canvas *__single c = canvas_create(478, 272);
     if (!c) {
         return;
     }
@@ -1395,7 +1395,7 @@ static void affine(void) {
 // miter spike survives.  Bottom: one dash pattern at five offsets, the phase
 // marching left (a frozen marching-ants animation).
 static void miterdash(void) {
-    canvas *__single c = canvas_create(480, 258);
+    struct canvas *__single c = canvas_create(480, 258);
     if (!c) {
         return;
     }
@@ -1467,7 +1467,7 @@ static void miterdash(void) {
 
 // Flood a box with rainbow stripes; only what falls inside the active clip
 // survives, so the stripes trace out the clip shape.
-static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float y1) {
+static void clip_stripes(struct canvas *__single c, float x0, float y0, float x1, float y1) {
     int const n = 16;
     float bw = (x1 - x0) / (float)n;
     for (int i = 0; i < n; i++) {
@@ -1482,7 +1482,7 @@ static void clip_stripes(canvas *__single c, float x0, float y0, float x1, float
 // Clipping: a circular window, the intersection of two discs, and a
 // self-intersecting star window — each masking the same flood of stripes.
 static void clipping(void) {
-    canvas *__single c = canvas_create(300, 120);
+    struct canvas *__single c = canvas_create(300, 120);
     if (!c) {
         return;
     }
@@ -1519,7 +1519,7 @@ static void clipping(void) {
 // Gradients: a diagonal linear fill (outlined with a gradient stroke), an
 // off-centre radial "sphere", and a multi-stop rainbow ramp.
 static void gradients(void) {
-    canvas *__single c = canvas_create(300, 120);
+    struct canvas *__single c = canvas_create(300, 120);
     if (!c) {
         return;
     }
@@ -1574,7 +1574,7 @@ static float batch_rand(void) {
 static void batching(void) {
     batch_rng = 0x1234567u;  // reseed so the scene is reproducible regardless of how
                              // many times it runs (GALLERY_REPS calls it repeatedly)
-    canvas *__single c = canvas_create(300, 120);
+    struct canvas *__single c = canvas_create(300, 120);
     if (!c) {
         return;
     }
@@ -1602,7 +1602,7 @@ static void batching(void) {
 // drawImage: a small procedural source, drawn 1:1 (crisp), scaled up (bilinear
 // smoothing), and scaled + rotated through the transform.
 static void drawimage(void) {
-    canvas *__single c = canvas_create(300, 120);
+    struct canvas *__single c = canvas_create(300, 120);
     if (!c) {
         return;
     }
@@ -1637,7 +1637,7 @@ static void drawimage(void) {
 // shapes, so they take gradients, strokes, transforms, and alpha; one fill_text
 // mixes Latin and Chinese.
 static void text(void) {
-    canvas *__single c = canvas_create(420, 170);
+    struct canvas *__single c = canvas_create(420, 170);
     if (!c) {
         return;
     }
@@ -1688,7 +1688,7 @@ static void blend(void) {
         { CANVAS_OP_LUMINOSITY, "luminosity" },
     };
     float const M = 12.0f, cellW = 140.0f, cellH = 124.0f;
-    canvas *__single c = canvas_create(724, 396);
+    struct canvas *__single c = canvas_create(724, 396);
     if (!c) {
         return;
     }
@@ -1737,7 +1737,7 @@ static void blend(void) {
 // is the op's coverage blurred (the in-tree box blur), tinted, offset, and
 // composited under the shape -- all in checked C, so both backends match.
 static void shadows(void) {
-    canvas *__single c = canvas_create(400, 130);
+    struct canvas *__single c = canvas_create(400, 130);
     if (!c) {
         return;
     }
@@ -1781,7 +1781,7 @@ static void shadows(void) {
 // are drawn as RGBA8 bitmaps (the second text boundary), composited like any other
 // paint -- so emoji mix inline with text and take the transform and shadow.
 static void emoji(void) {
-    canvas *__single c = canvas_create(520, 250);
+    struct canvas *__single c = canvas_create(520, 250);
     if (!c) {
         return;
     }
@@ -1848,7 +1848,7 @@ static void emoji(void) {
 // softness.  The second row repeats the ramp under progressive rotation: level
 // selection answers the transformed device footprint, not the nominal font size.
 static void emojiscale(void) {
-    canvas *__single c = canvas_create(700, 600);
+    struct canvas *__single c = canvas_create(700, 600);
     if (!c) {
         return;
     }
@@ -1897,7 +1897,7 @@ static void emojiscale(void) {
 // contextually, lays RTL out right-to-left, reorders Devanagari -- all rendered by
 // the same coverage rasterizer (and color emoji as bitmaps).
 static void shaping(void) {
-    canvas *__single c = canvas_create(500, 348);
+    struct canvas *__single c = canvas_create(500, 348);
     if (!c) {
         return;
     }
@@ -1952,7 +1952,7 @@ static void shaping(void) {
 // single anchor under every direction x start/end pairing -- the alignment
 // flips with direction, and the string itself reorders.
 static void rtl(void) {
-    canvas *__single c = canvas_create(500, 330);
+    struct canvas *__single c = canvas_create(500, 330);
     if (!c) {
         return;
     }
@@ -2034,9 +2034,9 @@ static void rtl(void) {
 // coloured shadow.
 static void filters(void) {
     struct {
-        void (*add)(canvas *__single cv, float amount);
+        void (*add)(struct canvas *__single cv, float amount);
         float amt;
-        void (*add2)(canvas *__single cv, float amount);  // chained second entry
+        void (*add2)(struct canvas *__single cv, float amount);  // chained second entry
         float amt2;
         bool shadow;                  // append a drop-shadow() after add/add2
         float sdx, sdy, sblur;        // its offset + blur
@@ -2068,7 +2068,7 @@ static void filters(void) {
           .label = "grayscale(1) drop-shadow" },
     };
     float const M = 12.0f, cellW = 140.0f, cellH = 124.0f;
-    canvas *__single c = canvas_create(444, 644);
+    struct canvas *__single c = canvas_create(444, 644);
     if (!c) {
         return;
     }

@@ -24,7 +24,7 @@
 // Every recordable command, and each enum value, at least once.  Coordinates and
 // colours are integers / simple decimals that round-trip exactly through %.9g and
 // the parser's number reader, so record -> replay is bit-identical.
-static void draw_program(canvas *__single cv) {
+static void draw_program(struct canvas *__single cv) {
     canvas_save(cv);
 
     // reset + resize first: both record as themselves (resize swallows the
@@ -156,7 +156,7 @@ static void draw_program(canvas *__single cv) {
     // twice each for fill/stroke, so the content dedupe pins ONE `path` block
     // (the idempotence compare again) -- plus the two hit-test overloads,
     // which are queries and must record nothing.
-    canvas_path2d *__single p2 = canvas_path2d_create();
+    struct canvas_path2d *__single p2 = canvas_path2d_create();
     if (p2) {
         canvas_path2d_move_to(p2, 20.0f, 4.0f);
         canvas_path2d_line_to(p2, 30.0f, 4.0f);
@@ -213,7 +213,7 @@ int main(void) {
 
     // Opening an unwritable path records nothing and reports failure.
     {
-        canvas *__single bad = canvas_create(W, H);
+        struct canvas *__single bad = canvas_create(W, H);
         CHECK(bad != NULL);
         CHECK(!canvas_record_to(bad, "build/no_such_dir_xyzzy/out.canvas"));
         canvas_destroy(bad);
@@ -222,7 +222,7 @@ int main(void) {
     // 1. Record a program to p1, capturing its pixels before destroy closes p1.
     uint8_t recorded_px[NPX];
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p1));
         draw_program(cv);
@@ -241,7 +241,7 @@ int main(void) {
 
     // 2. Pixel identity: replay p1 onto a fresh canvas; bitmaps match exactly.
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, p1));
         uint8_t replayed_px[NPX];
@@ -253,7 +253,7 @@ int main(void) {
     // 3. Text idempotence: replay p1 while recording into p2; p1 == p2 byte-for-
     // byte, proving record/replay are inverse on the canonical text form.
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p2));
         CHECK(canvas_replay_from(cv, p1));

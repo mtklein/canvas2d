@@ -6,13 +6,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-void cnvs_cover_free(cnvs_cover *c) {
+void cnvs_cover_free(struct cnvs_cover *c) {
     free(c->acc);
     c->acc = NULL;
     c->cap = 0;
 }
 
-bool cnvs_cover_reset(cnvs_cover *c, int w, int h) {
+bool cnvs_cover_reset(struct cnvs_cover *c, int w, int h) {
     int need = w * h;
     if (need > c->cap) {
         float *na = realloc(c->acc, (size_t)need * sizeof *na);
@@ -32,7 +32,7 @@ bool cnvs_cover_reset(cnvs_cover *c, int w, int h) {
 // the right edge, nothing lands on-screen.  always_inline: it's the innermost
 // step of the per-edge loop and -Os otherwise leaves it out-of-line.
 __attribute__((always_inline))
-static inline void deposit(cnvs_cover *c, int base, int w, int col, float xmf, float d) {
+static inline void deposit(struct cnvs_cover *c, int base, int w, int col, float xmf, float d) {
     if (col < 0) {
         c->acc[base] += d;
     } else if (col < w) {
@@ -45,7 +45,7 @@ static inline void deposit(cnvs_cover *c, int base, int w, int col, float xmf, f
 
 // Accumulate a segment that lies within a single scanline row `y`: it runs from
 // (xs, ys) to (xe, ye) with ys < ye, both in [y, y+1].
-static void accum_row(cnvs_cover *c, int w, int y,
+static void accum_row(struct cnvs_cover *c, int w, int y,
                       float xs, float ys, float xe, float ye, float dir) {
     int base = y * w;
     float dyt = ye - ys;
@@ -126,7 +126,7 @@ static void accum_row(cnvs_cover *c, int w, int y,
     }
 }
 
-void cnvs_cover_add_edge(cnvs_cover *c, int w, int h,
+void cnvs_cover_add_edge(struct cnvs_cover *c, int w, int h,
                          float x0, float y0, float x1, float y1) {
     float dir, xa, ya, xb, yb;
     if (y0 < y1) {
@@ -211,7 +211,7 @@ static inline float8 prefix_sum8(float8 v) {
     return v;
 }
 
-void cnvs_cover_resolve(cnvs_cover *c, int w, int h, enum cnvs_fill_rule rule,
+void cnvs_cover_resolve(struct cnvs_cover *c, int w, int h, enum cnvs_fill_rule rule,
                         uint8_t *__counted_by(w * h) out) {
     // Fold each row's signed-area deltas to coverage in one pass: an 8-wide
     // in-register prefix sum, plus a running scalar carry from earlier

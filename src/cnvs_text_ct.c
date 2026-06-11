@@ -40,7 +40,7 @@ int cnvs_run_font_name(void const *font, char *buf, int cap) {
     return ok ? (int)strlen(buf) : -1;
 }
 
-void cnvs_shaped_free(cnvs_shaped *s) {
+void cnvs_shaped_free(struct cnvs_shaped *s) {
     if (!s) {
         return;
     }
@@ -235,7 +235,7 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
     *x1 = (float)CGRectGetMaxX(r); *y1 = (float)CGRectGetMaxY(r);
 }
 
-cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px, bool rtl,
+struct cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px, bool rtl,
                         char const *text, int text_len) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     CFStringRef str = str_from_bytes(text, text_len);
@@ -253,7 +253,7 @@ cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px, bool rtl,
         { kCTParagraphStyleSpecifierBaseWritingDirection, sizeof wd, &wd },
     };
     CTParagraphStyleRef ps = CTParagraphStyleCreate(ps_set, 1);
-    cnvs_shaped *out = NULL;
+    struct cnvs_shaped *out = NULL;
     if (font && str && ps) {
         CFStringRef keys[2] = { kCTFontAttributeName,
                                 kCTParagraphStyleAttributeName };
@@ -304,7 +304,7 @@ struct cnvs_font {
     CTFontRef font;
 };
 
-cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px) {
+struct cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     if (!cfname) {
         return NULL;
@@ -314,7 +314,7 @@ cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px) {
     if (!font) {
         return NULL;
     }
-    cnvs_font *f = calloc(1, sizeof *f);
+    struct cnvs_font *f = calloc(1, sizeof *f);
     if (!f) {
         CFRelease(font);
         return NULL;
@@ -323,7 +323,7 @@ cnvs_font *cnvs_font_create(char const *name, int name_len, float size_px) {
     return f;
 }
 
-void cnvs_font_destroy(cnvs_font *f) {
+void cnvs_font_destroy(struct cnvs_font *f) {
     if (!f) {
         return;
     }
@@ -331,7 +331,7 @@ void cnvs_font_destroy(cnvs_font *f) {
     free(f);
 }
 
-void cnvs_font_vmetrics(cnvs_font *f, float *ascent, float *descent) {
+void cnvs_font_vmetrics(struct cnvs_font *f, float *ascent, float *descent) {
     *ascent = (float)CTFontGetAscent(f->font);
     *descent = (float)CTFontGetDescent(f->font);
 }

@@ -28,7 +28,7 @@ static bool col_near(cnvs_unpremul a, cnvs_unpremul b, float tol) {
 // Exact piecewise-linear colour in double over the f16 stop colours -- the
 // reference the evaluators may deviate from only by the f16 lerp's rounding.
 // Mirrors cnvs_gradient_color_at's segment selection; the lerp is exact.
-static void ref_color_at(cnvs_gradient const *gr, double t,
+static void ref_color_at(struct cnvs_gradient const *gr, double t,
                          double *__counted_by(4) out) {
     int n = gr->stop_count;
     if (n == 0) {
@@ -72,7 +72,7 @@ static void ref_color_at(cnvs_gradient const *gr, double t,
 // t < 0 "outside" sentinel, and within GRAD_ERR_TOL of the exact double
 // reference.  The sweep brackets [0,1] densely plus every stop offset and its
 // f32 neighbours; N % 8 == 5 so the 8-wide body and the scalar tail both run.
-static void check_color_row(cnvs_gradient const *gr) {
+static void check_color_row(struct cnvs_gradient const *gr) {
     enum { N = 1029 };
     static float t[N];
     static cnvs_unpremul row[N];
@@ -107,7 +107,7 @@ static void check_color_row(cnvs_gradient const *gr) {
 
 // Compare the scalar param against the vectorized row, pixel by pixel: equal t
 // where both have one (within float-solve tolerance), and "outside" agreeing.
-static void check_param_matches_row(cnvs_gradient const *gr, int x0, float y, int n) {
+static void check_param_matches_row(struct cnvs_gradient const *gr, int x0, float y, int n) {
     float row[64];
     if (n > 64) { n = 64; }
     cnvs_gradient_param_row(gr, x0, y, n, row);
@@ -124,7 +124,7 @@ static void check_param_matches_row(cnvs_gradient const *gr, int x0, float y, in
 
 int main(void) {
     // Linear gradient, red -> blue along x in [0,64].
-    cnvs_gradient lin = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
+    struct cnvs_gradient lin = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
                           .p1 = { .x = 64.0f, .y = 0.0f } };
     cnvs_gradient_add_stop(&lin, 0.0f, cnvs_unpremul_of(1.0f, 0.0f, 0.0f, 1.0f));
     cnvs_gradient_add_stop(&lin, 1.0f, cnvs_unpremul_of(0.0f, 0.0f, 1.0f, 1.0f));
@@ -134,13 +134,13 @@ int main(void) {
     //    points, exercising the no-solution branch).
     check_param_matches_row(&lin, 0, 8.0f, 64);
 
-    cnvs_gradient rad = { .kind = CNVS_GRAD_RADIAL, .p0 = { .x = 32.0f, .y = 32.0f },
+    struct cnvs_gradient rad = { .kind = CNVS_GRAD_RADIAL, .p0 = { .x = 32.0f, .y = 32.0f },
                           .p1 = { .x = 32.0f, .y = 32.0f }, .r0 = 0.0f, .r1 = 28.0f };
     cnvs_gradient_add_stop(&rad, 0.0f, cnvs_unpremul_of(1.0f, 1.0f, 0.0f, 1.0f));
     cnvs_gradient_add_stop(&rad, 1.0f, cnvs_unpremul_of(1.0f, 0.0f, 0.0f, 1.0f));
     check_param_matches_row(&rad, 0, 32.0f, 64);
 
-    cnvs_gradient focal = { .kind = CNVS_GRAD_RADIAL, .p0 = { .x = 20.0f, .y = 32.0f },
+    struct cnvs_gradient focal = { .kind = CNVS_GRAD_RADIAL, .p0 = { .x = 20.0f, .y = 32.0f },
                             .p1 = { .x = 44.0f, .y = 32.0f }, .r0 = 3.0f, .r1 = 18.0f };
     cnvs_gradient_add_stop(&focal, 0.0f, cnvs_unpremul_of(1.0f, 1.0f, 1.0f, 1.0f));
     cnvs_gradient_add_stop(&focal, 1.0f, cnvs_unpremul_of(0.0f, 0.0f, 0.2f, 1.0f));
@@ -162,7 +162,7 @@ int main(void) {
 
     // 3. add_stop: offsets clamp to [0,1], and it's a no-op once full.
     {
-        cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
+        struct cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
                             .p1 = { .x = 1.0f, .y = 0.0f } };
         cnvs_gradient_add_stop(&g, 2.0f, cnvs_unpremul_of(1.0f, 1.0f, 1.0f, 1.0f));   // -> 1
         cnvs_gradient_add_stop(&g, -1.0f, cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f));  // -> 0
@@ -177,7 +177,7 @@ int main(void) {
     // 4. Degenerate color_at: no stops -> transparent black; a single stop is
     //    constant across the whole parameter range.
     {
-        cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
+        struct cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
                             .p1 = { .x = 1.0f, .y = 0.0f } };
         cnvs_unpremul empty = cnvs_gradient_color_at(&g, 0.5f);
         CHECK(fnear((float)empty.a, 0.0f, 0.0f));
@@ -192,34 +192,34 @@ int main(void) {
     {
         check_color_row(&lin);
 
-        cnvs_gradient multi = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        struct cnvs_gradient multi = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         cnvs_gradient_add_stop(&multi, 0.00f, cnvs_unpremul_of(0.90f, 0.20f, 0.25f, 1.0f));
         cnvs_gradient_add_stop(&multi, 0.33f, cnvs_unpremul_of(0.95f, 0.80f, 0.25f, 1.0f));
         cnvs_gradient_add_stop(&multi, 0.66f, cnvs_unpremul_of(0.30f, 0.80f, 0.45f, 0.5f));
         cnvs_gradient_add_stop(&multi, 1.00f, cnvs_unpremul_of(0.30f, 0.45f, 0.95f, 0.0f));
         check_color_row(&multi);
 
-        cnvs_gradient hard = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        struct cnvs_gradient hard = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         cnvs_gradient_add_stop(&hard, 0.0f, cnvs_unpremul_of(0.97f, 0.78f, 0.24f, 1.0f));
         cnvs_gradient_add_stop(&hard, 0.4f, cnvs_unpremul_of(0.97f, 0.78f, 0.24f, 1.0f));
         cnvs_gradient_add_stop(&hard, 0.4f, cnvs_unpremul_of(0.20f, 0.78f, 0.70f, 1.0f));
         cnvs_gradient_add_stop(&hard, 1.0f, cnvs_unpremul_of(0.20f, 0.78f, 0.70f, 1.0f));
         check_color_row(&hard);
 
-        cnvs_gradient ties = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        struct cnvs_gradient ties = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         cnvs_gradient_add_stop(&ties, 0.5f, cnvs_unpremul_of(1.0f, 0.0f, 0.0f, 1.0f));
         cnvs_gradient_add_stop(&ties, 0.5f, cnvs_unpremul_of(0.0f, 1.0f, 0.0f, 1.0f));
         cnvs_gradient_add_stop(&ties, 0.5f, cnvs_unpremul_of(0.0f, 0.0f, 1.0f, 1.0f));
         check_color_row(&ties);
 
-        cnvs_gradient one = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        struct cnvs_gradient one = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         cnvs_gradient_add_stop(&one, 0.5f, cnvs_unpremul_of(0.2f, 0.4f, 0.6f, 0.8f));
         check_color_row(&one);
 
-        cnvs_gradient none = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        struct cnvs_gradient none = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         check_color_row(&none);
 
-        cnvs_gradient full = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+        struct cnvs_gradient full = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         for (int k = 0; k < CNVS_MAX_STOPS; k++) {
             float o = (float)k / (float)(CNVS_MAX_STOPS - 1);
             cnvs_gradient_add_stop(&full, o,

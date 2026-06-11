@@ -8,7 +8,7 @@
 #define H 80
 
 // Ink bounding-box width and height (black text on a white ground).
-static void ink_extent(canvas *__single cv, uint8_t *__counted_by(len) px, int len,
+static void ink_extent(struct canvas *__single cv, uint8_t *__counted_by(len) px, int len,
                        int *__single iw, int *__single ih) {
     canvas_read_rgba(cv, px, len);
     int xmin = W, xmax = -1, ymin = H, ymax = -1;
@@ -26,7 +26,7 @@ static void ink_extent(canvas *__single cv, uint8_t *__counted_by(len) px, int l
     *ih = ymax - ymin;
 }
 
-static void clear_white(canvas *__single cv) {
+static void clear_white(struct canvas *__single cv) {
     canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
@@ -39,7 +39,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

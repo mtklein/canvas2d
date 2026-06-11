@@ -13,7 +13,7 @@
 #define DIM 384
 
 int main(void) {
-    cnvs_gradient gr = {
+    struct cnvs_gradient gr = {
         .kind = CNVS_GRAD_RADIAL,
         .p0 = { .x = (float)DIM * 0.4f, .y = (float)DIM * 0.45f },
         .p1 = { .x = (float)DIM * 0.5f, .y = (float)DIM * 0.5f },

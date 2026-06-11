@@ -42,7 +42,7 @@ int main(void) {
         return TEST_REPORT();
     }
     fill_source(src, slen);
-    canvas *__single cv = canvas_create(16, 16);
+    struct canvas *__single cv = canvas_create(16, 16);
     CHECK(cv != NULL);
     if (!cv) {
         free(src);

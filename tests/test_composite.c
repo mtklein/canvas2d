@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // Paint an opaque backdrop, then a source under `op`, and read the centre pixel.
-static struct px4 blend(canvas *__single cv, int w, int h,
+static struct px4 blend(struct canvas *__single cv, int w, int h,
                         uint8_t *__counted_by(len) px, int len,
                         enum canvas_composite_op op,
                         float br, float bg, float bb,
@@ -28,7 +28,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    canvas *__single cv = canvas_create(w, h);
+    struct canvas *__single cv = canvas_create(w, h);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

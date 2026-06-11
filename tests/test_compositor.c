@@ -22,7 +22,7 @@ static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
 
 // Read the premultiplied target back as unpremultiplied RGBA8 (mirrors the
 // canvas-side conversion), so the pixel checks can use unpremultiplied values.
-static void read8(canvas *__single c, int w, int h,
+static void read8(struct canvas *__single c, int w, int h,
                   uint8_t *__counted_by(w * h * 4) out) {
     int const n = w * h;
     cnvs_premul *__counted_by(n) buf = malloc((size_t)n * sizeof *buf);
@@ -41,7 +41,7 @@ static void read8(canvas *__single c, int w, int h,
 }
 
 // clearRect == destination-out of a unit-alpha tile.
-static void clear_all(canvas *__single c, int w, int h) {
+static void clear_all(struct canvas *__single c, int w, int h) {
     cnvs_premul *t = make_tile16(w, h, 0.0f, 0.0f, 0.0f, 1.0f);
     if (t) {
         cnvs_blend(c, 0, 0, w, h, t, NULL, NULL, 0, CANVAS_OP_DESTINATION_OUT);
@@ -64,7 +64,7 @@ static void source_over_vs_double(void) {
     cnvs_premul *__counted_by(n) dst = malloc((size_t)n * sizeof *dst);
     cnvs_premul *__counted_by(n) src = malloc((size_t)n * sizeof *src);
     cnvs_premul *__counted_by(n) out = malloc((size_t)n * sizeof *out);
-    canvas *__single c = canvas_create(N, N);
+    struct canvas *__single c = canvas_create(N, N);
     CHECK(dst != NULL && src != NULL && out != NULL && c != NULL);
     if (dst && src && out && c) {
         for (int y = 0; y < N; y++) {
@@ -126,7 +126,7 @@ static void solid_vs_tile(void) {
     cnvs_premul *__counted_by(n) want = malloc((size_t)n * sizeof *want);
     uint8_t *__counted_by(n) covp = malloc((size_t)n);
     uint8_t *__counted_by(n) mask = malloc((size_t)n);
-    canvas *__single c = canvas_create(W, H);
+    struct canvas *__single c = canvas_create(W, H);
     CHECK(dst && tile && got && want && covp && mask && c);
     if (dst && tile && got && want && covp && mask && c) {
         cnvs_premul const color =
@@ -174,7 +174,7 @@ static void solid_vs_tile(void) {
 int main(void) {
     int const w = 16, h = 16, len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    canvas *__single c = canvas_create(w, h);
+    struct canvas *__single c = canvas_create(w, h);
     CHECK(px != NULL);
     CHECK(c != NULL);
     if (!px || !c) {

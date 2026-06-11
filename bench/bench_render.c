@@ -17,7 +17,7 @@
 
 // One frame: a deterministic scene (varies slightly with `f`) covering the ops a
 // real page mixes -- the point is proportion, not a pretty picture.
-static void scene(canvas *__single cv, int f) {
+static void scene(struct canvas *__single cv, int f) {
     float w = (float)DIM, h = (float)DIM;
     canvas_clear_rect(cv, 0.0f, 0.0f, w, h);
     canvas_set_fill_rgba(cv, 0.10f, 0.12f, 0.15f, 1.0f);  // opaque background
@@ -77,7 +77,7 @@ static void scene(canvas *__single cv, int f) {
 }
 
 int main(void) {
-    canvas *__single cv = canvas_create(DIM, DIM);
+    struct canvas *__single cv = canvas_create(DIM, DIM);
     int const len = DIM * DIM * 4;
     uint8_t *px = malloc((size_t)len);
     if (!cv || !px) {

@@ -40,14 +40,14 @@ typedef struct {
                            // retained; NULL for a replay-built run
 } cnvs_glyph_run;
 
-typedef struct {
+struct cnvs_shaped {
     cnvs_glyph_run *__counted_by(nruns) run;
     int nruns;
     int text_len;   // source UTF-16 length, the bound for cluster indices
     float size_px;  // font size the line was shaped at, user px (every run's font,
                     // fallback included, is at this size; the numerator of the
                     // canonical-curve px scale)
-} cnvs_shaped;
+};
 
 // Shape UTF-8 `text` with font `name` at `size_px`.  Runs come back in visual order.
 // `rtl` is the PARAGRAPH base direction (the canvas direction attribute): it sets
@@ -60,14 +60,14 @@ typedef struct {
 // NUL-terminated copy exists anywhere internal, and the shim cannot over-read a
 // non-terminated buffer.  (The public canvas.h API keeps its __null_terminated
 // ergonomics; the strlen happens once at that entry point, in-rules.)
-cnvs_shaped *__single cnvs_shape(char const *__counted_by(name_len) name, int name_len,
+struct cnvs_shaped *__single cnvs_shape(char const *__counted_by(name_len) name, int name_len,
                                  float size_px, bool rtl,
                                  char const *__counted_by(text_len) text, int text_len);
-void cnvs_shaped_free(cnvs_shaped *__single s);
+void cnvs_shaped_free(struct cnvs_shaped *__single s);
 
 // Checked-core consumers.
-float cnvs_shaped_width(cnvs_shaped const *__single s);                // sum of advances
-int cnvs_shaped_index_at_x(cnvs_shaped const *__single s, float x);    // hit-test -> UTF-16 index, or -1
+float cnvs_shaped_width(struct cnvs_shaped const *__single s);                // sum of advances
+int cnvs_shaped_index_at_x(struct cnvs_shaped const *__single s, float x);    // hit-test -> UTF-16 index, or -1
 
 // A visual x range [x0,x1) in user px from the line start (a selection highlight rect).
 typedef struct {
@@ -75,13 +75,13 @@ typedef struct {
 } cnvs_xspan;
 
 // Caret: visual x for a logical UTF-16 index (the leading visual edge of that glyph).
-float cnvs_shaped_x_at_index(cnvs_shaped const *__single s, int index);
+float cnvs_shaped_x_at_index(struct cnvs_shaped const *__single s, int index);
 
 // Selection: visual x-spans covering the logical range [lo,hi).  A bidi range maps to
 // non-contiguous visual positions and so splits into multiple spans; writes up to
 // `max`, returns the count.  Pure index logic: the cluster map drives it and every
 // access is bounds-checked -- this is where the checked side earns its keep.
-int cnvs_shaped_selection(cnvs_shaped const *__single s, int lo, int hi,
+int cnvs_shaped_selection(struct cnvs_shaped const *__single s, int lo, int hi,
                           cnvs_xspan *__counted_by(max) out, int max);
 
 // Copy a run's font name into `buf` (UTF-8, NUL-terminated within `cap`); returns the
@@ -123,7 +123,7 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 // hands back.  Two maps:
 //
 //   - shaped lines, keyed by (size_px bits, paragraph direction, text bytes)
-//     -> the cnvs_shaped.  Direction is IN the key because the same bytes
+//     -> the struct cnvs_shaped.  Direction is IN the key because the same bytes
 //     shape differently under ltr and rtl paragraphs (run order, neutral
 //     resolution); leaving it out would alias the two.  The cache OWNS its
 //     entries (each run's retained CTFontRef stays alive with them); call
@@ -168,15 +168,15 @@ typedef struct {
 } cnvs_mip;
 
 // One cached shaped line.  Empty when s == NULL.
-typedef struct {
+struct cnvs_shape_slot {
     char *__counted_by(len) text;  // owned key copy of the source bytes
     int len;
     uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
     bool rtl;            // paragraph direction, the key's third part
     uint64_t stamp;      // last-use tick, the LRU ordering
-    cnvs_shaped *__single s;  // owned; freed on eviction/clear
+    struct cnvs_shaped *__single s;  // owned; freed on eviction/clear
     bool emitted;  // already serialized into the active recording (cnvs_record.c)
-} cnvs_shape_slot;
+};
 
 // One cached glyph.  An outline glyph holds canonical curves; a color (emoji)
 // glyph holds its canonical CAPTURE instead -- one premultiplied RGBA8 render
@@ -184,7 +184,7 @@ typedef struct {
 // once per (font, glyph) ever and sampled (never re-rasterized) at draw time.
 // A blank glyph of either kind caches as upem == 0 / cap_w == 0 with no data --
 // "known to be blank" is itself a boundary result worth keeping.
-typedef struct {
+struct cnvs_glyph_slot {
     enum cnvs_glyph_verb *__counted_by(nverbs) verb;  // owned canonical curves
     cnvs_vec2 *__counted_by(npts) pt;
     int nverbs, npts;
@@ -208,35 +208,35 @@ typedef struct {
     uint32_t key;  // font_id << 16 | glyph id
     bool used;
     bool emitted;  // already serialized into the active recording
-} cnvs_glyph_slot;
+};
 
 // An interned font name (the sized model: length + bytes, no NUL games), plus
 // the font's vertical metrics normalized to size 1.0 -- ascent/descent are
 // linear in size, so one record (and one serialized `font` block) serves every
 // font size; the consumer multiplies by size_px.
-typedef struct {
+struct cnvs_font_name {
     char *__counted_by(len) name;
     int len;
     float asc1, desc1;  // ascent/descent at size 1.0, positive magnitudes from
     bool has_vm;        // the baseline; valid only once has_vm is set
     bool emitted;       // already serialized into the active recording
-} cnvs_font_name;
+};
 
-typedef struct {
-    cnvs_shape_slot shape[CNVS_SHAPE_CACHE_N];
+struct cnvs_text_cache {
+    struct cnvs_shape_slot shape[CNVS_SHAPE_CACHE_N];
     uint64_t tick;  // monotone use counter feeding the shape slots' LRU stamps
-    cnvs_glyph_slot *__counted_by(glyph_cap) glyph;  // lazily built on first miss
+    struct cnvs_glyph_slot *__counted_by(glyph_cap) glyph;  // lazily built on first miss
     int glyph_cap;                                   // 0 until that build succeeds
     int glyph_count;
-    cnvs_font_name font[CNVS_FONT_INTERN_N];  // interned names; index = font id
+    struct cnvs_font_name font[CNVS_FONT_INTERN_N];  // interned names; index = font id
     int nfonts;
     // Stats: pure instrumentation (tests + measurement), no behavioural role.
     int shape_hits, shape_misses;
     int glyph_hits, glyph_misses;
-} cnvs_text_cache;
+};
 
-void cnvs_text_cache_init(cnvs_text_cache *__single c);   // an empty cache
-void cnvs_text_cache_clear(cnvs_text_cache *__single c);  // free entries -> empty;
+void cnvs_text_cache_init(struct cnvs_text_cache *__single c);   // an empty cache
+void cnvs_text_cache_clear(struct cnvs_text_cache *__single c);  // free entries -> empty;
                                                           // also the destructor (the
                                                           // struct owns no spine)
 
@@ -249,7 +249,7 @@ void cnvs_text_cache_clear(cnvs_text_cache *__single c);  // free entries -> emp
 // NOT the key: the project pins one family ("Libian TC"); a font-family feature
 // must add it to the key.  `c` must be non-NULL (ownership needs somewhere to
 // live).
-cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
+struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, char const *__counted_by(len) text, int len);
 
@@ -257,19 +257,19 @@ cnvs_shaped const *__single cnvs_text_cache_shape(cnvs_text_cache *__single c,
 // return its id for glyph keys; -1 when there is no cache, the intern table is
 // full, or any allocation fails -- the glyph walk then takes plain boundary
 // calls.  A fresh intern also records the font's vmetrics (cnvs_run_vmetrics).
-int cnvs_text_cache_font(cnvs_text_cache *__single c, void *__single font);
+int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font);
 
 // Intern a font name by its bytes, no boundary call: the replay path, and the
 // canvas's own pinned family.  Same -1 contract as cnvs_text_cache_font.
-int cnvs_text_cache_intern(cnvs_text_cache *__single c,
+int cnvs_text_cache_intern(struct cnvs_text_cache *__single c,
                            char const *__counted_by(len) name, int len);
 
-// The per-name vertical metrics record (asc1/desc1 in cnvs_font_name): set
+// The per-name vertical metrics record (asc1/desc1 in struct cnvs_font_name): set
 // keeps the first value it is given (live and replayed values agree, so first
 // wins keeps one canonical pair); get returns false until one is set.
-void cnvs_text_cache_set_vmetrics(cnvs_text_cache *__single c, int fid,
+void cnvs_text_cache_set_vmetrics(struct cnvs_text_cache *__single c, int fid,
                                   float asc1, float desc1);
-bool cnvs_text_cache_get_vmetrics(cnvs_text_cache *__single c, int fid,
+bool cnvs_text_cache_get_vmetrics(struct cnvs_text_cache *__single c, int fid,
                                   float *__single asc1, float *__single desc1);
 
 // The glyph lookup behind the outline and metrics walks: the cached canonical
@@ -280,7 +280,7 @@ bool cnvs_text_cache_get_vmetrics(cnvs_text_cache *__single c, int fid,
 // 0, no `font` handle to fetch with (a replay-built run whose glyph block was
 // missing), a full table, or a failed allocation -- and the caller degrades to
 // a plain boundary call (or, with no handle, to a blank glyph).
-cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
+struct cnvs_glyph_slot *__single cnvs_text_cache_glyph(struct cnvs_text_cache *__single c,
         int fid, void *__single font, uint16_t glyph, float size_px);
 
 // Insert one glyph's canonical data under (fid, glyph) without a boundary
@@ -288,7 +288,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_glyph(cnvs_text_cache *__single c,
 // whether or not it inserts; an existing entry wins (replaying onto a canvas
 // that already drew live), and a full table or failed build just leaves the
 // entry out -- the cache's usual best-effort degradation, not an error.
-void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
+void cnvs_text_cache_put_glyph(struct cnvs_text_cache *__single c, int fid,
         uint16_t glyph, enum cnvs_glyph_verb *__counted_by(nverbs) verb, int nverbs,
         cnvs_vec2 *__counted_by(npts) pt, int npts, float upem,
         float ink_x0, float ink_y0, float ink_x1, float ink_y1);
@@ -304,7 +304,7 @@ void cnvs_text_cache_put_glyph(cnvs_text_cache *__single c, int fid,
 // block was missing), a full table, or a failed allocation -- and the caller
 // degrades to a per-draw boundary render (or, with no handle, to a blank
 // advance).
-cnvs_glyph_slot *__single cnvs_text_cache_color(cnvs_text_cache *__single c,
+struct cnvs_glyph_slot *__single cnvs_text_cache_color(struct cnvs_text_cache *__single c,
         int fid, void *__single font, uint16_t glyph);
 
 // Insert one color glyph's capture under (fid, glyph) without a boundary
@@ -313,7 +313,7 @@ cnvs_glyph_slot *__single cnvs_text_cache_color(cnvs_text_cache *__single c,
 // ink box (the placement rect's bottom-left is (ink_x0, ink_y0)).  An existing
 // entry wins, and a full table or failed build just leaves the entry out --
 // the cache's usual best-effort degradation, not an error.
-void cnvs_text_cache_put_capture(cnvs_text_cache *__single c, int fid,
+void cnvs_text_cache_put_capture(struct cnvs_text_cache *__single c, int fid,
         uint16_t glyph, uint8_t *__counted_by(len) px, int len, int w, int h,
         float ink_x0, float ink_y0, float ink_x1, float ink_y1);
 
@@ -334,28 +334,28 @@ void cnvs_mip_halve(uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh
 // selection to the coarsest available level -- worst case the capture itself,
 // which always exists).  Returns a zero view (px NULL) only when the slot has
 // no capture.
-cnvs_mip cnvs_glyph_mip(cnvs_glyph_slot *__single slot, float footprint);
+cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint);
 
 // Insert a rebuilt shaped line for (size_px, rtl, text): the replay path.
 // Takes ownership of `s` always (freeing it when it can't insert); copies the
 // key bytes; replaces an existing entry for the same key.
-void cnvs_text_cache_put_shape(cnvs_text_cache *__single c, float size_px,
+void cnvs_text_cache_put_shape(struct cnvs_text_cache *__single c, float size_px,
         bool rtl, char const *__counted_by(len) text, int len,
-        cnvs_shaped *__single s);
+        struct cnvs_shaped *__single s);
 
 // The recorder's view of a cached line: the slot holding (size_px, rtl, text),
 // or NULL when it isn't cached.  A peek -- no stats, no LRU bump, no shaping.
-cnvs_shape_slot *__single cnvs_text_cache_shape_slot(cnvs_text_cache *__single c,
+struct cnvs_shape_slot *__single cnvs_text_cache_shape_slot(struct cnvs_text_cache *__single c,
         float size_px, bool rtl, char const *__counted_by(len) text, int len);
 
 // Clear every `emitted` mark (font names, glyphs, shaped lines): a new
 // recording starts with nothing serialized yet.
-void cnvs_text_cache_unmark(cnvs_text_cache *__single c);
+void cnvs_text_cache_unmark(struct cnvs_text_cache *__single c);
 
 // The per-canvas cache handle, for tests and stats (implemented in canvas.c).
 // Deliberately not in the public canvas.h: tests include internal headers.
 struct canvas;
-cnvs_text_cache *__single cnvs_canvas_text_cache(struct canvas *__single cv);
+struct cnvs_text_cache *__single cnvs_canvas_text_cache(struct canvas *__single cv);
 
 // Callback for the color (emoji) glyphs cnvs_shaped_outline meets: they have no
 // outline and must be drawn, not traced (the capture path above), so the walk
@@ -376,9 +376,9 @@ typedef void (*cnvs_color_glyph_fn)(void *__single ctx, int fid,
 // means plain boundary calls throughout).  Returns the advance width.  Color
 // (emoji) runs have no outline path: their glyphs go to `color` (or are skipped when
 // it is NULL), and contribute only their advance to the layout.
-float cnvs_shaped_outline(cnvs_text_cache *__single cache,
-                          cnvs_shaped const *__single s, float ox, float oy,
-                          cnvs_mat to_device, float tol, cnvs_path *__single out,
+float cnvs_shaped_outline(struct cnvs_text_cache *__single cache,
+                          struct cnvs_shaped const *__single s, float ox, float oy,
+                          cnvs_mat to_device, float tol, struct cnvs_path *__single out,
                           cnvs_color_glyph_fn color, void *__single ctx);
 
 // Draw one glyph of the opaque `font` into an RGBA8 premultiplied buffer at (x,y) in
@@ -414,14 +414,14 @@ void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
 // metrics (ascent/descent) and as the reference font for measureText's font-wide
 // box and baselines.  NULL on failure.  Like cnvs_shape, the name crosses the
 // boundary counted -- (bytes, len), no NUL contract.
-typedef struct cnvs_font cnvs_font;
-cnvs_font *__single cnvs_font_create(char const *__counted_by(name_len) name,
+struct cnvs_font;
+struct cnvs_font *__single cnvs_font_create(char const *__counted_by(name_len) name,
                                      int name_len, float size_px);
-void cnvs_font_destroy(cnvs_font *__single f);
+void cnvs_font_destroy(struct cnvs_font *__single f);
 
 // Font vertical metrics in user px: ascent and descent, both positive magnitudes
 // from the baseline.  Cheap (no glyph walk) -- for textBaseline positioning.
-void cnvs_font_vmetrics(cnvs_font *__single f, float *__single ascent,
+void cnvs_font_vmetrics(struct cnvs_font *__single f, float *__single ascent,
                         float *__single descent);
 
 // Full text metrics, all in user px, baseline-relative and laid out from a pen
@@ -451,7 +451,7 @@ typedef struct {
 // descent_px -- the primary font's vertical metrics at size_px, which canvas.c
 // reads through its cached vmetrics record -- and size_px.  s may be NULL
 // (font-wide metrics only).
-void cnvs_shaped_metrics(cnvs_text_cache *__single cache,
-                         cnvs_shaped const *__single s, float size_px,
+void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
+                         struct cnvs_shaped const *__single s, float size_px,
                          float ascent_px, float descent_px,
                          cnvs_text_metrics *__single out);

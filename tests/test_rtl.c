@@ -25,7 +25,7 @@
 // ink, one fill_text anchored mid-canvas.
 static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated text,
                    enum canvas_direction dir, enum canvas_text_align align) {
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -84,7 +84,7 @@ static void check_state(void) {
 
     // Default: never touched == explicitly ltr.
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -103,7 +103,7 @@ static void check_state(void) {
 
     // save/restore: the inner ltr is undone, the outer rtl comes back.
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -143,7 +143,7 @@ static void check_state(void) {
 static void check_replay(void) {
     static uint8_t a[LEN], b[LEN];
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -163,7 +163,7 @@ static void check_replay(void) {
     CHECK(memcmp(a, b, LEN) == 0);
 
     // Strict parsing.
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -189,7 +189,7 @@ static void check_record(void) {
     char const *__null_terminated path = "build/test_rtl_rec.canvas";
     static uint8_t a[LEN], b[LEN];
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -206,7 +206,7 @@ static void check_record(void) {
         canvas_destroy(cv);
     }
     {
-        canvas *__single cv = canvas_create(W, H);
+        struct canvas *__single cv = canvas_create(W, H);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -244,7 +244,7 @@ static void check_draw_measure(void) {
     char const *__null_terminated heb = "\xD7\xA9\xD7\x9C\xD7\x95\xD7\x9D";  // שלום
     float const x = 120.0f;
 
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -292,7 +292,7 @@ static void check_mixed_reorders(void) {
     render(b, mixed, CANVAS_DIRECTION_RTL, CANVAS_ALIGN_LEFT);
     CHECK(memcmp(a, b, LEN) != 0);  // physical alignment, so only the
                                     // reordering can differ -- and it does
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         return;

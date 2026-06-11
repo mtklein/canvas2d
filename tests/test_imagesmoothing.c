@@ -14,7 +14,7 @@ int main(void) {
     // A 2x1 source: left pixel red, right pixel blue.
     uint8_t src[8] = { 255, 0, 0, 255,  0, 0, 255, 255 };
 
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

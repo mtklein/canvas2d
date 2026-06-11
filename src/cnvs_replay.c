@@ -9,7 +9,7 @@
 #include "cnvs_replay.h"
 
 #include "canvas.h"
-#include "cnvs_path2d.h"  // canvas_path2d's command count (OOM-drop detection)
+#include "cnvs_path2d.h"  // struct canvas_path2d's command count (OOM-drop detection)
 #include "cnvs_record.h"  // the shared numbered-object caps (CNVS_REC_*_MAX)
 #include "cnvs_text.h"
 #include "cnvs_zlib.h"
@@ -299,7 +299,7 @@ struct replay_blocks {
     int map[CNVS_FONT_INTERN_N];    // file font id -> interned cache id (-1 =
                                     // interning degraded; references still parse)
     bool seen[CNVS_FONT_INTERN_N];  // file font id declared by a `font` line
-    cnvs_shaped *__single s;        // shape block under construction (owned
+    struct cnvs_shaped *__single s;        // shape block under construction (owned
                                     // until its last `run` line inserts it)
     int runs_done;
     float size_px;                  // the pending shape's cache key...
@@ -334,8 +334,8 @@ struct replay_blocks {
     // images they don't outlive replay).  pend_path is the block under
     // construction: its command lines must follow directly, pend_left of them
     // still expected.
-    canvas_path2d *__single paths[CNVS_REC_PATHS_MAX];
-    canvas_path2d *__single pend_path;
+    struct canvas_path2d *__single paths[CNVS_REC_PATHS_MAX];
+    struct canvas_path2d *__single pend_path;
     int pend_id;
     int pend_cmds;  // the block's declared command count
     int pend_left;  // command lines still expected
@@ -388,7 +388,7 @@ static void paths_drop(struct replay_blocks *__single b) {
 // ownership, under its (size_px, rtl, text) key -- exactly the key a live
 // lookup uses, so the fill_text/stroke_text op that follows hits (and an ltr
 // and an rtl shaping of the same bytes land in distinct slots, never aliased).
-static void blocks_finish_shape(canvas *__single cv,
+static void blocks_finish_shape(struct canvas *__single cv,
                                 struct replay_blocks *__single b) {
     cnvs_text_cache_put_shape(cnvs_canvas_text_cache(cv), b->size_px, b->rtl,
                               b->text, b->text_len, b->s);
@@ -400,7 +400,7 @@ static void blocks_finish_shape(canvas *__single cv,
 // the name (the rest of the line; names can contain spaces) and record its
 // vertical metrics (normalized at size 1.0).  Strict: id in range and not yet
 // declared, finite metrics, non-empty name.
-static bool replay_font(canvas *__single cv, struct replay_blocks *__single b,
+static bool replay_font(struct canvas *__single cv, struct replay_blocks *__single b,
                         char const *__counted_by(le) data, size_t le, size_t j) {
     long id = 0;
     float vm[2];
@@ -432,7 +432,7 @@ static bool replay_font(canvas *__single cv, struct replay_blocks *__single b,
 // structurally in a counting pass and built in a second; a blank glyph (upem
 // 0) carries no curves.  Strict: declared font id, gid <= 0xFFFF, finite
 // numbers, upem >= 0.
-static bool replay_glyph(canvas *__single cv, struct replay_blocks *__single b,
+static bool replay_glyph(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
     long id = 0, gid = 0;
     float meta[5];  // upem, then the font-unit ink box x0 y0 x1 y1
@@ -659,7 +659,7 @@ static bool replay_path(struct replay_blocks *__single b,
     if (!at_eol(data, le, j)) {
         return false;
     }
-    canvas_path2d *__single p = canvas_path2d_create();
+    struct canvas_path2d *__single p = canvas_path2d_create();
     if (!p) {
         return false;  // OOM while rebuilding: stop replay
     }
@@ -681,7 +681,7 @@ static bool replay_path(struct replay_blocks *__single b,
 static bool replay_path_cmd(struct replay_blocks *__single b,
                             char const *__counted_by(le) data, size_t le,
                             size_t cs, size_t cl, size_t j) {
-    canvas_path2d *__single p = b->pend_path;
+    struct canvas_path2d *__single p = b->pend_path;
     float f[7];
     bool w;
     if (tok_eq(data, le, cs, cl, "m")) {
@@ -754,7 +754,7 @@ static int b64v(char ch) {
 // wrong decoded size -- fails the parse here.  The inflated capture is handed
 // to the cache (which takes ownership; an existing entry wins, the usual
 // best-effort posture).
-static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
+static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__single b,
                         char const *__counted_by(le) data, size_t le, size_t j) {
     if (b->bm_lines <= 0) {
         return false;  // no bitmap block pending
@@ -857,7 +857,7 @@ static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
 // key, byte for byte).  Strict: finite size, utf16-len <= byte-len (every
 // UTF-16 unit costs at least one UTF-8 byte), and the byte count exactly fills
 // the line.
-static bool replay_shape(canvas *__single cv, struct replay_blocks *__single b,
+static bool replay_shape(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
     float size = 0.0f;
     bool rtl = false;
@@ -877,7 +877,7 @@ static bool replay_shape(canvas *__single cv, struct replay_blocks *__single b,
     if ((size_t)blen != le - j || t16 > blen) {
         return false;
     }
-    cnvs_shaped *s = calloc(1, sizeof *s);
+    struct cnvs_shaped *s = calloc(1, sizeof *s);
     if (!s) {
         return false;
     }
@@ -919,7 +919,7 @@ static bool replay_shape(canvas *__single cv, struct replay_blocks *__single b,
 // CTFontRef is ever needed.  Strict: only legal while a shape block is
 // pending, a declared (or -1) font id, finite advances, and every cluster
 // index within the shape's UTF-16 length.
-static bool replay_run(canvas *__single cv, struct replay_blocks *__single b,
+static bool replay_run(struct canvas *__single cv, struct replay_blocks *__single b,
                        char const *__counted_by(le) data, size_t le, size_t j) {
     if (!b->s) {
         return false;  // no shape block pending
@@ -1003,7 +1003,7 @@ static bool read_image_id(struct replay_blocks *__single b,
     return true;
 }
 
-static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
+static bool replay_line(struct canvas *__single cv, struct replay_blocks *__single blk,
                         char const *__counted_by(le) data, size_t ls, size_t le) {
     size_t j = ls;
     size_t cs, cl;
@@ -1361,7 +1361,7 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     return at_eol(data, le, j);  // fixed-arity commands: nothing should follow
 }
 
-bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, size_t len) {
+bool cnvs_replay_text(struct canvas *__single cv, char const *__counted_by(len) data, size_t len) {
     struct replay_blocks b = { .s = NULL, .runs_done = 0, .size_px = 0.0f,
                                .rtl = false,
                                .text_len = 0, .text = NULL, .bm = NULL,
@@ -1395,7 +1395,7 @@ bool cnvs_replay_text(canvas *__single cv, char const *__counted_by(len) data, s
     return ok;
 }
 
-bool canvas_replay_from(canvas *__single cv, char const *__null_terminated path) {
+bool canvas_replay_from(struct canvas *__single cv, char const *__null_terminated path) {
     FILE *f = fopen(path, "rb");
     if (!f) {
         return false;

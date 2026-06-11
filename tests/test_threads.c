@@ -54,7 +54,7 @@ enum {
 // Scenes, drawn in logical scene space ([0,SCENE_W) x [0,SCENE_H)).
 // ---------------------------------------------------------------------------
 
-static void scene_gradients(canvas *__single cv) {
+static void scene_gradients(struct canvas *__single cv) {
     // Linear wash over the whole scene.
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
     canvas_add_fill_color_stop(cv, 0.0f, 0.10f, 0.05f, 0.30f, 1.0f);
@@ -113,7 +113,7 @@ static void scene_gradients(canvas *__single cv) {
     canvas_stroke(cv);
 }
 
-static void scene_pattern_path2d(canvas *__single cv) {
+static void scene_pattern_path2d(struct canvas *__single cv) {
     // Procedural 16x16 RGBA pattern source, built per render (per canvas: the
     // pattern source is borrowed, so each tile render owns its own copy).
     enum { PW = 16, PH = 16, PLEN = PW * PH * 4 };
@@ -132,7 +132,7 @@ static void scene_pattern_path2d(canvas *__single cv) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
 
     // A Path2D star spanning several tiles, filled even-odd then stroked.
-    canvas_path2d *__single star = canvas_path2d_create();
+    struct canvas_path2d *__single star = canvas_path2d_create();
     if (star) {
         for (int i = 0; i <= 10; i++) {
             float const r = (i & 1) ? 130.0f : 320.0f;
@@ -156,7 +156,7 @@ static void scene_pattern_path2d(canvas *__single cv) {
     }
 
     // A Path2D ring used as a clip; pattern-strokes inside it.
-    canvas_path2d *__single ring = canvas_path2d_create();
+    struct canvas_path2d *__single ring = canvas_path2d_create();
     if (ring) {
         canvas_path2d_arc(ring, 260.0f, 200.0f, 150.0f, 0.0f, 6.2831853f, false);
         canvas_save(cv);
@@ -174,7 +174,7 @@ static void scene_pattern_path2d(canvas *__single cv) {
     }
 }
 
-static void scene_text(canvas *__single cv) {
+static void scene_text(struct canvas *__single cv) {
     canvas_set_fill_rgba(cv, 0.98f, 0.96f, 0.92f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
     canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.15f, 1.0f);
@@ -214,7 +214,7 @@ static void scene_text(canvas *__single cv) {
     canvas_set_text_align(cv, CANVAS_ALIGN_START);
 }
 
-static void draw_scene(canvas *__single cv, int scene) {
+static void draw_scene(struct canvas *__single cv, int scene) {
     switch (scene) {
         case 0: scene_gradients(cv);     break;
         case 1: scene_pattern_path2d(cv); break;
@@ -233,7 +233,7 @@ static bool render_tile(int scene, int tile, uint8_t *__counted_by(len) out, int
     (void)len;
     int const tx = TILE * (tile % COLS);
     int const ty = TILE * (tile / COLS);
-    canvas *__single cv = canvas_create(TILE, TILE);
+    struct canvas *__single cv = canvas_create(TILE, TILE);
     if (!cv) {
         return false;
     }

@@ -26,14 +26,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
+struct cursor {
     uint8_t const *__counted_by(size) p;
     size_t size;
     size_t at;
     int eof;
-} cursor;
+};
 
-static uint8_t rd_u8(cursor *c) {
+static uint8_t rd_u8(struct cursor *c) {
     if (c->at >= c->size) {
         c->eof = 1;
         return 0;
@@ -43,7 +43,7 @@ static uint8_t rd_u8(cursor *c) {
 
 // Raw 4-byte reinterpret: every float value (incl. NaN/Inf/subnormals/huge) is
 // reachable, which is the point for the (int)-cast UB hunt.
-static float rd_f32(cursor *c) {
+static float rd_f32(struct cursor *c) {
     uint8_t b[4] = { rd_u8(c), rd_u8(c), rd_u8(c), rd_u8(c) };
     float f;
     memcpy(&f, b, sizeof f);
@@ -51,7 +51,7 @@ static float rd_f32(cursor *c) {
 }
 
 // Inclusive integer range, total (two bytes -> value modulo the span).
-static int rd_range(cursor *c, int lo, int hi) {
+static int rd_range(struct cursor *c, int lo, int hi) {
     if (hi <= lo) {
         return lo;
     }
@@ -60,7 +60,7 @@ static int rd_range(cursor *c, int lo, int hi) {
     return lo + (int)(v % span);
 }
 
-static void do_image_get(canvas *__single cv, cursor *c, int W, int H) {
+static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, int H) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int x = rd_range(c, -8, W + 8), y = rd_range(c, -8, H + 8);
     int len = w * h * 4;                       // w,h <= 64 -> fits int
@@ -71,7 +71,7 @@ static void do_image_get(canvas *__single cv, cursor *c, int W, int H) {
     free(out);
 }
 
-static void do_image_put(canvas *__single cv, cursor *c) {
+static void do_image_put(struct canvas *__single cv, struct cursor *c) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int dx = rd_range(c, -8, 64), dy = rd_range(c, -8, 64);
     int len = w * h * 4;
@@ -85,7 +85,7 @@ static void do_image_put(canvas *__single cv, cursor *c) {
     free(data);
 }
 
-static void do_image_draw(canvas *__single cv, cursor *c) {
+static void do_image_draw(struct canvas *__single cv, struct cursor *c) {
     int sw = rd_range(c, 1, 32), sh = rd_range(c, 1, 32);
     int slen = sw * sh * 4;
     uint8_t *__counted_by(slen) src = malloc((size_t)slen);
@@ -100,10 +100,10 @@ static void do_image_draw(canvas *__single cv, cursor *c) {
 }
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
-    cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
+    struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
 
     int W = rd_range(&c, 1, 256), H = rd_range(&c, 1, 256);
-    canvas *__single cv = canvas_create(W, H);
+    struct canvas *__single cv = canvas_create(W, H);
     if (!cv) {
         return 0;
     }

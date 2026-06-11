@@ -19,7 +19,7 @@ static inline cnvs_vec2 bench_rpt(float w, float h) {
 }
 
 // Append `count` concave star polygons (5..19 spikes each) over a w x h area.
-static inline void bench_stars(cnvs_path *path, int count, float w, float h) {
+static inline void bench_stars(struct cnvs_path *path, int count, float w, float h) {
     for (int k = 0; k < count; k++) {
         float cx = bench_frand() * w;
         float cy = bench_frand() * h;
@@ -43,8 +43,8 @@ static inline void bench_stars(cnvs_path *path, int count, float w, float h) {
 
 // Accumulate every subpath edge of `p` into a w*h coverage raster (each subpath
 // implicitly closed).
-static inline void bench_cover_path(cnvs_cover *cov, int w, int h,
-                                    cnvs_path const *p) {
+static inline void bench_cover_path(struct cnvs_cover *cov, int w, int h,
+                                    struct cnvs_path const *p) {
     cnvs_cover_reset(cov, w, h);
     for (int s = 0; s < p->sp_len; s++) {
         cnvs_subpath sp = p->subs[s];
@@ -64,9 +64,9 @@ static inline void bench_cover_path(cnvs_cover *cov, int w, int h,
 // -> resolve), instead of one full-canvas pass.  This is the representative case:
 // many shapes / glyphs, each resolved over its own (mostly covered) bbox.  `cov`
 // holds at least cov_cap bytes; returns a checksum to defeat dead-code elimination.
-static inline double bench_fill_shapes(cnvs_cover *cover,
+static inline double bench_fill_shapes(struct cnvs_cover *cover,
                                        uint8_t *__counted_by(cov_cap) cov, int cov_cap,
-                                       int clampw, int clamph, cnvs_path const *p,
+                                       int clampw, int clamph, struct cnvs_path const *p,
                                        enum cnvs_fill_rule rule) {
     double sink = 0.0;
     for (int s = 0; s < p->sp_len; s++) {

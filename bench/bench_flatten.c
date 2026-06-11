@@ -10,7 +10,7 @@
 #define CURVES 100
 
 int main(void) {
-    cnvs_path path;
+    struct cnvs_path path;
     cnvs_path_init(&path);
     double sink = 0.0;
 

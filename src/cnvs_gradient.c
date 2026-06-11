@@ -14,7 +14,7 @@ static float clamp01(float v) {
     return v;
 }
 
-void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color) {
+void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremul color) {
     if (gr->stop_count >= CNVS_MAX_STOPS) {
         return;
     }
@@ -30,7 +30,7 @@ void cnvs_gradient_add_stop(cnvs_gradient *gr, float offset, cnvs_unpremul color
     gr->stop_count += 1;
 }
 
-cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
+cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
     int n = gr->stop_count;
     if (n == 0) {
         return cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
@@ -65,7 +65,7 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
 // still paints), so float == is the required semantic here, not an accident.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wfloat-equal"
-bool cnvs_gradient_paints_nothing(cnvs_gradient const *gr) {
+bool cnvs_gradient_paints_nothing(struct cnvs_gradient const *gr) {
     bool const coincident = gr->p0.x == gr->p1.x && gr->p0.y == gr->p1.y;
     switch (gr->kind) {
         case CNVS_GRAD_LINEAR: return coincident;
@@ -76,7 +76,7 @@ bool cnvs_gradient_paints_nothing(cnvs_gradient const *gr) {
 }
 #pragma clang diagnostic pop
 
-bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t) {
+bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__single t) {
     if (gr->kind == CNVS_GRAD_CONIC) {
         // Angle of p about the centre, measured clockwise from +x (device space is
         // y-down, so atan2 already increases clockwise), minus the start angle;
@@ -141,7 +141,7 @@ bool cnvs_gradient_param(cnvs_gradient const *gr, cnvs_vec2 p, float *__single t
     return true;
 }
 
-cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
+cnvs_unpremul cnvs_gradient_sample(struct cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
     float t;
     cnvs_unpremul c;
     if (cnvs_gradient_param(gr, p, &t)) {
@@ -171,7 +171,7 @@ static float8 vclamp01(float8 v) {
 // point has no gradient parameter (the radial "outside" case) so the caller
 // paints transparent.  Along a row only x varies, so the per-pixel work
 // vectorizes 8 wide.
-void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
+void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out) {
     float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     float base = (float)x0 + 0.5f - gr->p0.x;
@@ -261,7 +261,7 @@ static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
 // narrowed once to _Float16 for the colour lerp).  Lane for lane bit-identical
 // to cnvs_gradient_color_at, the semantic reference; t < 0 -- the row
 // solver's "outside" sentinel -- paints transparent black.
-void cnvs_gradient_color_row(cnvs_gradient const *gr,
+void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
                              float const *__counted_by(n) t, int n,
                              cnvs_unpremul *__counted_by(n) out) {
     int const sc = gr->stop_count;

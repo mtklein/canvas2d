@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 int main(void) {
-    canvas *__single cv = canvas_create(8, 8);
+    struct canvas *__single cv = canvas_create(8, 8);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();

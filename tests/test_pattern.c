@@ -23,7 +23,7 @@ int main(void) {
         255, 0, 0, 255,   0, 255, 0, 255,
         0, 0, 255, 255,   255, 255, 255, 255,
     };
-    canvas *__single cv = canvas_create(W, W);
+    struct canvas *__single cv = canvas_create(W, W);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

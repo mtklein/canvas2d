@@ -13,10 +13,10 @@ enum cnvs_line_cap { CNVS_CAP_BUTT, CNVS_CAP_ROUND, CNVS_CAP_SQUARE };
 
 bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
                           float half_width, enum cnvs_line_join join, enum cnvs_line_cap cap,
-                          float miter_limit, cnvs_verts *out);
+                          float miter_limit, struct cnvs_verts *out);
 
 // Walk a cyclic dash pattern (device units, phase from `dash_offset`), stroking
 // only the on-runs as butt-capped quads -- no joins across dash gaps.
 bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
                         float half_width, float const *__counted_by(ndash) dash,
-                        int ndash, float dash_offset, cnvs_verts *out);
+                        int ndash, float dash_offset, struct cnvs_verts *out);

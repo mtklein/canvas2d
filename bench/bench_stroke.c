@@ -13,11 +13,11 @@
 #define STARS 300
 
 int main(void) {
-    cnvs_path path;
+    struct cnvs_path path;
     cnvs_path_init(&path);
     bench_stars(&path, STARS, 512.0f, 512.0f);
 
-    cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
+    struct cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
     double sink = 0.0;
 
     int reps = bench_reps();

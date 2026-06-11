@@ -31,7 +31,7 @@
 // coverage_folds -- folded into src for the over-family, lerped after the
 // blend for the rest.  Callers whose tile already carries its coverage (the
 // folded shade path) pass cov = NULL.  SOURCE_OVER is the fast path.
-void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
+void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
                 cnvs_premul const *__counted_by(w * h) tile,
                 uint8_t const *__counted_by_or_null(w * h) cov,
                 uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
@@ -41,7 +41,7 @@ void cnvs_blend(canvas *__single cv, int x, int y, int w, int h,
 // caller passes the one premultiplied colour and the blend stage splats it
 // across the lanes -- byte-identical output to materializing the constant
 // tile.  `cov` and `clip` apply exactly as in cnvs_blend.
-void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
+void cnvs_blend_solid(struct canvas *__single cv, int x, int y, int w, int h,
                       cnvs_premul color,
                       uint8_t const *__counted_by_or_null(w * h) cov,
                       uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
@@ -50,4 +50,4 @@ void cnvs_blend_solid(canvas *__single cv, int x, int y, int w, int h,
 // Copy the premultiplied target out, row-major top-first; len must be
 // width*height (pixels).  The oracle tests' bit-exact view of the target --
 // canvas_read_rgba is the production readback (unpremultiplied RGBA8).
-void cnvs_blend_read(canvas *__single cv, cnvs_premul *__counted_by(len) out, int len);
+void cnvs_blend_read(struct canvas *__single cv, cnvs_premul *__counted_by(len) out, int len);

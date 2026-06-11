@@ -15,18 +15,18 @@
 #include <stdint.h>
 #include <stddef.h>
 
-typedef struct {
+struct cursor {
     uint8_t const *__counted_by(size) p;
     size_t size, at;
     int eof;
-} cursor;
+};
 
-static uint8_t u8(cursor *c) {
+static uint8_t u8(struct cursor *c) {
     if (c->at >= c->size) { c->eof = 1; return 0; }
     return c->p[c->at++];
 }
 // A small device-space coordinate (kept on-canvas-ish so clips aren't all empty).
-static float coord(cursor *c) { return (float)((int)u8(c) - 32); }
+static float coord(struct cursor *c) { return (float)((int)u8(c) - 32); }
 
 enum {
     S_SAVE, S_RESTORE, S_CLIP_RECT, S_CLIP_CIRCLE, S_TRANSLATE, S_SCALE, S_ROTATE,
@@ -35,8 +35,8 @@ enum {
 };
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
-    cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
-    canvas *__single cv = canvas_create(40, 40);
+    struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
+    struct canvas *__single cv = canvas_create(40, 40);
     if (!cv) { return 0; }
 
     uint8_t img[16 * 16 * 4];

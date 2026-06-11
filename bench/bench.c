@@ -19,10 +19,10 @@ int main(void) {
     // unchanged); `ninja profile` raises it for a longer, samplable run.
     int reps = bench_reps();
 
-    cnvs_path path;
+    struct cnvs_path path;
     cnvs_path_init(&path);
-    cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
-    cnvs_cover cover = { .acc = NULL, .cap = 0 };
+    struct cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
+    struct cnvs_cover cover = { .acc = NULL, .cap = 0 };
 
     int const w = 512;
     int const h = 512;
