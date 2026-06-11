@@ -33,6 +33,19 @@ typedef struct {
     int len;
 } rec_path;
 
+// The text format's enum spellings (cnvs_record.h): written here, parsed by
+// cnvs_replay.c, one table for both directions.
+char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1] = {
+    "source-over", "source-in", "source-out", "source-atop", "destination-over",
+    "destination-in", "destination-out", "destination-atop", "xor", "lighter",
+    "copy", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge",
+    "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue",
+    "saturation", "color", "luminosity",
+};
+char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
+    "repeat", "repeat-x", "repeat-y", "no-repeat",
+};
+
 struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
@@ -436,11 +449,6 @@ void cnvs_rec_image_ints(cnvs_recorder *__single r,
     fputc('\n', r->f);
 }
 
-// Repeat-mode names in canvas_pattern_repeat order (matches cnvs_replay.c).
-static char const *const k_repeat[] = {
-    "repeat", "repeat-x", "repeat-y", "no-repeat",
-};
-
 void cnvs_rec_pattern(cnvs_recorder *__single r,
                       char const *__null_terminated name, int id,
                       canvas_pattern_repeat repeat) {
@@ -448,12 +456,12 @@ void cnvs_rec_pattern(cnvs_recorder *__single r,
         return;
     }
     unsigned i = (unsigned)repeat;
-    if (i >= sizeof k_repeat / sizeof k_repeat[0]) {
+    if (i >= sizeof cnvs_repeat_name / sizeof cnvs_repeat_name[0]) {
         return;  // out of range; the setter stored it but no draw reads past
     }            // the enum, and the parser accepts only the four names
     fputs(name, r->f);
     fprintf(r->f, " %d ", id);
-    fputs(k_repeat[i], r->f);
+    fputs(cnvs_repeat_name[i], r->f);
     fputc('\n', r->f);
 }
 
@@ -673,25 +681,16 @@ void cnvs_rec_direction(cnvs_recorder *__single r, canvas_direction dir) {
     fputc('\n', r->f);
 }
 
-// Composite-op names in canvas_composite_op order (matches cnvs_replay.c).
-static char const *const k_composite[] = {
-    "source-over", "source-in", "source-out", "source-atop", "destination-over",
-    "destination-in", "destination-out", "destination-atop", "xor", "lighter",
-    "copy", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge",
-    "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue",
-    "saturation", "color", "luminosity",
-};
-
 void cnvs_rec_composite(cnvs_recorder *__single r, canvas_composite_op op) {
     if (!r || r->suspend != 0) {
         return;
     }
     unsigned i = (unsigned)op;
-    if (i >= sizeof k_composite / sizeof k_composite[0]) {
+    if (i >= sizeof cnvs_composite_name / sizeof cnvs_composite_name[0]) {
         return;  // out of range; the caller's setter ignored it too (the hook
                  // sits after that guard), so the recording stays consistent.
     }
     fputs("set_global_composite_operation ", r->f);
-    fputs(k_composite[i], r->f);
+    fputs(cnvs_composite_name[i], r->f);
     fputc('\n', r->f);
 }

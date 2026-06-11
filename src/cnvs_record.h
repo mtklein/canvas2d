@@ -48,6 +48,12 @@ void cnvs_rec_text_max(cnvs_recorder *__single r, char const *__null_terminated 
                        float x, float y, float max_width,
                        char const *__counted_by(len) text, int len);
 
+// The enum spellings of the text format, indexed by enum value -- one table
+// serving both sides: the recorder writes these names and the replay parser
+// accepts exactly them, so the two cannot drift.  Defined in cnvs_record.c.
+extern char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1];
+extern char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1];
+
 // File-local numbered-object id spaces, shared with the replay parser: the
 // recorder never emits an id at or past the cap, and the parser rejects one.
 // A recording that uses more distinct images/paths than this stops carrying

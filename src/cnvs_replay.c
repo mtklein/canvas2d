@@ -1007,24 +1007,6 @@ static bool read_image_id(struct replay_blocks *__single b,
     return true;
 }
 
-// Repeat-mode names in canvas_pattern_repeat order (matches cnvs_record.c).
-static char const *const k_repeat[] = {
-    "repeat", "repeat-x", "repeat-y", "no-repeat",
-};
-static_assert(sizeof k_repeat / sizeof *k_repeat == CANVAS_NO_REPEAT + 1,
-              "one name per canvas_pattern_repeat value, in enum order");
-
-// Composite-op names in enum order (canvas_composite_op).
-static char const *const k_composite[] = {
-    "source-over", "source-in", "source-out", "source-atop", "destination-over",
-    "destination-in", "destination-out", "destination-atop", "xor", "lighter",
-    "copy", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge",
-    "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue",
-    "saturation", "color", "luminosity",
-};
-static_assert(sizeof k_composite / sizeof *k_composite == CANVAS_OP_LUMINOSITY + 1,
-              "one name per canvas_composite_op value, in enum order");
-
 static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
                         char const *__counted_by(le) data, size_t ls, size_t le) {
     size_t j = ls;
@@ -1238,8 +1220,8 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         size_t ts, tl;
         if (!read_token(data, le, &j, &ts, &tl)) return false;
         int op = -1;
-        for (int k = 0; k < (int)(sizeof k_composite / sizeof k_composite[0]); k++) {
-            if (tok_eq(data, le, ts, tl, k_composite[k])) { op = k; break; }
+        for (int k = 0; k < (int)(sizeof cnvs_composite_name / sizeof cnvs_composite_name[0]); k++) {
+            if (tok_eq(data, le, ts, tl, cnvs_composite_name[k])) { op = k; break; }
         }
         if (op < 0) return false;
         canvas_set_global_composite_operation(cv, (canvas_composite_op)op);
@@ -1339,8 +1321,8 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_token(data, le, &j, &ts, &tl)) return false;
         int rep = -1;
-        for (int k = 0; k < (int)(sizeof k_repeat / sizeof k_repeat[0]); k++) {
-            if (tok_eq(data, le, ts, tl, k_repeat[k])) { rep = k; break; }
+        for (int k = 0; k < (int)(sizeof cnvs_repeat_name / sizeof cnvs_repeat_name[0]); k++) {
+            if (tok_eq(data, le, ts, tl, cnvs_repeat_name[k])) { rep = k; break; }
         }
         if (rep < 0) return false;
         if (fill) {
