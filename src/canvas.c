@@ -42,15 +42,6 @@ static bool rgba8_dims_ok(int w, int h) {
     return w > 0 && h > 0 && (int64_t)w * (int64_t)h <= (int64_t)INT_MAX / 4;
 }
 
-// Colour components and the global alpha clamp to [0,1] (Canvas spec); NaN -> 0.
-// Keeps non-finite/out-of-range paint out of the float->_Float16->uint8 pipeline.
-static float clamp01(float v) {
-    if (!(v > 0.0f)) {   // <= 0, or NaN
-        return 0.0f;
-    }
-    return v > 1.0f ? 1.0f : v;
-}
-
 // One RGBA8 buffer adopted from a replayed `image` block
 // (cnvs_canvas_own_image): a singly linked list the canvas frees only at
 // canvas_free.  Patterns borrow their source, so a replayed program's
@@ -498,7 +489,7 @@ canvas_matrix canvas_get_transform(struct canvas *__single cv) {
 
 void canvas_set_fill_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.fill = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
+    cv->cur.fill = cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a));
     cv->cur.fill_kind = CNVS_PAINT_SOLID;
 }
 
@@ -590,8 +581,8 @@ void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angl
 void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5); }
-    cnvs_gradient_add_stop(&cv->cur.fill_grad, clamp01(offset),
-                           cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
+    cnvs_gradient_add_stop(&cv->cur.fill_grad, cnvs_clamp01(offset),
+                           cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a)));
 }
 
 void canvas_set_fill_pattern(struct canvas *__single cv,
@@ -634,8 +625,8 @@ void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_an
 void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5); }
-    cnvs_gradient_add_stop(&cv->cur.stroke_grad, clamp01(offset),
-                           cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a)));
+    cnvs_gradient_add_stop(&cv->cur.stroke_grad, cnvs_clamp01(offset),
+                           cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a)));
 }
 
 void canvas_set_stroke_pattern(struct canvas *__single cv,
@@ -654,7 +645,7 @@ void canvas_set_stroke_pattern(struct canvas *__single cv,
 
 void canvas_set_global_alpha(struct canvas *__single cv, float alpha) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_global_alpha", (float[]){ alpha }, 1); }
-    cv->cur.global_alpha = clamp01(alpha);
+    cv->cur.global_alpha = cnvs_clamp01(alpha);
 }
 
 void canvas_set_global_composite_operation(struct canvas *__single cv,
@@ -670,7 +661,7 @@ void canvas_set_shadow_color_rgba(struct canvas *__single cv,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4); }
     cv->cur.shadow_color =
-        cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
+        cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a));
 }
 
 void canvas_set_shadow_blur(struct canvas *__single cv, float blur) {
@@ -719,9 +710,10 @@ static void filter_append(struct canvas *__single cv, cnvs_filter f) {
     cv->cur.filter_count = n + 1;
 }
 
-// The unbounded-above amounts (brightness/contrast/saturate) clamp only below.
+// The unbounded-above amounts (brightness/contrast/saturate) clamp only below;
+// the clamp guarantee still holds (D1): NaN lands on the 0 bound, not through.
 static float clamp_lo(float v) {
-    return v < 0.0f ? 0.0f : v;
+    return v > 0.0f ? v : 0.0f;   // <= 0, or NaN -> 0
 }
 
 void canvas_add_filter_blur(struct canvas *__single cv, float px) {
@@ -760,7 +752,7 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float d
     if (!isfinite(dx) || !isfinite(dy) || !isfinite(blur) || blur < 0.0f) {
         return;  // spec: ignore an unparseable (or negative-blur) drop-shadow
     }
-    if (!(clamp01(a) > 0.0f)) {
+    if (!(cnvs_clamp01(a) > 0.0f)) {
         return;  // a fully transparent shadow composites as nothing
     }
     if (cv->rec) {
@@ -768,22 +760,22 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float d
         // clamped (identity for in-range values, and a NaN channel would
         // otherwise print as unreparseable "nan").
         cnvs_rec_floats(cv->rec, "add_filter_drop_shadow",
-                        (float[]){ dx, dy, blur, clamp01(r), clamp01(g),
-                                   clamp01(b), clamp01(a) }, 7);
+                        (float[]){ dx, dy, blur, cnvs_clamp01(r), cnvs_clamp01(g),
+                                   cnvs_clamp01(b), cnvs_clamp01(a) }, 7);
     }
     // The offsets round to whole device pixels (shadow_offset, as for
     // shadowOffset{X,Y}); blur IS the Gaussian's stdDev, like blur() -- but
     // unlike blur(), radius 0 is a real entry (a sharp shadow, not identity).
     filter_append(cv, cnvs_filter_drop_shadow(
                           shadow_offset(dx), shadow_offset(dy),
-                          sigma_box_radius(blur), clamp01(r), clamp01(g),
-                          clamp01(b), clamp01(a)));
+                          sigma_box_radius(blur), cnvs_clamp01(r), cnvs_clamp01(g),
+                          cnvs_clamp01(b), cnvs_clamp01(a)));
 }
 
 void canvas_add_filter_grayscale(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_grayscale", (float[]){ amount }, 1); }
-        filter_append(cv, cnvs_filter_grayscale(clamp01(amount)));
+        filter_append(cv, cnvs_filter_grayscale(cnvs_clamp01(amount)));
     }
 }
 
@@ -797,14 +789,14 @@ void canvas_add_filter_hue_rotate(struct canvas *__single cv, float radians) {
 void canvas_add_filter_invert(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_invert", (float[]){ amount }, 1); }
-        filter_append(cv, cnvs_filter_invert(clamp01(amount)));
+        filter_append(cv, cnvs_filter_invert(cnvs_clamp01(amount)));
     }
 }
 
 void canvas_add_filter_opacity(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_opacity", (float[]){ amount }, 1); }
-        filter_append(cv, cnvs_filter_opacity(clamp01(amount)));
+        filter_append(cv, cnvs_filter_opacity(cnvs_clamp01(amount)));
     }
 }
 
@@ -818,7 +810,7 @@ void canvas_add_filter_saturate(struct canvas *__single cv, float amount) {
 void canvas_add_filter_sepia(struct canvas *__single cv, float amount) {
     if (isfinite(amount)) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_sepia", (float[]){ amount }, 1); }
-        filter_append(cv, cnvs_filter_sepia(clamp01(amount)));
+        filter_append(cv, cnvs_filter_sepia(cnvs_clamp01(amount)));
     }
 }
 
@@ -2362,7 +2354,7 @@ void canvas_clip(struct canvas *__single cv) {
 
 void canvas_set_stroke_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.stroke = cnvs_unpremul_of(clamp01(r), clamp01(g), clamp01(b), clamp01(a));
+    cv->cur.stroke = cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a));
     cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
 

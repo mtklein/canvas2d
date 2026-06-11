@@ -76,6 +76,26 @@ cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p);
 // Inverse; identity if (near-)singular.
 cnvs_mat cnvs_mat_invert(cnvs_mat m);
 
+// clamp01 -- THE clamp (D1, docs/vocabulary.md): the output is guaranteed in
+// [0,1] no matter what comes in, NaN included.  !(v > 0) catches <= 0 and NaN
+// in one test, so NaN launders to 0 rather than flowing through a min/max
+// chain that would pass it along.  One definition, one home: every clamp01 in
+// the tree is this one.
+static inline float cnvs_clamp01(float v) {
+    if (!(v > 0.0f)) {   // <= 0, or NaN
+        return 0.0f;
+    }
+    return v > 1.0f ? 1.0f : v;
+}
+
+// The 8-lane twin, same guarantee: __builtin_elementwise_max/min return the
+// other operand when one is NaN (maxnum semantics), so max(0, NaN) is 0 and
+// every lane lands in [0,1] -- lane for lane the scalar above.
+static inline float8 float8_clamp01(float8 v) {
+    v = __builtin_elementwise_max((float8)0.0f, v);
+    return __builtin_elementwise_min((float8)1.0f, v);
+}
+
 // Saturating float->integer conversions for the rasterizer.  Plain float->int is
 // undefined behaviour when the value is non-finite or out of range; these clamp
 // instead (NaN -> 0), keeping the device-space casts total on adversarial input.

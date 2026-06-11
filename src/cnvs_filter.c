@@ -138,7 +138,7 @@ cnvs_filter cnvs_filter_drop_shadow(int dx, int dy, int radius,
 // One planar block's matrix-multiply-add + premul clamp, in _Float16: each
 // output plane is the row fold m_c0*r + m_c1*g + m_c2*b + off_c*a (the
 // offsets ride the alpha column since a premultiplied constant term scales by
-// alpha) and the alpha plane is ka*a; the clamp pins rgb into
+// alpha) and the alpha plane is ka*a; the clamp forces rgb into
 // [0, clamp01(ka*a)] (the spec's per-function unpremultiplied [0,1] clamp,
 // premultiplied) and alpha to clamp01(ka*a) itself.  Planar needs no
 // per-channel splat shuffles: a coefficient is a scalar broadcast and a

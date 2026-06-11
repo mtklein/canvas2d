@@ -189,7 +189,7 @@ static inline cnvs_px8 cnvs_px8_premultiply(cnvs_px8 p) {
 }
 
 // The blend stage's output clamp: ao = min(a, 1) ('lighter' can exceed 1), and
-// every channel -- alpha included -- pins into [0, ao], preserving the
+// every channel -- alpha included -- clamps into [0, ao], preserving the
 // premultiplied invariant rgb <= a.
 static inline cnvs_px8 cnvs_px8_clamp_premul(cnvs_px8 co) {
     half8 const zero = (half8)(_Float16)0.0f;

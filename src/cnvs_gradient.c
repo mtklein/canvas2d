@@ -4,21 +4,11 @@
 #include <math.h>
 #include <string.h>
 
-static float clamp01(float v) {
-    if (v < 0.0f) {
-        return 0.0f;
-    }
-    if (v > 1.0f) {
-        return 1.0f;
-    }
-    return v;
-}
-
 void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremul color) {
     if (gr->stop_count >= CNVS_STOPS_MAX) {
         return;
     }
-    float o = clamp01(offset);
+    float o = cnvs_clamp01(offset);
     // Insertion sort keeps stops ordered; ties land after equal offsets, so a
     // later addColorStop at the same offset wins on the high side (as in CSS).
     int i = gr->stop_count;
@@ -35,7 +25,7 @@ cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
     if (n == 0) {
         return cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
-    t = clamp01(t);
+    t = cnvs_clamp01(t);
     if (t <= gr->stops[0].offset) {
         return gr->stops[0].color;
     }
@@ -93,7 +83,7 @@ bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__s
         float v = denom > 1e-12f
                       ? ((p.x - gr->p0.x) * dx + (p.y - gr->p0.y) * dy) / denom
                       : 0.0f;
-        *t = clamp01(v);
+        *t = cnvs_clamp01(v);
         return true;
     }
     // Radial: find the largest t with (r0 + t*dr) >= 0 such that p lies on the
@@ -137,7 +127,7 @@ bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__s
             return false;
         }
     }
-    *t = clamp01(root);
+    *t = cnvs_clamp01(root);
     return true;
 }
 
@@ -161,11 +151,6 @@ static float8 float8_if_then_else(int8 m, float8 a, float8 b) {
     return (float8)(((int8)a & m) | ((int8)b & ~m));
 }
 
-static float8 vclamp01(float8 v) {
-    v = __builtin_elementwise_max((float8)0.0f, v);
-    return __builtin_elementwise_min((float8)1.0f, v);
-}
-
 // Parameter solve for a horizontal run of `n` pixel centres
 // (x0 + i + 0.5, y), i in [0, n).  Writes t in [0,1] per pixel, or -1 where the
 // point has no gradient parameter (the radial "outside" case) so the caller
@@ -184,7 +169,7 @@ void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, in
         float cy = (y - gr->p0.y) * dy;                    // y term constant per row
         for (; i + 8 <= n; i += 8) {
             float8 px = base + ((float)i + lane);
-            float8 v = vclamp01((px * dx + cy) * inv);  // clamp01(((p-p0).d)/|d|^2)
+            float8 v = float8_clamp01((px * dx + cy) * inv);  // cnvs_clamp01(((p-p0).d)/|d|^2)
             memcpy(t_out + i, &v, sizeof v);            // bounds-checked vector store
         }
     } else if (gr->kind == CNVS_GRAD_RADIAL) {
@@ -220,7 +205,7 @@ void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, in
                 root = float8_if_then_else(hiok, hi, float8_if_then_else(look, lo, (float8)0.0f));
                 valid = (disc >= 0.0f) & (hiok | look);
             }
-            float8 out = float8_if_then_else(valid, vclamp01(root), (float8)-1.0f);
+            float8 out = float8_if_then_else(valid, float8_clamp01(root), (float8)-1.0f);
             memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
         }
     }
