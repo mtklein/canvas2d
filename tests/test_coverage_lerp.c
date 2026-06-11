@@ -199,14 +199,14 @@ static dpx dpx_of(cnvs_premul p) {
     return (dpx){ (double)p.r, (double)p.g, (double)p.b, (double)p.a };
 }
 
-// max / sum of |got - ref| over the four premultiplied channels.
+// max / sum of |got - want| over the four premultiplied channels.
 typedef struct {
     double max, sum;
 } errs;
 
-static void err_acc(errs *e, dpx got, dpx ref) {
-    double d[4] = { fabs(got.r - ref.r), fabs(got.g - ref.g),
-                    fabs(got.b - ref.b), fabs(got.a - ref.a) };
+static void err_acc(errs *e, dpx got, dpx want) {
+    double d[4] = { fabs(got.r - want.r), fabs(got.g - want.g),
+                    fabs(got.b - want.b), fabs(got.a - want.a) };
     for (int i = 0; i < 4; i++) {
         e->max = dmax(e->max, d[i]);
         e->sum += d[i];
@@ -292,9 +292,9 @@ static void part_a(void) {
                            (enum canvas_composite_op)mode);
                 cnvs_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
-                    dpx ref = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
+                    dpx want = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
                                            (double)i / 255.0);
-                    err_acc(&en, dpx_of(out[i]), ref);
+                    err_acc(&en, dpx_of(out[i]), want);
                 }
 
                 // OLD: pre-folded tile, no plane.
@@ -303,9 +303,9 @@ static void part_a(void) {
                            (enum canvas_composite_op)mode);
                 cnvs_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
-                    dpx ref = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
+                    dpx want = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
                                            (double)i / 255.0);
-                    err_acc(&eo, dpx_of(out[i]), ref);
+                    err_acc(&eo, dpx_of(out[i]), want);
                 }
             }
         }
@@ -433,7 +433,7 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
         for (int x = 0; x < W; x++) {
             dpx d = x < W / 2 ? dl : dr;
             double k = cov[y * W + x];
-            dpx ref = cov_lerp_ref(d, blend_ref(mode, s_d, d), k);
+            dpx want = cov_lerp_ref(d, blend_ref(mode, s_d, d), k);
             // The old semantics, idealized in double: coverage folded into
             // the premultiplied source, blended at the folded strength.
             dpx sf = { s_d.r * k, s_d.g * k, s_d.b * k, s_d.a * k };
@@ -445,8 +445,8 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
             double a8 = (double)px[o + 3] / 255.0;
             dpx got = { (double)px[o] / 255.0 * a8, (double)px[o + 1] / 255.0 * a8,
                         (double)px[o + 2] / 255.0 * a8, a8 };
-            err_acc(en, got, ref);
-            err_acc(eo, old, ref);
+            err_acc(en, got, want);
+            err_acc(eo, old, want);
         }
     }
     canvas_free(cv);

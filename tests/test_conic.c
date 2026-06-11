@@ -14,10 +14,10 @@ static void setup_conic(struct canvas *__single cv, float start, float cx, float
     canvas_add_fill_color_stop(cv, 1.00f, 1.0f, 0.0f, 0.0f, 1.0f);
 }
 
-static bool dom_red(struct px4 p)   { return p.r > 180 && p.g < 90 && p.b < 90; }
-static bool dom_green(struct px4 p) { return p.g > 180 && p.r < 90 && p.b < 90; }
-static bool dom_blue(struct px4 p)  { return p.b > 180 && p.r < 90 && p.g < 90; }
-static bool dom_white(struct px4 p) { return p.r > 180 && p.g > 180 && p.b > 180; }
+static bool dom_red(struct rgba p)   { return p.r > 180 && p.g < 90 && p.b < 90; }
+static bool dom_green(struct rgba p) { return p.g > 180 && p.r < 90 && p.b < 90; }
+static bool dom_blue(struct rgba p)  { return p.b > 180 && p.r < 90 && p.g < 90; }
+static bool dom_white(struct rgba p) { return p.r > 180 && p.g > 180 && p.b > 180; }
 
 int main(void) {
     int const W = 32, len = W * W * 4;

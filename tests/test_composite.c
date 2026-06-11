@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 // Paint an opaque backdrop, then a source under `op`, and read the centre pixel.
-static struct px4 blend(struct canvas *__single cv, int w, int h,
+static struct rgba blend(struct canvas *__single cv, int w, int h,
                         uint8_t *__counted_by(len) px, int len,
                         enum canvas_composite_op op,
                         float br, float bg, float bb,
@@ -83,7 +83,7 @@ int main(void) {
 
     // A non-source-over mode must not corrupt the default path afterwards:
     // source-over half-green over red is the usual 50% mix.
-    struct px4 so = blend(cv, w, h, px, len, CANVAS_OP_SOURCE_OVER,
+    struct rgba so = blend(cv, w, h, px, len, CANVAS_OP_SOURCE_OVER,
                           1, 0, 0, 0, 1, 0, 0.5f);
     CHECK(px_near(so, 128, 128, 0, 255, 3));
 

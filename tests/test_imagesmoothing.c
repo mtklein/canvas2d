@@ -38,8 +38,8 @@ int main(void) {
     canvas_set_image_smoothing_enabled(cv, true);
     canvas_draw_image_scaled(cv, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
     canvas_read_rgba(cv, px, clen);
-    struct px4 a = pixel_at(px, clen, W, 19, 20);
-    struct px4 b = pixel_at(px, clen, W, 20, 20);
+    struct rgba a = pixel_at(px, clen, W, 19, 20);
+    struct rgba b = pixel_at(px, clen, W, 20, 20);
     CHECK(a.r > 30 && a.b > 30);   // blended, not pure red
     CHECK(b.r > 30 && b.b > 30);   // blended, not pure blue
     // Far from the seam it is still essentially the source colour.

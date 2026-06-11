@@ -249,7 +249,7 @@ int main(void) {
         cnvs_blend(c, 0, 0, w, h, opaque_red, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
         cnvs_blend(c, 0, 0, w, h, half_green, NULL, NULL, 0, CANVAS_OP_SOURCE_OVER);
         read8(c, w, h, px);
-        struct px4 m = pixel_at(px, len, w, 8, 8);
+        struct rgba m = pixel_at(px, len, w, 8, 8);
         CHECK(m.r > 110 && m.r < 145);  // ~half red survives
         CHECK(m.g > 110 && m.g < 145);  // ~half green over
         CHECK(m.b < 8);

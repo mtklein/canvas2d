@@ -47,7 +47,7 @@ static void check_v_vs_ref(void) {
     static int const hs[] = { 1, 2, 7, 24 };
     static int const rs[] = { 0, 1, 2, 5, 17, 300 };
     enum { MAXW = 64, MAXH = 24 };
-    uint8_t src[MAXW * MAXH], dst[MAXW * MAXH], ref[MAXH];
+    uint8_t src[MAXW * MAXH], dst[MAXW * MAXH], want[MAXH];
     for (size_t wi = 0; wi < sizeof ws / sizeof *ws; wi++) {
         for (size_t hi = 0; hi < sizeof hs / sizeof *hs; hi++) {
             for (size_t ri = 0; ri < sizeof rs / sizeof *rs; ri++) {
@@ -58,9 +58,9 @@ static void check_v_vs_ref(void) {
                 blur_box_v(dst, src, w, h, r);
                 bool same = true;
                 for (int x = 0; x < w; x++) {
-                    ref_blur_v_col(ref, src, w, h, x, r);
+                    ref_blur_v_col(want, src, w, h, x, r);
                     for (int y = 0; y < h; y++) {
-                        if (dst[y * w + x] != ref[y]) {
+                        if (dst[y * w + x] != want[y]) {
                             same = false;
                         }
                     }
@@ -78,7 +78,7 @@ static void check_h_vs_ref(void) {
     static int const ws[] = { 1, 2, 7, 8, 9, 31, 33, 64, 200 };
     static int const rs[] = { 0, 1, 2, 5, 17, 300 };
     enum { MAXW = 200, H = 3 };
-    uint8_t src[MAXW * H], dst[MAXW * H], ref[MAXW];
+    uint8_t src[MAXW * H], dst[MAXW * H], want[MAXW];
     for (size_t wi = 0; wi < sizeof ws / sizeof *ws; wi++) {
         for (size_t ri = 0; ri < sizeof rs / sizeof *rs; ri++) {
             int const w = ws[wi], r = rs[ri], n = w * H;
@@ -90,9 +90,9 @@ static void check_h_vs_ref(void) {
             blur_box_h(dst, src, w, H, r);
             bool same = true;
             for (int y = 0; y < H; y++) {
-                ref_blur_h_row(ref, src + y * w, w, r);
+                ref_blur_h_row(want, src + y * w, w, r);
                 for (int x = 0; x < w; x++) {
-                    if (dst[y * w + x] != ref[x]) {
+                    if (dst[y * w + x] != want[x]) {
                         same = false;
                     }
                 }

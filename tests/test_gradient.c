@@ -28,9 +28,9 @@ int main(void) {
     canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
-    struct px4 lft = pixel_at(px, len, w, 6, 32);
-    struct px4 mid = pixel_at(px, len, w, 32, 32);
-    struct px4 rgt = pixel_at(px, len, w, 58, 32);
+    struct rgba lft = pixel_at(px, len, w, 6, 32);
+    struct rgba mid = pixel_at(px, len, w, 32, 32);
+    struct rgba rgt = pixel_at(px, len, w, 58, 32);
     CHECK(lft.r > 200 && lft.b < 60 && lft.g < 20);                  // near red
     CHECK(rgt.b > 200 && rgt.r < 60 && rgt.g < 20);                  // near blue
     CHECK(mid.r > 96 && mid.r < 160 && mid.b > 96 && mid.b < 160);   // purple
@@ -44,9 +44,9 @@ int main(void) {
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv);
     canvas_read_rgba(cv, px, len);
-    struct px4 ctr = pixel_at(px, len, w, 32, 32);
-    struct px4 ring = pixel_at(px, len, w, 46, 32);  // ~half radius
-    struct px4 rim = pixel_at(px, len, w, 60, 32);   // at/over the rim
+    struct rgba ctr = pixel_at(px, len, w, 32, 32);
+    struct rgba ring = pixel_at(px, len, w, 46, 32);  // ~half radius
+    struct rgba rim = pixel_at(px, len, w, 60, 32);   // at/over the rim
     CHECK(ctr.r > 240 && ctr.g > 220 && ctr.b < 20);              // yellow
     CHECK(ring.r > 240 && ring.g > 80 && ring.g < 200 && ring.b < 20);  // orange
     CHECK(rim.r > 240 && rim.g < 50 && rim.b < 20);              // red
@@ -61,7 +61,7 @@ int main(void) {
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv);
     canvas_read_rgba(cv, px, len);
-    struct px4 g_mid = pixel_at(px, len, w, 32, 32);
+    struct rgba g_mid = pixel_at(px, len, w, 32, 32);
     CHECK(g_mid.g > 200 && g_mid.r < 40 && g_mid.b < 40);  // green at the centre stop
 
     // Setting a solid fill colour reverts the paint away from the gradient.
@@ -98,8 +98,8 @@ int main(void) {
     canvas_line_to(cv, 58.0f, 32.0f);
     canvas_stroke(cv);
     canvas_read_rgba(cv, px, len);
-    struct px4 s_lft = pixel_at(px, len, w, 10, 32);
-    struct px4 s_rgt = pixel_at(px, len, w, 54, 32);
+    struct rgba s_lft = pixel_at(px, len, w, 10, 32);
+    struct rgba s_rgt = pixel_at(px, len, w, 54, 32);
     CHECK(s_lft.r > 180 && s_lft.b < 80);  // red end
     CHECK(s_rgt.b > 180 && s_rgt.r < 80);  // blue end
 

@@ -87,14 +87,14 @@ static void ref_contrast2(float *__counted_by(n4) px, int n4) {
 // is solid enough that unpremultiplying isn't noise on both sides -- the far
 // skirt's near-zero alphas quantize to 0-vs-1 coin flips that say nothing.
 static void check_vs_ref(uint8_t const *__counted_by(len) px, int len,
-                         float const *__counted_by(w * h * 4) ref,
+                         float const *__counted_by(w * h * 4) want,
                          int w, int h, int tol) {
     bool ok = true;
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             int i = (y * w + x) * 4;
-            float ra = ref[i + 3];
-            struct px4 p = pixel_at(px, len, w, x, y);
+            float ra = want[i + 3];
+            struct rgba p = pixel_at(px, len, w, x, y);
             int ea = (int)(ra * 255.0f + 0.5f);
             if (abs((int)p.a - ea) > tol) {
                 ok = false;
@@ -102,7 +102,7 @@ static void check_vs_ref(uint8_t const *__counted_by(len) px, int len,
             if (ea >= 8) {
                 bool rgb_ok = true;
                 for (int c = 0; c < 3; c++) {
-                    float u = ref[i + c] / ra;
+                    float u = want[i + c] / ra;
                     u = u > 1.0f ? 1.0f : u;
                     int ec = (int)(u * 255.0f + 0.5f);
                     int pc = c == 0 ? p.r : (c == 1 ? p.g : p.b);
@@ -125,11 +125,11 @@ static void blur_matches_reference(void) {
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
     int const nf = N * N * 4;
-    float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
+    float *__counted_by(nf) want = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
     struct canvas *__single cv = canvas(N, N);
-    CHECK(px != NULL && ref != NULL && tmp != NULL && cv != NULL);
-    if (px && ref && tmp && cv) {
+    CHECK(px != NULL && want != NULL && tmp != NULL && cv != NULL);
+    if (px && want && tmp && cv) {
         canvas_add_filter_blur(cv, 3.0f);  // stdDev 3 -> box radius 3
         canvas_set_fill_rgba(cv, 0.2f, 0.4f, 0.8f, 0.6f);
         canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);
@@ -137,20 +137,20 @@ static void blur_matches_reference(void) {
         for (int y = 16; y < 32; y++) {
             for (int x = 16; x < 32; x++) {
                 int i = (y * N + x) * 4;
-                ref[i + 0] = 0.2f * 0.6f;
-                ref[i + 1] = 0.4f * 0.6f;
-                ref[i + 2] = 0.8f * 0.6f;
-                ref[i + 3] = 0.6f;
+                want[i + 0] = 0.2f * 0.6f;
+                want[i + 1] = 0.4f * 0.6f;
+                want[i + 2] = 0.8f * 0.6f;
+                want[i + 3] = 0.6f;
             }
         }
-        ref_blur3(ref, tmp, N, N, 3);
-        check_vs_ref(px, len, ref, N, N, 2);
+        ref_blur3(want, tmp, N, N, 3);
+        check_vs_ref(px, len, want, N, N, 2);
     }
     if (cv) {
         canvas_free(cv);
     }
     free(px);
-    free(ref);
+    free(want);
     free(tmp);
 }
 
@@ -195,12 +195,12 @@ static void blur_expands_bbox(void) {
         canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 20.0f, 20.0f, 8.0f, 8.0f);
         canvas_read_rgba(cv, px, len);
-        struct px4 skirt = pixel_at(px, len, N, 16, 24);  // 4px left of the bbox
+        struct rgba skirt = pixel_at(px, len, N, 16, 24);  // 4px left of the bbox
         CHECK(skirt.a > 5);
         CHECK(skirt.r > 0 && skirt.g == 0 && skirt.b == 0);  // still red
         // The window (2*4+1) is wider than the 8px square, so even the centre
         // is translucent -- but solidly covered, and pure red.
-        struct px4 centre = pixel_at(px, len, N, 24, 24);
+        struct rgba centre = pixel_at(px, len, N, 24, 24);
         CHECK(centre.a > 80 && centre.a < 200);
         CHECK(centre.r == 255 && centre.g == 0 && centre.b == 0);
         CHECK(px_near(pixel_at(px, len, N, 2, 2), 0, 0, 0, 0, 0));  // beyond the spread
@@ -224,11 +224,11 @@ static void blur_order_visible(void) {
     uint8_t *__counted_by(len) pxa = malloc((size_t)len);
     uint8_t *__counted_by(len) pxb = malloc((size_t)len);
     int const nf = N * N * 4;
-    float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
+    float *__counted_by(nf) want = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
     struct canvas *__single cv = canvas(N, N);
-    CHECK(pxa != NULL && pxb != NULL && ref != NULL && tmp != NULL && cv != NULL);
-    if (pxa && pxb && ref && tmp && cv) {
+    CHECK(pxa != NULL && pxb != NULL && want != NULL && tmp != NULL && cv != NULL);
+    if (pxa && pxb && want && tmp && cv) {
         for (int order = 0; order < 2; order++) {
             canvas_reset(cv);
             if (order == 0) {
@@ -248,28 +248,28 @@ static void blur_order_visible(void) {
             canvas_read_rgba(cv, order == 0 ? pxa : pxb, len);
             // Reference: the unblurred premultiplied tile (contrast(2) fixes
             // both pure endpoints, so it is also the contrast-applied tile)...
-            memset(ref, 0, (size_t)nf * sizeof(float));
+            memset(want, 0, (size_t)nf * sizeof(float));
             for (int y = 8; y < 40; y++) {
                 for (int x = 8; x < 40; x++) {
                     int i = (y * N + x) * 4;
-                    ref[i + (x < 24 ? 0 : 1)] = 1.0f;
-                    ref[i + 3] = 1.0f;
+                    want[i + (x < 24 ? 0 : 1)] = 1.0f;
+                    want[i + 3] = 1.0f;
                 }
             }
             // ...then the two function applications in this order's sequence.
             if (order == 0) {
-                ref_contrast2(ref, nf);
-                ref_blur3(ref, tmp, N, N, 2);
+                ref_contrast2(want, nf);
+                ref_blur3(want, tmp, N, N, 2);
             } else {
-                ref_blur3(ref, tmp, N, N, 2);
-                ref_contrast2(ref, nf);
+                ref_blur3(want, tmp, N, N, 2);
+                ref_contrast2(want, nf);
             }
-            check_vs_ref(order == 0 ? pxa : pxb, len, ref, N, N, 3);
+            check_vs_ref(order == 0 ? pxa : pxb, len, want, N, N, 3);
         }
         // The seam pixel tells the orders apart: contrast-then-blur keeps the
         // soft green spill, blur-then-contrast crushes it back toward red.
-        struct px4 a = pixel_at(pxa, len, N, 22, 24);
-        struct px4 b = pixel_at(pxb, len, N, 22, 24);
+        struct rgba a = pixel_at(pxa, len, N, 22, 24);
+        struct rgba b = pixel_at(pxb, len, N, 22, 24);
         CHECK((int)a.g - (int)b.g > 20);
     }
     if (cv) {
@@ -277,7 +277,7 @@ static void blur_order_visible(void) {
     }
     free(pxa);
     free(pxb);
-    free(ref);
+    free(want);
     free(tmp);
 }
 
@@ -299,7 +299,7 @@ static void blur_translucent_consistent(void) {
         bool consistent = true;
         for (int y = 0; y < N; y++) {
             for (int x = 0; x < N; x++) {
-                struct px4 p = pixel_at(px, len, N, x, y);
+                struct rgba p = pixel_at(px, len, N, x, y);
                 if (p.a > 129) {  // box blur cannot exceed the source alpha
                     consistent = false;
                 }
@@ -416,12 +416,12 @@ static void drop_shadow_matches_reference(void) {
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
     int const nf = N * N * 4;
-    float *__counted_by(nf) ref = calloc((size_t)nf, sizeof(float));
+    float *__counted_by(nf) want = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) sh = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
     struct canvas *__single cv = canvas(N, N);
-    CHECK(px != NULL && ref != NULL && sh != NULL && tmp != NULL && cv != NULL);
-    if (px && ref && sh && tmp && cv) {
+    CHECK(px != NULL && want != NULL && sh != NULL && tmp != NULL && cv != NULL);
+    if (px && want && sh && tmp && cv) {
         canvas_add_filter_drop_shadow(cv, 5.0f, 3.0f, 2.0f,
                                       0.1f, 0.3f, 0.9f, 0.8f);
         canvas_set_fill_rgba(cv, 0.2f, 0.4f, 0.8f, 0.6f);
@@ -430,20 +430,20 @@ static void drop_shadow_matches_reference(void) {
         for (int y = 16; y < 32; y++) {
             for (int x = 16; x < 32; x++) {
                 int i = (y * N + x) * 4;
-                ref[i + 0] = 0.2f * 0.6f;
-                ref[i + 1] = 0.4f * 0.6f;
-                ref[i + 2] = 0.8f * 0.6f;
-                ref[i + 3] = 0.6f;
+                want[i + 0] = 0.2f * 0.6f;
+                want[i + 1] = 0.4f * 0.6f;
+                want[i + 2] = 0.8f * 0.6f;
+                want[i + 3] = 0.6f;
             }
         }
-        ref_drop_shadow(ref, sh, tmp, N, N, 5, 3, 2, 0.1f, 0.3f, 0.9f, 0.8f);
-        check_vs_ref(px, len, ref, N, N, 2);
+        ref_drop_shadow(want, sh, tmp, N, N, 5, 3, 2, 0.1f, 0.3f, 0.9f, 0.8f);
+        check_vs_ref(px, len, want, N, N, 2);
     }
     if (cv) {
         canvas_free(cv);
     }
     free(px);
-    free(ref);
+    free(want);
     free(sh);
     free(tmp);
 }
@@ -592,9 +592,9 @@ static void drop_shadow_with_canvas_shadow(void) {
         canvas_fill_rect(cv, 16.0f, 16.0f, 8.0f, 8.0f);
         canvas_read_rgba(cv, px, len);
         CHECK(px_near(pixel_at(px, len, N, 20, 20), 0, 255, 0, 255, 0));  // drawing
-        struct px4 fs = pixel_at(px, len, N, 12, 20);  // filter shadow: blue
+        struct rgba fs = pixel_at(px, len, N, 12, 20);  // filter shadow: blue
         CHECK(fs.a > 100 && fs.b > 100 && fs.g < 50);
-        struct px4 cs = pixel_at(px, len, N, 33, 20);  // canvas shadow: red
+        struct rgba cs = pixel_at(px, len, N, 33, 20);  // canvas shadow: red
         CHECK(cs.a > 200 && cs.r > 200 && cs.g < 50);
         CHECK(px_near(pixel_at(px, len, N, 44, 44), 0, 0, 0, 0, 0));
     }
@@ -644,7 +644,7 @@ static void drop_shadow_clamps(void) {
 // Reset bitmap + state is the caller's job (the filter list is part of state);
 // this fills the whole canvas with (r,g,b,a) through whatever filters are set
 // and reads back the centre pixel, unpremultiplied RGBA8.
-static struct px4 fill_and_read(struct canvas *__single cv, uint8_t *__counted_by(len) px,
+static struct rgba fill_and_read(struct canvas *__single cv, uint8_t *__counted_by(len) px,
                                 int len, float r, float g, float b, float a) {
     canvas_set_fill_rgba(cv, r, g, b, a);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
@@ -743,7 +743,7 @@ int main(void) {
     // Identity amounts: every function at its identity leaves a translucent,
     // non-primary colour untouched.
     canvas_reset(cv);
-    struct px4 const base = fill_and_read(cv, px, len, 0.4f, 0.6f, 0.8f, 0.5f);
+    struct rgba const base = fill_and_read(cv, px, len, 0.4f, 0.6f, 0.8f, 0.5f);
     struct {
         void (*add)(struct canvas *__single cv, float amount);
         float identity;
@@ -875,7 +875,7 @@ int main(void) {
         bool found_solid = false, all_gray = true;
         for (int y = 0; y < TW; y++) {
             for (int x = 0; x < TW; x++) {
-                struct px4 p = pixel_at(tpx, tlen, TW, x, y);
+                struct rgba p = pixel_at(tpx, tlen, TW, x, y);
                 if (p.a > 128 && abs((int)p.r - 54) <= 3) {
                     found_solid = true;
                 }

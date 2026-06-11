@@ -82,7 +82,7 @@ int main(void) {
     canvas_line_to(cv, (float)W, 4.0f);
     canvas_stroke(cv);
     canvas_read_rgba(cv, px, len);
-    struct px4 s = pixel_at(px, len, W, 4, 4);
+    struct rgba s = pixel_at(px, len, W, 4, 4);
     CHECK(s.a > 0);  // the stroke laid down pattern ink
 
     // Invalid dimensions are ignored, leaving the (solid) fill paint in place.

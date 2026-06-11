@@ -95,12 +95,12 @@ static void check_color_row(struct cnvs_gradient const *gr) {
             : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
         CHECK(memcmp(&row[i], &want, sizeof want) == 0);
         if (t[i] >= 0.0f) {
-            double ref[4];
-            ref_color_at(gr, (double)t[i], ref);
-            CHECK(fabs((double)row[i].r - ref[0]) <= GRAD_ERR_TOL &&
-                  fabs((double)row[i].g - ref[1]) <= GRAD_ERR_TOL &&
-                  fabs((double)row[i].b - ref[2]) <= GRAD_ERR_TOL &&
-                  fabs((double)row[i].a - ref[3]) <= GRAD_ERR_TOL);
+            double want64[4];
+            ref_color_at(gr, (double)t[i], want64);
+            CHECK(fabs((double)row[i].r - want64[0]) <= GRAD_ERR_TOL &&
+                  fabs((double)row[i].g - want64[1]) <= GRAD_ERR_TOL &&
+                  fabs((double)row[i].b - want64[2]) <= GRAD_ERR_TOL &&
+                  fabs((double)row[i].a - want64[3]) <= GRAD_ERR_TOL);
         }
     }
 }

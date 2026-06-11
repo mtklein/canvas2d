@@ -18,7 +18,7 @@ enum { W = 16, H = 16, LEN = W * H * 4 };
 // Composite layer 1 (r1,g1,b1,a1) over layer 2 (r2,g2,b2,a2): paint layer 2 on a
 // cleared canvas, then layer 1 under `op`; return the centre pixel.  Either layer
 // may be translucent.
-static struct px4 over(struct canvas *__single cv, uint8_t *__counted_by(LEN) px,
+static struct rgba over(struct canvas *__single cv, uint8_t *__counted_by(LEN) px,
                        enum canvas_composite_op op,
                        float r1, float g1, float b1, float a1,
                        float r2, float g2, float b2, float a2) {
@@ -34,13 +34,13 @@ static struct px4 over(struct canvas *__single cv, uint8_t *__counted_by(LEN) px
 }
 
 // Opaque backdrop (br,bg,bb), then (sr,sg,sb,sa) under `op`; centre pixel.
-static struct px4 blend(struct canvas *__single cv, uint8_t *__counted_by(LEN) px,
+static struct rgba blend(struct canvas *__single cv, uint8_t *__counted_by(LEN) px,
                         enum canvas_composite_op op, float br, float bg, float bb,
                         float sr, float sg, float sb, float sa) {
     return over(cv, px, op, sr, sg, sb, sa, br, bg, bb, 1.0f);
 }
 
-static bool px_eq(struct px4 a, struct px4 b) {
+static bool px_eq(struct rgba a, struct rgba b) {
     return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 
@@ -87,10 +87,10 @@ int main(void) {
     for (int m = 0; m < (int)(sizeof SYM / sizeof SYM[0]); m++) {
         for (int i = 0; i < NL; i++) {
             for (int j = 0; j < NL; j++) {
-                struct px4 ij = over(cv, px, SYM[m],
+                struct rgba ij = over(cv, px, SYM[m],
                                      LAYER[i].c[0], LAYER[i].c[1], LAYER[i].c[2], LAYER[i].a,
                                      LAYER[j].c[0], LAYER[j].c[1], LAYER[j].c[2], LAYER[j].a);
-                struct px4 ji = over(cv, px, SYM[m],
+                struct rgba ji = over(cv, px, SYM[m],
                                      LAYER[j].c[0], LAYER[j].c[1], LAYER[j].c[2], LAYER[j].a,
                                      LAYER[i].c[0], LAYER[i].c[1], LAYER[i].c[2], LAYER[i].a);
                 CHECK(px_eq(ij, ji));
@@ -102,9 +102,9 @@ int main(void) {
     //    So A-over-B overlay == B-over-A hard-light, exactly.
     for (int i = 0; i < NCOL; i++) {
         for (int j = 0; j < NCOL; j++) {
-            struct px4 ov = blend(cv, px, CANVAS_OP_OVERLAY, COL[i][0], COL[i][1], COL[i][2],
+            struct rgba ov = blend(cv, px, CANVAS_OP_OVERLAY, COL[i][0], COL[i][1], COL[i][2],
                                   COL[j][0], COL[j][1], COL[j][2], 1.0f);
-            struct px4 hl = blend(cv, px, CANVAS_OP_HARD_LIGHT, COL[j][0], COL[j][1], COL[j][2],
+            struct rgba hl = blend(cv, px, CANVAS_OP_HARD_LIGHT, COL[j][0], COL[j][1], COL[j][2],
                                   COL[i][0], COL[i][1], COL[i][2], 1.0f);
             CHECK(px_eq(ov, hl));
         }
@@ -119,11 +119,11 @@ int main(void) {
     };
     for (int m = 0; m < (int)(sizeof HSL / sizeof HSL[0]); m++) {
         for (int i = 0; i < NCOL; i++) {
-            struct px4 self = blend(cv, px, HSL[m], COL[i][0], COL[i][1], COL[i][2],
+            struct rgba self = blend(cv, px, HSL[m], COL[i][0], COL[i][1], COL[i][2],
                                     COL[i][0], COL[i][1], COL[i][2], 1.0f);
-            struct px4 ref = blend(cv, px, CANVAS_OP_COPY, 0.0f, 0.0f, 0.0f,
+            struct rgba want = blend(cv, px, CANVAS_OP_COPY, 0.0f, 0.0f, 0.0f,
                                    COL[i][0], COL[i][1], COL[i][2], 1.0f);
-            CHECK(px_near(self, ref.r, ref.g, ref.b, ref.a, 1));
+            CHECK(px_near(self, want.r, want.g, want.b, want.a, 1));
         }
     }
 
@@ -133,8 +133,8 @@ int main(void) {
     for (int i = 0; i < NCOL; i++) {
         float br = COL[(i + 3) % NCOL][0], bgc = COL[(i + 3) % NCOL][1], bb = COL[(i + 3) % NCOL][2];
         float sr = COL[i][0], sg = COL[i][1], sb = COL[i][2];
-        struct px4 s = blend(cv, px, CANVAS_OP_COPY, br, bgc, bb, sr, sg, sb, 1.0f);  // == S
-        struct px4 b = blend(cv, px, CANVAS_OP_COPY, sr, sg, sb, br, bgc, bb, 1.0f);  // == B
+        struct rgba s = blend(cv, px, CANVAS_OP_COPY, br, bgc, bb, sr, sg, sb, 1.0f);  // == S
+        struct rgba b = blend(cv, px, CANVAS_OP_COPY, sr, sg, sb, br, bgc, bb, 1.0f);  // == B
         enum canvas_composite_op const TO_S[] = { CANVAS_OP_SOURCE_IN, CANVAS_OP_SOURCE_ATOP,
                                              CANVAS_OP_SOURCE_OVER };
         enum canvas_composite_op const TO_B[] = { CANVAS_OP_DESTINATION_OVER, CANVAS_OP_DESTINATION_IN,
@@ -149,7 +149,7 @@ int main(void) {
     //    B(0,Cs)=Cs).  Holds for every colour; exercises the polynomial path.
     for (int i = 0; i < NCOL; i++) {
         float sr = COL[i][0], sg = COL[i][1], sb = COL[i][2];
-        struct px4 s = blend(cv, px, CANVAS_OP_COPY, 0, 0, 0, sr, sg, sb, 1.0f);
+        struct rgba s = blend(cv, px, CANVAS_OP_COPY, 0, 0, 0, sr, sg, sb, 1.0f);
         CHECK(px_near(blend(cv, px, CANVAS_OP_MULTIPLY, 1, 1, 1, sr, sg, sb, 1.0f),
                       s.r, s.g, s.b, s.a, 1));
         CHECK(px_near(blend(cv, px, CANVAS_OP_SCREEN, 0, 0, 0, sr, sg, sb, 1.0f),

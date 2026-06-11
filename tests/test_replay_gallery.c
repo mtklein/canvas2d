@@ -98,19 +98,19 @@ enum { SCENE_N = (int)(sizeof k_scenes / sizeof k_scenes[0]) };
 // boundary.
 static void check_scene(scene_pair s) {
     int w = 0, h = 0, len = 0;
-    uint8_t *ref = canvas_read_png(s.png, &w, &h, &len);
-    CHECK(ref != NULL);
+    uint8_t *want = canvas_read_png(s.png, &w, &h, &len);
+    CHECK(want != NULL);
     CHECK(w > 0 && h > 0 && len == w * h * 4);
-    if (!ref || len <= 0) {
+    if (!want || len <= 0) {
         (void)fprintf(stderr, "  load failed: %s\n", s.png);
-        free(ref);
+        free(want);
         return;
     }
 
     struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (!cv) {
-        free(ref);
+        free(want);
         return;
     }
 
@@ -142,7 +142,7 @@ static void check_scene(scene_pair s) {
     CHECK(got != NULL);
     if (got) {
         canvas_read_rgba(cv, got, n);
-        int cmp = memcmp(ref, got, (size_t)n);
+        int cmp = memcmp(want, got, (size_t)n);
         CHECK(cmp == 0);
         if (cmp != 0) {
             (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);
@@ -154,7 +154,7 @@ static void check_scene(scene_pair s) {
     }
 
     free(got);
-    free(ref);
+    free(want);
     canvas_free(cv);
 }
 

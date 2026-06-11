@@ -295,12 +295,12 @@ static void *worker_main(void *arg) {
 
 int main(void) {
     int const all = NSCENES * SCENE_LEN;
-    uint8_t *__counted_by(all) ref = malloc((size_t)all);
+    uint8_t *__counted_by(all) want = malloc((size_t)all);
     uint8_t *__counted_by(all) got = malloc((size_t)all);
-    CHECK(ref != NULL);
+    CHECK(want != NULL);
     CHECK(got != NULL);
-    if (!ref || !got) {
-        free(ref);
+    if (!want || !got) {
+        free(want);
         free(got);
         return TEST_REPORT();
     }
@@ -308,7 +308,7 @@ int main(void) {
     // The serial reference: same tiling, one tile at a time.
     for (int scene = 0; scene < NSCENES; scene++) {
         for (int tile = 0; tile < NTILES; tile++) {
-            uint8_t *__counted_by(SCENE_LEN) dst = ref + scene * SCENE_LEN;
+            uint8_t *__counted_by(SCENE_LEN) dst = want + scene * SCENE_LEN;
             CHECK(render_tile(scene, tile, dst, SCENE_LEN));
         }
     }
@@ -340,11 +340,11 @@ int main(void) {
             CHECK(pthread_join(t[i], NULL) == 0);
             CHECK(w[i].ok);
         }
-        CHECK(memcmp(ref, got, (size_t)all) == 0);
+        CHECK(memcmp(want, got, (size_t)all) == 0);
         memset(got, 0, (size_t)all);  // a stale round can't mask the next
     }
 
-    free(ref);
+    free(want);
     free(got);
     return TEST_REPORT();
 }

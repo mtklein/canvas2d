@@ -39,7 +39,7 @@ int main(void) {
     for (int i = 0; i < 4; i++) {
         int x = (int)(cx + r * cosf(ang[i]));
         int y = (int)(cy + r * sinf(ang[i]));
-        struct px4 p = pixel_at(px, len, W, x, y);
+        struct rgba p = pixel_at(px, len, W, x, y);
         CHECK(p.a > 250);  // ring centreline is solid everywhere, seam included
     }
 

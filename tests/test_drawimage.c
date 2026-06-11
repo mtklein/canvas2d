@@ -46,7 +46,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, w, 7, 0), 0, 255, 0, 255, 4));      // green corner
     CHECK(px_near(pixel_at(px, len, w, 0, 7), 0, 0, 255, 255, 4));      // blue corner
     CHECK(px_near(pixel_at(px, len, w, 7, 7), 255, 255, 0, 255, 4));    // yellow corner
-    struct px4 edge = pixel_at(px, len, w, 4, 0);
+    struct rgba edge = pixel_at(px, len, w, 4, 0);
     CHECK(edge.r > 30 && edge.g > 30 && edge.b < 20);                   // red+green mix
 
     // Source subrect: right column only (green/yellow) -> centre has no red/blue.
@@ -54,7 +54,7 @@ int main(void) {
     canvas_draw_image_subrect(cv, src, 2, 2, 1.0f, 0.0f, 1.0f, 2.0f,
                               0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
-    struct px4 mid = pixel_at(px, len, w, 4, 4);
+    struct rgba mid = pixel_at(px, len, w, 4, 4);
     CHECK(mid.g > 200 && mid.b < 30);                                  // green/yellow
 
     // global alpha composites the image source-over: 50% opaque blue over red.

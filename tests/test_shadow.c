@@ -43,7 +43,7 @@ int main(void) {
     canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);  // shape [16,32)
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 24, 24), 255, 0, 0, 255, 2));  // shape on top
-    struct px4 leak = pixel_at(px, len, W, 36, 24);                   // 4px past the edge
+    struct rgba leak = pixel_at(px, len, W, 36, 24);                   // 4px past the edge
     CHECK(leak.a > 20);          // blurred shadow leaked out
     CHECK(leak.b > leak.r);      // and it's the blue shadow, not red
     // The soft falloff must reach well past one box radius (blur 16 -> r 8): a
