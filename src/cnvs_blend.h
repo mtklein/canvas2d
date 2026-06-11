@@ -47,7 +47,8 @@ void cnvs_blend_solid(struct canvas *__single cv, int x, int y, int w, int h,
                       uint8_t const *__counted_by_or_null(clip_len) clip, int clip_len,
                       enum canvas_composite_op mode);
 
-// Copy the premultiplied target out, row-major top-first; len must be
-// width*height (pixels).  The oracle tests' bit-exact view of the target --
+// Copy the premultiplied target out, row-major top-first; pixels must be
+// at least width*height.  The oracle tests' bit-exact view of the target --
 // canvas_read_rgba is the production readback (unpremultiplied RGBA8).
-void cnvs_blend_read(struct canvas *__single cv, cnvs_premul *__counted_by(len) out, int len);
+void cnvs_blend_read(struct canvas *__single cv,
+                     cnvs_premul *__counted_by(pixels) out, int pixels);

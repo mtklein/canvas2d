@@ -130,7 +130,7 @@ struct canvas {
     int target_len;                                // == width * height
     struct canvas_state cur;
     struct canvas_state *__counted_by(stack_cap) stack;
-    int stack_len;
+    int nsaved;
     int stack_cap;
     struct cnvs_path path;
     struct cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
@@ -256,7 +256,7 @@ struct canvas *__single canvas(int width, int height) {
     cv->target = target;  // count before pointer
     state_defaults(&cv->cur);
     cv->stack = NULL;
-    cv->stack_len = 0;
+    cv->nsaved = 0;
     cv->stack_cap = 0;
     cnvs_path_init(&cv->path);
     cnvs_path_init(&cv->text_path);
@@ -274,7 +274,7 @@ void canvas_free(struct canvas *__single cv) {
     }
     cnvs_recorder_end(cv->rec);  // flush and close any active recording
     free(cv->target);
-    for (int i = 0; i < cv->stack_len; i++) {
+    for (int i = 0; i < cv->nsaved; i++) {
         free(cv->stack[i].filters);
         free(cv->stack[i].clip_mask);
     }
@@ -347,10 +347,10 @@ static bool stack_reserve(struct canvas *__single cv, int need) {
 
 void canvas_save(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "save"); }
-    if (!stack_reserve(cv, cv->stack_len + 1)) {
+    if (!stack_reserve(cv, cv->nsaved + 1)) {
         return;
     }
-    cv->stack[cv->stack_len] = cv->cur;
+    cv->stack[cv->nsaved] = cv->cur;
     // Give the saved entry its own copy of the clip mask so clip() can mutate
     // cur's independently.
     if (cv->cur.clip_mask) {
@@ -358,11 +358,11 @@ void canvas_save(struct canvas *__single cv) {
         uint8_t *copy = malloc((size_t)n);
         if (copy) {
             memcpy(copy, cv->cur.clip_mask, (size_t)n);
-            cv->stack[cv->stack_len].clip_mask = copy;
-            cv->stack[cv->stack_len].clip_len = n;
+            cv->stack[cv->nsaved].clip_mask = copy;
+            cv->stack[cv->nsaved].clip_len = n;
         } else {
-            cv->stack[cv->stack_len].clip_mask = NULL;
-            cv->stack[cv->stack_len].clip_len = 0;
+            cv->stack[cv->nsaved].clip_mask = NULL;
+            cv->stack[cv->nsaved].clip_len = 0;
         }
     }
     // Likewise the filter list, so add_filter/set_filter_none can mutate cur's
@@ -373,23 +373,23 @@ void canvas_save(struct canvas *__single cv) {
         cnvs_filter *copy = malloc((size_t)n * sizeof *copy);
         if (copy) {
             memcpy(copy, cv->cur.filters, (size_t)n * sizeof *copy);
-            cv->stack[cv->stack_len].filters = copy;
-            cv->stack[cv->stack_len].filter_count = n;
+            cv->stack[cv->nsaved].filters = copy;
+            cv->stack[cv->nsaved].filter_count = n;
         } else {
-            cv->stack[cv->stack_len].filters = NULL;
-            cv->stack[cv->stack_len].filter_count = 0;
+            cv->stack[cv->nsaved].filters = NULL;
+            cv->stack[cv->nsaved].filter_count = 0;
         }
     }
-    cv->stack_len += 1;
+    cv->nsaved += 1;
 }
 
 void canvas_restore(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "restore"); }
-    if (cv->stack_len > 0) {
-        cv->stack_len -= 1;
+    if (cv->nsaved > 0) {
+        cv->nsaved -= 1;
         free(cv->cur.filters);
         free(cv->cur.clip_mask);
-        cv->cur = cv->stack[cv->stack_len];  // adopts the saved clip mask + filters
+        cv->cur = cv->stack[cv->nsaved];  // adopts the saved clip mask + filters
     }
 }
 
@@ -400,11 +400,11 @@ void canvas_reset(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "reset"); }
     // Empty the saved-state stack (each entry may own clip-mask and filter-list
     // copies); keep the backing allocation for reuse.
-    for (int i = 0; i < cv->stack_len; i++) {
+    for (int i = 0; i < cv->nsaved; i++) {
         free(cv->stack[i].filters);
         free(cv->stack[i].clip_mask);
     }
-    cv->stack_len = 0;
+    cv->nsaved = 0;
     // Drop the current filter list and clip mask, and restore every state field
     // to its default.
     free(cv->cur.filters);
@@ -1051,7 +1051,7 @@ static void cover_edge(struct canvas *__single cv, cbbox b, cnvs_vec2 p0, cnvs_v
 }
 
 static void cover_path_edges(struct canvas *__single cv, cbbox b, struct cnvs_path const *p) {
-    for (int s = 0; s < p->sp_len; s++) {
+    for (int s = 0; s < p->nsubs; s++) {
         cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
             continue;
@@ -1488,8 +1488,9 @@ void cnvs_blend_solid(struct canvas *__single cv, int x, int y, int w, int h,
     blend_region(cv, x, y, w, h, NULL, splat, cov, clip, clip_len, mode);
 }
 
-void cnvs_blend_read(struct canvas *__single cv, cnvs_premul *__counted_by(len) out, int len) {
-    if (!out || len < cv->target_len) {
+void cnvs_blend_read(struct canvas *__single cv,
+                     cnvs_premul *__counted_by(pixels) out, int pixels) {
+    if (!out || pixels < cv->target_len) {
         return;
     }
     memcpy(out, cv->target, (size_t)cv->target_len * sizeof *out);
@@ -2264,7 +2265,7 @@ void canvas_set_fill_rule(struct canvas *__single cv, enum canvas_fill_rule rule
 // over its clamped bbox.
 static void fill_device_path(struct canvas *__single cv, struct cnvs_path const *p,
                              enum cnvs_fill_rule rule) {
-    cbbox b = points_bbox(cv, p->pts, p->pt_len, filter_margin(cv));
+    cbbox b = points_bbox(cv, p->pts, p->npts, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -2288,7 +2289,7 @@ void canvas_fill(struct canvas *__single cv) {
 static bool path_contains(struct cnvs_path const *p, cnvs_vec2 q, enum cnvs_fill_rule rule) {
     int wn = 0;   // winding number  (nonzero rule)
     int cn = 0;   // crossing number (even-odd rule)
-    for (int s = 0; s < p->sp_len; s++) {
+    for (int s = 0; s < p->nsubs; s++) {
         cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
             continue;
@@ -2333,7 +2334,7 @@ void canvas_clip(struct canvas *__single cv) {
         return;
     }
     // Rasterize the path's coverage into cv->cov over its (clamped) bbox.
-    cbbox b = points_bbox(cv, cv->path.pts, cv->path.pt_len, 0);  // the clip is unfiltered
+    cbbox b = points_bbox(cv, cv->path.pts, cv->path.npts, 0);  // the clip is unfiltered
     if (b.w > 0 && b.h > 0 && ensure_tile(cv, b.w * b.h) &&
         cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         cover_path_edges(cv, b, &cv->path);
@@ -2442,7 +2443,7 @@ static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path cons
     }
     float soff = cv->cur.dash_offset * scale;
 
-    for (int s = 0; s < p->sp_len; s++) {
+    for (int s = 0; s < p->nsubs; s++) {
         cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
             continue;
@@ -2464,10 +2465,10 @@ static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path cons
 }
 
 static void stroke_device_path(struct canvas *__single cv, struct cnvs_path const *p) {
-    if (!build_stroke_verts(cv, p) || cv->scratch_verts.len < 3) {
+    if (!build_stroke_verts(cv, p) || cv->scratch_verts.nverts < 3) {
         return;
     }
-    cbbox b = points_bbox(cv, cv->scratch_verts.data, cv->scratch_verts.len,
+    cbbox b = points_bbox(cv, cv->scratch_verts.data, cv->scratch_verts.nverts,
                            filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
@@ -2475,7 +2476,7 @@ static void stroke_device_path(struct canvas *__single cv, struct cnvs_path cons
     }
     // Feed each stroke triangle as edges, forced to a consistent winding so the
     // overlapping join/cap triangles union (nonzero) instead of cancelling.
-    for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
+    for (int i = 0; i + 2 < cv->scratch_verts.nverts; i += 3) {
         cnvs_vec2 p0 = cv->scratch_verts.data[i];
         cnvs_vec2 p1 = cv->scratch_verts.data[i + 1];
         cnvs_vec2 p2 = cv->scratch_verts.data[i + 2];
@@ -2521,7 +2522,7 @@ static bool point_in_tri(cnvs_vec2 q, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
 // Whether q lies in the stroke triangles currently in cv->scratch_verts (their
 // union -- inside any triangle counts).
 static bool stroke_verts_contain(struct canvas *__single cv, cnvs_vec2 q) {
-    for (int i = 0; i + 2 < cv->scratch_verts.len; i += 3) {
+    for (int i = 0; i + 2 < cv->scratch_verts.nverts; i += 3) {
         if (point_in_tri(q, cv->scratch_verts.data[i], cv->scratch_verts.data[i + 1],
                          cv->scratch_verts.data[i + 2])) {
             return true;
@@ -3451,7 +3452,7 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 // cnvs_path2d.h so the recorder can serialize a path as a `path` block.
 
 struct canvas_path2d *__single canvas_path2d(void) {
-    return calloc(1, sizeof(struct canvas_path2d));  // cmds=NULL, len=cap=0 (consistent)
+    return calloc(1, sizeof(struct canvas_path2d));  // cmds=NULL, ncmds=cap=0 (consistent)
 }
 
 void canvas_path2d_free(struct canvas_path2d *__single p) {
@@ -3463,8 +3464,8 @@ void canvas_path2d_free(struct canvas_path2d *__single p) {
 }
 
 static void p2d_push(struct canvas_path2d *__single p, p2d_cmd c) {
-    if (p->len >= p->cap) {
-        int nc = cnvs_grow_cap(p->cap, p->len + 1);
+    if (p->ncmds >= p->cap) {
+        int nc = cnvs_grow_cap(p->cap, p->ncmds + 1);
         p2d_cmd *ncmds = realloc(p->cmds, (size_t)nc * sizeof *ncmds);
         if (!ncmds) {
             return;  // OOM: drop the command (best-effort, matches the path builders)
@@ -3472,8 +3473,8 @@ static void p2d_push(struct canvas_path2d *__single p, p2d_cmd c) {
         p->cmds = ncmds;
         p->cap = nc;
     }
-    p->cmds[p->len] = c;
-    p->len += 1;
+    p->cmds[p->ncmds] = c;
+    p->ncmds += 1;
 }
 
 void canvas_path2d_move_to(struct canvas_path2d *__single p, float x, float y) {
@@ -3530,7 +3531,7 @@ void canvas_path2d_close_path(struct canvas_path2d *__single p) {
 
 void canvas_path2d_add_path(struct canvas_path2d *__single dst,
                             struct canvas_path2d const *__single src) {
-    for (int i = 0; i < src->len; i++) {
+    for (int i = 0; i < src->ncmds; i++) {
         p2d_push(dst, src->cmds[i]);
     }
 }
@@ -3538,7 +3539,7 @@ void canvas_path2d_add_path(struct canvas_path2d *__single dst,
 // Replay a Path2D's commands into cv->path through the canvas path methods (which
 // transform each coordinate by the current CTM and flatten curves at device tol).
 static void p2d_replay(struct canvas *__single cv, struct canvas_path2d const *__single p) {
-    for (int i = 0; i < p->len; i++) {
+    for (int i = 0; i < p->ncmds; i++) {
         p2d_cmd c = p->cmds[i];
         float const *a = c.a;
         switch (c.op) {

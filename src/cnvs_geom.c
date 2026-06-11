@@ -23,7 +23,7 @@ bool cnvs_verts_append(struct cnvs_verts *v, cnvs_vec2 const *__counted_by(k) sr
     if (k <= 0) {
         return true;
     }
-    if (!verts_reserve(v, v->len + k)) {
+    if (!verts_reserve(v, v->nverts + k)) {
         return false;
     }
     // Blocks are small (a quad stages 6 verts, a join wedge 3), so a variable-
@@ -31,10 +31,10 @@ bool cnvs_verts_append(struct cnvs_verts *v, cnvs_vec2 const *__counted_by(k) sr
     // than the copy; the constant-size vector memcpys below inline to one
     // load/store pair each.  The destination converts to a counted local
     // FIRST -- that's the block's one real bounds check; copying through
-    // v->data directly would reload data/len/cap and recheck every step, since
+    // v->data directly would reload data/nverts/cap and recheck every step, since
     // the stores could alias *v.
     int cnt = k;  // __counted_by on a local can't name a parameter
-    cnvs_vec2 *__counted_by(cnt) dst = v->data + v->len;
+    cnvs_vec2 *__counted_by(cnt) dst = v->data + v->nverts;
     int i = 0;
     for (; i + 8 <= cnt; i += 8) {  // a stroke block stages 36-48 verts
         float16 q;
@@ -49,17 +49,17 @@ bool cnvs_verts_append(struct cnvs_verts *v, cnvs_vec2 const *__counted_by(k) sr
     for (; i < cnt; i++) {
         dst[i] = src[i];
     }
-    v->len += k;
+    v->nverts += k;
     return true;
 }
 
 void cnvs_verts_reset(struct cnvs_verts *v) {
-    v->len = 0;
+    v->nverts = 0;
 }
 
 void cnvs_verts_free(struct cnvs_verts *v) {
     free(v->data);
     v->data = NULL;
-    v->len = 0;
+    v->nverts = 0;
     v->cap = 0;
 }

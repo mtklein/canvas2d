@@ -9,7 +9,7 @@
 
 struct cnvs_verts {
     cnvs_vec2 *__counted_by(cap) data;
-    int len;
+    int nverts;
     int cap;
 };
 

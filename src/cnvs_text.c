@@ -31,7 +31,7 @@ int cnvs_shaped_index_at_x(struct cnvs_shaped const *__single s, float x) {
         for (int i = 0; i < run.count; i++) {  // left-to-right sweep works for RTL too
             if (x < pen + run.xadv[i]) {
                 int32_t c = run.cluster[i];
-                if (c < 0 || c >= s->text_len) {  // defensive: a bad cluster is not
+                if (c < 0 || c >= s->utf16s) {  // defensive: a bad cluster is not
                     return -1;                    // a valid source index
                 }
                 return c;

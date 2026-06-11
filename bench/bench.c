@@ -21,7 +21,7 @@ int main(void) {
 
     struct cnvs_path path;
     cnvs_path_init(&path);
-    struct cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
+    struct cnvs_verts verts = { .data = NULL, .nverts = 0, .cap = 0 };
     struct cnvs_cover cover = { .acc = NULL, .cap = 0 };
 
     int const w = 512;
@@ -50,7 +50,7 @@ int main(void) {
             sink += (double)cov[(h / 2) * w + w / 2];
 
             cnvs_verts_reset(&verts);
-            for (int s = 0; s < path.sp_len; s++) {
+            for (int s = 0; s < path.nsubs; s++) {
                 cnvs_subpath sp = path.subs[s];
                 if (sp.count < 2) {
                     continue;
@@ -59,7 +59,7 @@ int main(void) {
                 cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
                                      CNVS_JOIN_MITER, CNVS_CAP_BUTT, 10.0f, &verts);
             }
-            sink += (double)verts.len;
+            sink += (double)verts.nverts;
         }
 
         // /dev/null keeps disk I/O out of the timing; the encode still runs in full.

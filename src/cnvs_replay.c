@@ -721,7 +721,7 @@ static bool replay_path_cmd(struct replay_blocks *__single b,
     }
     b->pend_left -= 1;
     if (b->pend_left == 0) {
-        if (p->len != b->pend_cmds) {
+        if (p->ncmds != b->pend_cmds) {
             return false;  // a builder dropped a command (OOM): stop replay
         }
         b->paths[b->pend_id] = p;
@@ -882,7 +882,7 @@ static bool replay_shape(struct canvas *__single cv, struct replay_blocks *__sin
         return false;
     }
     s->size_px = size;
-    s->text_len = (int)t16;
+    s->utf16s = (int)t16;
     if (nruns > 0) {
         cnvs_glyph_run *runs = calloc((size_t)nruns, sizeof *runs);
         if (!runs) {
@@ -957,7 +957,7 @@ static bool replay_run(struct canvas *__single cv, struct replay_blocks *__singl
             float a = 0.0f;
             ok = read_uint(data, le, &j, 0xFFFF, &gid) &&
                  read_float(data, le, &j, &a) && isfinite(a) &&
-                 read_uint(data, le, &j, (long)b->s->text_len - 1, &cluster);
+                 read_uint(data, le, &j, (long)b->s->utf16s - 1, &cluster);
             if (ok) {
                 g[i] = (uint16_t)gid;
                 adv[i] = a;

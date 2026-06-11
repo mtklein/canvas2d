@@ -267,7 +267,7 @@ struct cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px, bo
 
         out = calloc(1, sizeof *out);
         if (out) {
-            out->text_len = (int)CFStringGetLength(str);
+            out->utf16s = (int)CFStringGetLength(str);
             out->size_px = size_px;
             out->nruns = (int)nruns;
             out->run = calloc((size_t)nruns, sizeof *out->run);

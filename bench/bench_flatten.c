@@ -24,7 +24,7 @@ int main(void) {
                                    bench_rpt(512.0f, 512.0f),
                                    bench_rpt(512.0f, 512.0f), 0.25f);
             }
-            sink += (double)path.pt_len;
+            sink += (double)path.npts;
         }
     }
 

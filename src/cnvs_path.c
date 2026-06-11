@@ -7,10 +7,10 @@
 
 void cnvs_path_init(struct cnvs_path *p) {
     p->pts = NULL;
-    p->pt_len = 0;
+    p->npts = 0;
     p->pt_cap = 0;
     p->subs = NULL;
-    p->sp_len = 0;
+    p->nsubs = 0;
     p->sp_cap = 0;
     p->has_cur = false;
     p->cur = (cnvs_vec2){ .x = 0.0f, .y = 0.0f };
@@ -23,8 +23,8 @@ void cnvs_path_free(struct cnvs_path *p) {
 }
 
 void cnvs_path_reset(struct cnvs_path *p) {
-    p->pt_len = 0;
-    p->sp_len = 0;
+    p->npts = 0;
+    p->nsubs = 0;
     p->has_cur = false;
 }
 
@@ -57,14 +57,14 @@ static bool subs_reserve(struct cnvs_path *p, int need) {
 }
 
 bool cnvs_path_move_to(struct cnvs_path *p, cnvs_vec2 pt) {
-    if (!subs_reserve(p, p->sp_len + 1) || !pts_reserve(p, p->pt_len + 1)) {
+    if (!subs_reserve(p, p->nsubs + 1) || !pts_reserve(p, p->npts + 1)) {
         return false;
     }
-    p->subs[p->sp_len] =
-        (cnvs_subpath){ .start = p->pt_len, .count = 1, .closed = false };
-    p->sp_len += 1;
-    p->pts[p->pt_len] = pt;
-    p->pt_len += 1;
+    p->subs[p->nsubs] =
+        (cnvs_subpath){ .start = p->npts, .count = 1, .closed = false };
+    p->nsubs += 1;
+    p->pts[p->npts] = pt;
+    p->npts += 1;
     p->has_cur = true;
     p->cur = pt;
     return true;
@@ -74,20 +74,20 @@ bool cnvs_path_line_to(struct cnvs_path *p, cnvs_vec2 pt) {
     if (!p->has_cur) {
         return cnvs_path_move_to(p, pt);
     }
-    if (!pts_reserve(p, p->pt_len + 1)) {
+    if (!pts_reserve(p, p->npts + 1)) {
         return false;
     }
-    p->pts[p->pt_len] = pt;
-    p->pt_len += 1;
-    p->subs[p->sp_len - 1].count += 1;
+    p->pts[p->npts] = pt;
+    p->npts += 1;
+    p->subs[p->nsubs - 1].count += 1;
     p->cur = pt;
     return true;
 }
 
 bool cnvs_path_close(struct cnvs_path *p) {
-    if (p->sp_len > 0) {
-        cnvs_subpath s = p->subs[p->sp_len - 1];
-        p->subs[p->sp_len - 1].closed = true;
+    if (p->nsubs > 0) {
+        cnvs_subpath s = p->subs[p->nsubs - 1];
+        p->subs[p->nsubs - 1].closed = true;
         if (s.count > 0) {
             p->cur = p->pts[s.start];
         }
@@ -98,18 +98,18 @@ bool cnvs_path_close(struct cnvs_path *p) {
 
 bool cnvs_path_rect(struct cnvs_path *p,
                     cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c, cnvs_vec2 d) {
-    if (!subs_reserve(p, p->sp_len + 1) || !pts_reserve(p, p->pt_len + 4)) {
+    if (!subs_reserve(p, p->nsubs + 1) || !pts_reserve(p, p->npts + 4)) {
         return false;
     }
-    int start = p->pt_len;
-    p->pts[p->pt_len] = a;
-    p->pts[p->pt_len + 1] = b;
-    p->pts[p->pt_len + 2] = c;
-    p->pts[p->pt_len + 3] = d;
-    p->pt_len += 4;
-    p->subs[p->sp_len] =
+    int start = p->npts;
+    p->pts[p->npts] = a;
+    p->pts[p->npts + 1] = b;
+    p->pts[p->npts + 2] = c;
+    p->pts[p->npts + 3] = d;
+    p->npts += 4;
+    p->subs[p->nsubs] =
         (cnvs_subpath){ .start = start, .count = 4, .closed = true };
-    p->sp_len += 1;
+    p->nsubs += 1;
     p->has_cur = true;
     p->cur = a;
     return true;

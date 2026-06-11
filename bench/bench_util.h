@@ -46,7 +46,7 @@ static inline void bench_stars(struct cnvs_path *path, int count, float w, float
 static inline void bench_cover_path(struct cnvs_cover *cov, int w, int h,
                                     struct cnvs_path const *p) {
     cnvs_cover_reset(cov, w, h);
-    for (int s = 0; s < p->sp_len; s++) {
+    for (int s = 0; s < p->nsubs; s++) {
         cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
             continue;
@@ -69,7 +69,7 @@ static inline double bench_fill_shapes(struct cnvs_cover *cover,
                                        int clampw, int clamph, struct cnvs_path const *p,
                                        enum cnvs_fill_rule rule) {
     double sink = 0.0;
-    for (int s = 0; s < p->sp_len; s++) {
+    for (int s = 0; s < p->nsubs; s++) {
         cnvs_subpath sp = p->subs[s];
         if (sp.count < 2) {
             continue;

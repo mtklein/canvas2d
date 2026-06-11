@@ -20,7 +20,7 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
         return;
     }
     CHECK(s->nruns >= 1);
-    CHECK(s->text_len > 0);
+    CHECK(s->utf16s > 0);
 
     bool clusters_ok = true, any_rtl = false;
     for (int r = 0; r < s->nruns; r++) {
@@ -28,7 +28,7 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
         CHECK(run.count > 0);
         any_rtl = any_rtl || run.rtl;
         for (int i = 0; i < run.count; i++) {
-            if (run.cluster[i] < 0 || run.cluster[i] >= s->text_len) {
+            if (run.cluster[i] < 0 || run.cluster[i] >= s->utf16s) {
                 clusters_ok = false;
             }
         }
@@ -42,8 +42,8 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
     CHECK(w > 0.0f);
     int i0 = cnvs_shaped_index_at_x(s, 0.0f);
     int i1 = cnvs_shaped_index_at_x(s, w * 0.99f);
-    CHECK(i0 >= 0 && i0 < s->text_len);
-    CHECK(i1 >= 0 && i1 < s->text_len);
+    CHECK(i0 >= 0 && i0 < s->utf16s);
+    CHECK(i1 >= 0 && i1 < s->utf16s);
     CHECK(cnvs_shaped_index_at_x(s, w + 100.0f) == -1);  // past the end
 
     cnvs_shaped_free(s);
@@ -94,7 +94,7 @@ static void check_outline(void) {
         float w = cnvs_shaped_outline(NULL, s, 0.0f, 0.0f, cnvs_mat_identity(),
                                       0.25f, &p, NULL, NULL);
         CHECK(w > 0.0f);
-        CHECK(p.pt_len > 0 && p.sp_len > 0);   // "ffi" produced outline geometry
+        CHECK(p.npts > 0 && p.nsubs > 0);   // "ffi" produced outline geometry
         cnvs_path_free(&p);
         cnvs_shaped_free(s);
     }
@@ -107,7 +107,7 @@ static void check_outline(void) {
         float w = cnvs_shaped_outline(NULL, e, 0.0f, 0.0f, cnvs_mat_identity(),
                                       0.25f, &p, NULL, NULL);
         CHECK(w > 0.0f);          // it has an advance (occupies space)
-        CHECK(p.pt_len == 0);     // but a color glyph has no outline path
+        CHECK(p.npts == 0);     // but a color glyph has no outline path
         cnvs_path_free(&p);
         cnvs_shaped_free(e);
     }
@@ -160,7 +160,7 @@ static void check_bidi(void) {
     cnvs_xspan sp[8];
 
     // Full selection collapses to one span covering the whole line.
-    int nfull = cnvs_shaped_selection(s, 0, s->text_len, sp, 8);
+    int nfull = cnvs_shaped_selection(s, 0, s->utf16s, sp, 8);
     CHECK(nfull == 1);
     CHECK(sp[0].x0 == 0.0f && sp[0].x1 > w - 0.5f && sp[0].x1 < w + 0.5f);
 
@@ -177,7 +177,7 @@ static void check_bidi(void) {
 
     // Caret at the line start is 0; an index past the end is the line width.
     CHECK(cnvs_shaped_x_at_index(s, 0) == 0.0f);
-    float xe = cnvs_shaped_x_at_index(s, s->text_len);
+    float xe = cnvs_shaped_x_at_index(s, s->utf16s);
     CHECK(xe > w - 0.5f && xe < w + 0.5f);
 
     cnvs_shaped_free(s);

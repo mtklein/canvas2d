@@ -25,6 +25,6 @@ typedef struct {
 
 struct canvas_path2d {
     p2d_cmd *__counted_by(cap) cmds;
-    int len;
+    int ncmds;
     int cap;
 };

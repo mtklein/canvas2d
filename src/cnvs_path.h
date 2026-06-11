@@ -16,10 +16,10 @@ typedef struct {
 
 struct cnvs_path {
     cnvs_vec2 *__counted_by(pt_cap) pts;
-    int pt_len;
+    int npts;
     int pt_cap;
     cnvs_subpath *__counted_by(sp_cap) subs;
-    int sp_len;
+    int nsubs;
     int sp_cap;
     bool has_cur;
     cnvs_vec2 cur;

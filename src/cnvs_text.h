@@ -43,7 +43,7 @@ typedef struct {
 struct cnvs_shaped {
     cnvs_glyph_run *__counted_by(nruns) run;
     int nruns;
-    int text_len;   // source UTF-16 length, the bound for cluster indices
+    int utf16s;     // source length in UTF-16 units, the bound for cluster indices
     float size_px;  // font size the line was shaped at, user px (every run's font,
                     // fallback included, is at this size; the numerator of the
                     // canonical-curve px scale)

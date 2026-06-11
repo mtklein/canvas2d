@@ -17,14 +17,14 @@ int main(void) {
     cnvs_path_init(&path);
     bench_stars(&path, STARS, 512.0f, 512.0f);
 
-    struct cnvs_verts verts = { .data = NULL, .len = 0, .cap = 0 };
+    struct cnvs_verts verts = { .data = NULL, .nverts = 0, .cap = 0 };
     double sink = 0.0;
 
     int reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             cnvs_verts_reset(&verts);
-            for (int s = 0; s < path.sp_len; s++) {
+            for (int s = 0; s < path.nsubs; s++) {
                 cnvs_subpath sp = path.subs[s];
                 if (sp.count < 2) {
                     continue;
@@ -33,7 +33,7 @@ int main(void) {
                 cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
                                      CNVS_JOIN_MITER, CNVS_CAP_BUTT, 10.0f, &verts);
             }
-            sink += (double)verts.len;
+            sink += (double)verts.nverts;
         }
     }
 

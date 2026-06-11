@@ -29,8 +29,8 @@ struct rec_image {
 // content, not pointer identity, is the key, since the caller's object may be
 // mutated (or freed and another allocated at the same address) between draws.
 struct rec_path {
-    p2d_cmd *__counted_by(len) cmds;
-    int len;
+    p2d_cmd *__counted_by(ncmds) cmds;
+    int ncmds;
 };
 
 // The text format's enum spellings (cnvs_record.h): written here, parsed by
@@ -347,7 +347,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // text is length-prefixed raw bytes to end of line (the key, byte for
     // byte).
     fprintf(r->f, "shape %.9g %d %d %d %d ", (double)size_px, rtl ? 1 : 0,
-            s->text_len, s->nruns, len);
+            s->utf16s, s->nruns, len);
     if (len > 0) {
         fwrite(text, 1, (size_t)len, r->f);
     }
@@ -504,7 +504,7 @@ int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *
     if (!r || r->suspend != 0) {
         return -1;
     }
-    int const n = p->len;
+    int const n = p->ncmds;
     for (int iv = 0; iv < n; iv++) {
         int k = 0;
         if (!p2d_token(p->cmds[iv].op, &k)) {
@@ -514,7 +514,7 @@ int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *
     // Content dedupe: the same petal stamped under twelve transforms costs
     // one block, however many fill_path/stroke_path reference it.
     for (int i = 0; i < r->npath; i++) {
-        if (r->path[i].len == n && path_cmds_eq(r->path[i].cmds, p->cmds, n)) {
+        if (r->path[i].ncmds == n && path_cmds_eq(r->path[i].cmds, p->cmds, n)) {
             return i;
         }
     }
@@ -542,7 +542,7 @@ int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *
         fputc('\n', r->f);
     }
     r->path[id].cmds = copy;
-    r->path[id].len = n;
+    r->path[id].ncmds = n;
     r->npath = id + 1;
     return id;
 }
