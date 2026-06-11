@@ -46,17 +46,28 @@ float cnvs_shaped_x_at_index(struct cnvs_shaped const *__single s, int index) {
     if (!s) {
         return 0.0f;
     }
-    float pen = 0.0f;
+    // One visual sweep tracking the glyph whose cluster START is the greatest
+    // one <= index: an exact hit is its own cluster's start, and an index
+    // INSIDE a cluster (a surrogate pair's low half, a ligature's interior)
+    // snaps to the enclosing cluster's edge -- no glyph carries that index, so
+    // without the snap the caret would fall off the end of the line.
+    float pen = 0.0f, best_x = 0.0f;
+    int32_t best = -1;  // greatest cluster start <= index seen so far
     for (int r = 0; r < s->nruns; r++) {
         struct cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
-            if (run.cluster[i] == index) {
-                return pen;  // leading visual edge of the glyph at this logical index
+            int32_t const c = run.cluster[i];
+            if (c <= index && c > best) {
+                best = c;
+                best_x = pen;
             }
             pen += run.xadv[i];
         }
     }
-    return pen;  // index past the last glyph -> end of the line
+    if (index >= s->utf16s) {
+        return pen;  // at or past the source's end -> the caret after the last glyph
+    }
+    return best >= 0 ? best_x : 0.0f;
 }
 
 int cnvs_shaped_selection(struct cnvs_shaped const *__single s, int lo, int hi,

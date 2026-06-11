@@ -74,7 +74,10 @@ typedef struct {
     float x0, x1;
 } cnvs_xspan;
 
-// Caret: visual x for a logical UTF-16 index (the leading visual edge of that glyph).
+// Caret: visual x for a logical UTF-16 index -- the left visual edge of the glyph
+// whose cluster contains it.  An index inside a cluster (a surrogate pair's low
+// half, a ligature's interior) snaps to that cluster's edge; an index at or past
+// the source's end is the caret after the last glyph (the line's advance width).
 float cnvs_shaped_x_at_index(struct cnvs_shaped const *__single s, int index);
 
 // Selection: visual x-spans covering the logical range [lo,hi).  A bidi range maps to

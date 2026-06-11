@@ -183,6 +183,30 @@ static void check_bidi(void) {
     cnvs_shaped_free(s);
 }
 
+// Caret snapping: an index INSIDE a cluster -- here the low half of an emoji's
+// surrogate pair -- has no glyph of its own, so the caret snaps to the enclosing
+// cluster's leading edge rather than falling off the end of the line.
+static void check_caret_snap(void) {
+    struct cnvs_shaped *s = cnvs_shape_text(S("Helvetica"), 20.0f, false, S("a\xF0\x9F\x98\x80z"));  // a 😀 z
+    CHECK(s != NULL);
+    if (!s) {
+        return;
+    }
+    CHECK(s->utf16s == 4);  // 'a' + the surrogate pair + 'z'
+    float const w = cnvs_shaped_width(s);
+    float const at_emoji = cnvs_shaped_x_at_index(s, 1);  // the pair's cluster start
+    float const inside = cnvs_shaped_x_at_index(s, 2);    // its low surrogate
+    CHECK(inside - at_emoji == 0.0f);                // snapped to the cluster's edge
+    CHECK(inside < w);                               // and NOT off the end of the line
+    CHECK(cnvs_shaped_x_at_index(s, 3) > at_emoji);  // 'z' sits past the emoji
+    CHECK(cnvs_shaped_x_at_index(s, 4) > w - 0.5f);  // end-of-line caret
+    for (int i = 0; i <= s->utf16s; i++) {           // every caret lands on the line
+        float const x = cnvs_shaped_x_at_index(s, i);
+        CHECK(x >= 0.0f && x <= w + 0.5f);
+    }
+    cnvs_shaped_free(s);
+}
+
 // The paragraph base direction (the canvas direction attribute) changes how a
 // mixed-direction line lays out and how its neutrals resolve -- same glyphs,
 // same advances, different visual order.  Both shapings must measure alike.
@@ -234,6 +258,7 @@ int main(void) {
     check_outline();
     check_emoji_draw();
     check_bidi();
+    check_caret_snap();
     check_paragraph_direction();
     return TEST_REPORT();
 }
