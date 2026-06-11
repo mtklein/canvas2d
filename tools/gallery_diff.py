@@ -11,8 +11,8 @@ data: URIs keep the canvas untainted for pixel work).
   python3 tools/gallery_diff.py HEAD~5       # vs any ref
   python3 tools/gallery_diff.py --no-open    # just print the output path
 
-Keys in the page: `o` for the ranked overview; up/down (or left/right, j/k)
-scan scenes in the nav's ranked order; 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
+Keys in the page: `o` for the ranked overview; j/k scan scenes in the nav's
+ranked order (arrows are left to the browser, for scrolling); 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
 the blink clock and steps it by hand (Enter resumes), [ and ] adjust heatmap
 gain, + and - adjust loupe zoom, m toggles the loupe.
 
@@ -402,8 +402,8 @@ document.querySelectorAll(".mode").forEach(b => b.onclick = () => {
   mode = b.dataset.m; if (cur < 0) cur = 0; render(); });
 addEventListener("keydown", e => {
   if (e.key === "o" || e.key === "0") { cur = -1; render(); }
-  else if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === "j") { e.preventDefault(); step(+1); }
-  else if (e.key === "ArrowUp"   || e.key === "ArrowLeft"  || e.key === "k") { e.preventDefault(); step(-1); }
+  else if (e.key === "j") { step(+1); }  // scenes are j/k (ranked order);
+  else if (e.key === "k") { step(-1); }  // arrows stay the browser's, to scroll
   else if (e.key >= "1" && e.key <= "4") { mode = ["blink","heat","swipe","side"][e.key - 1];
     if (cur < 0) cur = 0; render(); }
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
