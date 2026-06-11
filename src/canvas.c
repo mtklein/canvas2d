@@ -849,9 +849,9 @@ static cbbox points_bbox(canvas *__single cv,
     float fx0 = floorf(minx) - m, fy0 = floorf(miny) - m;
     float fx1 = ceilf(maxx) + m, fy1 = ceilf(maxy) + m;
     int x0 = cnvs_f2i(fx0), y0 = cnvs_f2i(fy0), x1 = cnvs_f2i(fx1), y1 = cnvs_f2i(fy1);
-    if (x0 < 0) { x0 = 0; }
-    if (y0 < 0) { y0 = 0; }
-    if (x1 > cv->width) { x1 = cv->width; }
+    if (x0 < 0)          { x0 = 0; }
+    if (y0 < 0)          { y0 = 0; }
+    if (x1 > cv->width)  { x1 = cv->width; }
     if (y1 > cv->height) { y1 = cv->height; }
     cbbox b = { .x = x0, .y = y0, .w = x1 - x0, .h = y1 - y0 };
     if (b.w < 0) { b.w = 0; }
@@ -1133,7 +1133,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
         // dense over the bbox, so one flat loop covers all rows.
         cnvs_h8 const base = (cnvs_h8)(_Float16)((float)solid.a * ga);
         cnvs_h8 const cr = (cnvs_h8)solid.r, cg = (cnvs_h8)solid.g,
-                 cb = (cnvs_h8)solid.b;
+                      cb = (cnvs_h8)solid.b;
         int const npix = b.w * b.h;
         if (fold) {
             int i = 0;
@@ -1404,11 +1404,11 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
     // at 3r beyond the shape -- the mask region must include that whole spread or
     // the soft edge gets clipped to a rectangle.
     int margin = 3 * r;
-    int sx0 = b.x + offx - margin, sy0 = b.y + offy - margin;
+    int sx0 = b.x       + offx - margin, sy0 = b.y       + offy - margin;
     int sx1 = b.x + b.w + offx + margin, sy1 = b.y + b.h + offy + margin;
-    if (sx0 < 0) { sx0 = 0; }
-    if (sy0 < 0) { sy0 = 0; }
-    if (sx1 > cv->width) { sx1 = cv->width; }
+    if (sx0 < 0)          { sx0 = 0; }
+    if (sy0 < 0)          { sy0 = 0; }
+    if (sx1 > cv->width)  { sx1 = cv->width; }
     if (sy1 > cv->height) { sy1 = cv->height; }
     int sw = sx1 - sx0, sh = sy1 - sy0;
     if (sw <= 0 || sh <= 0 || !ensure_shadow(cv, sw * sh) || !ensure_tile(cv, sw * sh)) {
@@ -1661,10 +1661,10 @@ void canvas_round_rect(canvas *__single cv, float x, float y, float w, float h,
     float q = (float)M_PI * 0.5f;
     float pi = (float)M_PI;
     canvas_move_to(cv, x + r, y);
-    canvas_arc(cv, x + w - r, y + r, r, -q, 0.0f, false);     // top-right
-    canvas_arc(cv, x + w - r, y + h - r, r, 0.0f, q, false);  // bottom-right
-    canvas_arc(cv, x + r, y + h - r, r, q, pi, false);        // bottom-left
-    canvas_arc(cv, x + r, y + r, r, pi, pi + q, false);       // top-left
+    canvas_arc(cv, x + w - r, y + r,     r,   -q, 0.0f,   false);  // top-right
+    canvas_arc(cv, x + w - r, y + h - r, r, 0.0f,    q,   false);  // bottom-right
+    canvas_arc(cv, x + r,     y + h - r, r,    q,   pi,   false);  // bottom-left
+    canvas_arc(cv, x + r,     y + r,     r,   pi, pi + q, false);  // top-left
     canvas_close_path(cv);
     cnvs_rec_leave(cv->rec);
 }
@@ -1715,10 +1715,10 @@ static void round_rect_radii_impl(canvas *__single cv, float x, float y,
     float q = (float)M_PI * 0.5f;
     float pi = (float)M_PI;
     canvas_move_to(cv, x + r[0], y);
-    canvas_ellipse(cv, x + w - r[2], y + r[3], r[2], r[3], 0.0f, -q, 0.0f, false);
-    canvas_ellipse(cv, x + w - r[4], y + h - r[5], r[4], r[5], 0.0f, 0.0f, q, false);
-    canvas_ellipse(cv, x + r[6], y + h - r[7], r[6], r[7], 0.0f, q, pi, false);
-    canvas_ellipse(cv, x + r[0], y + r[1], r[0], r[1], 0.0f, pi, pi + q, false);
+    canvas_ellipse(cv, x + w - r[2], y + r[3],     r[2], r[3], 0.0f,   -q, 0.0f,   false);
+    canvas_ellipse(cv, x + w - r[4], y + h - r[5], r[4], r[5], 0.0f, 0.0f,    q,   false);
+    canvas_ellipse(cv, x + r[6],     y + h - r[7], r[6], r[7], 0.0f,    q,   pi,   false);
+    canvas_ellipse(cv, x + r[0],     y + r[1],     r[0], r[1], 0.0f,   pi, pi + q, false);
     canvas_close_path(cv);
 }
 
@@ -2462,18 +2462,18 @@ canvas_text_metrics canvas_measure_text_full(canvas *__single cv,
     if (have_vm && s) {
         cnvs_text_metrics tm;  // fallback-aware: each glyph in its run's font
         cnvs_shaped_metrics(&cv->text_cache, s, cv->cur.font_size, a, d, &tm);
-        m.width = tm.width;
-        m.actual_bounding_box_left = tm.actual_left;
-        m.actual_bounding_box_right = tm.actual_right;
-        m.actual_bounding_box_ascent = tm.actual_ascent;
+        m.width                       = tm.width;
+        m.actual_bounding_box_left    = tm.actual_left;
+        m.actual_bounding_box_right   = tm.actual_right;
+        m.actual_bounding_box_ascent  = tm.actual_ascent;
         m.actual_bounding_box_descent = tm.actual_descent;
-        m.font_bounding_box_ascent = tm.font_ascent;
-        m.font_bounding_box_descent = tm.font_descent;
-        m.em_height_ascent = tm.em_ascent;
-        m.em_height_descent = tm.em_descent;
-        m.alphabetic_baseline = tm.alphabetic_baseline;
-        m.hanging_baseline = tm.hanging_baseline;
-        m.ideographic_baseline = tm.ideographic_baseline;
+        m.font_bounding_box_ascent    = tm.font_ascent;
+        m.font_bounding_box_descent   = tm.font_descent;
+        m.em_height_ascent            = tm.em_ascent;
+        m.em_height_descent           = tm.em_descent;
+        m.alphabetic_baseline         = tm.alphabetic_baseline;
+        m.hanging_baseline            = tm.hanging_baseline;
+        m.ideographic_baseline        = tm.ideographic_baseline;
     }
     return m;
 }
@@ -3116,19 +3116,19 @@ static void p2d_replay(canvas *__single cv, canvas_path2d const *__single p) {
         p2d_cmd c = p->cmds[i];
         float const *a = c.a;
         switch (c.op) {
-            case P2D_MOVE:  canvas_move_to(cv, a[0], a[1]); break;
-            case P2D_LINE:  canvas_line_to(cv, a[0], a[1]); break;
-            case P2D_QUAD:  canvas_quadratic_curve_to(cv, a[0], a[1], a[2], a[3]); break;
-            case P2D_CUBIC: canvas_bezier_curve_to(cv, a[0], a[1], a[2], a[3],
-                                                   a[4], a[5]); break;
-            case P2D_ARC:   canvas_arc(cv, a[0], a[1], a[2], a[3], a[4], c.ccw); break;
-            case P2D_ELLIPSE: canvas_ellipse(cv, a[0], a[1], a[2], a[3], a[4],
-                                             a[5], a[6], c.ccw); break;
-            case P2D_ARC_TO: canvas_arc_to(cv, a[0], a[1], a[2], a[3], a[4]); break;
-            case P2D_RECT:  canvas_rect(cv, a[0], a[1], a[2], a[3]); break;
+            case P2D_MOVE:       canvas_move_to(cv, a[0], a[1]); break;
+            case P2D_LINE:       canvas_line_to(cv, a[0], a[1]); break;
+            case P2D_QUAD:       canvas_quadratic_curve_to(cv, a[0], a[1], a[2], a[3]); break;
+            case P2D_CUBIC:      canvas_bezier_curve_to(cv, a[0], a[1], a[2], a[3],
+                                                        a[4], a[5]); break;
+            case P2D_ARC:        canvas_arc(cv, a[0], a[1], a[2], a[3], a[4], c.ccw); break;
+            case P2D_ELLIPSE:    canvas_ellipse(cv, a[0], a[1], a[2], a[3], a[4],
+                                                a[5], a[6], c.ccw); break;
+            case P2D_ARC_TO:     canvas_arc_to(cv, a[0], a[1], a[2], a[3], a[4]); break;
+            case P2D_RECT:       canvas_rect(cv, a[0], a[1], a[2], a[3]); break;
             case P2D_ROUND_RECT: canvas_round_rect(cv, a[0], a[1], a[2], a[3], a[4]);
-                            break;
-            case P2D_CLOSE: canvas_close_path(cv); break;
+                                 break;
+            case P2D_CLOSE:      canvas_close_path(cv); break;
         }
     }
 }
