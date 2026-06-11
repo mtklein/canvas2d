@@ -11,8 +11,8 @@ data: URIs keep the canvas untainted for pixel work).
   python3 tools/gallery_diff.py HEAD~5       # vs any ref
   python3 tools/gallery_diff.py --no-open    # just print the output path
 
-Keys in the page: `o` for the ranked overview, arrows or j/k switch scenes,
-1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
+Keys in the page: `o` for the ranked overview; up/down (or left/right, j/k)
+scan scenes in the nav's ranked order; 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
 the blink clock and steps it by hand (Enter resumes), [ and ] adjust heatmap
 gain, + and - adjust loupe zoom, m toggles the loupe.
 
@@ -210,8 +210,19 @@ function score(s, cb) {
   });
 }
 
+function ranked() {  // nav display order: worst first; arrows scan this order
+  return scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
+}
+
+function step(delta) {  // move through the RANKED order, as the nav reads
+  const order = ranked();
+  const at = Math.max(0, order.indexOf(cur));
+  cur = order[(at + delta + order.length) % order.length];
+  render();
+}
+
 function rebuildNav() {
-  const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
+  const order = ranked();
   nav.querySelectorAll("button").forEach(b => b.remove());
   for (const i of order) {
     const s = scenes[i], b = document.createElement("button");
@@ -229,7 +240,7 @@ function overview() {
   view.innerHTML = ""; hideLoupe(); clearInterval(blinkTimer); blinkTimer = null;
   stats.textContent = "ranked by weighted change (% px changed, sqrt-magnitude); click a row";
   document.querySelectorAll(".mode").forEach(b => b.classList.remove("sel"));
-  const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
+  const order = ranked();
   const t = document.createElement("table"); t.id = "over";
   for (const i of order) {
     const s = scenes[i], tr = document.createElement("tr");
@@ -388,8 +399,8 @@ document.querySelectorAll(".mode").forEach(b => b.onclick = () => {
   mode = b.dataset.m; if (cur < 0) cur = 0; render(); });
 addEventListener("keydown", e => {
   if (e.key === "o" || e.key === "0") { cur = -1; render(); }
-  else if (e.key === "ArrowRight" || e.key === "j") { cur = (cur + 1 + scenes.length) % scenes.length; render(); }
-  else if (e.key === "ArrowLeft" || e.key === "k") { cur = (cur - 1 + scenes.length) % scenes.length; render(); }
+  else if (e.key === "ArrowDown" || e.key === "ArrowRight" || e.key === "j") { e.preventDefault(); step(+1); }
+  else if (e.key === "ArrowUp"   || e.key === "ArrowLeft"  || e.key === "k") { e.preventDefault(); step(-1); }
   else if (e.key >= "1" && e.key <= "4") { mode = ["blink","heat","swipe","side"][e.key - 1];
     if (cur < 0) cur = 0; render(); }
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
