@@ -12,15 +12,17 @@ data: URIs keep the canvas untainted for pixel work).
   python3 tools/gallery_diff.py --no-open    # just print the output path
 
 Keys in the page: `o` for the ranked overview, arrows or j/k switch scenes,
-1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space toggles
-blink by hand, [ and ] adjust heatmap gain, + and - adjust loupe zoom,
-m toggles the loupe.
+1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
+the blink clock and steps it by hand (Enter resumes), [ and ] adjust heatmap
+gain, + and - adjust loupe zoom, m toggles the loupe.
 
 Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
 per-pixel magnitude crediting with diminishing (sqrt) returns.  Hovering any
-image raises the loupe: a magnified aperture around the cursor (live through
-blink, so a neighborhood can be watched flipping) with both sides' center
-pixel as unorm8 hex and float, plus the per-channel delta.  The overview's
+image positions the loupe, and the loupe is itself a tiny blink view: one
+global clock alternates it between ref and worktree in EVERY mode (space
+pauses/steps it, Enter resumes), its position persisting across mode flicks --
+line up on a pixel, toggle heatmap and back, never lose the spot.  The readout
+gives both sides' center pixel as unorm8 hex and float plus the delta.  The overview's
 thumbnails use idiff's CSS difference trick (github.com/mtklein/idiff) --
 stacked images under mix-blend-mode:difference and grayscale+brightness --
 kept there because it renders before any decode lands.
@@ -158,8 +160,8 @@ TEMPLATE = r"""<!doctype html>
 <script>
 const scenes = __SCENES__;
 let cur = -1, mode = "blink", gain = 16, blinkShow = 0, blinkTimer = null,
-    zoom = 8, loupeOn = true, swipeFrac = 0.5,
-    hover = null;  // {s, x, y, side} -- side: which image the cursor implies
+    paused = false, zoom = 8, loupeOn = true, swipeFrac = 0.5,
+    hover = null;  // {x, y} in image space; persists across modes and wiggles
 const nav = document.getElementById("nav"), view = document.getElementById("view"),
       stats = document.getElementById("stats"),
       loupe = document.getElementById("loupe"),
@@ -224,7 +226,7 @@ function rebuildNav() {
 }
 
 function overview() {
-  view.innerHTML = ""; hideLoupe();
+  view.innerHTML = ""; hideLoupe(); clearInterval(blinkTimer); blinkTimer = null;
   stats.textContent = "ranked by weighted change (% px changed, sqrt-magnitude); click a row";
   document.querySelectorAll(".mode").forEach(b => b.classList.remove("sel"));
   const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
@@ -249,11 +251,15 @@ function overview() {
   view.append(t);
 }
 
-// --- the loupe: a Digital Color Meter for the pair --------------------------
+// --- the loupe: a Digital Color Meter that is always a tiny blink view ------
+// One global clock (below) alternates it between ref and worktree in EVERY
+// mode -- the loupe always shows exactly what blink would show -- and its
+// position persists across mode flicks and scene switches (clamped), so
+// lining up on a pixel survives toggling 1<->2.  Space pauses/steps the clock.
 
-function hideLoupe() { loupe.style.display = "none"; hover = null; }
+function hideLoupe() { loupe.style.display = "none"; }
 
-function watch(el, side) {  // arm an element as a loupe source over scene px
+function watch(el) {  // arm an element as a loupe position source
   el.addEventListener("mousemove", e => {
     if (!loupeOn || cur < 0) return;
     const s = scenes[cur]; if (!s.px) return;
@@ -262,29 +268,24 @@ function watch(el, side) {  // arm an element as a loupe source over scene px
     const x = Math.floor((e.clientX - r.left - 1) * s.px.w / (r.width - 2));
     const y = Math.floor((e.clientY - r.top  - 1) * s.px.h / (r.height - 2));
     if (x < 0 || y < 0 || x >= s.px.w || y >= s.px.h) return;
-    hover = {s, x, y, side};
+    hover = {x, y};
     drawLoupe();
   });
-  el.addEventListener("mouseleave", hideLoupe);
-}
-
-function loupeSide() {  // which image the loupe magnifies right now
-  if (!hover) return "after";
-  if (mode === "blink") return blinkShow ? "after" : "before";
-  if (mode === "swipe") return (hover.x / hover.s.px.w) < swipeFrac ? "after" : "before";
-  return hover.side;  // side-by-side: the hovered figure; heatmap: after
 }
 
 function drawLoupe() {
-  if (!hover) return;
-  const {s, x, y} = hover, {w, h, pa, pb, cva, cvb} = s.px;
-  const side = loupeSide();
+  if (cur < 0 || !loupeOn) return;
+  const s = scenes[cur]; if (!s.px) return;
+  const {w, h, pa, pb, cva, cvb} = s.px;
+  if (!hover) hover = {x: w >> 1, y: h >> 1};  // visible before any mousemove
+  const x = Math.min(hover.x, w - 1), y = Math.min(hover.y, h - 1);
+  const side = blinkShow ? "after" : "before";
   const cx = lcv.getContext("2d");
   cx.imageSmoothingEnabled = false;
   // DCM-style: fixed panel, the aperture shrinks as zoom grows (odd, centered).
   const n = Math.max(3, Math.floor(200 / zoom) | 1), half = n >> 1;
   cx.clearRect(0, 0, 200, 200);
-  cx.drawImage(side === "after" ? cvb : cva, x - half, y - half, n, n, 0, 0, n * zoom, n * zoom);
+  cx.drawImage(blinkShow ? cvb : cva, x - half, y - half, n, n, 0, 0, n * zoom, n * zoom);
   cx.strokeStyle = "#3d77d8"; cx.lineWidth = 2;
   cx.strokeRect(half * zoom, half * zoom, zoom, zoom);  // the metered pixel
   const i = 4 * (y * w + x);
@@ -296,33 +297,48 @@ function drawLoupe() {
   lpre.innerHTML = [
     row("ref", pa, side === "before"),
     row("wt ", pb, side === "after"),
-    `<span class="dim">Δmax ${dmax}/255 · (${x},${y}) · ${zoom}x (+/-)</span>`,
+    `<span class="dim">Δmax ${dmax}/255 · (${x},${y}) · ${zoom}x (+/-)`
+      + `${paused ? " · paused (space steps)" : ""}</span>`,
   ].join("\n");
   loupe.style.display = "block";
 }
 
-// -----------------------------------------------------------------------------
+// One clock drives every blinking thing: the loupe in all modes, plus the
+// main overlay when in blink mode.  Space pauses it and steps by hand.
+function applyPhase() {
+  const top = document.querySelector("#overlay .top");
+  if (mode === "blink" && top) {
+    top.style.visibility = blinkShow ? "visible" : "hidden";
+    stats.textContent = (blinkShow ? "worktree" : "__REF__") + (paused ? " · paused" : "");
+  }
+  drawLoupe();
+}
+function tick() { blinkShow ^= 1; applyPhase(); }
+function startClock() {
+  clearInterval(blinkTimer); blinkTimer = null;
+  if (!paused && cur >= 0) blinkTimer = setInterval(tick, 500);
+}
 
 function render() {
   if (cur < 0) return overview();
   const s = scenes[cur];
   scenes.forEach(x => x.btn && x.btn.classList.toggle("sel", x === s));
   document.querySelectorAll(".mode").forEach(b => b.classList.toggle("sel", b.dataset.m === mode));
-  clearInterval(blinkTimer); blinkTimer = null;
-  view.innerHTML = ""; stats.textContent = ""; hideLoupe();
+  view.innerHTML = ""; stats.textContent = "";
   if (!s.before || !s.after) {  // new or deleted scene: nothing to compare
     const f = document.createElement("figure");
     f.append(img(s.after || s.before));
     f.insertAdjacentHTML("beforeend",
       `<figcaption class="badge">${s.after ? "new scene (not in __REF__)" : "deleted scene"}</figcaption>`);
-    view.append(f); return;
+    view.append(f); hideLoupe(); clearInterval(blinkTimer); blinkTimer = null; return;
   }
-  pixels(s, () => {});  // warm the loupe's canvases
+  pixels(s, () => { applyPhase(); });  // warm the loupe; draw it immediately
+  startClock();
   if (mode === "side") {
     const p = document.createElement("div"); p.className = "pair";
-    for (const [src, cap, side] of [[s.before, "__REF__", "before"], [s.after, "worktree", "after"]]) {
+    for (const [src, cap] of [[s.before, "__REF__"], [s.after, "worktree"]]) {
       const f = document.createElement("figure");
-      const e = img(src); watch(e, side); f.append(e);
+      const e = img(src); watch(e); f.append(e);
       f.insertAdjacentHTML("beforeend", `<figcaption>${cap}</figcaption>`);
       p.append(f);
     }
@@ -333,7 +349,7 @@ function render() {
     const ti = img(s.after); top.append(ti);
     const d = document.createElement("div"); d.id = "divider";
     o.append(base, top, d); view.append(o);
-    watch(o, "after");
+    watch(o);
     if (mode === "swipe") {
       const set = frac => { swipeFrac = frac; const w = base.clientWidth * frac;
         ti.style.clipPath = `inset(0 ${base.clientWidth - w}px 0 0)`; d.style.left = w + "px"; };
@@ -342,11 +358,7 @@ function render() {
         e => set(Math.min(1, Math.max(0, e.offsetX / base.clientWidth))));
     } else {
       d.remove();
-      const tick = () => { blinkShow ^= 1; top.style.visibility = blinkShow ? "visible" : "hidden";
-        stats.textContent = blinkShow ? "worktree" : "__REF__";
-        drawLoupe();  // the loupe blinks too -- watch a neighborhood flip
-      };
-      tick(); blinkTimer = setInterval(tick, 500);
+      applyPhase();  // the shared clock (startClock above) does the blinking
     }
   } else {  // heatmap: exact, JS-computed, adjustable gain
     pixels(s, ({w, h, pa, pb}) => {
@@ -361,7 +373,7 @@ function render() {
       cx.putImageData(out, 0, 0);
       const f = document.createElement("figure"); f.append(cv);
       f.insertAdjacentHTML("beforeend", `<figcaption>delta ×${gain} ([ and ] adjust)</figcaption>`);
-      view.append(f); watch(cv, "after");
+      view.append(f); watch(cv);
       score(s, () => { stats.textContent = statline(s); });
     });
   }
@@ -381,16 +393,13 @@ addEventListener("keydown", e => {
   else if (e.key >= "1" && e.key <= "4") { mode = ["blink","heat","swipe","side"][e.key - 1];
     if (cur < 0) cur = 0; render(); }
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
-    if (mode !== "blink") { mode = "blink"; render(); }
-    else { clearInterval(blinkTimer); blinkTimer = null;
-           const top = document.querySelector("#overlay .top"); blinkShow ^= 1;
-           top.style.visibility = blinkShow ? "visible" : "hidden";
-           stats.textContent = blinkShow ? "worktree" : "__REF__"; drawLoupe(); } }
+    paused = true; clearInterval(blinkTimer); blinkTimer = null; tick(); }
+  else if (e.key === "Enter") { if (cur < 0) return; paused = false; startClock(); }
   else if (e.key === "]") { gain = Math.min(256, gain * 2); if (mode === "heat") render(); }
   else if (e.key === "[") { gain = Math.max(1, gain / 2); if (mode === "heat") render(); }
   else if (e.key === "+" || e.key === "=") { zoom = Math.min(32, zoom * 2); drawLoupe(); }
   else if (e.key === "-") { zoom = Math.max(2, zoom / 2); drawLoupe(); }
-  else if (e.key === "m") { loupeOn = !loupeOn; if (!loupeOn) hideLoupe(); }
+  else if (e.key === "m") { loupeOn = !loupeOn; loupeOn ? drawLoupe() : hideLoupe(); }
 });
 
 // Score everything lazily at load; the nav and overview rank as results land.
