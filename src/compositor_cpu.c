@@ -126,7 +126,10 @@ static rgb8 clip_color8(rgb8 c) {
     c.r = cnvs_h8_sel(lo, l + (c.r - l) * kn, c.r);
     c.g = cnvs_h8_sel(lo, l + (c.g - l) * kn, c.g);
     c.b = cnvs_h8_sel(lo, l + (c.b - l) * kn, c.b);
-    cnvs_m8 hi = x > one;   // lanes with a channel above 1, on the updated c
+    // The W3C ClipColor computes n and x ONCE, before either fix: the x > 1
+    // test and the kx denominator both read the pre-fix maximum even though
+    // the channels they rescale may have just been pulled toward l.
+    cnvs_m8 hi = x > one;   // lanes with a channel above 1
     cnvs_h8 kx = (one - l) / (x - l);
     c.r = cnvs_h8_sel(hi, l + (c.r - l) * kx, c.r);
     c.g = cnvs_h8_sel(hi, l + (c.g - l) * kx, c.g);

@@ -101,7 +101,10 @@ static drgb clip_color_ref(drgb c) {
         c.g = l + (c.g - l) * k;
         c.b = l + (c.b - l) * k;
     }
-    x = dmax(c.r, dmax(c.g, c.b));  // on the updated c, as the kernel does
+    // n and x are computed ONCE, before either fix -- the W3C ClipColor
+    // pseudocode, and what the kernel does.  (This reference used to
+    // recompute x on the updated c, deviating from both; the bounds held
+    // because the test grid rarely trips both fixes at once.)
     if (x > 1.0) {
         double k = (1.0 - l) / (x - l);
         c.r = l + (c.r - l) * k;
