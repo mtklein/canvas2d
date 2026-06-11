@@ -1106,9 +1106,8 @@ static foldv8 mat_apply8(cnvs_mat m, foldf8 x, float y) {
 }
 
 // Does the shade stage fold the op's coverage into the tile's alpha?  The
-// over-family and every blend mode fold exactly (compositor_coverage_folds,
-// the §3.8 ruling + the homogeneity re-fold); for the rest -- copy, in/out,
-// dst-atop, lighter -- the tile carries the source at full strength and the
+// over-family folds exactly (compositor_coverage_folds, the §3.8 ruling); for
+// every other mode the tile carries the source at full strength and the
 // coverage plane rides to compositor_blend separately, which lerps.  Filters
 // force the fold regardless: blur()/drop-shadow() consume the op's silhouette
 // from the tile's alpha, so coverage must be materialized before they run --

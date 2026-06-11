@@ -28,12 +28,11 @@
 // Coverage (the op's AA plane x the clip mask) applies per the §3.8 ruling
 // (docs/rasterization.md): in principle out = lerp(dst, blend(src, dst), cov)
 // -- the uncovered fraction of a pixel keeps its destination.  Folding
-// coverage into source alpha instead is identical math in exact arithmetic
-// for the over-family (Fa free of sa, Fb affine in sa with Fb(0) = 1) and
-// for every blend mode (T = sa*da*B(d/da, s/sa) is degree-1 homogeneous in
-// (s, sa)); those fold -- cheaper, no coverage plane, no lerp
-// (compositor_coverage_folds) -- and copy, the in/out family, dst-atop, and
-// lighter blend at full strength and lerp (test_coverage_lerp is the
+// coverage into source alpha instead is identical math exactly when, in
+// co = Fa*s + Fb*d, Fa is free of sa and Fb is affine in sa with Fb(0) = 1
+// (compositor_coverage_folds): the over-family folds -- cheaper, and
+// bit-compatible with the folded source-over pipeline -- and every other
+// mode blends at full strength and lerps (test_coverage_lerp is the
 // supersampled-oracle gate).
 
 // minh/maxh as lane selects -- exactly the scalar `a < b ? a : b`, which can
