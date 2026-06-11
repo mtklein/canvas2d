@@ -13,7 +13,7 @@ data: URIs keep the canvas untainted for pixel work).
 
 Keys in the page: `o` for the ranked overview; j/k scan scenes in the nav's
 ranked order (arrows are left to the browser, for scrolling); 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
-the blink clock and steps it by hand (Enter resumes), [ and ] adjust heatmap
+the blink clock and steps it by hand, shift-space resumes auto-blink, [ and ] adjust heatmap
 gain, + and - adjust loupe zoom, m toggles the loupe, and a left-click pins
 the loupe in place (another click releases it back to following the mouse).
 
@@ -21,7 +21,7 @@ Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
 per-pixel magnitude crediting with diminishing (sqrt) returns.  Hovering any
 image positions the loupe, and the loupe is itself a tiny blink view: one
 global clock alternates it between ref and worktree in EVERY mode (space
-pauses/steps it, Enter resumes), its position persisting across mode flicks --
+pauses/steps it, shift-space resumes), its position persisting across mode flicks --
 line up on a pixel, toggle heatmap and back, never lose the spot.  The readout
 gives both sides' center pixel as unorm8 hex and float plus the delta.  The overview's
 thumbnails use idiff's CSS difference trick (github.com/mtklein/idiff) --
@@ -415,8 +415,8 @@ addEventListener("keydown", e => {
   else if (e.key >= "1" && e.key <= "4") { mode = ["blink","heat","swipe","side"][e.key - 1];
     if (cur < 0) cur = 0; render(); }
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
-    paused = true; clearInterval(blinkTimer); blinkTimer = null; tick(); }
-  else if (e.key === "Enter") { if (cur < 0) return; paused = false; startClock(); }
+    if (e.shiftKey) { paused = false; startClock(); }      // shift-space: auto
+    else { paused = true; clearInterval(blinkTimer); blinkTimer = null; tick(); } }
   else if (e.key === "]") { gain = Math.min(256, gain * 2); if (mode === "heat" || cur < 0) render(); }
   else if (e.key === "[") { gain = Math.max(1, gain / 2); if (mode === "heat" || cur < 0) render(); }
   else if (e.key === "+" || e.key === "=") { zoom = Math.min(32, zoom * 2); drawLoupe(); }
