@@ -801,7 +801,7 @@ static bool replay_bits(canvas *__single cv, struct replay_blocks *__single b,
             return false;  // more bytes than the header declared
         }
         uint32_t const v = ((uint32_t)v0 << 18) | ((uint32_t)v1 << 12) |
-                           ((uint32_t)v2 << 6) | (uint32_t)v3;
+                           ((uint32_t)v2 <<  6) |  (uint32_t)v3       ;
         uint8_t const by[3] = { (uint8_t)(v >> 16), (uint8_t)((v >> 8) & 0xFFu),
                                 (uint8_t)(v & 0xFFu) };
         for (int k = 0; k < nbytes; k++) {
@@ -1048,14 +1048,14 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     bool b;
 
     // --- no-arg ---
-    if (tok_eq(data, le, cs, cl, "save"))            { canvas_save(cv); }
-    else if (tok_eq(data, le, cs, cl, "restore"))    { canvas_restore(cv); }
+    if (tok_eq(data, le, cs, cl, "save"))                 { canvas_save(cv); }
+    else if (tok_eq(data, le, cs, cl, "restore"))         { canvas_restore(cv); }
     else if (tok_eq(data, le, cs, cl, "reset_transform")) { canvas_reset_transform(cv); }
-    else if (tok_eq(data, le, cs, cl, "begin_path")) { canvas_begin_path(cv); }
-    else if (tok_eq(data, le, cs, cl, "close_path")) { canvas_close_path(cv); }
-    else if (tok_eq(data, le, cs, cl, "fill"))       { canvas_fill(cv); }
-    else if (tok_eq(data, le, cs, cl, "stroke"))     { canvas_stroke(cv); }
-    else if (tok_eq(data, le, cs, cl, "clip"))       { canvas_clip(cv); }
+    else if (tok_eq(data, le, cs, cl, "begin_path"))      { canvas_begin_path(cv); }
+    else if (tok_eq(data, le, cs, cl, "close_path"))      { canvas_close_path(cv); }
+    else if (tok_eq(data, le, cs, cl, "fill"))            { canvas_fill(cv); }
+    else if (tok_eq(data, le, cs, cl, "stroke"))          { canvas_stroke(cv); }
+    else if (tok_eq(data, le, cs, cl, "clip"))            { canvas_clip(cv); }
     else if (tok_eq(data, le, cs, cl, "set_filter_none")) { canvas_set_filter_none(cv); }
     else if (tok_eq(data, le, cs, cl, "reset")) {
         // reset clears the text cache, and with it every interned font id:
@@ -1088,15 +1088,15 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     }
 
     // --- 1 float ---
-    else if (tok_eq(data, le, cs, cl, "rotate"))           { if (!read_floats(data, le, &j, f, 1)) return false; canvas_rotate(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_global_alpha"))     { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_global_alpha(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_line_width"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_line_width(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_miter_limit"))      { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_miter_limit(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_line_dash_offset")) { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_line_dash_offset(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_font_size"))        { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_font_size(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_shadow_blur"))      { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_blur(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_shadow_offset_x"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_x(cv, f[0]); }
-    else if (tok_eq(data, le, cs, cl, "set_shadow_offset_y"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_y(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "rotate"))                { if (!read_floats(data, le, &j, f, 1)) return false; canvas_rotate(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_global_alpha"))      { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_global_alpha(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_line_width"))        { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_line_width(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_miter_limit"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_miter_limit(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_line_dash_offset"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_line_dash_offset(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_font_size"))         { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_font_size(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_shadow_blur"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_blur(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_shadow_offset_x"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_x(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_shadow_offset_y"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_y(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "add_filter_blur"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_blur(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "add_filter_brightness")) { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_brightness(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "add_filter_contrast"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_add_filter_contrast(cv, f[0]); }
@@ -1112,32 +1112,32 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
     // --- 3 float ---
     else if (tok_eq(data, le, cs, cl, "set_fill_conic_gradient"))   { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_fill_conic_gradient(cv, f[0], f[1], f[2]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_conic_gradient")) { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_stroke_conic_gradient(cv, f[0], f[1], f[2]); }
-    else if (tok_eq(data, le, cs, cl, "scale"))     { if (!read_floats(data, le, &j, f, 2)) return false; canvas_scale(cv, f[0], f[1]); }
-    else if (tok_eq(data, le, cs, cl, "move_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_move_to(cv, f[0], f[1]); }
-    else if (tok_eq(data, le, cs, cl, "line_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_line_to(cv, f[0], f[1]); }
+    else if (tok_eq(data, le, cs, cl, "scale"))                     { if (!read_floats(data, le, &j, f, 2)) return false; canvas_scale(cv, f[0], f[1]); }
+    else if (tok_eq(data, le, cs, cl, "move_to"))                   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_move_to(cv, f[0], f[1]); }
+    else if (tok_eq(data, le, cs, cl, "line_to"))                   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_line_to(cv, f[0], f[1]); }
 
     // --- 4 float ---
-    else if (tok_eq(data, le, cs, cl, "rect"))       { if (!read_floats(data, le, &j, f, 4)) return false; canvas_rect(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "clear_rect")) { if (!read_floats(data, le, &j, f, 4)) return false; canvas_clear_rect(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "fill_rect"))  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_fill_rect(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "stroke_rect")){ if (!read_floats(data, le, &j, f, 4)) return false; canvas_stroke_rect(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_rgba(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_stroke_rgba")){ if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_rgba(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba")){ if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_shadow_color_rgba(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "quadratic_curve_to"))    { if (!read_floats(data, le, &j, f, 4)) return false; canvas_quadratic_curve_to(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "rect"))                       { if (!read_floats(data, le, &j, f, 4)) return false; canvas_rect(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "clear_rect"))                 { if (!read_floats(data, le, &j, f, 4)) return false; canvas_clear_rect(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "fill_rect"))                  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_fill_rect(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "stroke_rect"))                { if (!read_floats(data, le, &j, f, 4)) return false; canvas_stroke_rect(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))              { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_rgba(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_rgba"))            { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_rgba(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba"))      { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_shadow_color_rgba(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "quadratic_curve_to"))         { if (!read_floats(data, le, &j, f, 4)) return false; canvas_quadratic_curve_to(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_fill_linear_gradient"))   { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_linear_gradient(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_linear_gradient")) { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_linear_gradient(cv, f[0], f[1], f[2], f[3]); }
 
     // --- 5 float ---
-    else if (tok_eq(data, le, cs, cl, "round_rect"))       { if (!read_floats(data, le, &j, f, 5)) return false; canvas_round_rect(cv, f[0], f[1], f[2], f[3], f[4]); }
-    else if (tok_eq(data, le, cs, cl, "arc_to"))           { if (!read_floats(data, le, &j, f, 5)) return false; canvas_arc_to(cv, f[0], f[1], f[2], f[3], f[4]); }
-    else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))  { if (!read_floats(data, le, &j, f, 5)) return false; canvas_add_fill_color_stop(cv, f[0], f[1], f[2], f[3], f[4]); }
-    else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")){ if (!read_floats(data, le, &j, f, 5)) return false; canvas_add_stroke_color_stop(cv, f[0], f[1], f[2], f[3], f[4]); }
+    else if (tok_eq(data, le, cs, cl, "round_rect"))            { if (!read_floats(data, le, &j, f, 5)) return false; canvas_round_rect(cv, f[0], f[1], f[2], f[3], f[4]); }
+    else if (tok_eq(data, le, cs, cl, "arc_to"))                { if (!read_floats(data, le, &j, f, 5)) return false; canvas_arc_to(cv, f[0], f[1], f[2], f[3], f[4]); }
+    else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))   { if (!read_floats(data, le, &j, f, 5)) return false; canvas_add_fill_color_stop(cv, f[0], f[1], f[2], f[3], f[4]); }
+    else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")) { if (!read_floats(data, le, &j, f, 5)) return false; canvas_add_stroke_color_stop(cv, f[0], f[1], f[2], f[3], f[4]); }
 
     // --- 6 float ---
-    else if (tok_eq(data, le, cs, cl, "transform"))      { if (!read_floats(data, le, &j, f, 6)) return false; canvas_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
-    else if (tok_eq(data, le, cs, cl, "set_transform"))  { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
-    else if (tok_eq(data, le, cs, cl, "bezier_curve_to"))      { if (!read_floats(data, le, &j, f, 6)) return false; canvas_bezier_curve_to(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
+    else if (tok_eq(data, le, cs, cl, "transform"))                  { if (!read_floats(data, le, &j, f, 6)) return false; canvas_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
+    else if (tok_eq(data, le, cs, cl, "set_transform"))              { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
+    else if (tok_eq(data, le, cs, cl, "bezier_curve_to"))            { if (!read_floats(data, le, &j, f, 6)) return false; canvas_bezier_curve_to(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "set_fill_radial_gradient"))   { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_fill_radial_gradient(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_radial_gradient")) { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_stroke_radial_gradient(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
 
