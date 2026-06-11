@@ -34,7 +34,7 @@ typedef struct {
 // unselected lane may hold the inf/NaN of a guarded divide and must be
 // discarded exactly -- this is how scalar `p ? q : r` branches translate to
 // lanes without changing any selected value.
-static inline half8 half8_sel(short8 m, half8 a, half8 b) {
+static inline half8 half8_if_then_else(short8 m, half8 a, half8 b) {
     return (half8)(((short8)a & m) | ((short8)b & ~m));
 }
 

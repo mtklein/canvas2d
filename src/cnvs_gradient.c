@@ -153,7 +153,7 @@ cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float a
     return c;
 }
 
-// Bit-exact f32 lane select, the 32-bit twin of half8_sel: a where the mask
+// Bit-exact f32 lane select, the 32-bit twin of half8_if_then_else: a where the mask
 // lane is set (-1, from a vector comparison), else b.  Bitwise: the selected
 // lane passes through untouched (an arithmetic b + (a-b)*m re-rounds it), and
 // an unselected lane's inf/NaN is discarded exactly.
@@ -241,8 +241,8 @@ typedef struct {
 } gradpx8;
 
 static gradpx8 gradpx8_sel(short8 m, gradpx8 x, gradpx8 y) {
-    return (gradpx8){ half8_sel(m, x.r, y.r), half8_sel(m, x.g, y.g),
-                      half8_sel(m, x.b, y.b), half8_sel(m, x.a, y.a) };
+    return (gradpx8){ half8_if_then_else(m, x.r, y.r), half8_if_then_else(m, x.g, y.g),
+                      half8_if_then_else(m, x.b, y.b), half8_if_then_else(m, x.a, y.a) };
 }
 
 // The planar->AoS seam for unpremultiplied colours, mirroring cnvs_px8_store:

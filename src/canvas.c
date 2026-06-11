@@ -2812,13 +2812,13 @@ static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
     short8 opaque = p.a > zero;
     cnvs_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
-    u.r = half8_sel(opaque, __builtin_elementwise_min(one,
+    u.r = half8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.r)), zero);
-    u.g = half8_sel(opaque, __builtin_elementwise_min(one,
+    u.g = half8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.g)), zero);
-    u.b = half8_sel(opaque, __builtin_elementwise_min(one,
+    u.b = half8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.b)), zero);
-    u.a = half8_sel(opaque, __builtin_elementwise_min(one,
+    u.a = half8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.a)), zero);
     _Float16 const half = (_Float16)0.5f, k255 = (_Float16)255.0f;
     return (cnvs_px8){ u.r * k255 + half, u.g * k255 + half,
