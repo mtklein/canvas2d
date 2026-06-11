@@ -2829,7 +2829,8 @@ static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
 // premultiplied pixels, and the un-premultiply and 8-bit quantize happen here,
 // eight pixels per step over channel planes with st4 re-interleaving at the
 // RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same block gathered.
-static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
+// write_png and get_image_data read back through this same entry point.
+void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
     }
@@ -2851,17 +2852,13 @@ static void read_unpremul(canvas *__single cv, uint8_t *__counted_by(len) out, i
     free(buf);
 }
 
-void canvas_read_rgba(canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
-    read_unpremul(cv, out, len);
-}
-
 bool canvas_write_png(canvas *__single cv, char const *__null_terminated path) {
     int const len = cv->width * cv->height * 4;
     uint8_t *__counted_by_or_null(len) out = malloc((size_t)len);
     if (!out) {
         return false;
     }
-    read_unpremul(cv, out, len);
+    canvas_read_rgba(cv, out, len);
     bool ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
@@ -2884,7 +2881,7 @@ void canvas_get_image_data(canvas *__single cv, int x, int y, int w, int h,
     if (!buf) {
         return;
     }
-    read_unpremul(cv, buf, clen);
+    canvas_read_rgba(cv, buf, clen);
     cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
     free(buf);
 }
