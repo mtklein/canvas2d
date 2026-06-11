@@ -16,16 +16,11 @@ typedef struct {
 // survives premultiply -> f16 store -> unpremultiply -> 8-bit quantize
 // unchanged (all 65,280; a u8 premultiplied store corrupts half of them), at
 // half float32's footprint -- see docs/decisions/float16-color-type.md.
-// Since docs/decisions/color-axis.md's ruling, _Float16 is the COMPUTE type
-// too: the blend, filter, gradient-lerp, premultiply, and readback kernels do
-// their arithmetic in f16 (8 lanes per 128-bit NEON vector, native on Apple
-// Silicon), with no widen/narrow converts at the load/store boundaries.  The
-// bulk kernels are PLANAR over that type -- eight pixels as four channel-plane
-// vectors, deinterleaved at the buffer seams (cnvs_planar.h; the layout
-// addendum in the same memo) -- while this header's per-pixel converters stay
-// one pixel's four lanes.  The round-trip above survives f16 arithmetic
-// exhaustively (test_image), and blends stay within 1/255 of a double
-// reference (test_compositor).
+// Per docs/decisions/color-axis.md, _Float16 is the COMPUTE type too: the
+// blend, filter, gradient-lerp, premultiply, and readback kernels do their
+// arithmetic in f16, with no widen/narrow converts at the load/store
+// boundaries.  The bulk kernels are PLANAR over that type (cnvs_planar.h);
+// this header's per-pixel converters stay one pixel's four lanes.
 //
 // Two types so premultiplied and unpremultiplied colour can't be mixed up:
 // cnvs_unpremul is what the Canvas API speaks (r,g,b independent of a); cnvs_premul
@@ -69,8 +64,6 @@ cnvs_mat cnvs_mat_invert(cnvs_mat m);
 // Saturating float->integer conversions for the rasterizer.  Plain float->int is
 // undefined behaviour when the value is non-finite or out of range; these clamp
 // instead (NaN -> 0), keeping the device-space casts total on adversarial input.
-// static inline: they sit in the innermost rasterizer loops (every device-space
-// cast); out-of-line they showed up at ~6% of the fill's self-time.
 static inline int cnvs_f2i(float v) {
     if (v != v) {                  // NaN
         return 0;

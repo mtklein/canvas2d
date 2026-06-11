@@ -63,11 +63,8 @@ cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {
 typedef _Float16 premh4 __attribute__((ext_vector_type(4)));
 
 cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
-    // {r*a, g*a, b*a, a}, clamped to [0,1] -- the multiply and clamp run in
-    // _Float16 directly (no widen to f32, no narrowing convert on the way
-    // out), one 4-lane vector op each.  Every 8-bit edge value still
-    // round-trips exactly under f16 arithmetic (test_image's exhaustive
-    // sweep; docs/decisions/color-axis.md experiment 1).
+    // {r*a, g*a, b*a, a}, clamped to [0,1], in _Float16 directly
+    // (docs/decisions/color-axis.md).
     premh4 p = { c.r, c.g, c.b, c.a };
     _Float16 a = p[3];
     premh4 out = p * (premh4){ a, a, a, (_Float16)1.0f };
@@ -77,8 +74,8 @@ cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
 }
 
 cnvs_unpremul cnvs_unpremultiply(cnvs_premul c) {
-    // The inverse divide, also in _Float16: r/a, g/a, b/a (lane 3 divides to
-    // a/a and is overwritten with a), clamped to [0,1].
+    // r/a, g/a, b/a (lane 3 divides to a/a and is overwritten with a),
+    // clamped to [0,1].
     _Float16 a = c.a;
     if (a <= (_Float16)0.0f) {  // fully transparent un-premultiplies to all zero
         return (cnvs_unpremul){ .r = 0, .g = 0, .b = 0, .a = 0 };

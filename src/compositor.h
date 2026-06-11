@@ -50,15 +50,14 @@ typedef enum {
     COMPOSITOR_MODE_COUNT,
 } compositor_blend_mode;
 
-// Coverage semantics (docs/rasterization.md §3.8, ruled 2026-06-10): partial
+// Coverage semantics (docs/rasterization.md): partial
 // coverage applies in principle as a lerp between the destination and the
 // full-strength blend, out = lerp(dst, blend(src, dst), cov) -- a pixel the
 // shape doesn't cover keeps its destination.  Folding coverage into source
 // alpha instead (src *= cov, premultiplied) is identical math only where the
 // Porter-Duff form co = Fa*s + Fb*d has Fa free of sa and Fb affine in sa
 // with Fb(0) = 1, AND the result never trips the output clamp: the modes
-// below.  Those fold (cheaper, and bit-compatible with the established
-// source-over pipeline); every other mode takes the lerp in compositor_blend.
+// below.  Those fold; every other mode takes the lerp in compositor_blend.
 // 'lighter' passes the Fa/Fb criterion (Fa = Fb = 1) but its co = s + d
 // exceeds 1 exactly where it saturates, and clamp(c*s + d) != lerp(d,
 // clamp(s + d), c) there -- the supersampled truth clamps per subsample, so
@@ -101,10 +100,7 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
 // compositor_blend of a tile whose every pixel is `color`, without the tile:
 // the caller passes the one premultiplied colour and the compositor splats it
 // across the lanes -- byte-identical output to materializing the constant
-// tile, minus the ~16 B/px write-then-read round trip.  This is the shape of
-// every solid paint whose coverage rides as a plane (the lerp-family modes),
-// of clearRect/reset's unit-alpha erase, and of the full-strength shadow
-// tint.  `cov` and the clip apply exactly as in compositor_blend.
+// tile.  `cov` and the clip apply exactly as in compositor_blend.
 void compositor_blend_solid(compositor *__single c, int x, int y, int w, int h,
                             cnvs_premul color,
                             uint8_t const *__counted_by_or_null(w * h) cov,

@@ -653,8 +653,12 @@ void canvas_set_global_alpha(canvas *__single cv, float alpha) {
     cv->cur.global_alpha = clamp01(alpha);
 }
 
-// canvas_composite_op mirrors compositor_blend_mode value-for-value (canvas.h
-// notes the coupling), so the validated cast is the whole mapping.
+static_assert((int)CANVAS_OP_SOURCE_OVER == (int)COMPOSITOR_SRC_OVER &&
+              (int)CANVAS_OP_COPY        == (int)COMPOSITOR_COPY &&
+              (int)CANVAS_OP_LUMINOSITY  == (int)COMPOSITOR_LUMINOSITY &&
+              (int)CANVAS_OP_LUMINOSITY + 1 == (int)COMPOSITOR_MODE_COUNT,
+              "canvas_composite_op mirrors compositor_blend_mode value-for-value");
+
 void canvas_set_global_composite_operation(canvas *__single cv,
                                            canvas_composite_op op) {
     if ((int)op < 0 || (int)op >= COMPOSITOR_MODE_COUNT) {
@@ -1071,9 +1075,7 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
 // rounds back to exactly 1.0, so full coverage passes the paint's alpha
 // through untouched -- and each paint's alpha factors fold in the type the
 // colour data is born in (f16 for solid and gradient paint, f32 for image
-// and pattern samples), with one narrowing convert.  This is the f16 arm
-// docs/rasterization.md §3.1 priced and deferred for byte-stillness; taking
-// it re-rounds AA-edge alpha by <= 2 f16 ULP (interiors are exact).
+// and pattern samples), with one narrowing convert.
 
 typedef float foldf8 __attribute__((ext_vector_type(8)));  // f32 lanes for the
 // coordinate chain and the sampled colours (data born f32 at the taps)
@@ -1095,8 +1097,7 @@ static cnvs_px8 shade8(cnvs_h8 r, cnvs_h8 g, cnvs_h8 b, cnvs_h8 alpha) {
 
 // cnvs_mat_apply for eight pixel centres along one row: only x varies and the
 // affine map is elementwise, so the scalar expression runs per lane bit for
-// bit -- this replaces an out-of-line cnvs_mat_apply call per pixel in the
-// sampling loops (it was 4.4% of the post-planar profile).
+// bit.
 typedef struct {
     foldf8 x, y;
 } foldv8;
@@ -1107,8 +1108,8 @@ static foldv8 mat_apply8(cnvs_mat m, foldf8 x, float y) {
 }
 
 // Does the shade stage fold the op's coverage into the tile's alpha?  The
-// over-family folds exactly (compositor_coverage_folds, the §3.8 ruling); for
-// every other mode the tile carries the source at full strength and the
+// over-family folds exactly (compositor_coverage_folds); for every other
+// mode the tile carries the source at full strength and the
 // coverage plane rides to compositor_blend separately, which lerps.  Filters
 // force the fold regardless: blur()/drop-shadow() consume the op's silhouette
 // from the tile's alpha, so coverage must be materialized before they run --
@@ -1141,7 +1142,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                 cnvs_px8_store(cv->tile + i,
                                shade8(cr, cg, cb, base * cover8(cv->cov + i)));
             }
-            if (i < npix) {  // tail: k < 8 pixels through the same planar block
+            if (i < npix) {
                 int const k = npix - i;
                 cnvs_px8_store_k(cv->tile + i, k,
                                  shade8(cr, cg, cb,
@@ -1184,7 +1185,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
                 cnvs_px8_store(cv->tile + row + px,
                                shade8(col.r, col.g, col.b, alpha));
             }
-            if (px < b.w) {  // tail: k < 8 pixels through the same planar block
+            if (px < b.w) {
                 int const k = b.w - px;
                 cnvs_px8 const col = cnvs_px8_load_unpremul_k(cv->crow + px, k);
                 cnvs_h8 alpha = col.a * gah;
@@ -1455,7 +1456,7 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
             cnvs_px8_store(cv->tile + i,
                            shade8(cr, cg, cb, base * cover8(cv->shadow_src + i)));
         }
-        if (i < n) {  // tail: k < 8 pixels through the same planar block
+        if (i < n) {
             int const k = n - i;
             cnvs_px8_store_k(cv->tile + i, k,
                              shade8(cr, cg, cb,
@@ -2310,8 +2311,7 @@ static void draw_glyph_capture(canvas *__single cv, cnvs_glyph_slot *__single sl
 // The degraded path when the capture cache can't serve (full table, OOM) but
 // the run still has its boundary handle: ask the boundary for the ink box,
 // draw into a checked RGBA8 buffer at device size, unpremultiply, then
-// composite through the CTM with canvas_draw_image_subrect -- the per-draw
-// rasterization that used to be the only emoji path.
+// composite through the CTM with canvas_draw_image_subrect.
 static void draw_color_glyph(canvas *__single cv, void *__single font,
                              uint16_t glyph, float pen_x, float baseline_y) {
     float x0, y0, x1, y1;
@@ -2364,8 +2364,8 @@ struct color_glyph_ctx {
 
 // cnvs_shaped_outline's color-glyph callback: the context rides along untyped
 // (checked C on both ends of the void* hop, so no forge), and each emoji glyph
-// composites immediately at its pen position -- interleaved with the outline
-// accumulation exactly as the old hand-rolled walk did.  The canonical capture
+// composites immediately at its pen position, interleaved with the outline
+// accumulation.  The canonical capture
 // draws it (one boundary rasterization per glyph ever, and none at all when it
 // came from a replayed bitmap block); only when the cache can't serve does a
 // live font handle fall back to the per-draw boundary render, and a handle-less
@@ -2926,11 +2926,8 @@ static void put_image_sub(canvas *__single cv,
     // Source column/row of the first painted canvas pixel; col0+px stays in
     // [sx, sx+sw) ⊆ [0,w) and row0+py in [sy, sy+sh) ⊆ [0,h), so si < w*h*4 <= len.
     // Eight pixels per step: ld4 deinterleaves the RGBA8 source into channel
-    // planes (cnvs_planar.h), a true _Float16 divide scales each to [0,1] --
-    // bit-equal to the old per-channel (float)x / 255.0f-then-narrow for every
-    // u8 value (checked exhaustively; f16 division of an exact-in-f16 integer
-    // rounds once, where the f32 path rounds twice to the same place) -- and
-    // the planar premultiply writes finished tile pixels through st4.
+    // planes (cnvs_planar.h), a true _Float16 divide scales each to [0,1],
+    // and the planar premultiply writes finished tile pixels through st4.
     int col0 = (int)(cx0 - dx);
     int row0 = (int)(cy0 - dy);
     _Float16 const k255 = (_Float16)255.0f;
@@ -2942,7 +2939,7 @@ static void put_image_sub(canvas *__single cv,
             p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
             cnvs_px8_store(cv->tile + py * rw + px, cnvs_px8_premultiply(p));
         }
-        if (px < rw) {  // tail: k < 8 pixels through the same planar block
+        if (px < rw) {
             int k = rw - px;
             int si = ((row0 + py) * w + (col0 + px)) * 4;
             cnvs_px8 p = cnvs_px8_load_rgba8_k(data + si, k);

@@ -8,10 +8,8 @@
 // 16-lane vector ops with one bounds check per block.  The first row's
 // implicit prior row is all zeros (PNG spec), so Up degenerates to None there;
 // we still emit filter byte 2 uniformly so every row decodes through the same
-// kernel.  Measured across the 32-scene gallery corpus during development, the
-// classic adaptive chooser (None/Sub/Up/Avg/Paeth by minimum sum of absolute
-// differences) only beat Up-only by ~2% deflated -- not worth the per-row
-// 5-filter trial encode, and we only decode our own files.
+// kernel.  We only decode our own files, so the classic adaptive five-filter
+// chooser buys nothing worth its per-row trial encodes.
 
 #include "cnvs_png.h"
 
@@ -74,11 +72,9 @@ static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
 #else  // portable byte-at-a-time fallback (non-ARMv8 targets)
 
 // The table lives on the stack, rebuilt per call (2048 cheap iterations --
-// noise next to checksumming any PNG chunk).  It used to be a lazily
-// initialized file-scope static, the lone piece of shared mutable state in
-// src/: two unsynchronized threads racing the ready flag is exactly the
-// hidden-global class the thread-safety posture (distinct canvases are fully
-// independent; src/ holds no shared mutable state) forbids.
+// noise next to checksumming any PNG chunk): a lazily initialized file-scope
+// static would be shared mutable state, which the thread-safety posture
+// (distinct canvases are fully independent; src/ holds none) forbids.
 static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
     uint32_t table[256];
     for (uint32_t v = 0; v < 256; v++) {

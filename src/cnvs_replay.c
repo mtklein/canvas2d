@@ -87,6 +87,8 @@ static double const k_pow10[23] = {
     1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
     1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
 };
+static_assert(sizeof k_pow10 / sizeof *k_pow10 == 23,
+              "read_float steps its scaling by at most 10^22 at a time");
 
 // Next token parsed as a float, in place by index -- no strtof.  Stricter than
 // strtof: the whole token must be a
@@ -97,9 +99,8 @@ static double const k_pow10[23] = {
 // within +/-53, so the table-stepped scaling below costs at most three
 // roundings (~2^-51 relative) -- orders of magnitude inside the margin nine
 // significant digits leave around any float32, so the (float) conversion lands
-// on the identical value (record -> replay round-trips bit for bit;
-// test_record_text sweeps this).  Hostile exponents keep the old clamping
-// posture: the magnitude saturates and the value flushes to +/-inf or 0.
+// on the identical value (record -> replay round-trips bit for bit).  Hostile
+// exponents saturate in magnitude and flush the value to +/-inf or 0.
 static bool read_float(char const *__counted_by(le) data, size_t le,
                        size_t *__single jp, float *__single out) {
     size_t ts, tlen;
@@ -1010,6 +1011,8 @@ static bool read_image_id(struct replay_blocks *__single b,
 static char const *const k_repeat[] = {
     "repeat", "repeat-x", "repeat-y", "no-repeat",
 };
+static_assert(sizeof k_repeat / sizeof *k_repeat == CANVAS_NO_REPEAT + 1,
+              "one name per canvas_pattern_repeat value, in enum order");
 
 // Composite-op names in enum order (canvas_composite_op).
 static char const *const k_composite[] = {
@@ -1019,6 +1022,8 @@ static char const *const k_composite[] = {
     "color-burn", "hard-light", "soft-light", "difference", "exclusion", "hue",
     "saturation", "color", "luminosity",
 };
+static_assert(sizeof k_composite / sizeof *k_composite == CANVAS_OP_LUMINOSITY + 1,
+              "one name per canvas_composite_op value, in enum order");
 
 static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
                         char const *__counted_by(le) data, size_t ls, size_t le) {

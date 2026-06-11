@@ -30,12 +30,10 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
 // drawing blurs against transparency (CSS filter semantics), so the running
 // sum simply adds nothing outside.  Accumulation is f32 (every _Float16 widens
 // exactly); each pass rounds back to the tile's own _Float16 precision.  This
-// is the one colour kernel deliberately NOT moved to _Float16 arithmetic by
-// the color-axis ruling (docs/decisions/color-axis.md): a running sum is an
-// accumulator, and re-rounding it to f16 at every add/subtract drifts -- up to
-// ~0.9/255 per pass over a 512px row (vs 0.06/255 for f32), compounding over
-// the three h+v passes -- which would blow test_filter's 2/255 brute-force
-// reference, while no profile shows these passes on a hot path to pay for it.
+// is the one colour kernel deliberately NOT in _Float16 arithmetic under the
+// color-axis ruling (docs/decisions/color-axis.md): a running sum is an
+// accumulator, and re-rounding it to f16 at every add/subtract drifts,
+// compounding over the three h+v passes.
 // Blurring all four channels with one kernel preserves the premultiplied
 // invariant rgb <= a (a weighted average of pointwise inequalities).
 void blur_box_h_f16(cnvs_premul *__counted_by(w * h) dst,

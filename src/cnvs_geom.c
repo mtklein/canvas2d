@@ -30,10 +30,9 @@ bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int 
         return false;
     }
     // Blocks are small (a quad stages 6 verts, a join wedge 3), so a variable-
-    // size memcpy goes out of line to libc memmove and the call costs more than
-    // the copy -- it was a third of bench_stroke's self-time.  Copy four verts
-    // (one 32-byte vector) per step instead: the constant-size memcpys inline
-    // to one load/store pair.  The destination converts to a counted local
+    // size memcpy goes out of line to libc memmove and the call costs more
+    // than the copy; the constant-size vector memcpys below inline to one
+    // load/store pair each.  The destination converts to a counted local
     // FIRST -- that's the block's one real bounds check; copying through
     // v->data directly would reload data/len/cap and recheck every step, since
     // the stores could alias *v.

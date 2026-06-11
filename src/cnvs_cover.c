@@ -31,9 +31,9 @@ bool cnvs_cover_reset(cnvs_cover *c, int w, int h) {
 
 // Deposit one cell of signed cover: the edge crosses column `col` at fraction
 // `xmf` in [0,1], leaving cover `d` to its right (the rest propagates via the
-// prefix sum).  Left of the raster, full cover lumps into column 0; at or past the
-// right edge, nothing lands on-screen.  always_inline: it's the innermost step of
-// the per-edge loop and -Os otherwise leaves it out-of-line (~6% of the fill).
+// prefix sum).  Left of the raster, full cover lumps into column 0; at or past
+// the right edge, nothing lands on-screen.  always_inline: it's the innermost
+// step of the per-edge loop and -Os otherwise leaves it out-of-line.
 __attribute__((always_inline))
 static inline void deposit(cnvs_cover *c, int base, int w, int col, float xmf, float d) {
     if (col < 0) {
@@ -202,15 +202,10 @@ static covu8x8 cover_to_u8x8(cnvs_fill_rule rule, covf8 run) {
     return __builtin_convertvector(v, covu8x8);
 }
 
-// Inclusive prefix sum across the 8 lanes, in-register (Hillis-Steele: 3 shift-add
-// steps, each adding the lane d positions back, low lanes zero-filled).  This breaks
-// the per-pixel carried-dependency that made a scalar row scan latency-bound: the
-// only serial chain that survives is the carry between 8-lane blocks (depth w/8), and
-// consecutive blocks' in-register scans are independent and pipeline.  The tree
-// association differs from a left-to-right scalar sum, so the float rounding differs
-// by <=1 ULP before the 8-bit quantize -- fine here: coverage runs identically on
-// both backends (it feeds paint_tile on the CPU for each), so the backend diff can't
-// see it, and test_cover is tolerance-based.
+// Inclusive prefix sum across the 8 lanes, in-register (Hillis-Steele: 3
+// shift-add steps, each adding the lane d positions back, low lanes
+// zero-filled).  The tree association differs from a left-to-right scalar
+// sum, so the float rounding differs by <=1 ULP before the 8-bit quantize.
 static inline covf8 prefix_sum8(covf8 v) {
     covf8 z = (covf8){ 0, 0, 0, 0, 0, 0, 0, 0 };
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1 (zero-fill)
@@ -221,10 +216,9 @@ static inline covf8 prefix_sum8(covf8 v) {
 
 void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
                         uint8_t *__counted_by(w * h) out) {
-    // Fold each row's signed-area deltas to coverage in one pass: an 8-wide in-register
-    // prefix sum (plus a running scalar carry from earlier blocks) feeds the coverage
-    // fold + 8-bit convert directly, so the prefix sum is no longer a separate serial
-    // scan and the accumulator is never rewritten/reread.
+    // Fold each row's signed-area deltas to coverage in one pass: an 8-wide
+    // in-register prefix sum, plus a running scalar carry from earlier
+    // blocks, feeds the coverage fold + 8-bit convert directly.
     for (int y = 0; y < h; y++) {
         int base = y * w;
         float carry = 0.0f;  // running total of all deltas before this block, this row

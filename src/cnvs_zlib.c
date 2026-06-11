@@ -80,12 +80,9 @@ enum {
     // makes the matcher's worst case linear in the input, never quadratic.
     zlib_chain_max = 32,
     // Matches longer than this insert only every zlib_insert_stride-th covered
-    // position into the chains (zlib's max_insert_length idea).  Long matches
-    // are dominated by runs, whose interior positions all hash alike, so dense
-    // insertion there is almost pure overhead: across the 32-scene gallery
-    // corpus this trade costs +0.28% deflated bytes for a 1.9x faster encode
-    // on run-heavy content (sweep: skip-all was 2.2x but +2.7% bytes; denser
-    // strides pay more time for <= 0.02% of the bytes back).
+    // position into the chains (zlib's max_insert_length idea): long matches
+    // are dominated by runs, whose interior positions all hash alike, so
+    // dense insertion there is almost pure overhead.
     zlib_max_insert    = 32,
     zlib_insert_stride = 8,
 };
@@ -168,15 +165,12 @@ static void put_match(struct bitwr *w, int len, int dist) {
 // Fibonacci hash of the next 4 bytes down to zlib_hash_bits.  Four bytes, not
 // the minimum-match three: with the chain walk capped at zlib_chain_max, what
 // matters is how promising the candidates are, and the extra byte keeps
-// positions that share only a 3-byte prefix off each other's chains -- the
-// budget goes to candidates that nearly always extend past the minimum.
-// Measured across the gallery corpus this is both smaller (-1.1% deflated
-// bytes) and faster (~3%) than the 3-byte hash; the cost is that a position
-// fewer than 4 bytes from the end can't be hashed, so a final 3-byte match
-// goes out as literals.  The multiply wraps by design; __builtin_mul_overflow
-// with the flag ignored is the sanctioned spelling of that intent (see
-// cnvs_text's mix32), so the debug variant's -fsanitize=integer unsigned-wrap
-// check leaves it alone.
+// positions that share only a 3-byte prefix off each other's chains.  The
+// cost is that a position fewer than 4 bytes from the end can't be hashed, so
+// a final 3-byte match goes out as literals.  The multiply wraps by design;
+// __builtin_mul_overflow with the flag ignored is the sanctioned spelling of
+// that intent, so the debug variant's -fsanitize=integer unsigned-wrap check
+// leaves it alone.
 static uint32_t hash4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
     uint32_t v = ((uint32_t)a << 24) | ((uint32_t)b << 16) | ((uint32_t)c << 8) | (uint32_t)d;
     (void)__builtin_mul_overflow(v, 0x9E3779B1u, &v);
@@ -246,11 +240,8 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
                 // First-byte reject (zlib's scan_end idea): a candidate whose
                 // byte at best_len mismatches can match at most best_len bytes
                 // and could never update best, so skip its verify entirely.
-                // Gated on best_len >= 8 -- with a long best the verify below
-                // is expensive and the single byte is selective, while for
-                // short bests the two extra checked loads were measured as
-                // pure overhead.  Skipping never changes which match wins:
-                // emitted bytes are unchanged.
+                // Skipping never changes which match wins: emitted bytes are
+                // unchanged.
                 if (best_len >= 8 && src[cand + best_len] != src[i + best_len]) {
                     int const skip = chains[zlib_hash_size + (cand & (zlib_window - 1))];
                     if (skip >= cand) {

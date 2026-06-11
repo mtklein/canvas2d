@@ -52,9 +52,11 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
     int win = 2 * r + 1;
     int half = win / 2;
     float recip = 1.0f / (float)win;
-    // quant8's exactness argument needs n = 255*win + win/2 < 2^24; a window
-    // that wide is degenerate (every output is the row average), so it keeps
-    // the scalar loop.
+    // quant8's exactness needs n = 255*win + win/2 < 2^24; a window that wide
+    // is degenerate (every output is the row average), so it keeps the
+    // scalar loop.
+    static_assert(255 * (2 * 32767 + 1) + 32767 < (1 << 24),
+                  "quant8 stays exact up to the vector-path radius cutoff");
     bool wide = r < 32768;
     for (int y = 0; y < h; y++) {
         int base = y * w;

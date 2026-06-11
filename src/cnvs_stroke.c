@@ -71,11 +71,8 @@ static int disc_segs(float r) {
 // extra coverage over a half-disc lands on already-stroked geometry).  The
 // whole fan (at most 64 triangles) is staged and lands as one block.
 // Vertices come from a rotation recurrence: sin/cos of the step once, then a
-// 2x2 rotation per vertex -- two libm calls per disc instead of two per
-// vertex (matrix math, not trig, per the house rule).  The recurrence drifts
-// by ~1 ULP per step, a few 1e-6 r over the worst-case 64 segments --
-// far below the coverage quantizer; the fan still closes onto stroked
-// geometry the same way the per-vertex trig's inexact final point did.
+// 2x2 rotation per vertex; the recurrence's drift over the worst-case 64
+// segments stays far below the coverage quantizer.
 static bool emit_disc(cnvs_verts *out, cnvs_vec2 c, float r) {
     int segs = disc_segs(r);
     cnvs_vec2 stage[3 * 64];
@@ -441,11 +438,10 @@ bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed
     float remain = dash[di] - phase;
     bool on = (di % 2) == 0;
 
-    // A pathological dash (sub-pixel lengths, or a path whose transformed length
-    // is enormous) would iterate the inner loop unboundedly and emit a quad per
-    // span -- a memory/CPU DoS (a ~2GB vertex buffer was reachable this way).
-    // Cap the total spans; past it the dashing carries no visual information
-    // anyway, so truncating is the safe, graceful choice.
+    // A pathological dash (sub-pixel lengths, or a path whose transformed
+    // length is enormous) would iterate the inner loop unboundedly and emit a
+    // quad per span -- a memory/CPU DoS.  Cap the total spans; past the cap
+    // the dashing carries no visual information anyway, so truncate.
     int spans = 0;
     int const span_cap = 1 << 20;
 

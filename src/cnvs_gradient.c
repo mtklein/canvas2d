@@ -51,11 +51,9 @@ cnvs_unpremul cnvs_gradient_color_at(cnvs_gradient const *gr, float t) {
         cnvs_stop hi = gr->stops[i + 1];
         if (t <= hi.offset) {
             // The parameter and stop offsets are geometry and stay f32; the
-            // colour lerp itself runs in _Float16, one 4-lane vector op per
-            // term (<=0.25/255 of rounding vs an exact double reference --
-            // measured 0.156/255 worst-case; test_gradient_solve gates it).
-            // The guard is the minimal one: it exists only to keep the
-            // divide defined at coincident stops (span == 0 takes lo).
+            // colour lerp itself runs in _Float16.  The guard is the minimal
+            // one: it keeps the divide defined at coincident stops (span == 0
+            // takes lo).
             float span = hi.offset - lo.offset;
             float u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
             gradh4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
@@ -148,11 +146,9 @@ typedef float gradf8 __attribute__((ext_vector_type(8)));
 typedef int gradi8 __attribute__((ext_vector_type(8)));
 
 // Bit-exact f32 lane select, the 32-bit twin of cnvs_h8_sel: a where the mask
-// lane is set (-1, from a vector comparison), else b.  Bitwise per the house
-// doctrine: the selected lane passes through untouched (an arithmetic
-// b + (a-b)*m re-rounds it), and an unselected lane's inf/NaN -- the radial
-// solve's guarded divides below, the colour row's guarded span divide -- is
-// discarded exactly.
+// lane is set (-1, from a vector comparison), else b.  Bitwise: the selected
+// lane passes through untouched (an arithmetic b + (a-b)*m re-rounds it), and
+// an unselected lane's inf/NaN is discarded exactly.
 static gradf8 vsel_bits(gradi8 m, gradf8 a, gradf8 b) {
     return (gradf8)(((gradi8)a & m) | ((gradi8)b & ~m));
 }
@@ -164,9 +160,9 @@ static gradf8 vclamp01(gradf8 v) {
 
 // Parameter solve for a horizontal run of `n` pixel centres
 // (x0 + i + 0.5, y), i in [0, n).  Writes t in [0,1] per pixel, or -1 where the
-// point has no gradient parameter (the radial "outside" case) so the caller paints
-// transparent.  Along a row only x varies, so the per-pixel work vectorizes 8 wide;
-// it agrees with cnvs_gradient_param to <1e-6 in t (a tail handles n % 8 scalar).
+// point has no gradient parameter (the radial "outside" case) so the caller
+// paints transparent.  Along a row only x varies, so the per-pixel work
+// vectorizes 8 wide.
 void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out) {
     gradf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -255,9 +251,8 @@ static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
 // every lane visits every stop, no gathers -- then runs the scalar lerp's exact
 // arithmetic eight wide (u in f32 with the same true divide and span guard,
 // narrowed once to _Float16 for the colour lerp).  Lane for lane bit-identical
-// to cnvs_gradient_color_at, which stays the semantic reference
-// (test_gradient_solve pins the equivalence at tolerance zero); t < 0 -- the
-// row solver's "outside" sentinel -- paints transparent black.
+// to cnvs_gradient_color_at, the semantic reference; t < 0 -- the row
+// solver's "outside" sentinel -- paints transparent black.
 void cnvs_gradient_color_row(cnvs_gradient const *gr,
                              float const *__counted_by(n) t, int n,
                              cnvs_unpremul *__counted_by(n) out) {

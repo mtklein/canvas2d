@@ -10,30 +10,28 @@
 
 // W3C composite + blend math, premultiplied throughout, in _Float16 arithmetic
 // end to end (docs/decisions/color-axis.md: f16 is the compute type, not just
-// the storage type -- no widen/narrow converts anywhere).  Blend modes:
-// co = s*(1-da) + d*(1-sa) + T, ao = sa + da*(1-sa), with premultiplied term
-// T = sa*da*B(Cb,Cs); the polynomial modes have divide-free T, the non-linear ones
-// (dodge/burn/soft-light, HSL) un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.
-// Switches run over (int)mode to avoid -Wswitch-enum.
+// the storage type).  Blend modes: co = s*(1-da) + d*(1-sa) + T,
+// ao = sa + da*(1-sa), with premultiplied term T = sa*da*B(Cb,Cs); the
+// polynomial modes have divide-free T, the non-linear ones (dodge/burn/
+// soft-light, HSL) un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.
 //
 // Everything below runs eight pixels at a time over channel planes
-// (cnvs_planar.h); the scalar form's per-pixel branches are lane selects
-// that compute both arms and keep the guarded one, so the divide/sqrt modes
-// are straight-line vector code.  Selects are bitwise (cnvs_h8_sel): a
-// guarded divide's inf/NaN lanes are discarded exactly, and every selected
-// lane carries the arithmetic the scalar kernel produced, bit for bit
-// (verified exhaustively against the scalar form, all 26 modes, random +
-// edge-value sweeps -- the gallery byte-gate holds).
+// (cnvs_planar.h); per-pixel branches are bitwise lane selects (cnvs_h8_sel)
+// that compute both arms and discard a guarded divide's inf/NaN lanes
+// exactly.
 //
-// Coverage (the op's AA plane x the clip mask) applies per the §3.8 ruling
-// (docs/rasterization.md): in principle out = lerp(dst, blend(src, dst), cov)
-// -- the uncovered fraction of a pixel keeps its destination.  Folding
-// coverage into source alpha instead is identical math exactly when, in
+// Coverage (the op's AA plane x the clip mask) applies per the ruling in
+// docs/rasterization.md: out = lerp(dst, blend(src, dst), cov) -- the
+// uncovered fraction of a pixel keeps its destination.  Folding coverage
+// into source alpha instead is identical math exactly when, in
 // co = Fa*s + Fb*d, Fa is free of sa and Fb is affine in sa with Fb(0) = 1
-// (compositor_coverage_folds): the over-family folds -- cheaper, and
-// bit-compatible with the folded source-over pipeline -- and every other
-// mode blends at full strength and lerps (test_coverage_lerp is the
-// supersampled-oracle gate).
+// (compositor_coverage_folds): the over-family folds, every other mode
+// blends at full strength and lerps.
+
+static_assert(COMPOSITOR_COPY == 10 && COMPOSITOR_MULTIPLY == 11 &&
+              COMPOSITOR_EXCLUSION == 21 && COMPOSITOR_HUE == 22 &&
+              COMPOSITOR_MODE_COUNT == 26,
+              "blend8 dispatches on these mode bands");
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
 static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
@@ -50,7 +48,7 @@ static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
         case COMPOSITOR_SOFT_LIGHT: {
             cnvs_h8 dd = cnvs_h8_sel(cb <= (cnvs_h8)(_Float16)0.25f,
                 (((_Float16)16.0f * cb - (_Float16)12.0f) * cb + (_Float16)4.0f) * cb,
-                __builtin_elementwise_sqrt(cb));  // one fsqrt.8h, IEEE-exact
+                __builtin_elementwise_sqrt(cb));
             return cnvs_h8_sel(cs <= (cnvs_h8)(_Float16)0.5f,
                 cb - (one - (_Float16)2.0f * cs) * cb * (one - cb),
                 cb + ((_Float16)2.0f * cs - one) * (dd - cb));
@@ -89,8 +87,7 @@ static cnvs_h8 blend_term8(compositor_blend_mode mode,
 }
 
 // Source-over for one planar block: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
-// the same fold over every channel plane, alpha included.  Takes and returns
-// whole blocks in registers (cnvs_px8 is a four-vector HVA, q0-q3).
+// the same fold over every channel plane, alpha included.
 static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
     cnvs_h8 fb = (cnvs_h8)(_Float16)1.0f - s.a;
     cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
@@ -164,8 +161,8 @@ static rgb8 blend_nonsep8(compositor_blend_mode mode, rgb8 cb, rgb8 cs) {
 }
 
 // `s` is one planar block of premultiplied source pixels, already
-// clip-attenuated; the whole kernel stays in f16 arithmetic.  The composite
-// fold runs the same expression over every plane: in the Porter-Duff arm the
+// clip-attenuated.  The composite fold runs the same expression over every
+// plane: in the Porter-Duff arm the
 // alpha plane of Fa*s + Fb*d is Fa*sa + Fb*da = ao, and in the blend arm the
 // alpha plane of s*(1-da) + d*(1-sa) + T is sa + da*(1-sa) = ao because T's
 // alpha plane is pinned to sa*da.
@@ -312,12 +309,10 @@ void compositor_set_clip(compositor *__single c,
 // same planar block walk as the source-over fast path, with the 26-mode
 // kernel in place of the source-over fold.  `tile` may be NULL, in which case
 // every block's source is `splat` -- one solid colour broadcast across the
-// lanes, standing in for the constant tile the canvas used to write out and
-// this loop used to read back (a ~16 B/px round trip carrying no
-// information).  Effective coverage is the op plane x the clip mask (each
-// absent factor is 1); the over-family folds it into the source exactly as
-// the fast path does, every other mode blends at full strength and lerps
-// toward the destination (cov_lerp8) -- the §3.8 ruling.
+// lanes.  Effective coverage is the op plane x the clip mask (each absent
+// factor is 1); the over-family folds it into the source exactly as the fast
+// path does, every other mode blends at full strength and lerps toward the
+// destination (cov_lerp8).
 static void blend_region(compositor *__single c, int x, int y, int w, int h,
                          cnvs_premul const *__counted_by_or_null(w * h) tile,
                          cnvs_px8 splat,
@@ -338,10 +333,8 @@ static void blend_region(compositor *__single c, int x, int y, int w, int h,
             if (!atten) {
                 o = blend8(s, d, mode);
             } else if (folds) {
-                // Fold: attenuate the source by each factor in turn -- the
-                // source-over fast path's exact arithmetic (scale by cov,
-                // then scale by clip; combining the factors first would
-                // re-round).
+                // Attenuate the source by each factor in turn, exactly as the
+                // fast path does (combining the factors first re-rounds).
                 if (cov) {
                     s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
                 }
@@ -361,7 +354,7 @@ static void blend_region(compositor *__single c, int x, int y, int w, int h,
             }
             cnvs_px8_store(c->target + di, o);
         }
-        if (col < w) {  // tail: k < 8 pixels through the same planar block
+        if (col < w) {
             int n = w - col;
             int ti = row * w + col;
             int di = (y + row) * c->width + (x + col);
@@ -404,15 +397,9 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         return;
     }
     if (mode == COMPOSITOR_SRC_OVER) {
-        // The overwhelmingly common mode (every ordinary fill).  Eight pixels
-        // per step as four channel planes (cnvs_planar.h): ld4 deinterleaves
-        // at the tile seams, the blend is four fused multiply-adds with sa as
-        // a plain vector -- no alpha-splat shuffles -- and everything stays in
-        // _Float16 arithmetic end to end (docs/decisions/color-axis.md).
-        // Source-over folds: op coverage (normally already folded by the
-        // shade stage, so cov is NULL here) and clip attenuation both scale
-        // the premultiplied source, in f16.  A w%8 tail runs the same planar
-        // block over gathered pixels, zero-filled.
+        // The fast path.  Source-over folds: op coverage (normally already
+        // folded by the shade stage, so cov is NULL here) and clip
+        // attenuation both scale the premultiplied source, in f16.
         _Float16 const k255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
             int col = 0;
@@ -420,16 +407,16 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
                 int ti = row * w + col;
                 int di = (y + row) * c->width + (x + col);
                 cnvs_px8 s = cnvs_px8_load(tile + ti);
-                if (cov) {      // fold op coverage into the source (exact here)
+                if (cov) {
                     s = cnvs_px8_scale(s, cnvs_h8_from_u8(cov + ti) * k255);
                 }
-                if (c->clip) {  // attenuate premultiplied source by clip coverage
+                if (c->clip) {
                     s = cnvs_px8_scale(s, cnvs_h8_from_u8(c->clip + di) * k255);
                 }
                 cnvs_px8 d = cnvs_px8_load(c->target + di);
                 cnvs_px8_store(c->target + di, src_over8(s, d));
             }
-            if (col < w) {  // tail: k < 8 pixels through the same planar block
+            if (col < w) {
                 int k = w - col;
                 int ti = row * w + col;
                 int di = (y + row) * c->width + (x + col);
@@ -462,14 +449,12 @@ void compositor_blend_solid(compositor *__single c, int x, int y, int w, int h,
     if (x < 0 || y < 0 || x + w > c->width || y + h > c->height) {
         return;
     }
-    // Broadcast the colour across the lanes once; the region walk's source is
-    // this block for every step, bit-for-bit the tile of identical pixels the
-    // caller used to materialize (a splat lane equals the stored-and-reloaded
-    // f16 exactly).  SRC_OVER takes the region walk here, not the fast path,
-    // and still lands the same bytes: blend8 delegates source-over to
-    // src_over8 and the walk's fold arm applies cov/clip as the same two
-    // successive scales (test_compositor's solid_vs_tile sweep pins all 26
-    // modes x coverage shapes byte-for-byte).
+    // Broadcast the colour across the lanes once: a splat lane equals a
+    // stored-and-reloaded f16 exactly, so the region walk's output is
+    // byte-identical to materializing the constant tile.  SRC_OVER takes the
+    // region walk here, not the fast path, and still lands the same bytes:
+    // blend8 delegates source-over to src_over8, and the fold arm applies
+    // cov/clip as the same two successive scales.
     cnvs_px8 const splat = { (cnvs_h8)color.r, (cnvs_h8)color.g,
                              (cnvs_h8)color.b, (cnvs_h8)color.a };
     blend_region(c, x, y, w, h, NULL, splat, cov, mode);

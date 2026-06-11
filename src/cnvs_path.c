@@ -141,10 +141,8 @@ static float chord_len2(cnvs_vec2 a, cnvs_vec2 b) {
 // inf/NaN control point every comparison is false, and the (a <= b) form
 // would subdivide all the way to the depth cap -- 2^16 (2^18 for cubics)
 // emitted points PER CURVE, which a text line full of curves multiplies into
-// a multi-GB path (fuzz_replay found exactly that: an OOM via
-// `fill_text 1e9999 0 <text>`, whose inf pen poisons every device-space
-// point).  Identical behavior for finite inputs; degenerate curves emit one
-// segment, like any flat curve.
+// a multi-GB path.  Identical behavior for finite inputs; degenerate curves
+// emit one segment, like any flat curve.
 static bool quad_rec(cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                      float tol2, int depth) {
     if (depth >= 16 || !(cross_chord2(p0, p2, p1) > tol2 * chord_len2(p0, p2))) {

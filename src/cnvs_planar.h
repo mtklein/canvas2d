@@ -4,20 +4,17 @@
 // 8-lane _Float16 channel planes -- one full 128-bit NEON register of native
 // fp16 arithmetic per channel (docs/decisions/color-axis.md).  Planar is the
 // pipeline's house layout: per-channel math needs no alpha-splat shuffles
-// (sa IS a vector), per-pixel branches become lane selects, and the scalar
-// f16 paths (the HSL blend quartet) become straight-line vector code.  A
-// cnvs_px8 is a four-member homogeneous vector aggregate, so the arm64 ABI
-// passes and returns it in q0-q3 -- stages can call each other with whole
-// pixel blocks in registers, which is why the kernels here are factored as
-// small functions rather than fused monoliths.
+// (sa IS a vector) and per-pixel branches become lane selects.  A cnvs_px8
+// is a four-member homogeneous vector aggregate, so the arm64 ABI passes and
+// returns it in q0-q3 -- stages can call each other with whole pixel blocks
+// in registers.
 //
-// The AoS<->planar seams use explicit arm_neon.h ld4/st4 intrinsics: there is
-// no portable spelling for a deinterleaving load (the f16 compute ruling
-// already bets on Apple Silicon, so portability is spent).  arm_neon.h is
+// The AoS<->planar seams use explicit arm_neon.h ld4/st4 intrinsics (there
+// is no portable spelling for a deinterleaving load).  arm_neon.h is
 // unannotated, so the intrinsics' own pointer parameters carry no bounds --
 // each wrapper below takes __counted_by(8) (or (32) for RGBA8), making the
 // implicit conversion at every call site the bounds check: exactly one per
-// 8-pixel block, the same shape as the memcpy idiom the AoS kernels used.
+// 8-pixel block.
 
 #include "cnvs_math.h"  // cnvs_premul
 
@@ -196,8 +193,7 @@ static inline cnvs_px8 cnvs_px8_premultiply(cnvs_px8 p) {
 
 // The compositor's output clamp: ao = min(a, 1) ('lighter' can exceed 1), and
 // every channel -- alpha included -- pins into [0, ao], preserving the
-// premultiplied invariant rgb <= a.  Lane-wise the exact fminnm/fmaxnm fold
-// the AoS kernel used.
+// premultiplied invariant rgb <= a.
 static inline cnvs_px8 cnvs_px8_clamp_premul(cnvs_px8 co) {
     cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
     cnvs_h8 ao = __builtin_elementwise_min(co.a, (cnvs_h8)(_Float16)1.0f);
