@@ -115,7 +115,9 @@ TEMPLATE = r"""<!doctype html>
   #stats { margin-left:auto; color:#8b93a7; font-variant-numeric:tabular-nums; }
   #view { flex:1; display:flex; align-items:flex-start; justify-content:center; overflow:auto; padding:16px; }
   .pair { display:flex; gap:12px; }
-  .pair figure { margin:0; text-align:center; color:#8b93a7; }
+  figure { margin:0; text-align:center; color:#8b93a7; }  /* kill the UA 1em
+       figure margin: modes must not shift the image when swapped (lining up
+       heatmap against blink is the whole point of mode-flicking) */
   img, canvas { image-rendering:pixelated; background:
        repeating-conic-gradient(#23262e 0 25%, #1b1e25 0 50%) 0 0/16px 16px; border:1px solid #2a2e38; }
   .glow { position:relative; filter: grayscale(1) brightness(64); background:#000; }
