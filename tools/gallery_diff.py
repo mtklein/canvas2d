@@ -12,10 +12,11 @@ data: URIs keep the canvas untainted for the pixel-stats/heatmap mode).
   python3 tools/gallery_diff.py --no-open    # just print the output path
 
 Keys in the page: `o` for the ranked overview, arrows or j/k switch scenes,
-1/2/3/4/5 switch modes (side-by-side / swipe / blink / glow / heatmap),
+1/2/3/4/5 switch modes (blink / heatmap / swipe / side-by-side / glow),
 space toggles blink by hand, [ and ] adjust glow/heatmap gain.
 
-Scenes are ranked worst-first by mean absolute channel delta, idiff-style.
+Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
+per-pixel magnitude crediting with diminishing (sqrt) returns.
 The glow mode is lifted from Mike's idiff (github.com/mtklein/idiff): two
 stacked images under mix-blend-mode:difference and a grayscale+brightness
 filter -- the browser computes the amplified diff, no JS, no decode.
@@ -83,11 +84,12 @@ def main():
 
 
 # One page, no dependencies.  The overview ranks every changed scene
-# worst-first (idiff's mean-abs-delta score, computed client-side) with a
-# glow thumbnail per row; the per-scene modes are side-by-side | swipe
-# (pointer-driven divider) | blink (2 Hz, space to step by hand) | glow
-# (idiff's stacked difference + grayscale/brightness, all CSS) | heatmap
-# (per-pixel max channel delta with exact stats and adjustable gain).
+# worst-first by weighted change (%-of-pixels-changed dominating, magnitude
+# crediting with diminishing sqrt returns, computed client-side) with a glow
+# thumbnail per row; the per-scene modes are blink (the default; 2 Hz, space
+# to step by hand) | heatmap (per-pixel max channel delta, exact stats,
+# adjustable gain) | swipe (pointer-driven divider) | side-by-side | glow
+# (idiff's stacked difference + grayscale/brightness, all CSS).
 TEMPLATE = r"""<!doctype html>
 <meta charset="utf-8">
 <title>gallery diff vs __REF__</title>
@@ -132,18 +134,18 @@ TEMPLATE = r"""<!doctype html>
 <div id="nav"><h1>vs __REF__ <span class="score">(o: overview)</span></h1></div>
 <div id="main">
   <div id="bar">
-    <button class="mode" data-m="side">1 side-by-side</button>
-    <button class="mode" data-m="swipe">2 swipe</button>
-    <button class="mode" data-m="blink">3 blink</button>
-    <button class="mode" data-m="glow">4 glow</button>
-    <button class="mode" data-m="heat">5 heatmap</button>
+    <button class="mode" data-m="blink">1 blink</button>
+    <button class="mode" data-m="heat">2 heatmap</button>
+    <button class="mode" data-m="swipe">3 swipe</button>
+    <button class="mode" data-m="side">4 side-by-side</button>
+    <button class="mode" data-m="glow">5 glow</button>
     <span id="stats"></span>
   </div>
   <div id="view"></div>
 </div>
 <script>
 const scenes = __SCENES__;
-let cur = -1, mode = "side", gain = 64, blinkShow = 0, blinkTimer = null;
+let cur = -1, mode = "blink", gain = 64, blinkShow = 0, blinkTimer = null;
 const nav = document.getElementById("nav"), view = document.getElementById("view"),
       stats = document.getElementById("stats");
 
@@ -175,30 +177,33 @@ function pixels(s, cb) {
 // at load; the nav and overview re-sort as results land.
 function score(s, cb) {
   if (s.score !== undefined) return cb && cb();
-  if (!s.before || !s.after) { s.score = 1; s.count = NaN; s.max = NaN; return cb && cb(); }
+  if (!s.before || !s.after) { s.score = 1; s.w = 1; s.pct = 1; s.count = NaN; s.max = NaN; return cb && cb(); }
   pixels(s, ({w, h, pa, pb}) => {
-    let sum = 0, count = 0, max = 0;
+    let sum = 0, wsum = 0, count = 0, max = 0;
     for (let i = 0; i < pa.length; i += 4) {
       const d = Math.max(Math.abs(pa[i]-pb[i]), Math.abs(pa[i+1]-pb[i+1]),
                          Math.abs(pa[i+2]-pb[i+2]), Math.abs(pa[i+3]-pb[i+3]));
       sum += Math.abs(pa[i]-pb[i]) + Math.abs(pa[i+1]-pb[i+1])
            + Math.abs(pa[i+2]-pb[i+2]) + Math.abs(pa[i+3]-pb[i+3]);
-      if (d) { count++; if (d > max) max = d; }
+      if (d) { count++; if (d > max) max = d; wsum += Math.sqrt(d / 255); }
     }
+    // Rank by the weighted score: %-changed dominates, magnitude credits with
+    // diminishing returns (sqrt) -- broad subtle drift outranks a few loud px.
     s.score = sum / (pa.length * 255); s.count = count; s.max = max;
+    s.pct = count / (w * h); s.w = wsum / (w * h);
     cb && cb();
   });
 }
 
 function rebuildNav() {
-  const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].score ?? 0) - (scenes[x].score ?? 0));
+  const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
   nav.querySelectorAll("button").forEach(b => b.remove());
   for (const i of order) {
     const s = scenes[i], b = document.createElement("button");
     b.innerHTML = s.name + (s.before ? (s.after ? "" : " <span class=badge>(gone)</span>")
                                      : " <span class=badge>(new)</span>")
-      + (s.score !== undefined && s.before && s.after
-         ? ` <span class=score>${(s.score * 100).toFixed(3)}%</span>` : "");
+      + (s.pct !== undefined && s.before && s.after
+         ? ` <span class=score>${(s.pct * 100).toFixed(2)}%</span>` : "");
     b.onclick = () => { cur = i; render(); };
     b.classList.toggle("sel", i === cur);
     nav.appendChild(b); s.btn = b;
@@ -206,9 +211,9 @@ function rebuildNav() {
 }
 
 function overview() {
-  view.innerHTML = ""; stats.textContent = "ranked worst-first, idiff-style; click a row";
+  view.innerHTML = ""; stats.textContent = "ranked by weighted change (% px changed, sqrt-magnitude); click a row";
   document.querySelectorAll(".mode").forEach(b => b.classList.remove("sel"));
-  const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].score ?? 0) - (scenes[x].score ?? 0));
+  const order = scenes.map((s, i) => i).sort((x, y) => (scenes[y].w ?? 0) - (scenes[x].w ?? 0));
   const t = document.createElement("table"); t.id = "over";
   for (const i of order) {
     const s = scenes[i], tr = document.createElement("tr");
@@ -216,8 +221,8 @@ function overview() {
     name.innerHTML = `<b>${s.name}</b>` + (s.before && s.after ? "" : ' <span class=badge>' +
                      (s.after ? "(new)" : "(gone)") + "</span>");
     const num = document.createElement("td"); num.className = "num";
-    num.textContent = s.score !== undefined && s.count >= 0
-      ? `${(s.score * 100).toFixed(3)}%  ·  ${s.count.toLocaleString()} px  ·  max ${s.max}` : "";
+    num.textContent = s.pct !== undefined && s.count >= 0
+      ? `${(s.pct * 100).toFixed(2)}% changed  ·  ${s.count.toLocaleString()} px  ·  max ${s.max}` : "";
     const gl = document.createElement("td");
     if (s.before && s.after) gl.append(glowEl(s));
     const ba = document.createElement("td");
@@ -225,7 +230,7 @@ function overview() {
     if (s.before) ba.append(small(s.before));
     if (s.after) ba.append(small(s.after));
     tr.append(name, num, gl, ba);
-    tr.onclick = () => { cur = i; mode = "swipe"; render(); };
+    tr.onclick = () => { cur = i; mode = "blink"; render(); };
     t.append(tr);
   }
   view.append(t);
@@ -307,7 +312,7 @@ addEventListener("keydown", e => {
   if (e.key === "o" || e.key === "0") { cur = -1; render(); }
   else if (e.key === "ArrowRight" || e.key === "j") { cur = (cur + 1 + scenes.length) % scenes.length; render(); }
   else if (e.key === "ArrowLeft" || e.key === "k") { cur = (cur - 1 + scenes.length) % scenes.length; render(); }
-  else if (e.key >= "1" && e.key <= "5") { mode = ["side","swipe","blink","glow","heat"][e.key - 1];
+  else if (e.key >= "1" && e.key <= "5") { mode = ["blink","heat","swipe","side","glow"][e.key - 1];
     if (cur < 0) cur = 0; render(); }
   else if (e.key === " ") { e.preventDefault(); if (cur < 0) return;
     if (mode !== "blink") { mode = "blink"; render(); }
