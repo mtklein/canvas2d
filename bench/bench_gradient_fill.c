@@ -29,14 +29,14 @@ int main(void) {
     static float trow[DIM];
     static cnvs_unpremul crow[DIM];
     double sink = 0.0;
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             for (int y = 0; y < DIM; y++) {
                 cnvs_gradient_param_row(&gr, 0, (float)y + 0.5f, DIM, trow);
                 cnvs_gradient_color_row(&gr, trow, DIM, crow);
                 for (int x = 0; x < DIM; x++) {
-                    cnvs_unpremul c = crow[x];  // outside is transparent black
+                    cnvs_unpremul const c = crow[x];  // outside is transparent black
                     sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
                 }
             }

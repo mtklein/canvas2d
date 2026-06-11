@@ -13,7 +13,7 @@ float cnvs_shaped_width(struct cnvs_shaped const *__single s) {
     }
     float w = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
+        cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
             w += run.xadv[i];
         }
@@ -27,10 +27,10 @@ int cnvs_shaped_index_at_x(struct cnvs_shaped const *__single s, float x) {
     }
     float pen = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];  // glyphs are visual-order, so a single
+        cnvs_glyph_run const run = s->run[r];  // glyphs are visual-order, so a single
         for (int i = 0; i < run.count; i++) {  // left-to-right sweep works for RTL too
             if (x < pen + run.xadv[i]) {
-                int32_t c = run.cluster[i];
+                int32_t const c = run.cluster[i];
                 if (c < 0 || c >= s->utf16s) {  // defensive: a bad cluster is not
                     return -1;                    // a valid source index
                 }
@@ -48,7 +48,7 @@ float cnvs_shaped_x_at_index(struct cnvs_shaped const *__single s, int index) {
     }
     float pen = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
+        cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
             if (run.cluster[i] == index) {
                 return pen;  // leading visual edge of the glyph at this logical index
@@ -68,9 +68,9 @@ int cnvs_shaped_selection(struct cnvs_shaped const *__single s, int lo, int hi,
     float pen = 0.0f, start = 0.0f;
     bool in = false;  // currently inside a selected visual run of glyphs
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
+        cnvs_glyph_run const run = s->run[r];
         for (int i = 0; i < run.count; i++) {
-            bool sel = run.cluster[i] >= lo && run.cluster[i] < hi;
+            bool const sel = run.cluster[i] >= lo && run.cluster[i] < hi;
             if (sel && !in) {
                 start = pen;
                 in = true;
@@ -111,7 +111,7 @@ struct glyph_place {
 };
 
 static cnvs_vec2 place(struct glyph_place const *g, cnvs_vec2 fu) {
-    cnvs_vec2 u = { g->ox + fu.x * g->scale, g->oy - fu.y * g->scale };
+    cnvs_vec2 const u = { g->ox + fu.x * g->scale, g->oy - fu.y * g->scale };
     return cnvs_mat_apply(g->to_device, u);
 }
 
@@ -126,8 +126,8 @@ static void walk_curves(enum cnvs_glyph_verb const *__counted_by(nv) verb, int n
                         struct cnvs_path *__single out) {
     int ip = 0;
     for (int iv = 0; iv < nv; iv++) {
-        enum cnvs_glyph_verb v = verb[iv];
-        int k = verb_pts(v);
+        enum cnvs_glyph_verb const v = verb[iv];
+        int const k = verb_pts(v);
         if (k < 0 || ip + k > np) {
             break;  // not a verb, or its points would run past the count: stop
         }
@@ -280,11 +280,11 @@ int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font
         return -1;
     }
     char buf[256];
-    int n = cnvs_run_font_name(font, buf, (int)sizeof buf);
+    int const n = cnvs_run_font_name(font, buf, (int)sizeof buf);
     if (n <= 0) {
         return -1;
     }
-    int fid = cnvs_text_cache_intern(c, buf, n);
+    int const fid = cnvs_text_cache_intern(c, buf, n);
     // A live handle is the chance to record the name's vmetrics (one boundary
     // fetch per font ever) -- the serialized `font` block reads them back.
     if (fid >= 0 && !c->font[fid].has_vm) {
@@ -338,7 +338,7 @@ static struct cnvs_glyph_slot *__single glyph_probe(struct cnvs_text_cache *__si
     if (c->glyph_cap == 0) {
         return NULL;
     }
-    uint32_t mask = (uint32_t)c->glyph_cap - 1u;
+    uint32_t const mask = (uint32_t)c->glyph_cap - 1u;
     for (uint32_t i = mix32(key) & mask;; i = (i + 1u) & mask) {
         struct cnvs_glyph_slot *slot = &c->glyph[i];
         if (!slot->used || slot->key == key) {
@@ -389,7 +389,7 @@ struct cnvs_glyph_slot *__single cnvs_text_cache_glyph(struct cnvs_text_cache *_
     int nv = 0, np = 0;
     float upem = 0.0f;
     cnvs_glyph_curves(font, glyph, vstack, VSTACK, pstack, PSTACK, &nv, &np, &upem);
-    bool blank = nv <= 0 || np < 0 || upem <= 0.0f;
+    bool const blank = nv <= 0 || np < 0 || upem <= 0.0f;
     if (blank) {  // remembered too -- "no outline" is itself a boundary answer
         slot->verb = NULL;     // (a space costs one fetch ever)
         slot->nverbs = 0;
@@ -442,7 +442,7 @@ struct cnvs_glyph_slot *__single cnvs_text_cache_glyph(struct cnvs_text_cache *_
     if (!blank && size_px > 0.0f) {
         float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
         cnvs_glyph_bounds(font, glyph, &x0, &y0, &x1, &y1);
-        float k = upem / size_px;
+        float const k = upem / size_px;
         slot->ink_x0 = x0 * k;
         slot->ink_y0 = y0 * k;
         slot->ink_x1 = x1 * k;
@@ -826,7 +826,7 @@ float cnvs_shaped_outline(struct cnvs_text_cache *__single cache,
     }
     float pen = ox;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];  // visual-order glyphs, so advancing the pen
+        cnvs_glyph_run const run = s->run[r];  // visual-order glyphs, so advancing the pen
         // The glyph key (color runs included -- captures key by name too): a
         // replay-built run carries its interned id; a live run resolves through
         // one name fetch per run, not per glyph.
@@ -864,7 +864,7 @@ void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
     m->font_ascent = ascent_px;
     m->font_descent = descent_px;
     // Split the em square (height == size) by the ascent/descent ratio.
-    double denom = (double)ascent_px + (double)descent_px;
+    double const denom = (double)ascent_px + (double)descent_px;
     double em_asc = denom > 0.0 ? (double)size_px * (double)ascent_px / denom
                                 : (double)size_px;
     m->em_ascent = (float)em_asc;
@@ -881,7 +881,7 @@ void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
     bool any = false;
     float minx = 0.0f, maxx = 0.0f, miny = 0.0f, maxy = 0.0f;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
+        cnvs_glyph_run const run = s->run[r];
         int fid = run.name_id >= 0 ? run.name_id
                                    : cnvs_text_cache_font(cache, run.font);
         for (int i = 0; i < run.count; i++) {
@@ -907,8 +907,8 @@ void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
                 cnvs_glyph_bounds(run.font, run.glyph[i], &x0, &y0, &x1, &y1);
             }
             if (x1 > x0 && y1 > y0) {
-                float gx0 = pen + x0;
-                float gx1 = pen + x1;
+                float const gx0 = pen + x0;
+                float const gx1 = pen + x1;
                 if (!any) {
                     minx = gx0; maxx = gx1; miny = y0; maxy = y1;
                     any = true;

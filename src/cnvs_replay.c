@@ -55,7 +55,7 @@ static bool read_token(char const *__counted_by(le) data, size_t le,
     size_t j = *jp;
     while (j < le && is_ws(data[j])) { j++; }
     if (j >= le) { *jp = j; return false; }
-    size_t start = j;
+    size_t const start = j;
     while (j < le && !is_ws(data[j])) { j++; }
     *ts = start;
     *tlen = j - start;
@@ -71,7 +71,7 @@ static bool tok_eq(char const *__counted_by(le) data, size_t le, size_t ts,
         return false;      // unsafe/fuzz build too, where __counted_by is absent
     }
     for (size_t k = 0; k < tlen; k++) {
-        char c = *lit;
+        char const c = *lit;
         if (c == '\0' || data[ts + k] != c) {
             return false;
         }
@@ -151,7 +151,7 @@ static bool read_float(char const *__counted_by(le) data, size_t le,
     // 10^-k.  |fexp| <= the token length and |eexp| <= 1000, so the loops are
     // bounded; once the value saturates to inf or flushes to 0 further steps
     // hold it there.
-    int e = fexp + eexp;
+    int const e = fexp + eexp;
     double d = mant;
     for (int rem = e; rem > 0;) {
         int step = rem > 22 ? 22 : rem;
@@ -159,7 +159,7 @@ static bool read_float(char const *__counted_by(le) data, size_t le,
         rem -= step;
     }
     for (int rem = -e; rem > 0;) {
-        int step = rem > 22 ? 22 : rem;
+        int const step = rem > 22 ? 22 : rem;
         d /= k_pow10[step];
         rem -= step;
     }
@@ -178,7 +178,7 @@ static bool read_uint(char const *__counted_by(le) data, size_t le,
     }
     long v = 0;
     for (size_t k = 0; k < tlen; k++) {
-        char ch = data[ts + k];
+        char const ch = data[ts + k];
         if (ch < '0' || ch > '9') {
             return false;
         }
@@ -201,7 +201,7 @@ static bool read_int(char const *__counted_by(le) data, size_t le,
         return false;
     }
     size_t k = 0;
-    bool neg = data[ts] == '-';
+    bool const neg = data[ts] == '-';
     if (neg) {
         k = 1;
         if (tlen == 1) {
@@ -210,7 +210,7 @@ static bool read_int(char const *__counted_by(le) data, size_t le,
     }
     long v = 0;
     for (; k < tlen; k++) {
-        char ch = data[ts + k];
+        char const ch = data[ts + k];
         if (ch < '0' || ch > '9') {
             return false;
         }
@@ -456,7 +456,7 @@ static bool replay_glyph(struct canvas *__single cv, struct replay_blocks *__sin
         return false;
     }
     // Pass 1: validate every token and count the verbs and points.
-    size_t curves = j;
+    size_t const curves = j;
     int nv = 0, np = 0;
     while (!at_eol(data, le, j)) {
         size_t ts, tl;
@@ -1350,10 +1350,10 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "fill_text_max") ||
              tok_eq(data, le, cs, cl, "stroke_text_max")) {
         // Like fill_text, plus a max_width float between the pen and the text.
-        bool fill = data[cs] == 'f';
+        bool const fill = data[cs] == 'f';
         if (!read_floats(data, le, &j, f, 3)) return false;
         while (j < le && is_ws(data[j])) { j++; }
-        int n = (int)(le - j);  // le - j <= line cap < INT_MAX
+        int const n = (int)(le - j);  // le - j <= line cap < INT_MAX
         if (fill) canvas_fill_text_max_n(cv, data + j, n, f[0], f[1], f[2]);
         else      canvas_stroke_text_max_n(cv, data + j, n, f[0], f[1], f[2]);
         return true;  // text consumed the rest of the line
@@ -1409,7 +1409,7 @@ bool canvas_replay_from(struct canvas *__single cv, char const *__null_terminate
         (void)fclose(f);
         return false;
     }
-    long sz = ftell(f);
+    long const sz = ftell(f);
     (void)fseek(f, 0, SEEK_SET);
     if (sz < 0 || (unsigned long)sz > REPLAY_FILE_MAX) {
         (void)fclose(f);
@@ -1421,9 +1421,9 @@ bool canvas_replay_from(struct canvas *__single cv, char const *__null_terminate
         (void)fclose(f);
         return false;
     }
-    size_t got = fread(buf, 1, n, f);
+    size_t const got = fread(buf, 1, n, f);
     (void)fclose(f);
-    bool ok = cnvs_replay_text(cv, buf, got);
+    bool const ok = cnvs_replay_text(cv, buf, got);
     free(buf);
     return ok;
 }

@@ -38,8 +38,8 @@ int main(void) {
     canvas_set_font_size(cv, 48.0f);
 
     // measureText: non-empty has positive advance; empty string is zero.
-    float adv = canvas_measure_text(cv, "Hi");
-    float adv_empty = canvas_measure_text(cv, "");
+    float const adv = canvas_measure_text(cv, "Hi");
+    float const adv_empty = canvas_measure_text(cv, "");
     CHECK(adv > 1.0f);
     CHECK(adv_empty <= 0.0f);
 

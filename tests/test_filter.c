@@ -29,7 +29,7 @@ static void ref_box_h(float *__counted_by(w * h * 4) dst,
             for (int c = 0; c < 4; c++) {
                 float s = 0.0f;
                 for (int k = -r; k <= r; k++) {
-                    int xx = x + k;
+                    int const xx = x + k;
                     if (xx >= 0 && xx < w) {
                         s += src[(y * w + xx) * 4 + c];
                     }
@@ -48,7 +48,7 @@ static void ref_box_v(float *__counted_by(w * h * 4) dst,
             for (int c = 0; c < 4; c++) {
                 float s = 0.0f;
                 for (int k = -r; k <= r; k++) {
-                    int yy = y + k;
+                    int const yy = y + k;
                     if (yy >= 0 && yy < h) {
                         s += src[(yy * w + x) * 4 + c];
                     }
@@ -73,9 +73,9 @@ static void ref_blur3(float *__counted_by(w * h * 4) px,
 // makes filter order visible around a blur; see blur_order_visible).
 static void ref_contrast2(float *__counted_by(n4) px, int n4) {
     for (int i = 0; i + 3 < n4; i += 4) {
-        float a = px[i + 3];
+        float const a = px[i + 3];
         for (int c = 0; c < 3; c++) {
-            float v = 2.0f * px[i + c] - 0.5f * a;
+            float const v = 2.0f * px[i + c] - 0.5f * a;
             px[i + c] = v < 0.0f ? 0.0f : (v > a ? a : v);
         }
     }
@@ -92,10 +92,10 @@ static void check_vs_ref(uint8_t const *__counted_by(len) px, int len,
     bool ok = true;
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            int i = (y * w + x) * 4;
-            float ra = want[i + 3];
+            int const i = (y * w + x) * 4;
+            float const ra = want[i + 3];
             struct rgba p = pixel_at(px, len, w, x, y);
-            int ea = (int)(ra * 255.0f + 0.5f);
+            int const ea = (int)(ra * 255.0f + 0.5f);
             if (abs((int)p.a - ea) > tol) {
                 ok = false;
             }
@@ -104,8 +104,8 @@ static void check_vs_ref(uint8_t const *__counted_by(len) px, int len,
                 for (int c = 0; c < 3; c++) {
                     float u = want[i + c] / ra;
                     u = u > 1.0f ? 1.0f : u;
-                    int ec = (int)(u * 255.0f + 0.5f);
-                    int pc = c == 0 ? p.r : (c == 1 ? p.g : p.b);
+                    int const ec = (int)(u * 255.0f + 0.5f);
+                    int const pc = c == 0 ? p.r : (c == 1 ? p.g : p.b);
                     if (abs(pc - ec) > tol) {
                         rgb_ok = false;
                     }
@@ -136,7 +136,7 @@ static void blur_matches_reference(void) {
         canvas_read_rgba(cv, px, len);
         for (int y = 16; y < 32; y++) {
             for (int x = 16; x < 32; x++) {
-                int i = (y * N + x) * 4;
+                int const i = (y * N + x) * 4;
                 want[i + 0] = 0.2f * 0.6f;
                 want[i + 1] = 0.4f * 0.6f;
                 want[i + 2] = 0.8f * 0.6f;
@@ -251,7 +251,7 @@ static void blur_order_visible(void) {
             memset(want, 0, (size_t)nf * sizeof(float));
             for (int y = 8; y < 40; y++) {
                 for (int x = 8; x < 40; x++) {
-                    int i = (y * N + x) * 4;
+                    int const i = (y * N + x) * 4;
                     want[i + (x < 24 ? 0 : 1)] = 1.0f;
                     want[i + 3] = 1.0f;
                 }
@@ -371,7 +371,7 @@ static void ref_drop_shadow(float *__counted_by(w * h * 4) px,
         ref_blur3(sh, tmp, w, h, r);
     }
     for (int i = 0; i < w * h * 4; i += 4) {
-        float k = 1.0f - px[i + 3];
+        float const k = 1.0f - px[i + 3];
         for (int c = 0; c < 4; c++) {
             px[i + c] += sh[i + c] * k;
         }
@@ -429,7 +429,7 @@ static void drop_shadow_matches_reference(void) {
         canvas_read_rgba(cv, px, len);
         for (int y = 16; y < 32; y++) {
             for (int x = 16; x < 32; x++) {
-                int i = (y * N + x) * 4;
+                int const i = (y * N + x) * 4;
                 want[i + 0] = 0.2f * 0.6f;
                 want[i + 1] = 0.4f * 0.6f;
                 want[i + 2] = 0.8f * 0.6f;

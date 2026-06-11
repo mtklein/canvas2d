@@ -25,7 +25,7 @@ int main(void) {
     }
 
     double sink = 0.0;
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             blur_box_v(dst, src, DIM, DIM, RADIUS);

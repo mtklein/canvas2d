@@ -68,7 +68,7 @@ cnvs_filter cnvs_filter_grayscale(float amount) {
 
 // sepia(g) interpolates identity (t = 1) toward the spec's sepia matrix (t = 0).
 cnvs_filter cnvs_filter_sepia(float amount) {
-    float t = 1.0f - amount;
+    float const t = 1.0f - amount;
     return (cnvs_filter){
         .m = {
             0.393f + 0.607f * t,  0.769f - 0.769f * t,  0.189f - 0.189f * t,
@@ -86,11 +86,11 @@ cnvs_filter cnvs_filter_sepia(float amount) {
 // whole M keeps a pixel's luminance for every theta).  Evaluated at the spec's
 // three-digit weights this reproduces feColorMatrix hueRotate's table.
 cnvs_filter cnvs_filter_hue_rotate(float radians) {
-    float c = cosf(radians);
-    float s = sinf(radians);
-    float s10 = (LR * LR + LB * (1.0f - LR)) / LG;
-    float s11 = LR - LB;
-    float s12 = -(LR * (1.0f - LB) + LB * LB) / LG;
+    float const c = cosf(radians);
+    float const s = sinf(radians);
+    float const s10 = (LR * LR + LB * (1.0f - LR)) / LG;
+    float const s11 = LR - LB;
+    float const s12 = -(LR * (1.0f - LB) + LB * LB) / LG;
     return (cnvs_filter){
         .m = {
             LR + c * (1.0f - LR) - s * LR,
@@ -157,7 +157,7 @@ static cnvs_px8 filter_block(cnvs_px8 p, cnvs_filter const *__single fn) {
     q.g = __builtin_elementwise_max(q.g, zero);
     q.b = __builtin_elementwise_max(q.b, zero);
     q.a = __builtin_elementwise_max(q.a, zero);
-    half8 lim = __builtin_elementwise_min(q.a, (half8)(_Float16)1.0f);
+    half8 const lim = __builtin_elementwise_min(q.a, (half8)(_Float16)1.0f);
     q.r = __builtin_elementwise_min(q.r, lim);
     q.g = __builtin_elementwise_min(q.g, lim);
     q.b = __builtin_elementwise_min(q.b, lim);
@@ -178,7 +178,7 @@ void cnvs_filter_apply(cnvs_filter const *__counted_by(count) list, int count,
             cnvs_px8_store(px + i, filter_block(cnvs_px8_load(px + i), &fn));
         }
         if (i < n) {
-            int k = n - i;
+            int const k = n - i;
             cnvs_px8_store_k(px + i, k,
                              filter_block(cnvs_px8_load_k(px + i, k), &fn));
         }

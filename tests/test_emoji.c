@@ -57,8 +57,8 @@ static void check_renders_in_color(void) {
         if (!(r == 255 && g == 255 && b == 255)) {
             ink++;  // drew something over the white ground
         }
-        int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
-        int mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        int const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        int const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
         if (mx - mn > 40) {
             colored++;  // a chromatic pixel: not grayscale coverage / a black box
         }
@@ -79,7 +79,7 @@ static void check_renders_in_color(void) {
             memcpy(snap, slot->capture, (size_t)slot->capture_size);
             uint8_t const *before = slot->capture;
             struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
-            int miss = c->glyph_misses;
+            int const miss = c->glyph_misses;
             canvas_set_font_size(cv, 23.0f);
             canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 40.0f);
             CHECK(c->glyph_misses == miss);    // no new boundary fetch
@@ -186,8 +186,8 @@ static void check_halve_premul(void) {
     uint8_t a[SW * SH * 4], b[SW * SH * 4];
     uint32_t seed = 0xBADC0DE;
     for (int i = 0; i < SW * SH; i++) {
-        uint32_t r = xorshift32(&seed);
-        uint8_t alpha = (uint8_t)(r & 0xFF);
+        uint32_t const r = xorshift32(&seed);
+        uint8_t const alpha = (uint8_t)(r & 0xFF);
         a[i * 4 + 0] = (uint8_t)(((r >> 8) & 0xFF) % (alpha + 1u));
         a[i * 4 + 1] = (uint8_t)(((r >> 16) & 0xFF) % (alpha + 1u));
         a[i * 4 + 2] = (uint8_t)(((r >> 24) & 0xFF) % (alpha + 1u));
@@ -243,7 +243,7 @@ static void check_mip_select(void) {
             { -3.0f, 1 },
         };
         for (int i = 0; i < (int)(sizeof cases / sizeof cases[0]); i++) {
-            cnvs_mip m = cnvs_glyph_mip(slot, cases[i].f);
+            cnvs_mip const m = cnvs_glyph_mip(slot, cases[i].f);
             CHECK(m.px != NULL);
             CHECK(m.w == cases[i].want);
             CHECK(m.len == m.w * m.h * 4);
@@ -275,16 +275,16 @@ static void check_draw_matches_level(struct canvas *__single cv, float size_px,
     for (int y = 1; y + 1 < lvl.h; y++) {  // interior: skip the coverage edge
         for (int x = 1; x + 1 < lvl.w; x++) {
             for (int c = 0; c < 4; c++) {
-                int s = lvl.px[(y * lvl.w + x) * 4 + c];
-                int a = lvl.px[(y * lvl.w + x) * 4 + 3];
+                int const s = lvl.px[(y * lvl.w + x) * 4 + c];
+                int const a = lvl.px[(y * lvl.w + x) * 4 + 3];
                 // premul over opaque white, then the unpremultiplying readback
                 // (alpha reads back 255): rgb = s + (255 - a), alpha = 255.
                 int want = c == 3 ? 255 : s + (255 - a);
                 if (want > 255) {
                     want = 255;
                 }
-                int got = px[((oy + y) * w + ox + x) * 4 + c];
-                int d = got > want ? got - want : want - got;
+                int const got = px[((oy + y) * w + ox + x) * 4 + c];
+                int const d = got > want ? got - want : want - got;
                 if (d > 3) {
                     bad++;
                 }
@@ -306,11 +306,11 @@ static void check_draw_equivalence(void) {
     CHECK(slot != NULL);
     if (slot) {
         // At 160px device size the dest quad is the capture, texel for texel.
-        cnvs_mip cap = cnvs_glyph_mip(slot, 160.0f);
+        cnvs_mip const cap = cnvs_glyph_mip(slot, 160.0f);
         CHECK(cap.w == 160);
         check_draw_matches_level(cv, 160.0f, cap, 16, 16);
         // At 80px the footprint rule lands on the level-1 mip, ditto.
-        cnvs_mip half = cnvs_glyph_mip(slot, 80.0f);
+        cnvs_mip const half = cnvs_glyph_mip(slot, 80.0f);
         CHECK(half.w == 80);
         check_draw_matches_level(cv, 80.0f, half, 16, 16);
     }

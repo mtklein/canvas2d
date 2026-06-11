@@ -50,7 +50,7 @@ int main(void) {
         return TEST_REPORT();
     }
     canvas_set_font_size(cv, 40.0f);
-    float adv = canvas_measure_text(cv, "Hi");
+    float const adv = canvas_measure_text(cv, "Hi");
     CHECK(adv > 0.0f);
 
     // textAlign: the ink's left edge shifts left by frac*advance as we go

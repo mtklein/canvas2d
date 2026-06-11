@@ -12,7 +12,7 @@ int main(void) {
     canvas_set_font_size(cv, 20.0f);
 
     // width matches the simple measureText, and a non-empty string is positive.
-    canvas_text_metrics h = canvas_measure_text_full(cv, "H");
+    canvas_text_metrics const h = canvas_measure_text_full(cv, "H");
     CHECK(h.width > 0.0f);
     CHECK(fabsf(h.width - canvas_measure_text(cv, "H")) < 1e-3f);
 
@@ -38,16 +38,16 @@ int main(void) {
     CHECK(h.ideographic_baseline <= 0.0f);
 
     // Repeating the same glyph doubles the advance exactly.
-    canvas_text_metrics hh = canvas_measure_text_full(cv, "HH");
+    canvas_text_metrics const hh = canvas_measure_text_full(cv, "HH");
     CHECK(fabsf(hh.width - 2.0f * h.width) < 0.05f);
 
     // A longer run has a wider actual bounding box.
-    canvas_text_metrics h4 = canvas_measure_text_full(cv, "HHHH");
+    canvas_text_metrics const h4 = canvas_measure_text_full(cv, "HHHH");
     CHECK(h4.actual_bounding_box_right > h.actual_bounding_box_right);
 
     // Empty string: zero advance and a zero *actual* box, but the font-wide
     // metrics still describe the current font.
-    canvas_text_metrics e = canvas_measure_text_full(cv, "");
+    canvas_text_metrics const e = canvas_measure_text_full(cv, "");
     CHECK(e.width == 0.0f);
     CHECK(e.actual_bounding_box_ascent == 0.0f);
     CHECK(e.actual_bounding_box_descent == 0.0f);

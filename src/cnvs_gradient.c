@@ -8,7 +8,7 @@ void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremu
     if (gr->stop_count >= CNVS_STOPS_MAX) {
         return;
     }
-    float o = cnvs_clamp01(offset);
+    float const o = cnvs_clamp01(offset);
     // Insertion sort keeps stops ordered; ties land after equal offsets, so a
     // later addColorStop at the same offset wins on the high side (as in CSS).
     int i = gr->stop_count;
@@ -21,7 +21,7 @@ void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremu
 }
 
 cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
-    int n = gr->stop_count;
+    int const n = gr->stop_count;
     if (n == 0) {
         return cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
     }
@@ -33,18 +33,18 @@ cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
         return gr->stops[n - 1].color;
     }
     for (int i = 0; i + 1 < n; i++) {
-        cnvs_stop lo = gr->stops[i];
-        cnvs_stop hi = gr->stops[i + 1];
+        cnvs_stop const lo = gr->stops[i];
+        cnvs_stop const hi = gr->stops[i + 1];
         if (t <= hi.offset) {
             // The parameter and stop offsets are geometry and stay f32; the
             // colour lerp itself runs in _Float16.  The guard is the minimal
             // one: it keeps the divide defined at coincident stops (span == 0
             // takes lo).
-            float span = hi.offset - lo.offset;
-            float u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
-            half4 lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
-            half4 hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
-            half4 c = lov + (hiv - lov) * (_Float16)u;
+            float const span = hi.offset - lo.offset;
+            float const u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
+            half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
+            half4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
+            half4 const c = lov + (hiv - lov) * (_Float16)u;
             return (cnvs_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
         }
     }
@@ -71,15 +71,15 @@ bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__s
         // Angle of p about the centre, measured clockwise from +x (device space is
         // y-down, so atan2 already increases clockwise), minus the start angle;
         // wrapped into [0,1).  Every point has a parameter, so this never misses.
-        float ang = atan2f(p.y - gr->p0.y, p.x - gr->p0.x) - gr->angle;
+        float const ang = atan2f(p.y - gr->p0.y, p.x - gr->p0.x) - gr->angle;
         float v = ang * 0.15915494309189535f;  // * 1/(2*pi)
         *t = v - floorf(v);
         return true;
     }
     if (gr->kind == CNVS_GRAD_LINEAR) {
-        float dx = gr->p1.x - gr->p0.x;
-        float dy = gr->p1.y - gr->p0.y;
-        float denom = dx * dx + dy * dy;
+        float const dx = gr->p1.x - gr->p0.x;
+        float const dy = gr->p1.y - gr->p0.y;
+        float const denom = dx * dx + dy * dy;
         float v = denom > 1e-12f
                       ? ((p.x - gr->p0.x) * dx + (p.y - gr->p0.y) * dy) / denom
                       : 0.0f;
@@ -89,14 +89,14 @@ bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__s
     // Radial: find the largest t with (r0 + t*dr) >= 0 such that p lies on the
     // circle centred at lerp(p0,p1,t) with that radius.  Expanding
     // |p - C(t)| = R(t) gives the quadratic a t^2 + b t + c = 0.
-    float cdx = gr->p1.x - gr->p0.x;
-    float cdy = gr->p1.y - gr->p0.y;
+    float const cdx = gr->p1.x - gr->p0.x;
+    float const cdy = gr->p1.y - gr->p0.y;
     float dr  = gr->r1   - gr->r0  ;
-    float pdx = p.x - gr->p0.x;
-    float pdy = p.y - gr->p0.y;
-    float a = cdx * cdx + cdy * cdy - dr * dr;
-    float b = -2.0f * (cdx * pdx + cdy * pdy + gr->r0 * dr);
-    float c = pdx * pdx + pdy * pdy - gr->r0 * gr->r0;
+    float const pdx = p.x - gr->p0.x;
+    float const pdy = p.y - gr->p0.y;
+    float const a = cdx * cdx + cdy * cdy - dr * dr;
+    float const b = -2.0f * (cdx * pdx + cdy * pdy + gr->r0 * dr);
+    float const c = pdx * pdx + pdy * pdy - gr->r0 * gr->r0;
     float root;
     if (fabsf(a) < 1e-9f) {
         if (fabsf(b) < 1e-12f) {
@@ -107,15 +107,15 @@ bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__s
             return false;
         }
     } else {
-        float disc = b * b - 4.0f * a * c;
+        float const disc = b * b - 4.0f * a * c;
         if (disc < 0.0f) {
             return false;
         }
-        float sq = sqrtf(disc);
+        float const sq = sqrtf(disc);
         float hi = (-b + sq) / (2.0f * a);
         float lo = (-b - sq) / (2.0f * a);
         if (hi < lo) {
-            float tmp = hi;
+            float const tmp = hi;
             hi = lo;
             lo = tmp;
         }
@@ -159,33 +159,33 @@ static float8 float8_if_then_else(int8 m, float8 a, float8 b) {
 void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out) {
     float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
-    float base = (float)x0 + 0.5f - gr->p0.x;
+    float const base = (float)x0 + 0.5f - gr->p0.x;
     int i = 0;
     if (gr->kind == CNVS_GRAD_LINEAR) {
-        float dx = gr->p1.x - gr->p0.x;
-        float dy = gr->p1.y - gr->p0.y;
-        float denom = dx * dx + dy * dy;
-        float inv = denom > 1e-12f ? 1.0f / denom : 0.0f;  // inv == 0 -> all-zero t
-        float cy = (y - gr->p0.y) * dy;                    // y term constant per row
+        float const dx = gr->p1.x - gr->p0.x;
+        float const dy = gr->p1.y - gr->p0.y;
+        float const denom = dx * dx + dy * dy;
+        float const inv = denom > 1e-12f ? 1.0f / denom : 0.0f;  // inv == 0 -> all-zero t
+        float const cy = (y - gr->p0.y) * dy;                    // y term constant per row
         for (; i + 8 <= n; i += 8) {
-            float8 px = base + ((float)i + lane);
+            float8 const px = base + ((float)i + lane);
             float8 v = float8_clamp01((px * dx + cy) * inv);  // cnvs_clamp01(((p-p0).d)/|d|^2)
             memcpy(t_out + i, &v, sizeof v);            // bounds-checked vector store
         }
     } else if (gr->kind == CNVS_GRAD_RADIAL) {
-        float cdx = gr->p1.x - gr->p0.x;
-        float cdy = gr->p1.y - gr->p0.y;
+        float const cdx = gr->p1.x - gr->p0.x;
+        float const cdy = gr->p1.y - gr->p0.y;
         float dr  = gr->r1   - gr->r0  ;
-        float r0 = gr->r0;
-        float a = cdx * cdx + cdy * cdy - dr * dr;
-        float pdy = y - gr->p0.y;
-        float bconst = cdy * pdy + r0 * dr;  // b = -2*(cdx*pdx + bconst)
-        float cconst = pdy * pdy - r0 * r0;  // c = pdx*pdx + cconst
-        bool a_lin = fabsf(a) < 1e-9f;       // a is constant along the row
-        float8 inv2a = (float8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
+        float const r0 = gr->r0;
+        float const a = cdx * cdx + cdy * cdy - dr * dr;
+        float const pdy = y - gr->p0.y;
+        float const bconst = cdy * pdy + r0 * dr;  // b = -2*(cdx*pdx + bconst)
+        float const cconst = pdy * pdy - r0 * r0;  // c = pdx*pdx + cconst
+        bool const a_lin = fabsf(a) < 1e-9f;       // a is constant along the row
+        float8 const inv2a = (float8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
         for (; i + 8 <= n; i += 8) {
-            float8 pdx = base + ((float)i + lane);
-            float8 b = -2.0f * (cdx * pdx + bconst);
+            float8 const pdx = base + ((float)i + lane);
+            float8 const b = -2.0f * (cdx * pdx + bconst);
             float8 c = pdx * pdx + cconst;
             float8 root;
             int8 valid;
@@ -193,15 +193,15 @@ void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, in
                 root = -c / b;
                 valid = ((b > 1e-12f) | (b < -1e-12f)) & (r0 + root * dr >= 0.0f);
             } else {
-                float8 disc = b * b - 4.0f * a * c;
+                float8 const disc = b * b - 4.0f * a * c;
                 float8 sq = __builtin_elementwise_sqrt(
                     __builtin_elementwise_max((float8)0.0f, disc));
-                float8 r1_ = (-b + sq) * inv2a;
-                float8 r2_ = (-b - sq) * inv2a;
-                float8 hi = __builtin_elementwise_max(r1_, r2_);
-                float8 lo = __builtin_elementwise_min(r1_, r2_);
-                int8 hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
-                int8 look = r0 + lo * dr >= 0.0f;
+                float8 const r1_ = (-b + sq) * inv2a;
+                float8 const r2_ = (-b - sq) * inv2a;
+                float8 const hi = __builtin_elementwise_max(r1_, r2_);
+                float8 const lo = __builtin_elementwise_min(r1_, r2_);
+                int8 const hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
+                int8 const look = r0 + lo * dr >= 0.0f;
                 root = float8_if_then_else(hiok, hi, float8_if_then_else(look, lo, (float8)0.0f));
                 valid = (disc >= 0.0f) & (hiok | look);
             }
@@ -213,7 +213,7 @@ void cnvs_gradient_param_row(struct cnvs_gradient const *gr, int x0, float y, in
     // takes neither vector branch above (i stays 0), the whole row for conic.
     for (; i < n; i++) {
         float t;
-        cnvs_vec2 p = { .x = (float)x0 + (float)i + 0.5f, .y = y };
+        cnvs_vec2 const p = { .x = (float)x0 + (float)i + 0.5f, .y = y };
         t_out[i] = cnvs_gradient_param(gr, p, &t) ? t : -1.0f;
     }
 }
@@ -258,7 +258,7 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
         float8 off[CNVS_STOPS_MAX];
         gradpx8 col[CNVS_STOPS_MAX];
         for (int s = 0; s < sc; s++) {
-            cnvs_stop st = gr->stops[s];
+            cnvs_stop const st = gr->stops[s];
             off[s] = (float8)st.offset;
             col[s] = (gradpx8){ (half8)st.color.r, (half8)st.color.g,
                                 (half8)st.color.b, (half8)st.color.a };
@@ -275,8 +275,8 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
             float8  lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
             gradpx8 lo     = col[0], hi     = col[last > 0 ? 1 : 0];
             for (int s = 1; s + 1 < sc; s++) {
-                int8 m = tv > off[s];
-                short8 mh = __builtin_convertvector(m, short8);
+                int8 const m = tv > off[s];
+                short8 const mh = __builtin_convertvector(m, short8);
                 lo_off = float8_if_then_else(m, off[s],     lo_off);
                 hi_off = float8_if_then_else(m, off[s + 1], hi_off);
                 lo = gradpx8_sel(mh, col[s],     lo);
@@ -285,10 +285,10 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
             // The scalar lerp, eight lanes wide.  Lanes the edge selects below
             // overwrite may divide by a zero span; the bitwise selects discard
             // the resulting inf/NaN exactly.
-            float8 span = hi_off - lo_off;
+            float8 const span = hi_off - lo_off;
             float8 u32 = float8_if_then_else(span > 0.0f, (tv - lo_off) / span,
                                    (float8)0.0f);
-            half8 u = __builtin_convertvector(u32, half8);
+            half8 const u = __builtin_convertvector(u32, half8);
             gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,
                           lo.b + (hi.b - lo.b) * u, lo.a + (hi.a - lo.a) * u };
             // Edge and sentinel lanes, in the scalar path's precedence: t at or
@@ -296,7 +296,7 @@ void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
             // first takes the first (applied second, so it wins ties exactly
             // like the scalar's early-out order), and t < 0 is transparent.
             short8 mlast  = __builtin_convertvector(tv >= off[last],    short8);
-            short8 mfirst = __builtin_convertvector(tv <= off[0],       short8);
+            short8 const mfirst = __builtin_convertvector(tv <= off[0],       short8);
             short8 mout   = __builtin_convertvector(tv <  (float8)0.0f, short8);
             c = gradpx8_sel(mlast,  col[last], c);
             c = gradpx8_sel(mfirst, col[0],    c);

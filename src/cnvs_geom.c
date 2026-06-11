@@ -9,7 +9,7 @@ static bool verts_reserve(struct cnvs_verts *v, int need) {
     if (need <= v->cap) {
         return true;
     }
-    int newcap = cnvs_grow_cap(v->cap, need);
+    int const newcap = cnvs_grow_cap(v->cap, need);
     cnvs_vec2 *nd = realloc(v->data, (size_t)newcap * sizeof *nd);
     if (!nd) {
         return false;
@@ -33,7 +33,7 @@ bool cnvs_verts_append(struct cnvs_verts *v, cnvs_vec2 const *__counted_by(k) sr
     // FIRST -- that's the block's one real bounds check; copying through
     // v->data directly would reload data/nverts/cap and recheck every step, since
     // the stores could alias *v.
-    int cnt = k;  // __counted_by on a local can't name a parameter
+    int const cnt = k;  // __counted_by on a local can't name a parameter
     cnvs_vec2 *__counted_by(cnt) dst = v->data + v->nverts;
     int i = 0;
     for (; i + 8 <= cnt; i += 8) {  // a stroke block stages 36-48 verts

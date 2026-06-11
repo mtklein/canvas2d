@@ -114,7 +114,7 @@ static void check_scene(scene_pair s) {
         return;
     }
 
-    bool ok = canvas_replay_from(cv, s.canvas);
+    bool const ok = canvas_replay_from(cv, s.canvas);
     CHECK(ok);
     if (!ok) {
         (void)fprintf(stderr, "  replay failed: %s\n", s.canvas);
@@ -142,7 +142,7 @@ static void check_scene(scene_pair s) {
     CHECK(got != NULL);
     if (got) {
         canvas_read_rgba(cv, got, n);
-        int cmp = memcmp(want, got, (size_t)n);
+        int const cmp = memcmp(want, got, (size_t)n);
         CHECK(cmp == 0);
         if (cmp != 0) {
             (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);

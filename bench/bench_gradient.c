@@ -29,7 +29,7 @@ int main(void) {
     cnvs_gradient_add_stop(&gr, 1.00f, cnvs_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
 
     double sink = 0.0;
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             for (int y = 0; y < DIM; y++) {

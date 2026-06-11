@@ -8,12 +8,12 @@
 // Premultiplied blend tile from an unpremultiplied colour (channels in [0,1]).
 static cnvs_premul *__counted_by(w * h) make_tile16(int w, int h,
                                                     float r, float g, float b, float a) {
-    int n = w * h;
+    int const n = w * h;
     cnvs_premul *t = malloc((size_t)n * sizeof *t);
     if (!t) {
         return NULL;
     }
-    cnvs_premul p = cnvs_premultiply(cnvs_unpremul_of(r, g, b, a));
+    cnvs_premul const p = cnvs_premultiply(cnvs_unpremul_of(r, g, b, a));
     for (int i = 0; i < n; i++) {
         t[i] = p;
     }
@@ -31,7 +31,7 @@ static void read8(struct canvas *__single c, int w, int h,
     }
     cnvs_blend_read(c, buf, n);
     for (int i = 0; i < n; i++) {
-        cnvs_unpremul s = cnvs_unpremultiply(buf[i]);
+        cnvs_unpremul const s = cnvs_unpremultiply(buf[i]);
         out[i * 4]     = (uint8_t)((float)s.r * 255.0f + 0.5f);
         out[i * 4 + 1] = (uint8_t)((float)s.g * 255.0f + 0.5f);
         out[i * 4 + 2] = (uint8_t)((float)s.b * 255.0f + 0.5f);
@@ -68,17 +68,17 @@ static void source_over_vs_double(void) {
     CHECK(dst != NULL && src != NULL && out != NULL && c != NULL);
     if (dst && src && out && c) {
         for (int y = 0; y < N; y++) {
-            float dc = (float)y / 255.0f;
-            cnvs_premul p = cnvs_premultiply(cnvs_unpremul_of(dc, dc, dc, 1.0f));
+            float const dc = (float)y / 255.0f;
+            cnvs_premul const p = cnvs_premultiply(cnvs_unpremul_of(dc, dc, dc, 1.0f));
             for (int x = 0; x < N; x++) {
                 dst[y * N + x] = p;
             }
         }
         int max_delta = 0;
         for (int ai = 0; ai <= 255; ai += ASTEP) {
-            float sa = (float)ai / 255.0f;
+            float const sa = (float)ai / 255.0f;
             for (int x = 0; x < N; x++) {  // one row of sources, replicated
-                float sc = (float)x / 255.0f;
+                float const sc = (float)x / 255.0f;
                 src[x] = cnvs_premultiply(cnvs_unpremul_of(sc, sc, sc, sa));
             }
             for (int y = 1; y < N; y++) {
@@ -91,13 +91,13 @@ static void source_over_vs_double(void) {
                 for (int x = 0; x < N; x++) {
                     // co = s + (1-sa)*d onto opaque d: ao == 1, so the
                     // unpremultiplied result is co itself.
-                    double s = ((double)x / 255.0) * ((double)ai / 255.0);
-                    double co = s + (1.0 - (double)ai / 255.0) * ((double)y / 255.0);
-                    int want = (int)(co * 255.0 + 0.5);
-                    cnvs_unpremul u = cnvs_unpremultiply(out[y * N + x]);
-                    int got = (int)((float)u.r * 255.0f + 0.5f);
-                    int da = abs(got - want);
-                    int aa = abs((int)((float)u.a * 255.0f + 0.5f) - 255);
+                    double const s = ((double)x / 255.0) * ((double)ai / 255.0);
+                    double const co = s + (1.0 - (double)ai / 255.0) * ((double)y / 255.0);
+                    int const want = (int)(co * 255.0 + 0.5);
+                    cnvs_unpremul const u = cnvs_unpremultiply(out[y * N + x]);
+                    int const got = (int)((float)u.r * 255.0f + 0.5f);
+                    int const da = abs(got - want);
+                    int const aa = abs((int)((float)u.a * 255.0f + 0.5f) - 255);
                     if (da > max_delta) { max_delta = da; }
                     if (aa > max_delta) { max_delta = aa; }
                 }
@@ -132,7 +132,7 @@ static void solid_vs_tile(void) {
         cnvs_premul const color =
             cnvs_premultiply(cnvs_unpremul_of(0.8f, 0.35f, 0.1f, 0.6f));
         for (int i = 0; i < n; i++) {
-            float t = (float)i / (float)(n - 1);
+            float const t = (float)i / (float)(n - 1);
             dst[i] = cnvs_premultiply(cnvs_unpremul_of(t, 1.0f - t, 0.4f, t));
             tile[i] = color;
             covp[i] = (uint8_t)(i * 7);   // every byte value over the sweep

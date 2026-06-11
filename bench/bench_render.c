@@ -25,14 +25,14 @@ static void scene(struct canvas *__single cv, int f) {
 
     // A handful of translucent star fills (concave coverage + per-fill blend).
     for (int i = 0; i < 6; i++) {
-        float cx = 30.0f + (float)((i * 47 + f * 3) % 200);
-        float cy = 40.0f + (float)((i * 31 + f * 5) % 180);
+        float const cx = 30.0f + (float)((i * 47 + f * 3) % 200);
+        float const cy = 40.0f + (float)((i * 31 + f * 5) % 180);
         canvas_set_fill_rgba(cv, 0.2f + 0.1f * (float)i, 0.5f, 0.9f - 0.1f * (float)i, 0.8f);
         canvas_begin_path(cv);
         canvas_move_to(cv, cx + 20.0f, cy);
         for (int k = 1; k < 10; k++) {
-            float a = 6.2831853f * (float)k / 10.0f;
-            float r = (k % 2) ? 8.0f : 20.0f;
+            float const a = 6.2831853f * (float)k / 10.0f;
+            float const r = (k % 2) ? 8.0f : 20.0f;
             canvas_line_to(cv, cx + r * cosf(a), cy + r * sinf(a));
         }
         canvas_close_path(cv);
@@ -91,11 +91,11 @@ int main(void) {
     // readback's unpremultiply+quantize.  Default reads each frame (the
     // getImageData / PNG-export shape).
     char const *__null_terminated rb = getenv("BENCH_READBACK");
-    bool read_each = !(rb && rb[0] == 'e');
+    bool const read_each = !(rb && rb[0] == 'e');
 
     double sink = 0.0;
-    int reps = bench_reps();
-    double t0 = bench_now_s();
+    int const reps = bench_reps();
+    double const t0 = bench_now_s();
     for (int rep = 0; rep < reps; rep++) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
@@ -109,7 +109,7 @@ int main(void) {
         canvas_read_rgba(cv, px, len);  // a single readback at the end
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
-    double secs = bench_now_s() - t0;
+    double const secs = bench_now_s() - t0;
 
     // Output pixels produced: one finished DIM*DIM canvas per frame.  (Overdraw --
     // the scene's fills cover only parts of the canvas -- isn't counted; this is

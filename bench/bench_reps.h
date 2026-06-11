@@ -9,7 +9,7 @@
 // runs long enough for `sample` to collect a meaningful self-time profile.
 static inline int bench_reps(void) {
     char const *__null_terminated env = getenv("BENCH_REPS");
-    int reps = env ? atoi(env) : 1;
+    int const reps = env ? atoi(env) : 1;
     return reps < 1 ? 1 : reps;
 }
 

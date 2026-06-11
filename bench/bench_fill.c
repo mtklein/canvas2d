@@ -25,7 +25,7 @@ int main(void) {
     uint8_t *cov = malloc((size_t)cov_cap);
     double sink = 0.0;
 
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps && cov; rep++) {
         for (int it = 0; it < ITERS; it++) {
             sink += bench_fill_shapes(&cover, cov, cov_cap, DIM, DIM, &path,

@@ -175,7 +175,7 @@ static void sweep(scene_fn fn) {
     }
     cnvs_oom_fail_at(0);
     fn(probe);
-    int allocs = cnvs_oom_seen();
+    int const allocs = cnvs_oom_seen();
     canvas_free(probe);
     CHECK(allocs > 0);  // the scene must allocate, or the sweep tests nothing
 

@@ -17,7 +17,7 @@
 int main(void) {
     // Repeat the e2e workload BENCH_REPS times (default 1, so benchcmp is
     // unchanged); `ninja profile` raises it for a longer, samplable run.
-    int reps = bench_reps();
+    int const reps = bench_reps();
 
     struct cnvs_path path;
     cnvs_path_init(&path);
@@ -51,7 +51,7 @@ int main(void) {
 
             cnvs_verts_reset(&verts);
             for (int s = 0; s < path.nsubs; s++) {
-                cnvs_subpath sp = path.subs[s];
+                cnvs_subpath const sp = path.subs[s];
                 if (sp.count < 2) {
                     continue;
                 }

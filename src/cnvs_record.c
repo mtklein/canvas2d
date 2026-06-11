@@ -304,7 +304,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // replay re-derives the levels in checked C at no format cost.
     for (int ri = 0; ri < s->nruns; ri++) {
         cnvs_glyph_run const *__single run = &s->run[ri];
-        int fid = run_fid(c, run);
+        int const fid = run_fid(c, run);
         if (!run->is_color || fid < 0) {
             continue;
         }
@@ -455,7 +455,7 @@ void cnvs_rec_pattern(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
-    unsigned i = (unsigned)repeat;
+    unsigned const i = (unsigned)repeat;
     if (i >= sizeof cnvs_repeat_name / sizeof cnvs_repeat_name[0]) {
         return;  // out of range; the setter stored it but no draw reads past
     }            // the enum, and the parser accepts only the four names
@@ -687,7 +687,7 @@ void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_
     if (!r || r->suspend != 0) {
         return;
     }
-    unsigned i = (unsigned)op;
+    unsigned const i = (unsigned)op;
     if (i >= sizeof cnvs_composite_name / sizeof cnvs_composite_name[0]) {
         return;  // out of range; the caller's setter ignored it too (the hook
                  // sits after that guard), so the recording stays consistent.

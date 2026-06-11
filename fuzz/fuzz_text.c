@@ -25,14 +25,14 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     }
 
     size_t at = 0;
-    uint8_t b0 = at < size ? data[at++] : 0;
-    uint8_t b1 = at < size ? data[at++] : 0;
+    uint8_t const b0 = at < size ? data[at++] : 0;
+    uint8_t const b1 = at < size ? data[at++] : 0;
     canvas_set_font_size(cv, (float)(b0 % 48) + 4.0f);
     canvas_rotate(cv, (float)((int)b1 - 128) * 0.01f);  // exercise emit()'s gpt() mapping
 
     // Remaining bytes are the UTF-8 string, NUL-terminated (the API contract;
     // an embedded NUL just ends the string early -- a valid case for utf8_next).
-    size_t tlen = size - at;
+    size_t const tlen = size - at;
     char *text = malloc(tlen + 1);
     if (text) {
         if (tlen) {
@@ -58,10 +58,10 @@ int main(int argc, char **argv) {
             continue;
         }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
         uint8_t *buf = malloc(n > 0 ? (size_t)n : 1);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) {
             LLVMFuzzerTestOneInput(buf, got);

@@ -24,10 +24,10 @@ int main(void) {
     }
 
     double sink = 0.0;
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
-            int off = it % 64 - 32;  // some iterations clip at the edges
+            int const off = it % 64 - 32;  // some iterations clip at the edges
             cnvs_blit_rgba(dst, DIM, DIM, off, off, src, DIM, DIM, 0, 0, DIM, DIM);
             sink += (double)dst[0];
         }

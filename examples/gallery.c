@@ -20,7 +20,7 @@ static bool g_skip_save = false;
 
 static int gallery_reps(void) {
     char const *__null_terminated env = getenv("GALLERY_REPS");
-    int reps = env ? atoi(env) : 1;
+    int const reps = env ? atoi(env) : 1;
     return reps < 1 ? 1 : reps;
 }
 
@@ -50,7 +50,7 @@ static void record_scene(struct canvas *__single cv, char const *__null_terminat
 static void star(struct canvas *__single cv, float cx, float cy, float r) {
     canvas_begin_path(cv);
     for (int i = 0; i < 5; i++) {
-        float a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
+        float const a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
         if (i == 0) {
             canvas_move_to(cv, cx + r * cosf(a), cy + r * sinf(a));
         } else {
@@ -241,7 +241,7 @@ static void joinscaps(void) {
     for (int k = 0; k < 3; k++) {
         canvas_set_line_join(c, js[k]);
         canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.35f, 1.0f);
-        float cx = 55.0f + (float)k * 85.0f;
+        float const cx = 55.0f + (float)k * 85.0f;
         canvas_begin_path(c);
         canvas_move_to(c, cx - 28.0f, 80.0f);
         canvas_line_to(c, cx, 26.0f);
@@ -255,7 +255,7 @@ static void joinscaps(void) {
     for (int k = 0; k < 3; k++) {
         canvas_set_line_cap(c, cs[k]);
         canvas_set_stroke_rgba(c, 0.40f, 0.80f, 0.95f, 1.0f);
-        float x0 = 45.0f + (float)k * 80.0f;
+        float const x0 = 45.0f + (float)k * 80.0f;
         canvas_begin_path(c);
         canvas_move_to(c, x0, 130.0f);
         canvas_line_to(c, x0 + 45.0f, 130.0f);
@@ -335,7 +335,7 @@ static void roundrect(void) {
     };
 
     for (int i = 0; i < 4; i++) {
-        float x = x0 + (float)i * (cw + gap);
+        float const x = x0 + (float)i * (cw + gap);
         for (int pass = 0; pass < 2; pass++) {
             canvas_begin_path(c);
             canvas_round_rect_radii(c, x, y0, cw, ch,
@@ -503,7 +503,7 @@ static void conic(void) {
 
     canvas_set_stroke_conic_gradient(c, 0.0f, cx[2], cy);
     for (int k = 0; k < ns; k++) {
-        float t = (float)k / (float)(ns - 1);
+        float const t = (float)k / (float)(ns - 1);
         canvas_add_stroke_color_stop(c, t, 0.5f + 0.5f * cosf(TAU * t),
                                      0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                                      0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
@@ -530,15 +530,15 @@ static void conic(void) {
 static void make_tile(uint8_t *__counted_by(32 * 32 * 4) t) {
     for (int y = 0; y < 32; y++) {
         for (int x = 0; x < 32; x++) {
-            int i = (y * 32 + x) * 4;
+            int const i = (y * 32 + x) * 4;
             float fx = (float)x + 0.5f, fy = (float)y + 0.5f;
             float r = 0.16f, g = 0.18f, b = 0.36f;  // indigo ground
             float cdx = fx - 16.0f, cdy = fy - 16.0f;
             if (cdx * cdx + cdy * cdy < 10.5f * 10.5f) {  // centre gem
                 r = 0.97f; g = 0.80f; b = 0.28f;
             }
-            float gx = fx < 16.0f ? fx : fx - 32.0f;  // distance to nearest corner
-            float gy = fy < 16.0f ? fy : fy - 32.0f;
+            float const gx = fx < 16.0f ? fx : fx - 32.0f;  // distance to nearest corner
+            float const gy = fy < 16.0f ? fy : fy - 32.0f;
             if (gx * gx + gy * gy < 7.0f * 7.0f) {  // corner dots (wrap into circles)
                 r = 0.95f; g = 0.42f; b = 0.42f;
             }
@@ -619,7 +619,7 @@ static void smoothing(void) {
     uint8_t src[16 * 16 * 4];
     for (int y = 0; y < 16; y++) {
         for (int x = 0; x < 16; x++) {
-            int i = (y * 16 + x) * 4;
+            int const i = (y * 16 + x) * 4;
             float r = 0.0f, g = 0.0f, b = 0.0f, a = 0.0f;
             switch (art[y][x]) {
                 case 'D': r = 0.60f; g = 0.08f; b = 0.16f; a = 1.0f; break;
@@ -716,7 +716,7 @@ static void textgrid(void) {
     char const *const bname[6] = { "top",        "hang", "middle",
                                    "alphabetic", "ideo", "bottom" };
     for (int i = 0; i < 6; i++) {
-        float cx = 30.0f + ((float)i + 0.5f) * ((490.0f - 30.0f) / 6.0f);
+        float const cx = 30.0f + ((float)i + 0.5f) * ((490.0f - 30.0f) / 6.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_set_text_baseline(c, bl[i]);
         canvas_set_font_size(c, 28.0f);
@@ -750,7 +750,7 @@ static void textmetrics(void) {
     canvas_set_text_align(c, CANVAS_ALIGN_START);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
     canvas_set_font_size(c, 62.0f);
-    canvas_text_metrics m = canvas_measure_text_full(c, word);
+    canvas_text_metrics const m = canvas_measure_text_full(c, word);
 
     // Baselines first (behind everything): horizontal guides across the word.
     float lx0 = x0 - 16.0f, lx1 = x0 + m.width + 16.0f;
@@ -802,7 +802,7 @@ static void textmetrics(void) {
     canvas_fill_text(c, "actual box", ab_l + 2.0f, ab_t - 4.0f);
 
     // Advance-width measure below, with the measured value.
-    float wy = y0 + m.font_bounding_box_descent + 26.0f;
+    float const wy = y0 + m.font_bounding_box_descent + 26.0f;
     canvas_set_stroke_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
     canvas_set_line_width(c, 1.4f);
     canvas_begin_path(c);
@@ -853,7 +853,7 @@ static void textmaxwidth(void) {
     canvas_set_line_width(c, 1.4f);
     canvas_set_stroke_rgba(c, 0.55f, 0.59f, 0.68f, 0.85f);
     for (int k = 0; k < 2; k++) {
-        float gx = k == 0 ? L : R;
+        float const gx = k == 0 ? L : R;
         canvas_begin_path(c);
         canvas_move_to(c, gx, gy0);
         canvas_line_to(c, gx, gy1);
@@ -962,7 +962,7 @@ static void hittest(void) {
     for (int j = 0; j < ny; j++) {
         for (int i = 0; i < nx; i++) {
             float px = 254.0f + (float)(i * step), py = 22.0f + (float)(j * step);
-            bool in = inB[j * nx + i];
+            bool const in = inB[j * nx + i];
             if (in) {
                 canvas_set_fill_rgba(c, 0.97f, 0.62f, 0.25f, 1.0f);
             } else {
@@ -1005,9 +1005,9 @@ static void dirtyrect(void) {
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
                 int i = (y * W + x) * 4;
-                float dx = (float)x - (float)W * 0.5f;
-                float dy = (float)y - (float)H * 0.5f;
-                float t = sqrtf(dx * dx + dy * dy) * (1.0f / 24.0f);  // ring period
+                float const dx = (float)x - (float)W * 0.5f;
+                float const dy = (float)y - (float)H * 0.5f;
+                float const t = sqrtf(dx * dx + dy * dy) * (1.0f / 24.0f);  // ring period
                 img[i]     = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * t)) + 0.5f);
                 img[i + 1] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (t + 0.33f))) + 0.5f);
                 img[i + 2] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (t + 0.66f))) + 0.5f);
@@ -1067,7 +1067,7 @@ static void path2d_demo(void) {
         canvas_path2d_close_path(petal);
         int const n = 12;
         for (int i = 0; i < n; i++) {
-            float t = (float)i / (float)n;
+            float const t = (float)i / (float)n;
             canvas_save(c);
             canvas_translate(c, 135.0f, 116.0f);
             canvas_rotate(c, t * TAU);
@@ -1106,7 +1106,7 @@ static void path2d_demo(void) {
     struct canvas_path2d *__single starp = canvas_path2d();
     if (starp) {
         for (int i = 0; i < 5; i++) {
-            float a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
+            float const a = -TAU * 0.25f + (float)i * (TAU * 0.4f);
             float px = 365.0f + 24.0f * cosf(a), py = 116.0f + 24.0f * sinf(a);
             if (i == 0) {
                 canvas_path2d_move_to(starp, px, py);
@@ -1244,7 +1244,7 @@ static void subrect(void) {
             int tx = k % 4, ty = k / 4;
             float ox = (float)(tx * 40), oy = (float)(ty * 40);
             float cx = ox + 20.0f, cy = oy + 20.0f;
-            float t = (float)k / 8.0f;
+            float const t = (float)k / 8.0f;
             canvas_set_fill_rgba(ac, 0.5f + 0.5f * cosf(TAU * t),
                                  0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                                  0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
@@ -1305,8 +1305,8 @@ static void subrect(void) {
     float const ts = 66.0f, gap = 8.0f, dx0 = 300.0f, dy0 = 30.0f;
     for (int m = 0; m < 4; m++) {
         int k = pick[m], tx = k % 4, ty = k / 4;
-        float dx = dx0 + (float)(m % 2) * (ts + gap);
-        float dy = dy0 + (float)(m / 2) * (ts + gap);
+        float const dx = dx0 + (float)(m % 2) * (ts + gap);
+        float const dy = dy0 + (float)(m / 2) * (ts + gap);
         canvas_draw_image_subrect(c, atlas, AW, AH, (float)(tx * 40),
                                   (float)(ty * 40), 40.0f, 40.0f, dx, dy, ts, ts);
     }
@@ -1415,7 +1415,7 @@ static void miterdash(void) {
     canvas_set_line_cap(c, CANVAS_CAP_BUTT);
     canvas_set_line_width(c, 14.0f);
     for (int i = 0; i < 4; i++) {
-        float cx = 90.0f + (float)i * 100.0f;
+        float const cx = 90.0f + (float)i * 100.0f;
         canvas_set_miter_limit(c, limits[i]);
         canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.30f, 1.0f);
         canvas_begin_path(c);
@@ -1443,7 +1443,7 @@ static void miterdash(void) {
     canvas_set_line_width(c, 6.0f);
     canvas_set_line_cap(c, CANVAS_CAP_BUTT);
     for (int i = 0; i < 5; i++) {
-        float y = 200.0f + (float)i * 12.0f;
+        float const y = 200.0f + (float)i * 12.0f;
         canvas_set_line_dash_offset(c, offs[i]);
         canvas_set_stroke_rgba(c, 0.40f, 0.82f, 0.95f, 1.0f);
         canvas_begin_path(c);
@@ -1466,9 +1466,9 @@ static void miterdash(void) {
 // survives, so the stripes trace out the clip shape.
 static void clip_stripes(struct canvas *__single c, float x0, float y0, float x1, float y1) {
     int const n = 16;
-    float bw = (x1 - x0) / (float)n;
+    float const bw = (x1 - x0) / (float)n;
     for (int i = 0; i < n; i++) {
-        float t = (float)i / (float)(n - 1);
+        float const t = (float)i / (float)(n - 1);
         canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
@@ -1581,10 +1581,10 @@ static void batching(void) {
 
     canvas_set_global_alpha(c, 0.55f);
     for (int i = 0; i < 320; i++) {
-        float x = batch_rand() * 300.0f;
-        float y = batch_rand() * 120.0f;
-        float r = 3.0f + batch_rand() * 9.0f;
-        float t = batch_rand();
+        float const x = batch_rand() * 300.0f;
+        float const y = batch_rand() * 120.0f;
+        float const r = 3.0f + batch_rand() * 9.0f;
+        float const t = batch_rand();
         canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
@@ -1611,7 +1611,7 @@ static void drawimage(void) {
     uint8_t img[16 * 16 * 4];
     for (int y = 0; y < 16; y++) {
         for (int x = 0; x < 16; x++) {
-            int i = (y * 16 + x) * 4;
+            int const i = (y * 16 + x) * 4;
             img[i] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (float)x / 16.0f)));
             img[i + 1] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (float)y / 16.0f)));
             img[i + 2] = (uint8_t)(255.0f * (0.5f + 0.5f * cosf(TAU * (float)(x + y) / 16.0f)));
@@ -1869,8 +1869,8 @@ static void emojiscale(void) {
     }
     x = 14.0f;
     for (int i = 0; i < n; i++) {
-        float t = (float)i / (float)(n - 1);
-        float size = s0 * powf(s1 / s0, t);
+        float const t = (float)i / (float)(n - 1);
+        float const size = s0 * powf(s1 / s0, t);
         canvas_save(c);
         canvas_translate(c, x, 545.0f);
         canvas_rotate(c, -0.11f * (float)i);
@@ -1922,8 +1922,8 @@ static void shaping(void) {
         { "👋 🌍 🎉",        "color emoji" },
     };
     for (int i = 0; i < 8; i++) {
-        float y = 92.0f + (float)i * 31.0f;
-        float t = (float)i / 8.0f;
+        float const y = 92.0f + (float)i * 31.0f;
+        float const t = (float)i / 8.0f;
         canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
@@ -2001,7 +2001,7 @@ static void rtl(void) {
         { CANVAS_DIRECTION_RTL, CANVAS_ALIGN_END,   "rtl end" },
     };
     for (int i = 0; i < 4; i++) {
-        float y = 222.0f + (float)i * 28.0f;
+        float const y = 222.0f + (float)i * 28.0f;
         canvas_set_direction(c, row[i].dir);
         canvas_set_text_align(c, row[i].align);
         canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
@@ -2160,7 +2160,7 @@ static void render_all(void) {
 }
 
 int main(void) {
-    int reps = gallery_reps();
+    int const reps = gallery_reps();
     // GALLERY_NO_SAVE suppresses ALL writes: a profiling run (profile_scene.sh)
     // gets sampled then killed, and the renderer is now fast enough to finish
     // its reps and reach the file-writing one before the kill lands -- which

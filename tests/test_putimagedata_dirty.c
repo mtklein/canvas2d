@@ -8,8 +8,8 @@
 static void fill_source(uint8_t *__counted_by(len) src, int len) {
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
-            int o = (row * 8 + col) * 4;
-            bool red = col >= 2 && col < 6 && row >= 2 && row < 6;
+            int const o = (row * 8 + col) * 4;
+            bool const red = col >= 2 && col < 6 && row >= 2 && row < 6;
             src[o + 0] = red ? 255 : 0;
             src[o + 1] = 0;
             src[o + 2] = red ? 0 : 255;

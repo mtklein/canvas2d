@@ -11,7 +11,7 @@ struct rgba {
 static inline struct rgba pixel_at(uint8_t const *__counted_by(len) px, int len,
                                   int w, int x, int y) {
     (void)len;
-    int o = (y * w + x) * 4;
+    int const o = (y * w + x) * 4;
     return (struct rgba){ .r = px[o], .g = px[o + 1],
                          .b = px[o + 2], .a = px[o + 3] };
 }

@@ -34,7 +34,7 @@ static int ref_inflate(uint8_t *dst, int dcap, uint8_t const *src, int n,
                        int *consumed) {
     uLongf dlen = (uLongf)dcap;
     uLong slen = (uLong)n;
-    int rc = uncompress2(dst, &dlen, src, &slen);
+    int const rc = uncompress2(dst, &dlen, src, &slen);
     *consumed = (int)slen;
     return rc == Z_OK ? (int)dlen : -1;
 }
@@ -101,10 +101,10 @@ int main(int argc, char **argv) {
             continue;
         }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
         uint8_t *buf = malloc(n > 0 ? (size_t)n : 1);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) {
             LLVMFuzzerTestOneInput(buf, got);

@@ -48,7 +48,7 @@ uint32_t cnvs_zlib_adler32(uint8_t const *__counted_by(n) data, size_t n) {
         if (chunk > 5552) {
             chunk = 5552;
         }
-        size_t end = i + chunk;
+        size_t const end = i + chunk;
         for (; i + 16 <= end; i += 16) {
             u8x16 v;
             memcpy(&v, data + i, sizeof v);  // unaligned vector load, still bounds-checked
@@ -187,7 +187,7 @@ static uint32_t hash4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
 static void insert(int *__counted_by(zlib_hash_size + zlib_window) chains,
                    uint8_t const *__counted_by(n) src, int n, int pos) {
     if (pos + 4 <= n) {  // hash4 reads 4 bytes
-        uint32_t h = hash4(src[pos], src[pos + 1], src[pos + 2], src[pos + 3]);
+        uint32_t const h = hash4(src[pos], src[pos + 1], src[pos + 2], src[pos + 3]);
         chains[zlib_hash_size + (pos & (zlib_window - 1))] = chains[h];
         chains[h] = pos;
     }
@@ -233,7 +233,7 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
     while (i < n) {
         int best_len = 0, best_dist = 0;
         if (i + 4 <= n) {  // hash4 reads 4 bytes
-            int limit = n - i < zlib_max_match ? n - i : zlib_max_match;
+            int const limit = n - i < zlib_max_match ? n - i : zlib_max_match;
             int cand = chains[hash4(src[i], src[i + 1], src[i + 2], src[i + 3])];
             for (int steps = 0; steps < zlib_chain_max && cand >= 0 && i - cand <= zlib_window;
                  steps++) {
@@ -281,7 +281,7 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
                         break;
                     }
                 }
-                int next = chains[zlib_hash_size + (cand & (zlib_window - 1))];
+                int const next = chains[zlib_hash_size + (cand & (zlib_window - 1))];
                 if (next >= cand) {
                     break;  // recycled slot: real chains strictly decrease
                 }
@@ -311,7 +311,7 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
 
     put_litlen(&w, 256);  // end of block
     wr_align(&w);
-    uint32_t adler = cnvs_zlib_adler32(src, (size_t)n);
+    uint32_t const adler = cnvs_zlib_adler32(src, (size_t)n);
     putbits(&w, (adler >> 24) & 0xFFu, 8);  // trailer is big-endian, unlike the
     putbits(&w, (adler >> 16) & 0xFFu, 8);  // deflate bit stream
     putbits(&w, (adler >>  8) & 0xFFu, 8);
@@ -378,7 +378,7 @@ static bool getbits(struct bitrd *b, int cnt, uint32_t *__single out) {
 }
 
 static void rd_align(struct bitrd *b) {  // discard the partial byte's bits
-    int drop = b->nbits & 7;
+    int const drop = b->nbits & 7;
     b->acc >>= drop;
     b->nbits -= drop;
 }
@@ -526,7 +526,7 @@ static int huff_decode(struct bitrd *b, struct huffman const *h) {
             return -1;
         }
         code |= (int)bit;
-        int count = h->count[len];
+        int const count = h->count[len];
         if (code - first < count) {
             return h->symbol[index + (code - first)];
         }
@@ -558,7 +558,7 @@ static bool run_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int dcap
                       struct huffman const *lit, struct huffman const *dist) {
     int out = *outp;
     for (;;) {
-        int sym = huff_decode(b, lit);
+        int const sym = huff_decode(b, lit);
         if (sym < 0) {
             return false;
         }
@@ -575,20 +575,20 @@ static bool run_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int dcap
             if (sym > 285) {
                 return false;
             }
-            int lc = sym - 257;
+            int const lc = sym - 257;
             uint32_t extra;
             if (!getbits(b, len_extra[lc], &extra)) {
                 return false;
             }
-            int len = len_base[lc] + (int)extra;
-            int ds = huff_decode(b, dist);
+            int const len = len_base[lc] + (int)extra;
+            int const ds = huff_decode(b, dist);
             if (ds < 0 || ds > 29) {
                 return false;
             }
             if (!getbits(b, dist_extra[ds], &extra)) {
                 return false;
             }
-            int d = dist_base[ds] + (int)extra;
+            int const d = dist_base[ds] + (int)extra;
             if (d > out) {
                 return false;  // back-reference past the start of output
             }
@@ -658,7 +658,7 @@ static bool stored_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int d
         return false;
     }
     int out = *outp;
-    int remaining = (int)len;
+    int const remaining = (int)len;
     if (remaining > dcap - out) {
         return false;  // output overflow
     }
@@ -724,7 +724,7 @@ static bool dynamic_tables(struct bitrd *b, struct huffman *lit, struct huffman 
     int const total = nlit + ndist;
     int got = 0;
     while (got < total) {
-        int sym = huff_decode(b, &cl);
+        int const sym = huff_decode(b, &cl);
         if (sym < 0) {
             return false;
         }
@@ -828,7 +828,7 @@ int cnvs_zlib_inflate(uint8_t *__counted_by(dcap) dst, int dcap,
     // partial byte, whatever whole bytes the 64-bit reader still buffers map
     // 1:1 to input bytes, so the subtraction recovers the exact byte position.
     rd_align(&b);
-    int pos = b.at - b.nbits / 8;
+    int const pos = b.at - b.nbits / 8;
     if (n - pos != 4) {
         return -1;
     }

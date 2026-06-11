@@ -32,7 +32,7 @@ static bool pts_reserve(struct cnvs_path *p, int need) {
     if (need <= p->pt_cap) {
         return true;
     }
-    int newcap = cnvs_grow_cap(p->pt_cap, need);
+    int const newcap = cnvs_grow_cap(p->pt_cap, need);
     cnvs_vec2 *nd = realloc(p->pts, (size_t)newcap * sizeof *nd);
     if (!nd) {
         return false;
@@ -46,7 +46,7 @@ static bool subs_reserve(struct cnvs_path *p, int need) {
     if (need <= p->sp_cap) {
         return true;
     }
-    int newcap = cnvs_grow_cap(p->sp_cap, need);
+    int const newcap = cnvs_grow_cap(p->sp_cap, need);
     cnvs_subpath *nd = realloc(p->subs, (size_t)newcap * sizeof *nd);
     if (!nd) {
         return false;
@@ -86,7 +86,7 @@ bool cnvs_path_line_to(struct cnvs_path *p, cnvs_vec2 pt) {
 
 bool cnvs_path_close(struct cnvs_path *p) {
     if (p->nsubs > 0) {
-        cnvs_subpath s = p->subs[p->nsubs - 1];
+        cnvs_subpath const s = p->subs[p->nsubs - 1];
         p->subs[p->nsubs - 1].closed = true;
         if (s.count > 0) {
             p->cur = p->pts[s.start];
@@ -122,17 +122,17 @@ static cnvs_vec2 mid(cnvs_vec2 a, cnvs_vec2 b) {
 // Squared perpendicular distance from c to the line through a and b, times the
 // squared chord length (lets us compare against tol^2 without a divide).
 static float cross_chord2(cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
-    float dx = b.x - a.x;
-    float dy = b.y - a.y;
-    float ex = c.x - a.x;
-    float ey = c.y - a.y;
-    float cross = ex * dy - ey * dx;
+    float const dx = b.x - a.x;
+    float const dy = b.y - a.y;
+    float const ex = c.x - a.x;
+    float const ey = c.y - a.y;
+    float const cross = ex * dy - ey * dx;
     return cross * cross;
 }
 
 static float chord_len2(cnvs_vec2 a, cnvs_vec2 b) {
-    float dx = b.x - a.x;
-    float dy = b.y - a.y;
+    float const dx = b.x - a.x;
+    float const dy = b.y - a.y;
     return dx * dx + dy * dy;
 }
 
@@ -148,9 +148,9 @@ static bool quad_rec(struct cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 
     if (depth >= 16 || !(cross_chord2(p0, p2, p1) > tol2 * chord_len2(p0, p2))) {
         return cnvs_path_line_to(p, p2);
     }
-    cnvs_vec2 p01 = mid(p0, p1);
-    cnvs_vec2 p12 = mid(p1, p2);
-    cnvs_vec2 m = mid(p01, p12);
+    cnvs_vec2 const p01 = mid(p0, p1);
+    cnvs_vec2 const p12 = mid(p1, p2);
+    cnvs_vec2 const m = mid(p01, p12);
     return quad_rec(p, p0, p01, m, tol2, depth + 1) &&
            quad_rec(p, m, p12, p2, tol2, depth + 1);
 }
@@ -164,16 +164,16 @@ bool cnvs_path_quad_to(struct cnvs_path *p, cnvs_vec2 ctrl, cnvs_vec2 end, float
 
 static bool cubic_rec(struct cnvs_path *p, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 p2,
                       cnvs_vec2 p3, float tol2, int depth) {
-    float d = cross_chord2(p0, p3, p1) + cross_chord2(p0, p3, p2);
+    float const d = cross_chord2(p0, p3, p1) + cross_chord2(p0, p3, p2);
     if (depth >= 18 || !(d > tol2 * chord_len2(p0, p3))) {  // !(>): NaN is
         return cnvs_path_line_to(p, p3);                    // flat (see quad_rec)
     }
-    cnvs_vec2 p01 = mid(p0, p1);
-    cnvs_vec2 p12 = mid(p1, p2);
-    cnvs_vec2 p23 = mid(p2, p3);
-    cnvs_vec2 p012 = mid(p01, p12);
-    cnvs_vec2 p123 = mid(p12, p23);
-    cnvs_vec2 m = mid(p012, p123);
+    cnvs_vec2 const p01 = mid(p0, p1);
+    cnvs_vec2 const p12 = mid(p1, p2);
+    cnvs_vec2 const p23 = mid(p2, p3);
+    cnvs_vec2 const p012 = mid(p01, p12);
+    cnvs_vec2 const p123 = mid(p12, p23);
+    cnvs_vec2 const m = mid(p012, p123);
     return cubic_rec(p, p0, p01, p012, m, tol2, depth + 1) &&
            cubic_rec(p, m, p123, p23, p3, tol2, depth + 1);
 }

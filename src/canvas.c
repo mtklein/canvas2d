@@ -323,7 +323,7 @@ static bool stack_reserve(struct canvas *__single cv, int need) {
     if (need <= cv->stack_cap) {
         return true;
     }
-    int newcap = cnvs_grow_cap(cv->stack_cap, need);
+    int const newcap = cnvs_grow_cap(cv->stack_cap, need);
     struct canvas_state *ns =
         realloc(cv->stack, (size_t)newcap * sizeof *ns);
     if (!ns) {
@@ -358,7 +358,7 @@ void canvas_save(struct canvas *__single cv) {
     // independently.  On allocation failure the saved entry keeps no filters
     // (best-effort, matching the clip's degraded copy above).
     if (cv->cur.filters) {
-        int n = cv->cur.filter_count;
+        int const n = cv->cur.filter_count;
         cnvs_filter *copy = malloc((size_t)n * sizeof *copy);
         if (copy) {
             memcpy(copy, cv->cur.filters, (size_t)n * sizeof *copy);
@@ -464,7 +464,7 @@ void canvas_rotate(struct canvas *__single cv, float radians) {
 void canvas_transform(struct canvas *__single cv,
                       float a, float b, float c, float d, float e, float f) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f }, 6); }
-    cnvs_mat m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
+    cnvs_mat const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, m);
 }
 
@@ -480,7 +480,7 @@ void canvas_reset_transform(struct canvas *__single cv) {
 }
 
 canvas_matrix canvas_get_transform(struct canvas *__single cv) {
-    cnvs_mat m = cv->cur.ctm;
+    cnvs_mat const m = cv->cur.ctm;
     return (canvas_matrix){ .a = m.a, .b = m.b, .c = m.c,
                             .d = m.d, .e = m.e, .f = m.f };
 }
@@ -493,7 +493,7 @@ void canvas_set_fill_rgba(struct canvas *__single cv, float r, float g, float b,
 
 // Average CTM scale, used to bake user-space radii into device space.
 static float ctm_scale(cnvs_mat m) {
-    float det = m.a * m.d - m.b * m.c;
+    float const det = m.a * m.d - m.b * m.c;
     return sqrtf(fabsf(det));
 }
 
@@ -512,7 +512,7 @@ static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr
 
 static void grad_set_radial(struct canvas *__single cv, struct cnvs_gradient *gr, float x0,
                             float y0, float r0, float x1, float y1, float r1) {
-    float s = ctm_scale(cv->cur.ctm);
+    float const s = ctm_scale(cv->cur.ctm);
     gr->kind = CNVS_GRAD_RADIAL;
     gr->p0 = xf(cv, x0, y0);
     gr->p1 = xf(cv, x1, y1);
@@ -698,7 +698,7 @@ void canvas_set_filter_none(struct canvas *__single cv) {
 // builders).  Non-finite amounts never reach here -- each canvas_add_filter_*
 // ignores those calls outright, per spec.
 static void filter_append(struct canvas *__single cv, cnvs_filter f) {
-    int n = cv->cur.filter_count;
+    int const n = cv->cur.filter_count;
     cnvs_filter *nf = realloc(cv->cur.filters, ((size_t)n + 1) * sizeof *nf);
     if (!nf) {
         return;
@@ -723,7 +723,7 @@ void canvas_add_filter_blur(struct canvas *__single cv, float px) {
     // The recorder hooks sit inside each add_filter_*'s accept guard: an
     // ignored call records nothing, and the raw amount rides the line (replay
     // re-clamps and re-compiles it through this same code).
-    int r = sigma_box_radius(px);
+    int const r = sigma_box_radius(px);
     if (r > 0) {
         if (cv->rec) { cnvs_rec_floats(cv->rec, "add_filter_blur", (float[]){ px }, 1); }
         filter_append(cv, cnvs_filter_blur(r));
@@ -831,13 +831,13 @@ static cbbox points_bbox(struct canvas *__single cv,
     }
     float minx = pts[0].x, maxx = pts[0].x, miny = pts[0].y, maxy = pts[0].y;
     for (int i = 1; i < n; i++) {
-        cnvs_vec2 p = pts[i];
+        cnvs_vec2 const p = pts[i];
         minx = p.x < minx ? p.x : minx;
         maxx = p.x > maxx ? p.x : maxx;
         miny = p.y < miny ? p.y : miny;
         maxy = p.y > maxy ? p.y : maxy;
     }
-    float m = (float)margin;
+    float const m = (float)margin;
     float fx0 = floorf(minx) - m, fy0 = floorf(miny) - m;
     float fx1 = ceilf(maxx) + m, fy1 = ceilf(maxy) + m;
     int x0 = cnvs_f2i(fx0), y0 = cnvs_f2i(fy0), x1 = cnvs_f2i(fx1), y1 = cnvs_f2i(fy1);
@@ -925,8 +925,8 @@ static int filter_margin(struct canvas const *__single cv) {
         cnvs_filter const f = cv->cur.filters[i];
         m += 3 * f.blur;
         if (f.shadow) {
-            int ax = f.dx < 0 ? -f.dx : f.dx;
-            int ay = f.dy < 0 ? -f.dy : f.dy;
+            int const ax = f.dx < 0 ? -f.dx : f.dx;
+            int const ay = f.dy < 0 ? -f.dy : f.dy;
             m += ax > ay ? ax : ay;
         }
         if (m > CANVAS_DIM_MAX) {
@@ -958,9 +958,9 @@ static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, 
     cnvs_premul const tint = cnvs_premultiply(
         cnvs_unpremul_of(f.color[0], f.color[1], f.color[2], f.color[3]));
     for (int y = 0; y < h; y++) {
-        int sy = y - f.dy;
+        int const sy = y - f.dy;
         for (int x = 0; x < w; x++) {
-            int sx = x - f.dx;
+            int const sx = x - f.dx;
             float a = sx >= 0 && sx < w && sy >= 0 && sy < h
                           ? (float)cv->tile[sy * w + sx].a
                           : 0.0f;
@@ -980,7 +980,7 @@ static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, 
     }
     for (int i = 0; i < npix; i++) {  // premultiplied source-over: tile OVER shadow
         cnvs_premul t = cv->tile[i], s = cv->blur_tmp[i];
-        float k = 1.0f - (float)t.a;
+        float const k = 1.0f - (float)t.a;
         cv->tile[i] = (cnvs_premul){
             .r = (_Float16)((float)t.r + (float)s.r * k),
             .g = (_Float16)((float)t.g + (float)s.g * k),
@@ -1042,13 +1042,13 @@ static void cover_edge(struct canvas *__single cv, cbbox b, cnvs_vec2 p0, cnvs_v
 
 static void cover_path_edges(struct canvas *__single cv, cbbox b, struct cnvs_path const *p) {
     for (int s = 0; s < p->nsubs; s++) {
-        cnvs_subpath sp = p->subs[s];
+        cnvs_subpath const sp = p->subs[s];
         if (sp.count < 2) {
             continue;
         }
         for (int k = 0; k < sp.count; k++) {
-            cnvs_vec2 a = p->pts[sp.start + k];
-            cnvs_vec2 c = p->pts[sp.start + (k + 1) % sp.count];
+            cnvs_vec2 const a = p->pts[sp.start + k];
+            cnvs_vec2 const c = p->pts[sp.start + (k + 1) % sp.count];
             cover_edge(cv, b, a, c);
         }
     }
@@ -1152,8 +1152,8 @@ static half8 blend_term8(enum canvas_composite_op mode,
         case CANVAS_OP_EXCLUSION:   return sa * d + da * s - (_Float16)2.0f * s * d;
         default: {  // color-dodge / color-burn / soft-light
             half8 const zero = (half8)(_Float16)0.0f;
-            half8 cs = half8_if_then_else(sa > zero, s / sa, zero);
-            half8 cb = half8_if_then_else(da > zero, d / da, zero);
+            half8 const cs = half8_if_then_else(sa > zero, s / sa, zero);
+            half8 const cb = half8_if_then_else(da > zero, d / da, zero);
             return sa * da * blend_sep8(mode, cb, cs);
         }
     }
@@ -1162,7 +1162,7 @@ static half8 blend_term8(enum canvas_composite_op mode,
 // Source-over for one planar slab: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
 // the same fold over every channel plane, alpha included.
 static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
-    half8 fb = (half8)(_Float16)1.0f - s.a;
+    half8 const fb = (half8)(_Float16)1.0f - s.a;
     cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
                     s.b + fb * d.b, s.a + fb * d.a };
     return cnvs_px8_clamp_premul(co);
@@ -1179,19 +1179,19 @@ static half8 lum8(rgb8 c) {
 
 static rgb8 clip_color8(rgb8 c) {
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    half8 l = lum8(c);
-    half8 n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
-    half8 x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    short8 lo = n < zero;  // lanes with a channel below 0: scale about l
-    half8 kn = l / (l - n);
+    half8 const l = lum8(c);
+    half8 const n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    half8 const x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    short8 const lo = n < zero;  // lanes with a channel below 0: scale about l
+    half8 const kn = l / (l - n);
     c.r = half8_if_then_else(lo, l + (c.r - l) * kn, c.r);
     c.g = half8_if_then_else(lo, l + (c.g - l) * kn, c.g);
     c.b = half8_if_then_else(lo, l + (c.b - l) * kn, c.b);
     // The W3C ClipColor computes n and x ONCE, before either fix: the x > 1
     // test and the kx denominator both read the pre-fix maximum even though
     // the channels they rescale may have just been pulled toward l.
-    short8 hi = x > one;   // lanes with a channel above 1
-    half8 kx = (one - l) / (x - l);
+    short8 const hi = x > one;   // lanes with a channel above 1
+    half8 const kx = (one - l) / (x - l);
     c.r = half8_if_then_else(hi, l + (c.r - l) * kx, c.r);
     c.g = half8_if_then_else(hi, l + (c.g - l) * kx, c.g);
     c.b = half8_if_then_else(hi, l + (c.b - l) * kx, c.b);
@@ -1199,7 +1199,7 @@ static rgb8 clip_color8(rgb8 c) {
 }
 
 static rgb8 set_lum8(rgb8 c, half8 l) {
-    half8 dl = l - lum8(c);
+    half8 const dl = l - lum8(c);
     c.r += dl;
     c.g += dl;
     c.b += dl;
@@ -1215,10 +1215,10 @@ static half8 saturation8(rgb8 c) {
 // lane (mx <= mn) has no saturation axis and goes to black.
 static rgb8 set_saturation8(rgb8 c, half8 s) {
     half8 const zero = (half8)(_Float16)0.0f;
-    half8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
-    half8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    short8 flat = mx <= mn;
-    half8 k = s / (mx - mn);
+    half8 const mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    half8 const mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    short8 const flat = mx <= mn;
+    half8 const k = s / (mx - mn);
     return (rgb8){ .r = half8_if_then_else(flat, zero, (c.r - mn) * k),
                    .g = half8_if_then_else(flat, zero, (c.g - mn) * k),
                    .b = half8_if_then_else(flat, zero, (c.b - mn) * k) };
@@ -1282,7 +1282,7 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
             rgb8 cb = { half8_if_then_else(dm, d.r / da, zero),
                         half8_if_then_else(dm, d.g / da, zero),
                         half8_if_then_else(dm, d.b / da, zero) };
-            rgb8 bl = blend_nonsep8(mode, cb, cs);
+            rgb8 const bl = blend_nonsep8(mode, cb, cs);
             t.r = sa * da * bl.r;
             t.g = sa * da * bl.g;
             t.b = sa * da * bl.b;
@@ -1307,7 +1307,7 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
 // zero coverage must not perturb the destination).  The clamp restores the
 // premultiplied invariant against the one-ULP drift of cov + (1-cov) in f16.
 static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 cov) {
-    half8 icov = (half8)(_Float16)1.0f - cov;
+    half8 const icov = (half8)(_Float16)1.0f - cov;
     cnvs_px8 o = { co.r * cov + d.r * icov, co.g * cov + d.g * icov,
                    co.b * cov + d.b * icov, co.a * cov + d.a * icov };
     return cnvs_px8_clamp_premul(o);
@@ -1365,11 +1365,11 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
             cnvs_px8_store(cv->target + di, o);
         }
         if (col < w) {
-            int n = w - col;
-            int ti = row * w + col;
-            int di = (y + row) * cv->width + (x + col);
+            int const n = w - col;
+            int const ti = row * w + col;
+            int const di = (y + row) * cv->width + (x + col);
             cnvs_px8 s = tile ? cnvs_px8_load_k(tile + ti, n) : splat;
-            cnvs_px8 d = cnvs_px8_load_k(cv->target + di, n);
+            cnvs_px8 const d = cnvs_px8_load_k(cv->target + di, n);
             cnvs_px8 o;
             if (!atten) {
                 o = blend8(s, d, mode);
@@ -1431,9 +1431,9 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
                 cnvs_px8_store(cv->target + di, src_over8(s, d));
             }
             if (col < w) {
-                int k = w - col;
-                int ti = row * w + col;
-                int di = (y + row) * cv->width + (x + col);
+                int const k = w - col;
+                int const ti = row * w + col;
+                int const di = (y + row) * cv->width + (x + col);
                 cnvs_px8 s = cnvs_px8_load_k(tile + ti, k);
                 if (cov) {
                     s = cnvs_px8_scale(s, half8_from_u8_k(cov + ti, k) * inv255);
@@ -1441,7 +1441,7 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
                 if (clip) {
                     s = cnvs_px8_scale(s, half8_from_u8_k(clip + di, k) * inv255);
                 }
-                cnvs_px8 d = cnvs_px8_load_k(cv->target + di, k);
+                cnvs_px8 const d = cnvs_px8_load_k(cv->target + di, k);
                 cnvs_px8_store_k(cv->target + di, k, src_over8(s, d));
             }
         }
@@ -1635,7 +1635,7 @@ static void paint_tile_gradient(struct canvas *__single cv, cbbox b,
         // per-pixel parameter solve + stop lerp.
         for (int py = 0; py < b.h; py++) {
             for (int px = 0; px < b.w; px++) {
-                int i = py * b.w + px;
+                int const i = py * b.w + px;
                 float t;
                 cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
                                 .y = (float)b.y + (float)py + 0.5f };
@@ -1672,8 +1672,8 @@ static int wrap_idx(int i, int n, bool repeat) {
 // per-tap indices wrap (repeat) or clamp (no-repeat).  Bilinear when `smooth`.
 static void pattern_sample(struct cnvs_pattern const *p, float u, float v, bool smooth,
                            float *__counted_by(4) out) {
-    bool rx = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_X;
-    bool ry = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_Y;
+    bool const rx = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_X;
+    bool const ry = p->repeat == CANVAS_REPEAT || p->repeat == CANVAS_REPEAT_Y;
     if ((!rx && (u < 0.0f || u >= (float)p->w)) ||
         (!ry && (v < 0.0f || v >= (float)p->h))) {
         out[0] = out[1] = out[2] = out[3] = 0.0f;
@@ -1687,18 +1687,18 @@ static void pattern_sample(struct cnvs_pattern const *p, float u, float v, bool 
         int u0 = wrap_idx(cnvs_f2i(fu), w, rx), u1 = wrap_idx(cnvs_f2i(fu) + 1, w, rx);
         int v0 = wrap_idx(cnvs_f2i(fv), h, ry), v1 = wrap_idx(cnvs_f2i(fv) + 1, h, ry);
         for (int k = 0; k < 4; k++) {
-            float c00 = (float)p->data[(v0 * w + u0) * 4 + k];
-            float c10 = (float)p->data[(v0 * w + u1) * 4 + k];
-            float c01 = (float)p->data[(v1 * w + u0) * 4 + k];
-            float c11 = (float)p->data[(v1 * w + u1) * 4 + k];
-            float top = c00 + (c10 - c00) * tu;
-            float bot = c01 + (c11 - c01) * tu;
+            float const c00 = (float)p->data[(v0 * w + u0) * 4 + k];
+            float const c10 = (float)p->data[(v0 * w + u1) * 4 + k];
+            float const c01 = (float)p->data[(v1 * w + u0) * 4 + k];
+            float const c11 = (float)p->data[(v1 * w + u1) * 4 + k];
+            float const top = c00 + (c10 - c00) * tu;
+            float const bot = c01 + (c11 - c01) * tu;
             out[k] = (top + (bot - top) * tv) / 255.0f;
         }
     } else {
-        int iu = wrap_idx(cnvs_f2i(floorf(u)), w, rx);
-        int iv = wrap_idx(cnvs_f2i(floorf(v)), h, ry);
-        int o = (iv * w + iu) * 4;
+        int const iu = wrap_idx(cnvs_f2i(floorf(u)), w, rx);
+        int const iv = wrap_idx(cnvs_f2i(floorf(v)), h, ry);
+        int const o = (iv * w + iu) * 4;
         for (int k = 0; k < 4; k++) {
             out[k] = (float)p->data[o + k] / 255.0f;
         }
@@ -1802,7 +1802,7 @@ static int sigma_box_radius(float sigma) {
     if (!(sigma > 0.0f)) {
         return 0;
     }
-    int r = (int)(sigma + 0.5f);
+    int const r = (int)(sigma + 0.5f);
     return r < 1 ? 1 : (r > 1024 ? 1024 : r);
 }
 
@@ -1814,7 +1814,7 @@ static int shadow_radius(float blur) {
 // Round a shadow offset to an integer device pixel, clamped to a sane range (a
 // larger offset just pushes the shadow off-canvas).
 static int shadow_offset(float v) {
-    float m = (float)(2 * CANVAS_DIM_MAX);
+    float const m = (float)(2 * CANVAS_DIM_MAX);
     v = v > m ? m : (v < -m ? -m : v);
     return cnvs_f2i(roundf(v));
 }
@@ -1828,13 +1828,13 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
     if (!shadow_active(cv) || b.w <= 0 || b.h <= 0) {
         return;
     }
-    int radius = shadow_radius(cv->cur.shadow_blur);
-    int offx = shadow_offset(cv->cur.shadow_offset_x);
-    int offy = shadow_offset(cv->cur.shadow_offset_y);
+    int const radius = shadow_radius(cv->cur.shadow_blur);
+    int const offx = shadow_offset(cv->cur.shadow_offset_x);
+    int const offy = shadow_offset(cv->cur.shadow_offset_y);
     // Three box passes each spread the blur by the radius, so the falloff
     // reaches ~0 only at 3x the radius beyond the shape -- the mask region must
     // include that whole spread or the soft edge gets clipped to a rectangle.
-    int margin = 3 * radius;
+    int const margin = 3 * radius;
     int sx0 = b.x       + offx - margin, sy0 = b.y       + offy - margin;
     int sx1 = b.x + b.w + offx + margin, sy1 = b.y + b.h + offy + margin;
     if (sx0 < 0)          { sx0 = 0; }
@@ -1845,18 +1845,18 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
     if (sw <= 0 || sh <= 0 || !ensure_shadow(cv, sw * sh) || !ensure_tile(cv, sw * sh)) {
         return;
     }
-    int n = sw * sh;
+    int const n = sw * sh;
     memset(cv->shadow_src, 0, (size_t)n);
     // Stamp the op coverage into the mask at its offset position (clipped to the
     // mask, which may be tighter than the offset coverage near the canvas edge).
     int mx0 = b.x + offx - sx0, my0 = b.y + offy - sy0;
     for (int cy = 0; cy < b.h; cy++) {
-        int my = my0 + cy;
+        int const my = my0 + cy;
         if (my < 0 || my >= sh) {
             continue;
         }
         for (int cx = 0; cx < b.w; cx++) {
-            int mx = mx0 + cx;
+            int const mx = mx0 + cx;
             if (mx >= 0 && mx < sw) {
                 cv->shadow_src[my * sw + mx] = cv->cov[cy * b.w + cx];
             }
@@ -1956,7 +1956,7 @@ void canvas_fill_rect(struct canvas *__single cv, float x, float y, float w, flo
     if (cv->rec) { cnvs_rec_floats(cv->rec, "fill_rect", (float[]){ x, y, w, h }, 4); }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
-    cbbox b = points_bbox(cv, q, 4, filter_margin(cv));
+    cbbox const b = points_bbox(cv, q, 4, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -2017,7 +2017,7 @@ void canvas_ellipse(struct canvas *__single cv, float x, float y, float rx, floa
                              (float[]){ x, y, rx, ry, rotation, start_angle, end_angle },
                              7, anticlockwise);
     }
-    float two_pi = 2.0f * (float)M_PI;
+    float const two_pi = 2.0f * (float)M_PI;
     float sweep = end_angle - start_angle;
     if (!isfinite(sweep)) {
         return;  // non-finite angle: no arc (Canvas spec ignores non-finite args)
@@ -2030,15 +2030,15 @@ void canvas_ellipse(struct canvas *__single cv, float x, float y, float rx, floa
     } else if (anticlockwise && sweep > 0.0f) {
         sweep -= two_pi * ceilf(sweep / two_pi);     // -> (-2pi, 0]
     }
-    float arx = rx < 0.0f ? -rx : rx;
-    float ary = ry < 0.0f ? -ry : ry;
-    float rmax = arx > ary ? arx : ary;
-    float rr = rmax > CANVAS_FLATTEN_TOL ? rmax : CANVAS_FLATTEN_TOL;
+    float const arx = rx < 0.0f ? -rx : rx;
+    float const ary = ry < 0.0f ? -ry : ry;
+    float const rmax = arx > ary ? arx : ary;
+    float const rr = rmax > CANVAS_FLATTEN_TOL ? rmax : CANVAS_FLATTEN_TOL;
     float dstep = 2.0f * acosf(fmaxf(-1.0f, 1.0f - CANVAS_FLATTEN_TOL / rr));
     if (!(dstep > 1e-4f)) {
         dstep = 1e-4f;  // guard against tiny/NaN step
     }
-    float fsegs = ceilf(fabsf(sweep) / dstep);
+    float const fsegs = ceilf(fabsf(sweep) / dstep);
     int segs = cnvs_f2i(fsegs);
     if (segs < 2) {
         segs = 2;
@@ -2046,20 +2046,20 @@ void canvas_ellipse(struct canvas *__single cv, float x, float y, float rx, floa
     if (segs > 4096) {
         segs = 4096;
     }
-    float cosr = cosf(rotation);
-    float sinr = sinf(rotation);
+    float const cosr = cosf(rotation);
+    float const sinr = sinf(rotation);
     for (int i = 0; i <= segs; i++) {
-        float t = start_angle + sweep * ((float)i / (float)segs);
-        float ex = rx * cosf(t);
-        float ey = ry * sinf(t);
-        cnvs_vec2 p = xf(cv, x + ex * cosr - ey * sinr, y + ex * sinr + ey * cosr);
+        float const t = start_angle + sweep * ((float)i / (float)segs);
+        float const ex = rx * cosf(t);
+        float const ey = ry * sinf(t);
+        cnvs_vec2 const p = xf(cv, x + ex * cosr - ey * sinr, y + ex * sinr + ey * cosr);
         if (i == 0 && !cv->path.has_cur) {
             cnvs_path_move_to(&cv->path, p);
         } else {
             cnvs_path_line_to(&cv->path, p);
         }
     }
-    float te = start_angle + sweep;
+    float const te = start_angle + sweep;
     cv->cur_user = (cnvs_vec2){
         .x = x + rx * cosf(te) * cosr - ry * sinf(te) * sinr,
         .y = y + rx * cosf(te) * sinr + ry * sinf(te) * cosr,
@@ -2096,8 +2096,8 @@ void canvas_round_rect(struct canvas *__single cv, float x, float y, float w, fl
     if (r > rmax) {
         r = rmax;
     }
-    float q = (float)M_PI * 0.5f;
-    float pi = (float)M_PI;
+    float const q = (float)M_PI * 0.5f;
+    float const pi = (float)M_PI;
     canvas_move_to(cv, x + r, y);
     canvas_arc(cv, x + w - r, y + r,     r,   -q, 0.0f,   false);  // top-right
     canvas_arc(cv, x + w - r, y + h - r, r, 0.0f,    q,   false);  // bottom-right
@@ -2111,7 +2111,7 @@ void canvas_round_rect(struct canvas *__single cv, float x, float y, float w, fl
 // summing to `sum` fit within an edge of length `len`.  `sum` 0 (no radii on the
 // edge) divides to inf or NaN, which never passes g < f.
 static float radii_fit(float f, float len, float sum) {
-    float g = len / sum;
+    float const g = len / sum;
     return g < f ? g : f;
 }
 
@@ -2145,8 +2145,8 @@ static void round_rect_radii_impl(struct canvas *__single cv, float x, float y,
     }
     // Trace the outline clockwise from the top edge, each corner an elliptical
     // arc (a zero-radius corner degenerates to the sharp rectangle corner).
-    float q = (float)M_PI * 0.5f;
-    float pi = (float)M_PI;
+    float const q = (float)M_PI * 0.5f;
+    float const pi = (float)M_PI;
     canvas_move_to(cv, x + r[0], y);
     canvas_ellipse(cv, x + w - r[2], y + r[3],     r[2], r[3], 0.0f,   -q, 0.0f,   false);
     canvas_ellipse(cv, x + w - r[4], y + h - r[5], r[4], r[5], 0.0f, 0.0f,    q,   false);
@@ -2184,8 +2184,8 @@ static void arc_to_impl(struct canvas *__single cv, float x1, float y1, float x2
     float u0y = cv->cur_user.y - y1;
     float u2x = x2 - x1;
     float u2y = y2 - y1;
-    float l0 = sqrtf(u0x * u0x + u0y * u0y);
-    float l2 = sqrtf(u2x * u2x + u2y * u2y);
+    float const l0 = sqrtf(u0x * u0x + u0y * u0y);
+    float const l2 = sqrtf(u2x * u2x + u2y * u2y);
     if (l0 < 1e-6f || l2 < 1e-6f || radius <= 0.0f) {
         canvas_line_to(cv, x1, y1);
         return;
@@ -2201,25 +2201,25 @@ static void arc_to_impl(struct canvas *__single cv, float x1, float y1, float x2
     if (cosang < -1.0f) {
         cosang = -1.0f;
     }
-    float ang = acosf(cosang);
+    float const ang = acosf(cosang);
     if (ang < 1e-3f || (float)M_PI - ang < 1e-3f) {
         canvas_line_to(cv, x1, y1);  // collinear: no arc
         return;
     }
-    float td = radius / tanf(ang * 0.5f);   // P1 -> tangent point distance
-    float bx = u0x + u2x;
-    float by = u0y + u2y;
-    float bl = sqrtf(bx * bx + by * by);
-    float cdist = radius / sinf(ang * 0.5f);  // P1 -> arc centre distance
-    float cx = x1 + bx / bl * cdist;
-    float cy = y1 + by / bl * cdist;
-    float t1x = x1 + u0x * td;
-    float t1y = y1 + u0y * td;
-    float t2x = x1 + u2x * td;
-    float t2y = y1 + u2y * td;
-    float sa = atan2f(t1y - cy, t1x - cx);
-    float ea = atan2f(t2y - cy, t2x - cx);
-    bool ccw = (u0x * u2y - u0y * u2x) > 0.0f;
+    float const td = radius / tanf(ang * 0.5f);   // P1 -> tangent point distance
+    float const bx = u0x + u2x;
+    float const by = u0y + u2y;
+    float const bl = sqrtf(bx * bx + by * by);
+    float const cdist = radius / sinf(ang * 0.5f);  // P1 -> arc centre distance
+    float const cx = x1 + bx / bl * cdist;
+    float const cy = y1 + by / bl * cdist;
+    float const t1x = x1 + u0x * td;
+    float const t1y = y1 + u0y * td;
+    float const t2x = x1 + u2x * td;
+    float const t2y = y1 + u2y * td;
+    float const sa = atan2f(t1y - cy, t1x - cx);
+    float const ea = atan2f(t2y - cy, t2x - cx);
+    bool const ccw = (u0x * u2y - u0y * u2x) > 0.0f;
     canvas_line_to(cv, t1x, t1y);
     canvas_arc(cv, cx, cy, radius, sa, ea, ccw);
     cv->cur_user = (cnvs_vec2){ .x = t2x, .y = t2y };
@@ -2247,7 +2247,7 @@ void canvas_close_path(struct canvas *__single cv) {
 // over its clamped bbox.
 static void fill_device_path(struct canvas *__single cv, struct cnvs_path const *p,
                              enum cnvs_fill_rule rule) {
-    cbbox b = points_bbox(cv, p->pts, p->npts, filter_margin(cv));
+    cbbox const b = points_bbox(cv, p->pts, p->npts, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -2273,21 +2273,21 @@ static bool path_contains(struct cnvs_path const *p, cnvs_vec2 q, enum cnvs_fill
     int wn = 0;   // winding number  (nonzero rule)
     int cn = 0;   // crossing number (even-odd rule)
     for (int s = 0; s < p->nsubs; s++) {
-        cnvs_subpath sp = p->subs[s];
+        cnvs_subpath const sp = p->subs[s];
         if (sp.count < 2) {
             continue;
         }
         for (int k = 0; k < sp.count; k++) {
-            cnvs_vec2 a = p->pts[sp.start + k];
-            cnvs_vec2 b = p->pts[sp.start + (k + 1) % sp.count];
-            bool up = a.y <= q.y && b.y > q.y;
-            bool down = a.y > q.y && b.y <= q.y;
+            cnvs_vec2 const a = p->pts[sp.start + k];
+            cnvs_vec2 const b = p->pts[sp.start + (k + 1) % sp.count];
+            bool const up = a.y <= q.y && b.y > q.y;
+            bool const down = a.y > q.y && b.y <= q.y;
             if (!up && !down) {
                 continue;  // edge doesn't straddle the ray's row
             }
             // isLeft > 0 means q is left of the directed edge a->b, i.e. the +x
             // ray from q crosses it.  An upward edge then winds +1, a downward -1.
-            float is_left = (b.x - a.x) * (q.y - a.y) - (q.x - a.x) * (b.y - a.y);
+            float const is_left = (b.x - a.x) * (q.y - a.y) - (q.x - a.x) * (b.y - a.y);
             if (up && is_left > 0.0f) {
                 wn += 1;
                 cn += 1;
@@ -2305,13 +2305,13 @@ bool canvas_is_point_in_path(struct canvas *__single cv, float x, float y,
     if (!isfinite(x) || !isfinite(y)) {
         return false;
     }
-    enum cnvs_fill_rule r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    enum cnvs_fill_rule const r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
     return path_contains(&cv->path, xf(cv, x, y), r);
 }
 
 void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
     if (cv->rec) { cnvs_rec_rule(cv->rec, "clip", rule); }
-    int n = cv->width * cv->height;
+    int const n = cv->width * cv->height;
     uint8_t *nm = malloc((size_t)n);
     if (!nm) {
         return;
@@ -2331,12 +2331,12 @@ void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
     // new_clip = old_clip * path_coverage, zero outside the path's bbox.
     for (int yy = 0; yy < cv->height; yy++) {
         for (int xx = 0; xx < cv->width; xx++) {
-            int i = yy * cv->width + xx;
+            int const i = yy * cv->width + xx;
             int pc = 0;
             if (xx >= b.x && xx < b.x + b.w && yy >= b.y && yy < b.y + b.h) {
                 pc = cv->cov[(yy - b.y) * b.w + (xx - b.x)];
             }
-            int old = cv->cur.clip_mask ? cv->cur.clip_mask[i] : 255;
+            int const old = cv->cur.clip_mask ? cv->cur.clip_mask[i] : 255;
             nm[i] = (uint8_t)(old * pc / 255);
         }
     }
@@ -2398,10 +2398,10 @@ void canvas_set_line_dash(struct canvas *__single cv,
 
 int canvas_get_line_dash(struct canvas *__single cv,
                          float *__counted_by(cap) out, int cap) {
-    int n = cv->cur.dash_count;
+    int const n = cv->cur.dash_count;
     // Copy at most `cap` entries; never write past the caller's buffer, and never
     // mutate `cap` itself (it bounds `out`).  A negative cap copies nothing.
-    int m = cap < n ? cap : n;
+    int const m = cap < n ? cap : n;
     for (int i = 0; i < m; i++) {
         out[i] = cv->cur.dash[i];
     }
@@ -2418,18 +2418,18 @@ void canvas_set_line_dash_offset(struct canvas *__single cv, float offset) {
 static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path const *p) {
     cnvs_verts_reset(&cv->scratch_verts);
     // Line width and dash lengths are in user units; bake the CTM scale in.
-    float scale = ctm_scale(cv->cur.ctm);
-    float half_width = cv->cur.line_width * 0.5f * scale;
+    float const scale = ctm_scale(cv->cur.ctm);
+    float const half_width = cv->cur.line_width * 0.5f * scale;
 
-    bool dashed = cv->cur.dash_count > 0;
+    bool const dashed = cv->cur.dash_count > 0;
     float sdash[CANVAS_DASH_MAX];
     for (int i = 0; i < cv->cur.dash_count; i++) {
         sdash[i] = cv->cur.dash[i] * scale;
     }
-    float soff = cv->cur.dash_offset * scale;
+    float const soff = cv->cur.dash_offset * scale;
 
     for (int s = 0; s < p->nsubs; s++) {
-        cnvs_subpath sp = p->subs[s];
+        cnvs_subpath const sp = p->subs[s];
         if (sp.count < 2) {
             continue;
         }
@@ -2462,12 +2462,12 @@ static void stroke_device_path(struct canvas *__single cv, struct cnvs_path cons
     // Feed each stroke triangle as edges, forced to a consistent winding so the
     // overlapping join/cap triangles union (nonzero) instead of cancelling.
     for (int i = 0; i + 2 < cv->scratch_verts.nverts; i += 3) {
-        cnvs_vec2 p0 = cv->scratch_verts.data[i];
+        cnvs_vec2 const p0 = cv->scratch_verts.data[i];
         cnvs_vec2 p1 = cv->scratch_verts.data[i + 1];
         cnvs_vec2 p2 = cv->scratch_verts.data[i + 2];
-        float area = (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y);
+        float const area = (p1.x - p0.x) * (p2.y - p0.y) - (p2.x - p0.x) * (p1.y - p0.y);
         if (area < 0.0f) {
-            cnvs_vec2 t = p1;
+            cnvs_vec2 const t = p1;
             p1 = p2;
             p2 = t;
         }
@@ -2499,8 +2499,8 @@ static bool point_in_tri(cnvs_vec2 q, cnvs_vec2 a, cnvs_vec2 b, cnvs_vec2 c) {
         return false;
     }
     float d1 = orient(a, b, q), d2 = orient(b, c, q), d3 = orient(c, a, q);
-    bool neg = d1 < 0.0f || d2 < 0.0f || d3 < 0.0f;
-    bool pos = d1 > 0.0f || d2 > 0.0f || d3 > 0.0f;
+    bool const neg = d1 < 0.0f || d2 < 0.0f || d3 < 0.0f;
+    bool const pos = d1 > 0.0f || d2 > 0.0f || d3 > 0.0f;
     return !(neg && pos);
 }
 
@@ -2578,7 +2578,7 @@ static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
 // be built (then there are no metrics to give).
 static bool canvas_vmetrics(struct canvas *__single cv, float *__single ascent,
                             float *__single descent) {
-    float size = cv->cur.font_size;
+    float const size = cv->cur.font_size;
     int fid = cnvs_text_cache_intern(&cv->text_cache, k_font_family,
                                      (int)sizeof k_font_family - 1);
     float a1 = 0.0f, d1 = 0.0f;
@@ -2751,14 +2751,14 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
         return;  // blank glyph (e.g. a space in the color font)
     }
     int const margin = 1;
-    float bw = ceilf(x1 - x0);
-    float bh = ceilf(y1 - y0);
-    int gw = (int)bw + 2 * margin;
-    int gh = (int)bh + 2 * margin;
+    float const bw = ceilf(x1 - x0);
+    float const bh = ceilf(y1 - y0);
+    int const gw = (int)bw + 2 * margin;
+    int const gh = (int)bh + 2 * margin;
     if (gw < 1 || gh < 1 || gw > 4096 || gh > 4096) {
         return;
     }
-    int glen = gw * gh * 4;
+    int const glen = gw * gh * 4;
     uint8_t *buf = malloc((size_t)glen);
     if (!buf) {
         return;
@@ -2770,7 +2770,7 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
     // CGBitmapContext gives premultiplied RGBA, top row first (the orientation
     // canvas_draw_image_subrect wants); just unpremultiply to straight alpha.
     for (int i = 0; i < glen; i += 4) {
-        int a = buf[i + 3];
+        int const a = buf[i + 3];
         if (a > 0 && a < 255) {
             buf[i + 0] = (uint8_t)((buf[i + 0] * 255 + a / 2) / a);
             buf[i + 1] = (uint8_t)((buf[i + 1] * 255 + a / 2) / a);
@@ -2779,8 +2779,8 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
     }
     // The buffer maps to a user-space rect: its left edge is `margin` px left of
     // the glyph ink, its top edge `gh - margin + y0` glyph-px above the baseline.
-    float dest_x = pen_x + x0 - (float)margin;
-    float dest_y = baseline_y - ((float)gh - (float)margin + y0);
+    float const dest_x = pen_x + x0 - (float)margin;
+    float const dest_y = baseline_y - ((float)gh - (float)margin + y0);
     canvas_draw_image_subrect(cv, buf, gw, gh, 0.0f, 0.0f, (float)gw, (float)gh,
                               dest_x, dest_y, (float)gw, (float)gh);
     free(buf);
@@ -2848,14 +2848,14 @@ static void do_text(struct canvas *__single cv, char const *__counted_by(len) te
     if (!s) {
         return;
     }
-    float advance = cnvs_shaped_width(s);
+    float const advance = cnvs_shaped_width(s);
     float sx = 1.0f;
     if (isfinite(max_width) && max_width > 0.0f && advance > max_width) {
         sx = max_width / advance;  // condense in x to fit
     }
     float ox = x - text_align_frac(cv->cur.text_align, cv->cur.direction)
                        * advance * sx;
-    float oy = y + text_baseline_offset(cv);
+    float const oy = y + text_baseline_offset(cv);
     cnvs_mat td = cv->cur.ctm;
     if (sx != 1.0f) {
         // Scale x by sx about the anchor: X' = sx*X + ox*(1-sx), Y' = Y; then the CTM.
@@ -2867,7 +2867,7 @@ static void do_text(struct canvas *__single cv, char const *__counted_by(len) te
 }
 
 float canvas_measure_text(struct canvas *__single cv, char const *__null_terminated text) {
-    int len = (int)strlen(text);
+    int const len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     struct cnvs_shaped const *__single s = shape_text(cv, t, len);
     if (!s) {
@@ -2881,8 +2881,8 @@ canvas_text_metrics canvas_measure_text_full(struct canvas *__single cv,
     canvas_text_metrics m;
     memset(&m, 0, sizeof m);  // all-zero if the font/shaping can't be built
     float a = 0.0f, d = 0.0f;
-    bool have_vm = canvas_vmetrics(cv, &a, &d);  // cached: no font handle needed
-    int len = (int)strlen(text);
+    bool const have_vm = canvas_vmetrics(cv, &a, &d);  // cached: no font handle needed
+    int const len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     struct cnvs_shaped const *__single s = shape_text(cv, t, len);
     if (have_vm && s) {
@@ -2936,7 +2936,7 @@ void canvas_fill_text_n(struct canvas *__single cv, char const *__counted_by(len
 
 void canvas_fill_text(struct canvas *__single cv, char const *__null_terminated text,
                       float x, float y) {
-    int len = (int)strlen(text);
+    int const len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_fill_text_n(cv, t, len, x, y);
 }
@@ -2952,7 +2952,7 @@ void canvas_fill_text_max_n(struct canvas *__single cv, char const *__counted_by
 
 void canvas_fill_text_max(struct canvas *__single cv, char const *__null_terminated text,
                           float x, float y, float max_width) {
-    int len = (int)strlen(text);
+    int const len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_fill_text_max_n(cv, t, len, x, y, max_width);
 }
@@ -2968,7 +2968,7 @@ void canvas_stroke_text_n(struct canvas *__single cv, char const *__counted_by(l
 
 void canvas_stroke_text(struct canvas *__single cv, char const *__null_terminated text,
                         float x, float y) {
-    int len = (int)strlen(text);
+    int const len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_stroke_text_n(cv, t, len, x, y);
 }
@@ -2985,7 +2985,7 @@ void canvas_stroke_text_max_n(struct canvas *__single cv,
 
 void canvas_stroke_text_max(struct canvas *__single cv, char const *__null_terminated text,
                             float x, float y, float max_width) {
-    int len = (int)strlen(text);
+    int const len = (int)strlen(text);
     char const *__counted_by(len) t = __null_terminated_to_indexable(text);
     canvas_stroke_text_max_n(cv, t, len, x, y, max_width);
 }
@@ -3010,12 +3010,12 @@ static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
     if (y0 < 0) { y0 = 0; } else if (y0 > sh - 1) { y0 = sh - 1; }
     if (y1 < 0) { y1 = 0; } else if (y1 > sh - 1) { y1 = sh - 1; }
     for (int k = 0; k < 4; k++) {
-        float c00 = (float)src[(y0 * sw + x0) * 4 + k];
-        float c10 = (float)src[(y0 * sw + x1) * 4 + k];
-        float c01 = (float)src[(y1 * sw + x0) * 4 + k];
-        float c11 = (float)src[(y1 * sw + x1) * 4 + k];
-        float top = c00 + (c10 - c00) * tx;
-        float bot = c01 + (c11 - c01) * tx;
+        float const c00 = (float)src[(y0 * sw + x0) * 4 + k];
+        float const c10 = (float)src[(y0 * sw + x1) * 4 + k];
+        float const c01 = (float)src[(y1 * sw + x0) * 4 + k];
+        float const c11 = (float)src[(y1 * sw + x1) * 4 + k];
+        float const top = c00 + (c10 - c00) * tx;
+        float const bot = c01 + (c11 - c01) * tx;
         out[k] = (top + (bot - top) * ty) / 255.0f;
     }
 }
@@ -3030,7 +3030,7 @@ static void sample_src_nearest(uint8_t const *__counted_by(slen) src, int slen,
     int y = cnvs_f2i(floorf(fy));
     if (x < 0) { x = 0; } else if (x > sw - 1) { x = sw - 1; }
     if (y < 0) { y = 0; } else if (y > sh - 1) { y = sh - 1; }
-    int o = (y * sw + x) * 4;
+    int const o = (y * sw + x) * 4;
     for (int k = 0; k < 4; k++) {
         out[k] = (float)src[o + k] / 255.0f;
     }
@@ -3073,7 +3073,7 @@ static void draw_image_quad(struct canvas *__single cv,
     // The dest rect transforms to a (possibly rotated) device-space quad.
     cnvs_vec2 q[4] = { xf(cv, dx, dy), xf(cv, dx + dw, dy),
                        xf(cv, dx + dw, dy + dh), xf(cv, dx, dy + dh) };
-    cbbox b = points_bbox(cv, q, 4, filter_margin(cv));
+    cbbox const b = points_bbox(cv, q, 4, filter_margin(cv));
     if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
         !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
         return;
@@ -3236,7 +3236,7 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
 // the truncating store seam (cnvs_px8_store_rgba8).
 static cnvs_px8 unpremul_to_unorm8(cnvs_px8 p) {
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    short8 opaque = p.a > zero;
+    short8 const opaque = p.a > zero;
     cnvs_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
     u.r = half8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.r)), zero);
@@ -3267,7 +3267,7 @@ void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out
                              unpremul_to_unorm8(cnvs_px8_load(cv->target + i)));
     }
     if (i < n) {
-        int k = n - i;
+        int const k = n - i;
         cnvs_px8_store_rgba8_k(out + i * 4, k,
                                unpremul_to_unorm8(cnvs_px8_load_k(cv->target + i, k)));
     }
@@ -3280,7 +3280,7 @@ bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated 
         return false;
     }
     canvas_read_rgba(cv, out, len);
-    bool ok = cnvs_png_write(path, out, cv->width, cv->height);
+    bool const ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
 }
@@ -3314,7 +3314,7 @@ canvas_create_image_data(int sw, int sh, int *__single len) {
         return NULL;
     }
     // rgba8_dims_ok guarantees sw*sh*4 fits a positive int, so this is overflow-free.
-    int n = sw * sh * 4;
+    int const n = sw * sh * 4;
     uint8_t *buf = calloc((size_t)n, 1);  // zeroed == transparent black
     if (!buf) {
         *len = 0;
@@ -3340,8 +3340,8 @@ static void put_image_sub(struct canvas *__single cv,
     int64_t cx1 = xs + sw, cy1 = ys + sh;
     if (cx1 > cv->width)  { cx1 = cv->width; }
     if (cy1 > cv->height) { cy1 = cv->height; }
-    int rw = cx1 > cx0 ? (int)(cx1 - cx0) : 0;
-    int rh = cy1 > cy0 ? (int)(cy1 - cy0) : 0;
+    int const rw = cx1 > cx0 ? (int)(cx1 - cx0) : 0;
+    int const rh = cy1 > cy0 ? (int)(cy1 - cy0) : 0;
     if (rw <= 0 || rh <= 0 || !ensure_tile(cv, rw * rh)) {
         return;
     }
@@ -3350,8 +3350,8 @@ static void put_image_sub(struct canvas *__single cv,
     // Eight pixels per step: ld4 deinterleaves the RGBA8 source into channel
     // planes (cnvs_planar.h), a true _Float16 divide scales each to [0,1],
     // and the planar premultiply writes finished tile pixels through st4.
-    int col0 = (int)(cx0 - dx);
-    int row0 = (int)(cy0 - dy);
+    int const col0 = (int)(cx0 - dx);
+    int const row0 = (int)(cy0 - dy);
     _Float16 const k255 = (_Float16)255.0f;
     for (int py = 0; py < rh; py++) {
         int px = 0;
@@ -3362,8 +3362,8 @@ static void put_image_sub(struct canvas *__single cv,
             cnvs_px8_store(cv->tile + py * rw + px, cnvs_px8_premultiply(p));
         }
         if (px < rw) {
-            int k = rw - px;
-            int si = ((row0 + py) * w + (col0 + px)) * 4;
+            int const k = rw - px;
+            int const si = ((row0 + py) * w + (col0 + px)) * 4;
             cnvs_px8 p = cnvs_px8_load_rgba8_k(data + si, k);
             p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
             cnvs_px8_store_k(cv->tile + py * rw + px, k, cnvs_px8_premultiply(p));
@@ -3449,7 +3449,7 @@ void canvas_path2d_free(struct canvas_path2d *__single p) {
 
 static void p2d_push(struct canvas_path2d *__single p, p2d_cmd c) {
     if (p->ncmds >= p->cap) {
-        int nc = cnvs_grow_cap(p->cap, p->ncmds + 1);
+        int const nc = cnvs_grow_cap(p->cap, p->ncmds + 1);
         p2d_cmd *ncmds = realloc(p->cmds, (size_t)nc * sizeof *ncmds);
         if (!ncmds) {
             return;  // OOM: drop the command (best-effort, matches the path builders)
@@ -3524,7 +3524,7 @@ void canvas_path2d_add_path(struct canvas_path2d *__single dst,
 // transform each coordinate by the current CTM and flatten curves at device tol).
 static void p2d_replay(struct canvas *__single cv, struct canvas_path2d const *__single p) {
     for (int i = 0; i < p->ncmds; i++) {
-        p2d_cmd c = p->cmds[i];
+        p2d_cmd const c = p->cmds[i];
         float const *a = c.a;
         switch (c.verb) {
             case P2D_MOVE:       canvas_move_to(cv, a[0], a[1]); break;

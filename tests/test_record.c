@@ -199,7 +199,7 @@ static int slurp(char const *__null_terminated path, char *__counted_by(cap) buf
     if (!f) {
         return -1;
     }
-    size_t got = fread(buf, 1, (size_t)cap, f);
+    size_t const got = fread(buf, 1, (size_t)cap, f);
     (void)fclose(f);
     return (int)got;
 }
@@ -260,8 +260,8 @@ int main(void) {
 
         char a[1 << 14];
         char b[1 << 14];
-        int na = slurp(p1, a, (int)sizeof a);
-        int nb = slurp(p2, b, (int)sizeof b);
+        int const na = slurp(p1, a, (int)sizeof a);
+        int const nb = slurp(p2, b, (int)sizeof b);
         CHECK(na > 0);
         CHECK(na < (int)sizeof a);  // fit, so we compared the whole file
         CHECK(na == nb);

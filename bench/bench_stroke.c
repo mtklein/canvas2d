@@ -20,12 +20,12 @@ int main(void) {
     struct cnvs_verts verts = { .data = NULL, .nverts = 0, .cap = 0 };
     double sink = 0.0;
 
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             cnvs_verts_reset(&verts);
             for (int s = 0; s < path.nsubs; s++) {
-                cnvs_subpath sp = path.subs[s];
+                cnvs_subpath const sp = path.subs[s];
                 if (sp.count < 2) {
                     continue;
                 }

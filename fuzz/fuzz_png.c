@@ -21,16 +21,16 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     }
     // Modest dimensions: enough to exercise multi-segment (>65535-byte) zlib
     // blocks and the size math, while keeping the w*h*4 buffer small per run.
-    int w = (int)(((unsigned)data[0] | ((unsigned)data[1] << 8)) % 512u) + 1;  // 1..512
-    int h = (int)(((unsigned)data[2] | ((unsigned)data[3] << 8)) % 512u) + 1;
-    size_t need = (size_t)w * (size_t)h * 4u;
+    int const w = (int)(((unsigned)data[0] | ((unsigned)data[1] << 8)) % 512u) + 1;  // 1..512
+    int const h = (int)(((unsigned)data[2] | ((unsigned)data[3] << 8)) % 512u) + 1;
+    size_t const need = (size_t)w * (size_t)h * 4u;
 
     uint8_t *px = malloc(need);
     if (!px) {
         return 0;
     }
     // Fill from the remaining fuzz bytes (repeating) so adler32/CRC see varied data.
-    size_t src_len = size - 4;
+    size_t const src_len = size - 4;
     for (size_t i = 0; i < need; i++) {
         px[i] = src_len ? data[4 + (i % src_len)] : (uint8_t)i;
     }
@@ -49,10 +49,10 @@ int main(int argc, char **argv) {
             continue;
         }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
         uint8_t *buf = malloc(n > 0 ? (size_t)n : 1);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) {
             LLVMFuzzerTestOneInput(buf, got);

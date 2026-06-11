@@ -96,10 +96,10 @@ int main(int argc, char **argv) {
         FILE *f = fopen(argv[i], "rb");
         if (!f) { continue; }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
         uint8_t *buf = malloc(n > 0 ? (size_t)n : 1);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) { LLVMFuzzerTestOneInput(buf, got); free(buf); }
         (void)fprintf(stderr, "ok: %s (%zu bytes)\n", argv[i], got);

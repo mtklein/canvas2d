@@ -65,11 +65,11 @@ int main(void) {
     }
 
     char const *__null_terminated rb = getenv("BENCH_READBACK");
-    bool read_each = !(rb && rb[0] == 'e');
+    bool const read_each = !(rb && rb[0] == 'e');
 
     double sink = 0.0;
-    int reps = bench_reps();
-    double t0 = bench_now_s();
+    int const reps = bench_reps();
+    double const t0 = bench_now_s();
     for (int rep = 0; rep < reps; rep++) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
@@ -83,7 +83,7 @@ int main(void) {
         canvas_read_rgba(cv, px, len);
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
-    double secs = bench_now_s() - t0;
+    double const secs = bench_now_s() - t0;
 
     // Output pixels produced: one finished DIM*DIM canvas per frame (finished-frame
     // throughput, comparable across canvas sizes).

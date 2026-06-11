@@ -21,16 +21,16 @@ static inline cnvs_vec2 bench_rpt(float w, float h) {
 // Append `count` concave star polygons (5..19 spikes each) over a w x h area.
 static inline void bench_stars(struct cnvs_path *path, int count, float w, float h) {
     for (int k = 0; k < count; k++) {
-        float cx = bench_frand() * w;
-        float cy = bench_frand() * h;
-        int spikes = 5 + (int)(bench_frand() * 15.0f);
-        float r1 = 12.0f + bench_frand() * 60.0f;
-        float r2 = r1 * 0.45f;
-        int n = spikes * 2;
+        float const cx = bench_frand() * w;
+        float const cy = bench_frand() * h;
+        int const spikes = 5 + (int)(bench_frand() * 15.0f);
+        float const r1 = 12.0f + bench_frand() * 60.0f;
+        float const r2 = r1 * 0.45f;
+        int const n = spikes * 2;
         for (int i = 0; i < n; i++) {
-            float a = (float)i * (float)M_PI / (float)spikes;
-            float r = (i % 2 == 0) ? r1 : r2;
-            cnvs_vec2 p = { .x = cx + r * cosf(a), .y = cy + r * sinf(a) };
+            float const a = (float)i * (float)M_PI / (float)spikes;
+            float const r = (i % 2 == 0) ? r1 : r2;
+            cnvs_vec2 const p = { .x = cx + r * cosf(a), .y = cy + r * sinf(a) };
             if (i == 0) {
                 cnvs_path_move_to(path, p);
             } else {
@@ -47,13 +47,13 @@ static inline void bench_cover_path(struct cnvs_cover *cov, int w, int h,
                                     struct cnvs_path const *p) {
     cnvs_cover_reset(cov, w, h);
     for (int s = 0; s < p->nsubs; s++) {
-        cnvs_subpath sp = p->subs[s];
+        cnvs_subpath const sp = p->subs[s];
         if (sp.count < 2) {
             continue;
         }
         for (int k = 0; k < sp.count; k++) {
-            cnvs_vec2 a = p->pts[sp.start + k];
-            cnvs_vec2 b = p->pts[sp.start + (k + 1) % sp.count];
+            cnvs_vec2 const a = p->pts[sp.start + k];
+            cnvs_vec2 const b = p->pts[sp.start + (k + 1) % sp.count];
             cnvs_cover_add_edge(cov, w, h, a.x, a.y, b.x, b.y);
         }
     }
@@ -70,14 +70,14 @@ static inline double bench_fill_shapes(struct cnvs_cover *cover,
                                        enum cnvs_fill_rule rule) {
     double sink = 0.0;
     for (int s = 0; s < p->nsubs; s++) {
-        cnvs_subpath sp = p->subs[s];
+        cnvs_subpath const sp = p->subs[s];
         if (sp.count < 2) {
             continue;
         }
         float minx = p->pts[sp.start].x, maxx = minx;
         float miny = p->pts[sp.start].y, maxy = miny;
         for (int k = 1; k < sp.count; k++) {
-            cnvs_vec2 q = p->pts[sp.start + k];
+            cnvs_vec2 const q = p->pts[sp.start + k];
             minx = q.x < minx ? q.x : minx;
             maxx = q.x > maxx ? q.x : maxx;
             miny = q.y < miny ? q.y : miny;
@@ -96,8 +96,8 @@ static inline double bench_fill_shapes(struct cnvs_cover *cover,
         }
         cnvs_cover_reset(cover, bw, bh);
         for (int k = 0; k < sp.count; k++) {
-            cnvs_vec2 a = p->pts[sp.start + k];
-            cnvs_vec2 b = p->pts[sp.start + (k + 1) % sp.count];
+            cnvs_vec2 const a = p->pts[sp.start + k];
+            cnvs_vec2 const b = p->pts[sp.start + (k + 1) % sp.count];
             cnvs_cover_add_edge(cover, bw, bh, a.x - (float)x0, a.y - (float)y0,
                                 b.x - (float)x0, b.y - (float)y0);
         }

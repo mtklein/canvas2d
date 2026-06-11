@@ -13,7 +13,7 @@ void cnvs_cover_free(struct cnvs_cover *c) {
 }
 
 bool cnvs_cover_reset(struct cnvs_cover *c, int w, int h) {
-    int need = w * h;
+    int const need = w * h;
     if (need > c->cap) {
         float *na = realloc(c->acc, (size_t)need * sizeof *na);
         if (!na) {
@@ -47,8 +47,8 @@ static inline void deposit(struct cnvs_cover *c, int base, int w, int col, float
 // (xs, ys) to (xe, ye) with ys < ye, both in [y, y+1].
 static void accum_row(struct cnvs_cover *c, int w, int y,
                       float xs, float ys, float xe, float ye, float dir) {
-    int base = y * w;
-    float dyt = ye - ys;
+    int const base = y * w;
+    float const dyt = ye - ys;
     if (dyt <= 0.0f) {
         return;
     }
@@ -56,16 +56,16 @@ static void accum_row(struct cnvs_cover *c, int w, int y,
     float xhi = xs < xe ? xe : xs;
 
     if (xhi - xlo < 1e-7f) {  // vertical within the row: all cover in one column
-        float colf = floorf(xlo);
+        float const colf = floorf(xlo);
         deposit(c, base, w, cnvs_f2i(colf), xlo - colf, dir * dyt);
         return;
     }
 
-    float dydx = dyt / (xhi - xlo);  // dy per unit x (both spans positive)
+    float const dydx = dyt / (xhi - xlo);  // dy per unit x (both spans positive)
 
     // The part left of the raster contributes full cover to column 0.
     if (xlo < 0.0f) {
-        float clipx = xhi < 0.0f ? xhi : 0.0f;
+        float const clipx = xhi < 0.0f ? xhi : 0.0f;
         c->acc[base] += dir * (clipx - xlo) * dydx;
         if (xhi <= 0.0f) {
             return;
@@ -80,10 +80,10 @@ static void accum_row(struct cnvs_cover *c, int w, int y,
         xhi = (float)w;
     }
 
-    float clof = floorf(xlo);
-    float chif = floorf(xhi);
-    int clo = cnvs_f2i(clof);
-    int chi = cnvs_f2i(chif);
+    float const clof = floorf(xlo);
+    float const chif = floorf(xhi);
+    int const clo = cnvs_f2i(clof);
+    int const chi = cnvs_f2i(chif);
 
     if (clo == chi) {  // the whole span lies in one column
         // Area from the in-raster width, NOT dir*dyt: when the segment was
@@ -108,7 +108,7 @@ static void accum_row(struct cnvs_cover *c, int w, int y,
     // whole-vector bounds check per block (the resolve's memcpy idiom) instead
     // of two scattered checked writes per column.
     if (chi - clo >= 2) {
-        float d = dir * dydx;
+        float const d = dir * dydx;
         c->acc[base + clo + 1] += 0.5f * d;
         if (chi < w) {
             c->acc[base + chi] += 0.5f * d;
@@ -141,7 +141,7 @@ void cnvs_cover_add_edge(struct cnvs_cover *c, int w, int h,
     if (yb <= 0.0f || ya >= (float)h) {
         return;
     }
-    float dxdy = (xb - xa) / (yb - ya);
+    float const dxdy = (xb - xa) / (yb - ya);
     if (ya < 0.0f) {  // clip to the top of the raster
         xa += dxdy * (0.0f - ya);
         ya = 0.0f;
@@ -150,13 +150,13 @@ void cnvs_cover_add_edge(struct cnvs_cover *c, int w, int h,
         xb += dxdy * ((float)h - yb);
         yb = (float)h;
     }
-    float row0f = floorf(ya);
-    float row1f = ceilf(yb);
-    int row0 = cnvs_f2i(row0f);
-    int row1 = cnvs_f2i(row1f);
+    float const row0f = floorf(ya);
+    float const row1f = ceilf(yb);
+    int const row0 = cnvs_f2i(row0f);
+    int const row1 = cnvs_f2i(row1f);
     for (int y = row0; y < row1 && y < h; y++) {
-        float rtop = ya > (float)y ? ya : (float)y;
-        float rbot = yb < (float)(y + 1) ? yb : (float)(y + 1);
+        float const rtop = ya > (float)y ? ya : (float)y;
+        float const rbot = yb < (float)(y + 1) ? yb : (float)(y + 1);
         if (rbot <= rtop) {
             continue;
         }
@@ -171,8 +171,8 @@ static uint8_t cover_to_u8(enum cnvs_fill_rule rule, float run) {
     if (rule == CNVS_EVENODD) {
         // Triangle wave of period 2: fold the winding count to coverage without
         // fmodf's libm call (floorf lowers to a single frintm).
-        float t = run * 0.5f;
-        float m = (t - floorf(t)) * 2.0f;  // in [0, 2) for any sign of run
+        float const t = run * 0.5f;
+        float const m = (t - floorf(t)) * 2.0f;  // in [0, 2) for any sign of run
         cov = m > 1.0f ? 2.0f - m : m;
     } else {
         cov = fabsf(run);
@@ -189,13 +189,13 @@ static uint8_t cover_to_u8(enum cnvs_fill_rule rule, float run) {
 static uchar8 cover_to_u8x8(enum cnvs_fill_rule rule, float8 run) {
     float8 cov;
     if (rule == CNVS_EVENODD) {
-        float8 t = run * 0.5f;
-        float8 m = (t - __builtin_elementwise_floor(t)) * 2.0f;  // [0, 2)
+        float8 const t = run * 0.5f;
+        float8 const m = (t - __builtin_elementwise_floor(t)) * 2.0f;  // [0, 2)
         cov = __builtin_elementwise_min(m, 2.0f - m);           // == m>1 ? 2-m : m, bit-exact
     } else {
         cov = __builtin_elementwise_min((float8)1.0f, __builtin_elementwise_abs(run));
     }
-    float8 v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
+    float8 const v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
     return __builtin_convertvector(v, uchar8);
 }
 
@@ -204,7 +204,7 @@ static uchar8 cover_to_u8x8(enum cnvs_fill_rule rule, float8 run) {
 // zero-filled).  The tree association differs from a left-to-right scalar
 // sum, so the float rounding differs by <=1 ULP before the 8-bit quantize.
 static inline float8 prefix_sum8(float8 v) {
-    float8 z = (float8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+    float8 const z = (float8){ 0, 0, 0, 0, 0, 0, 0, 0 };
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1 (zero-fill)
     v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
     v += __builtin_shufflevector(v, z, 8, 8, 8, 8, 0, 1, 2, 3);  // += lane-4
@@ -217,7 +217,7 @@ void cnvs_cover_resolve(struct cnvs_cover *c, int w, int h, enum cnvs_fill_rule 
     // in-register prefix sum, plus a running scalar carry from earlier
     // blocks, feeds the coverage fold + 8-bit convert directly.
     for (int y = 0; y < h; y++) {
-        int base = y * w;
+        int const base = y * w;
         float carry = 0.0f;  // running total of all deltas before this block, this row
         int x = 0;
         for (; x + 8 <= w; x += 8) {

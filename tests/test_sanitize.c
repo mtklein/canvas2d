@@ -22,7 +22,7 @@ int main(void) {
     int const nbad = (int)(sizeof bad / sizeof bad[0]);
 
     for (int i = 0; i < nbad; i++) {
-        float v = bad[i];
+        float const v = bad[i];
         canvas_clear_rect(cv, v, v, v, v);                 // points_bbox (int) cast
 
         canvas_begin_path(cv);

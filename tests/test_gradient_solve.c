@@ -30,7 +30,7 @@ static bool col_near(cnvs_unpremul a, cnvs_unpremul b, float tol) {
 // Mirrors cnvs_gradient_color_at's segment selection; the lerp is exact.
 static void ref_color_at(struct cnvs_gradient const *gr, double t,
                          double *__counted_by(4) out) {
-    int n = gr->stop_count;
+    int const n = gr->stop_count;
     if (n == 0) {
         out[0] = out[1] = out[2] = out[3] = 0.0;
         return;
@@ -40,10 +40,10 @@ static void ref_color_at(struct cnvs_gradient const *gr, double t,
         c = gr->stops[n - 1].color;
         if (t < (double)gr->stops[n - 1].offset) {
             for (int i = 0; i + 1 < n; i++) {
-                double lo = (double)gr->stops[i].offset;
-                double hi = (double)gr->stops[i + 1].offset;
+                double const lo = (double)gr->stops[i].offset;
+                double const hi = (double)gr->stops[i + 1].offset;
                 if (t <= hi) {
-                    double u = hi > lo ? (t - lo) / (hi - lo) : 0.0;
+                    double const u = hi > lo ? (t - lo) / (hi - lo) : 0.0;
                     cnvs_unpremul a = gr->stops[i].color, b = gr->stops[i + 1].color;
                     out[0] = (double)a.r + ((double)b.r - (double)a.r) * u;
                     out[1] = (double)a.g + ((double)b.g - (double)a.g) * u;
@@ -79,12 +79,12 @@ static void check_color_row(struct cnvs_gradient const *gr) {
     int n = 0;
     t[n++] = -1.0f;  // the row solver's "outside" sentinel
     for (int s = 0; s < gr->stop_count && n + 3 <= N; s++) {
-        float o = gr->stops[s].offset;
+        float const o = gr->stops[s].offset;
         t[n++] = nextafterf(o, 0.0f);
         t[n++] = o;
         t[n++] = nextafterf(o, 1.0f);
     }
-    int base = n;
+    int const base = n;
     for (; n < N; n++) {
         t[n] = (float)(n - base) / (float)(N - 1 - base);  // dense [0,1]
     }
@@ -113,7 +113,7 @@ static void check_param_matches_row(struct cnvs_gradient const *gr, int x0, floa
     cnvs_gradient_param_row(gr, x0, y, n, row);
     for (int i = 0; i < n; i++) {
         float t = -2.0f;
-        bool ok = cnvs_gradient_param(gr, (cnvs_vec2){ .x = (float)(x0 + i) + 0.5f, .y = y }, &t);
+        bool const ok = cnvs_gradient_param(gr, (cnvs_vec2){ .x = (float)(x0 + i) + 0.5f, .y = y }, &t);
         if (row[i] < 0.0f) {
             CHECK(!ok);
         } else {
@@ -149,11 +149,11 @@ int main(void) {
 
     // 2. cnvs_gradient_sample(p, alpha) == color_at(param(p)) with alpha folded in.
     {
-        cnvs_vec2 p = { .x = 18.5f, .y = 8.0f };
+        cnvs_vec2 const p = { .x = 18.5f, .y = 8.0f };
         float t = -2.0f;
         CHECK(cnvs_gradient_param(&lin, p, &t));
-        cnvs_unpremul want = cnvs_gradient_color_at(&lin, t);
-        cnvs_unpremul got = cnvs_gradient_sample(&lin, p, 0.5f);
+        cnvs_unpremul const want = cnvs_gradient_color_at(&lin, t);
+        cnvs_unpremul const got = cnvs_gradient_sample(&lin, p, 0.5f);
         CHECK(fnear((float)got.r, (float)want.r, 2e-3f) &&
               fnear((float)got.g, (float)want.g, 2e-3f) &&
               fnear((float)got.b, (float)want.b, 2e-3f) &&
@@ -179,7 +179,7 @@ int main(void) {
     {
         struct cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p0 = { .x = 0.0f, .y = 0.0f },
                             .p1 = { .x = 1.0f, .y = 0.0f } };
-        cnvs_unpremul empty = cnvs_gradient_color_at(&g, 0.5f);
+        cnvs_unpremul const empty = cnvs_gradient_color_at(&g, 0.5f);
         CHECK(fnear((float)empty.a, 0.0f, 0.0f));
         cnvs_gradient_add_stop(&g, 0.5f, cnvs_unpremul_of(0.2f, 0.4f, 0.6f, 1.0f));
         CHECK(col_near(cnvs_gradient_color_at(&g, 0.0f), cnvs_gradient_color_at(&g, 1.0f), 0.0f));
@@ -221,7 +221,7 @@ int main(void) {
 
         struct cnvs_gradient full = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
         for (int k = 0; k < CNVS_STOPS_MAX; k++) {
-            float o = (float)k / (float)(CNVS_STOPS_MAX - 1);
+            float const o = (float)k / (float)(CNVS_STOPS_MAX - 1);
             cnvs_gradient_add_stop(&full, o,
                 cnvs_unpremul_of(o, 1.0f - o, 0.5f + 0.4f * sinf(20.0f * o), 1.0f));
         }

@@ -17,9 +17,9 @@ static float const TAU = 6.2831853f;
 
 // Unit direction and length of p0->p1; false if degenerate.
 static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
-    float dx = p1.x - p0.x;
-    float dy = p1.y - p0.y;
-    float l = sqrtf(dx * dx + dy * dy);
+    float const dx = p1.x - p0.x;
+    float const dy = p1.y - p0.y;
+    float const l = sqrtf(dx * dx + dy * dy);
     *dir = (cnvs_vec2){ .x = dx / l, .y = dy / l };
     *len = l;
     return !(l < 1e-6f);
@@ -38,22 +38,22 @@ static void stage_quad(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 a0, cnvs_vec2
 
 // Rectangle from p0 to p1 offset by +/-nrm, as two triangles.
 static bool emit_quad(struct cnvs_verts *out, cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 nrm) {
-    cnvs_vec2 a0 = { .x = p0.x + nrm.x, .y = p0.y + nrm.y };
-    cnvs_vec2 b0 = { .x = p0.x - nrm.x, .y = p0.y - nrm.y };
-    cnvs_vec2 a1 = { .x = p1.x + nrm.x, .y = p1.y + nrm.y };
-    cnvs_vec2 b1 = { .x = p1.x - nrm.x, .y = p1.y - nrm.y };
+    cnvs_vec2 const a0 = { .x = p0.x + nrm.x, .y = p0.y + nrm.y };
+    cnvs_vec2 const b0 = { .x = p0.x - nrm.x, .y = p0.y - nrm.y };
+    cnvs_vec2 const a1 = { .x = p1.x + nrm.x, .y = p1.y + nrm.y };
+    cnvs_vec2 const b1 = { .x = p1.x - nrm.x, .y = p1.y - nrm.y };
     cnvs_vec2 stage[6];
     stage_quad(stage, a0, b0, a1, b1);
     return cnvs_verts_append(out, stage, 6);
 }
 
 static int disc_segs(float r) {
-    float rr = r > 0.5f ? r : 0.5f;
+    float const rr = r > 0.5f ? r : 0.5f;
     float dtheta = 2.0f * acosf(fmaxf(0.0f, 1.0f - 0.25f / rr));
     if (!(dtheta > 1e-3f)) {
         dtheta = 1e-3f;
     }
-    float fs = ceilf(TAU / dtheta);
+    float const fs = ceilf(TAU / dtheta);
     int s = cnvs_f2i(fs);
     if (s < 8) {
         s = 8;
@@ -71,7 +71,7 @@ static int disc_segs(float r) {
 // 2x2 rotation per vertex; the recurrence's drift over the worst-case 64
 // segments stays far below the coverage quantizer.
 static bool emit_disc(struct cnvs_verts *out, cnvs_vec2 c, float r) {
-    int segs = disc_segs(r);
+    int const segs = disc_segs(r);
     cnvs_vec2 stage[3 * 64];
     float const step = TAU / (float)segs;
     float const cs = cosf(step), sn = sinf(step);
@@ -83,7 +83,7 @@ static bool emit_disc(struct cnvs_verts *out, cnvs_vec2 c, float r) {
         float const ny = dx * sn + dy * cs;
         dx = nx;
         dy = ny;
-        cnvs_vec2 cur = { .x = c.x + dx, .y = c.y + dy };
+        cnvs_vec2 const cur = { .x = c.x + dx, .y = c.y + dy };
         cnvs_vec2 *__counted_by(3) tri = stage + k;
         tri[0] = c;
         tri[1] = prev;
@@ -101,7 +101,7 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
                        cnvs_vec2 d1, float cross, float half_width,
                        enum cnvs_line_join join, float miter_limit) {
     // Outer side is opposite the turn.
-    float sgn = cross > 0.0f ? -1.0f : 1.0f;
+    float const sgn = cross > 0.0f ? -1.0f : 1.0f;
     cnvs_vec2 pa = { .x = v.x + sgn * -d0.y * half_width,
                      .y = v.y + sgn * d0.x * half_width };
     cnvs_vec2 pb = { .x = v.x + sgn * -d1.y * half_width,
@@ -111,10 +111,10 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
     stage[2] = pb;
     if (join == CNVS_JOIN_MITER) {
         // Miter tip = intersection of the two outer edges (pa,d0) and (pb,d1).
-        float s = ((pb.x - pa.x) * d1.y - (pb.y - pa.y) * d1.x) / cross;
-        cnvs_vec2 tip = { .x = pa.x + d0.x * s, .y = pa.y + d0.y * s };
-        float mx = tip.x - v.x;
-        float my = tip.y - v.y;
+        float const s = ((pb.x - pa.x) * d1.y - (pb.y - pa.y) * d1.x) / cross;
+        cnvs_vec2 const tip = { .x = pa.x + d0.x * s, .y = pa.y + d0.y * s };
+        float const mx = tip.x - v.x;
+        float const my = tip.y - v.y;
         if (sqrtf(mx * mx + my * my) <= miter_limit * half_width) {
             stage[3] = pa;
             stage[4] = tip;
@@ -132,7 +132,7 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
 static int join_at(struct cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
                    cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1, float half_width,
                    enum cnvs_line_join join, float miter_limit) {
-    float cross = d0.x * d1.y - d0.y * d1.x;
+    float const cross = d0.x * d1.y - d0.y * d1.x;
     if (cross > -1e-6f && cross < 1e-6f) {
         return k;  // collinear: no gap to fill
     }
@@ -149,7 +149,7 @@ static int join_at(struct cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, in
 static bool emit_join(struct cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
                       float half_width, enum cnvs_line_join join, float miter_limit) {
     cnvs_vec2 stage[48];
-    int k = join_at(out, stage, 0, v, d0, d1, half_width, join, miter_limit);
+    int const k = join_at(out, stage, 0, v, d0, d1, half_width, join, miter_limit);
     return k >= 0 && cnvs_verts_append(out, stage, k);
 }
 
@@ -162,8 +162,8 @@ static bool emit_cap(struct cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir,
     if (cap == CNVS_CAP_ROUND) {
         return emit_disc(out, e, half_width);
     }
-    cnvs_vec2 nrm = { .x = -capdir.y * half_width, .y = capdir.x * half_width };
-    cnvs_vec2 e2 = { .x = e.x + capdir.x * half_width, .y = e.y + capdir.y * half_width };
+    cnvs_vec2 const nrm = { .x = -capdir.y * half_width, .y = capdir.x * half_width };
+    cnvs_vec2 const e2 = { .x = e.x + capdir.x * half_width, .y = e.y + capdir.y * half_width };
     return emit_quad(out, e, e2, nrm);  // square: extend by half_width
 }
 
@@ -192,7 +192,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
         }
         m -= 1;
     }
-    int nseg = closed ? m : m - 1;
+    int const nseg = closed ? m : m - 1;
 
     bool have_prev = false;
     bool have_first = false;
@@ -215,23 +215,23 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             float8 q0, q1;
             memcpy(&q0, pts + s, sizeof q0);      // one bounds check, 4 points
             memcpy(&q1, pts + s + 1, sizeof q1);  // (x0,y0,x1,y1,...)
-            float8 dq = q1 - q0;                 // lane-wise p1 - p0
-            float4 dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
-            float4 dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
+            float8 const dq = q1 - q0;                 // lane-wise p1 - p0
+            float4 const dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
+            float4 const dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
             float4 len = __builtin_elementwise_sqrt(dx * dx + dy * dy);
             // Degenerate lanes divide too (IEEE: huge/inf/NaN, all discarded);
             // the emission pass skips them exactly where seg_dir bails.
             float4 dirx = dx / len;
             float4 diry = dy / len;
-            float4 nrmx = -diry * half_width;
-            float4 nrmy =  dirx * half_width;
+            float4 const nrmx = -diry * half_width;
+            float4 const nrmy =  dirx * half_width;
             // Corners in AoS form: nrm re-interleaved, then p +/- nrm is the
             // same lane-wise fadd/fsub the scalar corner math does.
             float8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
-            float8 za0 = q0 + nrm;
-            float8 zb0 = q0 - nrm;
-            float8 za1 = q1 + nrm;
-            float8 zb1 = q1 - nrm;
+            float8 const za0 = q0 + nrm;
+            float8 const zb0 = q0 - nrm;
+            float8 const za1 = q1 + nrm;
+            float8 const zb1 = q1 - nrm;
 
             // Transpose each quad's corners into vertex order -- (a0,b0,b1)
             // (a0,b1,a1) -- as three 16-byte stores.  A macro because shuffle
@@ -275,38 +275,38 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             // lane 0 with no carry yet) are computed and discarded.  Like the
             // quads, the wedges transpose to vertex order in-register; only
             // the two decision masks spill.
-            int4 degen = len < (float4)1e-6f;
-            bool vjoin = join != CNVS_JOIN_ROUND && !__builtin_reduce_or(degen);
+            int4 const degen = len < (float4)1e-6f;
+            bool const vjoin = join != CNVS_JOIN_ROUND && !__builtin_reduce_or(degen);
             cnvs_vec2 wedges[24];  // 4 joins x (pa, v, pb, pa, tip, pb)
             int col4[4], ok4[4];
             if (vjoin) {
-                float4 p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
-                float4 p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
+                float4 const p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
+                float4 const p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
                 float4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
                 float4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
                 d0x[0] = prev_dir.x;  // constant-index insert: stays in-register
                 d0y[0] = prev_dir.y;
-                float4 crs = d0x * diry - d0y * dirx;
+                float4 const crs = d0x * diry - d0y * dirx;
                 int4 col = (crs > (float4)-1e-6f) & (crs < (float4)1e-6f);
-                int4 pos = crs > (float4)0.0f;
+                int4 const pos = crs > (float4)0.0f;
                 // Outer side is opposite the turn (bit-exact +/-1 select).
                 float4 sgn = (float4)((pos & (int4)(float4)-1.0f) |
                                       (~pos & (int4)(float4)1.0f));
-                float4 pax = p0x + sgn * -d0y  * half_width;
-                float4 pay = p0y + sgn *  d0x  * half_width;
-                float4 pbx = p0x + sgn * -diry * half_width;
-                float4 pby = p0y + sgn *  dirx * half_width;
+                float4 const pax = p0x + sgn * -d0y  * half_width;
+                float4 const pay = p0y + sgn *  d0x  * half_width;
+                float4 const pbx = p0x + sgn * -diry * half_width;
+                float4 const pby = p0y + sgn *  dirx * half_width;
                 // Miter tip = intersection of the outer edges (pa,d0),(pb,d1).
-                float4 sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
-                float4 tipx = pax + d0x * sm;
-                float4 tipy = pay + d0y * sm;
-                float4 mx = tipx - p0x;
-                float4 my = tipy - p0y;
-                float mlim = miter_limit * half_width;
+                float4 const sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
+                float4 const tipx = pax + d0x * sm;
+                float4 const tipy = pay + d0y * sm;
+                float4 const mx = tipx - p0x;
+                float4 const my = tipy - p0y;
+                float const mlim = miter_limit * half_width;
                 int4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
                 float8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
                 float8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
-                float8 ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
+                float8 const ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
 #define CNVS_PUT_WEDGE(i)                                                        \
     do {                                                                         \
         float4 t0 = __builtin_shufflevector(zpa, q0, 2 * (i), 2 * (i) + 1,       \
@@ -370,12 +370,12 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             }
             s += 4;
         } else {
-            cnvs_vec2 p0 = pts[s];
-            cnvs_vec2 p1 = pts[(s + 1) % m];
+            cnvs_vec2 const p0 = pts[s];
+            cnvs_vec2 const p1 = pts[(s + 1) % m];
             cnvs_vec2 dir;
             float len;
             if (seg_dir(p0, p1, &dir, &len)) {
-                cnvs_vec2 nrm = { .x = -dir.y * half_width, .y = dir.x * half_width };
+                cnvs_vec2 const nrm = { .x = -dir.y * half_width, .y = dir.x * half_width };
                 if (!emit_quad(out, p0, p1, nrm)) {
                     return false;
                 }
@@ -402,7 +402,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
     if (closed) {
         return emit_join(out, pts[0], prev_dir, first_dir, half_width, join, miter_limit);
     }
-    cnvs_vec2 back = { .x = -first_dir.x, .y = -first_dir.y };
+    cnvs_vec2 const back = { .x = -first_dir.x, .y = -first_dir.y };
     return emit_cap(out, first_pt, back, half_width, cap) &&
            emit_cap(out, last_pt, prev_dir, half_width, cap);
 }
@@ -444,16 +444,16 @@ bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed
     int spans = 0;
     int const span_cap = 1 << 20;
 
-    int nseg = closed ? n : n - 1;
+    int const nseg = closed ? n : n - 1;
     for (int s = 0; s < nseg; s++) {
-        cnvs_vec2 a = pts[s];
-        cnvs_vec2 b = pts[(s + 1) % n];
+        cnvs_vec2 const a = pts[s];
+        cnvs_vec2 const b = pts[(s + 1) % n];
         cnvs_vec2 dir;
         float seglen;
         if (!seg_dir(a, b, &dir, &seglen)) {
             continue;
         }
-        cnvs_vec2 nrm = { .x = -dir.y * half_width, .y = dir.x * half_width };
+        cnvs_vec2 const nrm = { .x = -dir.y * half_width, .y = dir.x * half_width };
 
         float pos = 0.0f;
         while (pos < seglen) {
@@ -462,7 +462,7 @@ bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed
                 step = seglen - pos;
             }
             if (on) {
-                cnvs_vec2 p0 = { .x = a.x + dir.x * pos, .y = a.y + dir.y * pos };
+                cnvs_vec2 const p0 = { .x = a.x + dir.x * pos, .y = a.y + dir.y * pos };
                 cnvs_vec2 p1 = { .x = a.x + dir.x * (pos + step),
                                  .y = a.y + dir.y * (pos + step) };
                 if (!emit_quad(out, p0, p1, nrm)) {

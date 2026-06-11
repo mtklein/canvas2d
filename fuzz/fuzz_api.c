@@ -55,15 +55,15 @@ static int rd_range(struct cursor *c, int lo, int hi) {
     if (hi <= lo) {
         return lo;
     }
-    uint32_t span = (uint32_t)(hi - lo) + 1u;
-    uint32_t v = (uint32_t)rd_u8(c) << 8 | (uint32_t)rd_u8(c);
+    uint32_t const span = (uint32_t)(hi - lo) + 1u;
+    uint32_t const v = (uint32_t)rd_u8(c) << 8 | (uint32_t)rd_u8(c);
     return lo + (int)(v % span);
 }
 
 static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, int H) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int x = rd_range(c, -8, W + 8), y = rd_range(c, -8, H + 8);
-    int len = w * h * 4;                       // w,h <= 64 -> fits int
+    int const len = w * h * 4;                       // w,h <= 64 -> fits int
     uint8_t *__counted_by(len) out = malloc(len > 0 ? (size_t)len : 1);
     if (out) {
         canvas_get_image_data(cv, x, y, w, h, out, len);
@@ -74,7 +74,7 @@ static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, in
 static void do_image_put(struct canvas *__single cv, struct cursor *c) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int dx = rd_range(c, -8, 64), dy = rd_range(c, -8, 64);
-    int len = w * h * 4;
+    int const len = w * h * 4;
     uint8_t *__counted_by(len) data = malloc(len > 0 ? (size_t)len : 1);
     if (data) {
         for (int i = 0; i < len; i++) {
@@ -87,7 +87,7 @@ static void do_image_put(struct canvas *__single cv, struct cursor *c) {
 
 static void do_image_draw(struct canvas *__single cv, struct cursor *c) {
     int sw = rd_range(c, 1, 32), sh = rd_range(c, 1, 32);
-    int slen = sw * sh * 4;
+    int const slen = sw * sh * 4;
     uint8_t *__counted_by(slen) src = malloc((size_t)slen);
     if (src) {
         for (int i = 0; i < slen; i++) {
@@ -160,7 +160,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_SET_COMPOSITE:   canvas_set_global_composite_operation(cv,
                                          (enum canvas_composite_op)rd_range(&c, 0, 25)); break;
             case OP_SET_LINE_DASH: {
-                int n = rd_range(&c, 0, 8);
+                int const n = rd_range(&c, 0, 8);
                 float dash[8];
                 for (int i = 0; i < n; i++) {
                     dash[i] = rd_f32(&c);
@@ -223,11 +223,11 @@ int main(int argc, char **argv) {
             continue;
         }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
-        size_t cap = n > 0 ? (size_t)n : 1;
+        size_t const cap = n > 0 ? (size_t)n : 1;
         uint8_t *buf = malloc(cap);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) {
             LLVMFuzzerTestOneInput(buf, got);

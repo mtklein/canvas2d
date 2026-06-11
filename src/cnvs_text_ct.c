@@ -81,7 +81,7 @@ static bool copy_run(CTRunRef run, cnvs_glyph_run *dst) {
     CGGlyph *tg = malloc((size_t)gc * sizeof *tg);
     CGSize *ta = malloc((size_t)gc * sizeof *ta);
     CFIndex *ti = malloc((size_t)gc * sizeof *ti);
-    bool ok = dst->glyph && dst->xadv && dst->cluster && tg && ta && ti;
+    bool const ok = dst->glyph && dst->xadv && dst->cluster && tg && ta && ti;
     if (ok) {
         CFRange all = CFRangeMake(0, gc);
         CTRunGetGlyphs(run, all, tg);
@@ -157,8 +157,8 @@ void cnvs_glyph_curves(void *font, uint16_t glyph,
     if (!font) {
         return;
     }
-    unsigned upem = CTFontGetUnitsPerEm((CTFontRef)font);
-    double size = CTFontGetSize((CTFontRef)font);
+    unsigned const upem = CTFontGetUnitsPerEm((CTFontRef)font);
+    double const size = CTFontGetSize((CTFontRef)font);
     if (upem == 0 || size <= 0.0) {
         return;
     }
@@ -211,7 +211,7 @@ void cnvs_run_vmetrics(void const *font, float *asc1, float *desc1) {
     if (!font) {
         return;
     }
-    double size = CTFontGetSize((CTFontRef)font);
+    double const size = CTFontGetSize((CTFontRef)font);
     if (size <= 0.0) {
         return;
     }

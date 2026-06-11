@@ -56,7 +56,7 @@ int main(void) {
     cnvs_path_move_to(&p, v(0.0f, 0.0f));
     n0 = p.npts;
     CHECK(cnvs_path_cubic_to(&p, v(0.0f, 40.0f), v(40.0f, 40.0f), v(40.0f, 0.0f), 0.0f));
-    int deep = p.npts - n0;
+    int const deep = p.npts - n0;
     CHECK(deep > flat && deep >= 100);  // subdivided deeply, but bounded + terminated
 
     // Flattening, quad: same flat-vs-deep pair.

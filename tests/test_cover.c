@@ -6,7 +6,7 @@
 static void add_poly(struct cnvs_cover *c, int w, int h,
                      float const *__counted_by(2 * n) pts, int n) {
     for (int i = 0; i < n; i++) {
-        int j = (i + 1) % n;
+        int const j = (i + 1) % n;
         cnvs_cover_add_edge(c, w, h, pts[2 * i], pts[2 * i + 1],
                             pts[2 * j], pts[2 * j + 1]);
     }

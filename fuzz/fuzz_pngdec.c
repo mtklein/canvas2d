@@ -38,8 +38,8 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
         return 0;
     }
     if (size >= 24) {  // the output cap described above
-        uint32_t w32 = peek32be(data + 16);
-        uint32_t h32 = peek32be(data + 20);
+        uint32_t const w32 = peek32be(data + 16);
+        uint32_t const h32 = peek32be(data + 20);
         if (w32 <= 16384u && h32 <= 16384u && w32 * h32 > (1u << 20)) {
             return 0;
         }
@@ -73,10 +73,10 @@ int main(int argc, char **argv) {
             continue;
         }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
         uint8_t *buf = malloc(n > 0 ? (size_t)n : 1);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) {
             LLVMFuzzerTestOneInput(buf, got);

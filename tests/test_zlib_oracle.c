@@ -221,7 +221,7 @@ static void test_corpus(void) {
 
     for (int y = 0; y < 160; y++) {  // emoji-capture-like RGBA: mostly
         for (int x = 0; x < 160; x++) {  // transparent, a gradient disc of ink
-            int o = (y * 160 + x) * 4;
+            int const o = (y * 160 + x) * 4;
             if ((x - 80) * (x - 80) + (y - 80) * (y - 80) < 60 * 60) {
                 buf[o + 0] = (uint8_t)x;
                 buf[o + 1] = (uint8_t)y;

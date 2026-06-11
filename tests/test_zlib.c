@@ -169,10 +169,10 @@ static void round_trip(uint8_t const *__counted_by(n) src, int n) {
     uint8_t *__counted_by_or_null(bcap) back = malloc((size_t)bcap);
     CHECK(z != NULL && z2 != NULL && back != NULL);
     if (z && z2 && back) {
-        int zn = cnvs_zlib_deflate(z, zcap, src, n);
+        int const zn = cnvs_zlib_deflate(z, zcap, src, n);
         CHECK(zn > 0);
         CHECK(zn <= zcap);
-        int zn2 = cnvs_zlib_deflate(z2, zcap, src, n);
+        int const zn2 = cnvs_zlib_deflate(z2, zcap, src, n);
         CHECK(zn2 == zn);
         if (zn > 0 && zn2 == zn) {
             CHECK(memcmp(z, z2, (size_t)zn) == 0);
@@ -252,7 +252,7 @@ static void test_round_trips(void) {
 
     for (int y = 0; y < 160; y++) {  // emoji-capture-like RGBA: mostly
         for (int x = 0; x < 160; x++) {  // transparent, a gradient disc of ink
-            int o = (y * 160 + x) * 4;
+            int const o = (y * 160 + x) * 4;
             if ((x - 80) * (x - 80) + (y - 80) * (y - 80) < 60 * 60) {
                 buf[o + 0] = (uint8_t)x;
                 buf[o + 1] = (uint8_t)y;
@@ -325,7 +325,7 @@ static void test_multiblock_stored(void) {
         zs[at++] = (uint8_t)(nrest >> 8);
         memcpy(zs + at, plain + 65535, (size_t)rest);
         at += rest;
-        uint32_t adler = cnvs_zlib_adler32(plain, pn);
+        uint32_t const adler = cnvs_zlib_adler32(plain, pn);
         zs[at++] = (uint8_t)(adler >> 24);
         zs[at++] = (uint8_t)(adler >> 16);
         zs[at++] = (uint8_t)(adler >> 8);
@@ -603,7 +603,7 @@ static void test_bad_dynamic(void) {
         bw_put(&w, 0, 5);
         bw_put(&w, 14, 4);
         for (int i = 0; i < 18; i++) {
-            int v = i == 2 ? 1 : i == 3 ? 2 : i == 15 ? 3 : i == 17 ? 3 : 0;
+            int const v = i == 2 ? 1 : i == 3 ? 2 : i == 15 ? 3 : i == 17 ? 3 : 0;
             bw_put(&w, (uint32_t)v, 3);
         }
         bw_code(&w, 6, 3);   // len[0]=1
@@ -633,7 +633,7 @@ static void test_dynamic_single_dist(void) {
         // CL code over values {1, 2, 18}, lengths {1, 2, 2}: codes 1->0,
         // 2->10, 18->11.  Permutation indices: 18@2, 2@15, 1@17.
         for (int i = 0; i < 18; i++) {
-            int v = i == 2 ? 2 : i == 15 ? 2 : i == 17 ? 1 : 0;
+            int const v = i == 2 ? 2 : i == 15 ? 2 : i == 17 ? 1 : 0;
             bw_put(&w, (uint32_t)v, 3);
         }
         bw_code(&w, 3, 2);  // 18: 97 zeros   (lens[0..96] = 0)

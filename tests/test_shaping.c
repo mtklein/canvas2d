@@ -24,7 +24,7 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
 
     bool clusters_ok = true, any_rtl = false;
     for (int r = 0; r < s->nruns; r++) {
-        cnvs_glyph_run run = s->run[r];
+        cnvs_glyph_run const run = s->run[r];
         CHECK(run.count > 0);
         any_rtl = any_rtl || run.rtl;
         for (int i = 0; i < run.count; i++) {
@@ -38,10 +38,10 @@ static void check_shape(char const *__counted_by(len) text, int len, bool expect
         CHECK(any_rtl);
     }
 
-    float w = cnvs_shaped_width(s);
+    float const w = cnvs_shaped_width(s);
     CHECK(w > 0.0f);
-    int i0 = cnvs_shaped_index_at_x(s, 0.0f);
-    int i1 = cnvs_shaped_index_at_x(s, w * 0.99f);
+    int const i0 = cnvs_shaped_index_at_x(s, 0.0f);
+    int const i1 = cnvs_shaped_index_at_x(s, w * 0.99f);
     CHECK(i0 >= 0 && i0 < s->utf16s);
     CHECK(i1 >= 0 && i1 < s->utf16s);
     CHECK(cnvs_shaped_index_at_x(s, w + 100.0f) == -1);  // past the end
@@ -58,12 +58,12 @@ static void check_fallback(void) {
         return;
     }
     char name0[128] = { 0 };
-    int n0 = cnvs_run_font_name(s->run[0].font, name0, (int)sizeof name0);
+    int const n0 = cnvs_run_font_name(s->run[0].font, name0, (int)sizeof name0);
     CHECK(n0 > 0);
     bool distinct = false;
     for (int r = 1; r < s->nruns; r++) {
         char nm[128] = { 0 };
-        int n = cnvs_run_font_name(s->run[r].font, nm, (int)sizeof nm);
+        int const n = cnvs_run_font_name(s->run[r].font, nm, (int)sizeof nm);
         CHECK(n > 0);
         // Compare via the returned lengths + memcmp (the sized model), not strcmp
         // (the null-terminated model, which needs an unsafe bridge from an indexable
@@ -156,17 +156,17 @@ static void check_bidi(void) {
     if (!s) {
         return;
     }
-    float w = cnvs_shaped_width(s);
+    float const w = cnvs_shaped_width(s);
     cnvs_xspan sp[8];
 
     // Full selection collapses to one span covering the whole line.
-    int nfull = cnvs_shaped_selection(s, 0, s->utf16s, sp, 8);
+    int const nfull = cnvs_shaped_selection(s, 0, s->utf16s, sp, 8);
     CHECK(nfull == 1);
     CHECK(sp[0].x0 == 0.0f && sp[0].x1 > w - 0.5f && sp[0].x1 < w + 0.5f);
 
     // A logical range crossing the LTR<->RTL boundary maps to non-contiguous visual
     // positions, so it splits into >= 2 spans (the point of bidi selection).
-    int nsplit = cnvs_shaped_selection(s, 1, 5, sp, 8);
+    int const nsplit = cnvs_shaped_selection(s, 1, 5, sp, 8);
     CHECK(nsplit >= 2);
     for (int k = 0; k < nsplit; k++) {
         CHECK(sp[k].x0 <= sp[k].x1 && sp[k].x0 >= 0.0f && sp[k].x1 <= w + 0.5f);
@@ -177,7 +177,7 @@ static void check_bidi(void) {
 
     // Caret at the line start is 0; an index past the end is the line width.
     CHECK(cnvs_shaped_x_at_index(s, 0) == 0.0f);
-    float xe = cnvs_shaped_x_at_index(s, s->utf16s);
+    float const xe = cnvs_shaped_x_at_index(s, s->utf16s);
     CHECK(xe > w - 0.5f && xe < w + 0.5f);
 
     cnvs_shaped_free(s);
@@ -202,7 +202,7 @@ static void check_paragraph_direction(void) {
         // reorders, so allow the last-ulp wobble of float addition).
         float wl = cnvs_shaped_width(ltr), wr = cnvs_shaped_width(rtl);
         CHECK(wl > 0.0f);
-        float d = wl - wr;
+        float const d = wl - wr;
         CHECK(d < 0.01f && d > -0.01f);
     }
     cnvs_shaped_free(ltr);

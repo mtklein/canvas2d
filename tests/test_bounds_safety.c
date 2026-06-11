@@ -38,7 +38,7 @@ int main(void) {
 
     int status = 0;
     (void)waitpid(pid, &status, 0);
-    bool trapped = WIFSIGNALED(status);
+    bool const trapped = WIFSIGNALED(status);
     CHECK(trapped);
     if (!trapped && WIFEXITED(status)) {
         (void)fprintf(stderr, "child exited %d without trapping\n",

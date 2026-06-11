@@ -37,7 +37,7 @@ int main(void) {
     float const ang[4] = { 0.0f, (float)M_PI * 0.5f, (float)M_PI,
                            (float)M_PI * 1.5f };
     for (int i = 0; i < 4; i++) {
-        int x = (int)(cx + r * cosf(ang[i]));
+        int const x = (int)(cx + r * cosf(ang[i]));
         int y = (int)(cy + r * sinf(ang[i]));
         struct rgba p = pixel_at(px, len, W, x, y);
         CHECK(p.a > 250);  // ring centreline is solid everywhere, seam included

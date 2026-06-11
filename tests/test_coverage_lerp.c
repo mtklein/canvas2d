@@ -75,7 +75,7 @@ static double sep_ref(int mode, double cb, double cs) {
             return 2.0 * cs <= 1.0 ? 2.0 * cb * cs
                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
         case CANVAS_OP_SOFT_LIGHT: {
-            double dd = cb <= 0.25 ? ((16.0 * cb - 12.0) * cb + 4.0) * cb : sqrt(cb);
+            double const dd = cb <= 0.25 ? ((16.0 * cb - 12.0) * cb + 4.0) * cb : sqrt(cb);
             return cs <= 0.5 ? cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
                              : cb + (2.0 * cs - 1.0) * (dd - cb);
         }
@@ -91,9 +91,9 @@ typedef struct {
 static double lum_ref(drgb c) { return 0.3 * c.r + 0.59 * c.g + 0.11 * c.b; }
 
 static drgb clip_color_ref(drgb c) {
-    double l = lum_ref(c);
-    double n = dmin(c.r, dmin(c.g, c.b));
-    double x = dmax(c.r, dmax(c.g, c.b));
+    double const l = lum_ref(c);
+    double const n = dmin(c.r, dmin(c.g, c.b));
+    double const x = dmax(c.r, dmax(c.g, c.b));
     if (n < 0.0) {
         double k = l / (l - n);
         c.r = l + (c.r - l) * k;
@@ -105,7 +105,7 @@ static drgb clip_color_ref(drgb c) {
     // recompute x on the updated c, deviating from both; the bounds held
     // because the test grid rarely trips both fixes at once.)
     if (x > 1.0) {
-        double k = (1.0 - l) / (x - l);
+        double const k = (1.0 - l) / (x - l);
         c.r = l + (c.r - l) * k;
         c.g = l + (c.g - l) * k;
         c.b = l + (c.b - l) * k;
@@ -114,7 +114,7 @@ static drgb clip_color_ref(drgb c) {
 }
 
 static drgb set_lum_ref(drgb c, double l) {
-    double dl = l - lum_ref(c);
+    double const dl = l - lum_ref(c);
     return clip_color_ref((drgb){ c.r + dl, c.g + dl, c.b + dl });
 }
 
@@ -123,12 +123,12 @@ static double sat_ref(drgb c) {
 }
 
 static drgb set_sat_ref(drgb c, double s) {
-    double mn = dmin(c.r, dmin(c.g, c.b));
-    double mx = dmax(c.r, dmax(c.g, c.b));
+    double const mn = dmin(c.r, dmin(c.g, c.b));
+    double const mx = dmax(c.r, dmax(c.g, c.b));
     if (mx <= mn) {
         return (drgb){ 0.0, 0.0, 0.0 };
     }
-    double k = s / (mx - mn);
+    double const k = s / (mx - mn);
     return (drgb){ (c.r - mn) * k, (c.g - mn) * k, (c.b - mn) * k };
 }
 
@@ -143,7 +143,7 @@ static drgb nonsep_ref(int mode, drgb cb, drgb cs) {
 
 // The output clamp, lane-wise cnvs_px8_clamp_premul.
 static dpx clamp_premul_ref(dpx c) {
-    double ao = dmin(c.a, 1.0);
+    double const ao = dmin(c.a, 1.0);
     return (dpx){ dmax(0.0, dmin(ao, c.r)), dmax(0.0, dmin(ao, c.g)),
                   dmax(0.0, dmin(ao, c.b)), dmax(0.0, dmin(ao, c.a)) };
 }
@@ -272,15 +272,15 @@ static void part_a(void) {
             for (int di = 0; di < NDST; di++) {
                 cnvs_unpremul du = cnvs_unpremul_of(DSTS[di][0], DSTS[di][1],
                                                     DSTS[di][2], DSTS[di][3]);
-                cnvs_premul dp = cnvs_premultiply(du);
-                cnvs_premul sp = cnvs_premultiply(su);
+                cnvs_premul const dp = cnvs_premultiply(du);
+                cnvs_premul const sp = cnvs_premultiply(su);
                 for (int i = 0; i < N; i++) {
                     dstt[i] = dp;
                     full[i] = sp;
                     // The old shade fold, arithmetic-for-arithmetic: coverage
                     // widened and divided in f32, folded into the paint's
                     // alpha, one narrow to f16, then the f16 premultiply.
-                    float af = (float)su.a * ((float)i / 255.0f);
+                    float const af = (float)su.a * ((float)i / 255.0f);
                     fold[i] = cnvs_premultiply((cnvs_unpremul){
                         .r = su.r, .g = su.g, .b = su.b, .a = (_Float16)af });
                 }
@@ -382,8 +382,8 @@ static void coverage_ss(float const *__counted_by(n) vx,
             int hit = 0;
             for (int sy = 0; sy < SS; sy++) {
                 for (int sx = 0; sx < SS; sx++) {
-                    double px = (double)x + ((double)sx + 0.5) / (double)SS;
-                    double py = (double)y + ((double)sy + 0.5) / (double)SS;
+                    double const px = (double)x + ((double)sx + 0.5) / (double)SS;
+                    double const py = (double)y + ((double)sy + 0.5) / (double)SS;
                     hit += inside_poly(vx, vy, n, px, py) ? 1 : 0;
                 }
             }
@@ -424,25 +424,25 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
 
     // Pixel-aligned source-over rect fills onto transparent land the exact
     // premultiplied paint; mirror that for the reference's destination.
-    dpx dl = dpx_of(cnvs_premultiply(cnvs_unpremul_of(DL[0], DL[1], DL[2], DL[3])));
-    dpx dr = dpx_of(cnvs_premultiply(cnvs_unpremul_of(DR[0], DR[1], DR[2], DR[3])));
+    dpx const dl = dpx_of(cnvs_premultiply(cnvs_unpremul_of(DL[0], DL[1], DL[2], DL[3])));
+    dpx const dr = dpx_of(cnvs_premultiply(cnvs_unpremul_of(DR[0], DR[1], DR[2], DR[3])));
     // The non-folding shade tile is the premultiplied paint at full strength.
-    dpx s_d = dpx_of(cnvs_premultiply(cnvs_unpremul_of(sc[0], sc[1], sc[2], sc[3])));
+    dpx const s_d = dpx_of(cnvs_premultiply(cnvs_unpremul_of(sc[0], sc[1], sc[2], sc[3])));
 
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
-            dpx d = x < W / 2 ? dl : dr;
-            double k = cov[y * W + x];
-            dpx want = cov_lerp_ref(d, blend_ref(mode, s_d, d), k);
+            dpx const d = x < W / 2 ? dl : dr;
+            double const k = cov[y * W + x];
+            dpx const want = cov_lerp_ref(d, blend_ref(mode, s_d, d), k);
             // The old semantics, idealized in double: coverage folded into
             // the premultiplied source, blended at the folded strength.
-            dpx sf = { s_d.r * k, s_d.g * k, s_d.b * k, s_d.a * k };
-            dpx old = blend_ref(mode, sf, d);
+            dpx const sf = { s_d.r * k, s_d.g * k, s_d.b * k, s_d.a * k };
+            dpx const old = blend_ref(mode, sf, d);
             // Compare premultiplied: readback is unpremultiplied u8, so
             // re-premultiply (low-alpha pixels would otherwise amplify the
             // readback quantization).
-            int o = (y * W + x) * 4;
-            double a8 = (double)px[o + 3] / 255.0;
+            int const o = (y * W + x) * 4;
+            double const a8 = (double)px[o + 3] / 255.0;
             dpx got = { (double)px[o] / 255.0 * a8, (double)px[o + 1] / 255.0 * a8,
                         (double)px[o + 2] / 255.0 * a8, a8 };
             err_acc(en, got, want);
@@ -459,14 +459,14 @@ static void part_b(void) {
     // orientation and coverage value in one shape.
     float dx[NV], dy[NV];
     for (int i = 0; i < NV; i++) {
-        double t = 2.0 * 3.14159265358979323846 * i / (double)NV;
+        double const t = 2.0 * 3.14159265358979323846 * i / (double)NV;
         dx[i] = (float)(13.3 + 8.3 * cos(t));
         dy[i] = (float)(11.7 + 8.3 * sin(t));
     }
     // The thin diagonal: a 1.3px-wide quad from (4.2, 3.1) to (23.8, 20.6) --
     // every pixel it touches is partial coverage.
     double x0 = 4.2, y0 = 3.1, x1 = 23.8, y1 = 20.6, half_width = 0.65;
-    double len = hypot(x1 - x0, y1 - y0);
+    double const len = hypot(x1 - x0, y1 - y0);
     double nx = -(y1 - y0) / len * half_width, ny = (x1 - x0) / len * half_width;
     float qx[4] = { (float)(x0 + nx), (float)(x1 + nx),
                     (float)(x1 - nx), (float)(x0 - nx) };

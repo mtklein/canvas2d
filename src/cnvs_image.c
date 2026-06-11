@@ -28,10 +28,10 @@ void cnvs_blit_rgba(uint8_t *__counted_by(dw * dh * 4) dst, int dw, int dh,
     // Each clipped row is one contiguous RGBA8 run -- copy it whole.  One bounds
     // check per row instead of four per pixel: vectorizes, and amortizes the
     // -fbounds-safety per-element cost a byte-by-byte loop would pay in full.
-    size_t span = (size_t)(i1 - i0) * 4;
+    size_t const span = (size_t)(i1 - i0) * 4;
     for (int j = j0; j < j1; j++) {
-        int s = ((sy + j) * sw + sx + i0) * 4;
-        int d = ((dy + j) * dw + dx + i0) * 4;
+        int const s = ((sy + j) * sw + sx + i0) * 4;
+        int const d = ((dy + j) * dw + dx + i0) * 4;
         memcpy(dst + d, src + s, span);
     }
 }

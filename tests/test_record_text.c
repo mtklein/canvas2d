@@ -81,7 +81,7 @@ static int slurp(char const *__null_terminated path, char *__counted_by(cap) buf
     if (!f) {
         return -1;
     }
-    size_t got = fread(buf, 1, (size_t)cap, f);
+    size_t const got = fread(buf, 1, (size_t)cap, f);
     (void)fclose(f);
     return (int)got;
 }
@@ -250,8 +250,8 @@ static void check_dedup(void) {
     // Static buffers: roomy enough even if a capture ever compressed badly.
     static char a[1 << 19];
     static char b[1 << 19];
-    int na = slurp(once, a, (int)sizeof a);
-    int nb = slurp(twice, b, (int)sizeof b);
+    int const na = slurp(once, a, (int)sizeof a);
+    int const nb = slurp(twice, b, (int)sizeof b);
     CHECK(na > 0 && na < (int)sizeof a);
     CHECK(nb > 0 && nb < (int)sizeof b);
     if (na <= 0 || nb <= 0) {
@@ -296,7 +296,7 @@ static void check_size(void) {
         canvas_free(cv);
     }
     static char buf[1 << 19];
-    int n = slurp(path, buf, (int)sizeof buf);
+    int const n = slurp(path, buf, (int)sizeof buf);
     CHECK(n > 0);
     CHECK(n < 80 * 1024);
     CHECK(count_lines(buf, n > 0 ? n : 0, "bitmap ") == 1);  // the block IS there
@@ -344,10 +344,10 @@ static bool replay_fmt(struct canvas *__single cv, char const *__null_terminated
     }
     va_list ap;
     va_start(ap, fmt);
-    int r = vfprintf(f, fmt, ap);
+    int const r = vfprintf(f, fmt, ap);
     va_end(ap);
-    bool ok = r > 0 && fflush(f) == 0;
-    long n = ftell(f);
+    bool const ok = r > 0 && fflush(f) == 0;
+    long const n = ftell(f);
     (void)fclose(f);
     if (!ok || n <= 0 || (size_t)n >= sizeof prog) {
         return false;
@@ -543,7 +543,7 @@ static bool roundtrips(struct canvas *__single cv, FILE *__single f,
     if (fflush(f) != 0) {
         return false;
     }
-    long n = ftell(f);
+    long const n = ftell(f);
     if (n <= 0 || n > cap) {
         return false;
     }
@@ -808,7 +808,7 @@ static void check_direction_blocks(void) {
 
     // One shape block per direction, the bit telling them apart.
     static char buf[1 << 19];
-    int n = slurp(path, buf, (int)sizeof buf);
+    int const n = slurp(path, buf, (int)sizeof buf);
     CHECK(n > 0 && n < (int)sizeof buf);
     if (n <= 0) {
         return;

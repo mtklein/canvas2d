@@ -66,8 +66,8 @@ int main(void) {
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
                 for (int c = 0; c < 4; c++) {
-                    int d = (j * 4 + i) * 4 + c;
-                    int s = ((1 + j) * sw + (1 + i)) * 4 + c;
+                    int const d = (j * 4 + i) * 4 + c;
+                    int const s = ((1 + j) * sw + (1 + i)) * 4 + c;
                     if (dst[d] != src[s]) {
                         copied = false;
                     }

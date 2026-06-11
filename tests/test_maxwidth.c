@@ -47,7 +47,7 @@ int main(void) {
     }
     canvas_set_font_size(cv, 40.0f);
     char const *__null_terminated s = "Hello";
-    float adv = canvas_measure_text(cv, s);
+    float const adv = canvas_measure_text(cv, s);
     CHECK(adv > 0.0f);
 
     // Baseline: unconstrained render.

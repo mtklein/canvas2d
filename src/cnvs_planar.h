@@ -120,7 +120,7 @@ static inline cnvs_px8 cnvs_px8_load_rgba8_k(uint8_t const *__counted_by(4 * k) 
 static inline void cnvs_px8_store_rgba8_k(uint8_t *__counted_by(4 * k) p, int k,
                                           cnvs_px8 px) {
     for (int i = 0; i < k && i < 8; i++) {
-        half4 v = { px.r[i], px.g[i], px.b[i], px.a[i] };
+        half4 const v = { px.r[i], px.g[i], px.b[i], px.a[i] };
         uchar4 q = __builtin_convertvector(v, uchar4);
         memcpy(&p[i * 4], &q, sizeof q);
     }
@@ -193,7 +193,7 @@ static inline cnvs_px8 cnvs_px8_premultiply(cnvs_px8 p) {
 // premultiplied invariant rgb <= a.
 static inline cnvs_px8 cnvs_px8_clamp_premul(cnvs_px8 co) {
     half8 const zero = (half8)(_Float16)0.0f;
-    half8 ao = __builtin_elementwise_min(co.a, (half8)(_Float16)1.0f);
+    half8 const ao = __builtin_elementwise_min(co.a, (half8)(_Float16)1.0f);
     co.r = __builtin_elementwise_max(zero, __builtin_elementwise_min(ao, co.r));
     co.g = __builtin_elementwise_max(zero, __builtin_elementwise_min(ao, co.g));
     co.b = __builtin_elementwise_max(zero, __builtin_elementwise_min(ao, co.b));

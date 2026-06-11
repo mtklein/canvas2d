@@ -32,15 +32,15 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     if (!out) {
         return 0;
     }
-    int got = cnvs_zlib_inflate(out, cap, data, (int)size);
+    int const got = cnvs_zlib_inflate(out, cap, data, (int)size);
     if (got >= 0) {
-        int zcap = cnvs_zlib_bound(got);
+        int const zcap = cnvs_zlib_bound(got);
         uint8_t *z = malloc((size_t)zcap);
         uint8_t *back = malloc(got > 0 ? (size_t)got : 1);  // exact-size: redzones bite
         if (z && back) {
-            int zn = cnvs_zlib_deflate(z, zcap, out, got);
+            int const zn = cnvs_zlib_deflate(z, zcap, out, got);
             assert(zn > 0);
-            int bn = cnvs_zlib_inflate(back, got, z, zn);
+            int const bn = cnvs_zlib_inflate(back, got, z, zn);
             assert(bn == got);
             assert(got == 0 || memcmp(back, out, (size_t)got) == 0);
         }
@@ -60,10 +60,10 @@ int main(int argc, char **argv) {
             continue;
         }
         fseek(f, 0, SEEK_END);
-        long n = ftell(f);
+        long const n = ftell(f);
         fseek(f, 0, SEEK_SET);
         uint8_t *buf = malloc(n > 0 ? (size_t)n : 1);
-        size_t got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
+        size_t const got = buf ? fread(buf, 1, n > 0 ? (size_t)n : 0, f) : 0;
         fclose(f);
         if (buf) {
             LLVMFuzzerTestOneInput(buf, got);

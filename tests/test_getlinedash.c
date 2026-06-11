@@ -17,7 +17,7 @@ int main(void) {
     // Round-trip an even pattern.
     float const dash[4] = { 4.0f, 2.0f, 6.0f, 1.0f };
     canvas_set_line_dash(cv, dash, 4);
-    int n = canvas_get_line_dash(cv, out, 8);
+    int const n = canvas_get_line_dash(cv, out, 8);
     CHECK(n == 4);
     CHECK(fabsf(out[0] - 4.0f) < 1e-6f);
     CHECK(fabsf(out[1] - 2.0f) < 1e-6f);

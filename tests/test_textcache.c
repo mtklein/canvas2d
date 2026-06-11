@@ -126,7 +126,7 @@ static void check_eviction(void) {
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(churn);
     canvas_set_font_size(churn, 16.0f);
 
-    float w0 = canvas_measure_text(churn, "s0");
+    float const w0 = canvas_measure_text(churn, "s0");
     char last[3] = { 0 };
     for (int i = 1; i <= CNVS_SHAPING_CACHE_N; i++) {  // fill every slot, plus one
         last[0] = 's';                               // distinct two-letter keys
@@ -137,7 +137,7 @@ static void check_eviction(void) {
     }
     CHECK(c->shaping_misses == CNVS_SHAPING_CACHE_N + 1);
 
-    int hits = c->shaping_hits;
+    int const hits = c->shaping_hits;
     // Evicted: re-shaped from the boundary, to the bit-identical width.
     CHECK(fabsf(canvas_measure_text(churn, "s0") - w0) <= 0.0f);
     CHECK(c->shaping_misses == CNVS_SHAPING_CACHE_N + 2);
@@ -199,7 +199,7 @@ static void check_fallback_fonts(void) {
     canvas_fill_text(cv, "A\xD7\x90", 2.0f, 30.0f);  // A + aleph
     CHECK(c->nfonts >= 2);
     CHECK(c->glyph_count == c->glyph_misses);  // every miss inserted exactly once
-    int gmiss = c->glyph_misses;
+    int const gmiss = c->glyph_misses;
     canvas_fill_text(cv, "A\xD7\x90", 2.0f, 30.0f);
     CHECK(c->glyph_misses == gmiss);  // both fonts' glyphs hit on the redraw
 

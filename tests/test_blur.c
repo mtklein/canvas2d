@@ -13,7 +13,7 @@ static int clampi(int v, int lo, int hi) {
 // window sum, edge-clamped, with the same (sum + win/2) / win quantize.
 static void ref_blur_h_row(uint8_t *__counted_by(w) dst,
                            uint8_t const *__counted_by(w) src, int w, int r) {
-    int win = 2 * r + 1;
+    int const win = 2 * r + 1;
     for (int x = 0; x < w; x++) {
         int sum = 0;
         for (int k = -r; k <= r; k++) {
@@ -29,7 +29,7 @@ static void ref_blur_h_row(uint8_t *__counted_by(w) dst,
 static void ref_blur_v_col(uint8_t *__counted_by(h) dst,
                            uint8_t const *__counted_by(w * h) src,
                            int w, int h, int x, int r) {
-    int win = 2 * r + 1;
+    int const win = 2 * r + 1;
     for (int y = 0; y < h; y++) {
         int sum = 0;
         for (int k = -r; k <= r; k++) {
@@ -138,7 +138,7 @@ int main(void) {
     int cx = 16, cy = 12;
     src[cy * w + cx] = 255;
     blur_box_h(dst, src, w, h, r);
-    uint8_t lvl = (uint8_t)((255 + win / 2) / win);
+    uint8_t const lvl = (uint8_t)((255 + win / 2) / win);
     CHECK(dst[cy * w + cx] == lvl);
     CHECK(dst[cy * w + cx - r] == lvl && dst[cy * w + cx + r] == lvl);  // window edge
     CHECK(dst[cy * w + cx - r - 1] == 0 && dst[cy * w + cx + r + 1] == 0);  // outside

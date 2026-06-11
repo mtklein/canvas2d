@@ -86,7 +86,7 @@ static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
     }
     uint32_t c = 0xFFFFFFFFu;
     for (size_t i = 0; i < n; i++) {
-        uint32_t idx = (c ^ p[i]) & 0xFFu;
+        uint32_t const idx = (c ^ p[i]) & 0xFFu;
         c = table[idx] ^ (c >> 8);
     }
     return c ^ 0xFFFFFFFFu;
@@ -185,7 +185,7 @@ cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
     }
 
     put32be(&w, 13u);
-    size_t ihdr = w.at;
+    size_t const ihdr = w.at;
     put8(&w, 'I'); put8(&w, 'H'); put8(&w, 'D'); put8(&w, 'R');
     put32be(&w, (uint32_t)width);
     put32be(&w, (uint32_t)height);
@@ -197,13 +197,13 @@ cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
     put32be(&w, crc32_buf(w.buf + ihdr, w.at - ihdr));
 
     put32be(&w, (uint32_t)zn);
-    size_t idat = w.at;
+    size_t const idat = w.at;
     put8(&w, 'I'); put8(&w, 'D'); put8(&w, 'A'); put8(&w, 'T');
     put_bytes(&w, z, (size_t)zn);
     put32be(&w, crc32_buf(w.buf + idat, w.at - idat));
 
     put32be(&w, 0u);
-    size_t iend = w.at;
+    size_t const iend = w.at;
     put8(&w, 'I'); put8(&w, 'E'); put8(&w, 'N'); put8(&w, 'D');
     put32be(&w, crc32_buf(w.buf + iend, w.at - iend));
 

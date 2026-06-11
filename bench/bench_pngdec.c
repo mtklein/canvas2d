@@ -39,7 +39,7 @@ int main(void) {
     (void)fclose(f);
 
     double sink = 0.0;
-    int reps = bench_reps();
+    int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             int w = 0, h = 0, len = 0;

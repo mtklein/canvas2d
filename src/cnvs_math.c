@@ -29,7 +29,7 @@ cnvs_mat cnvs_mat_scale(float sx, float sy) {
 }
 
 cnvs_mat cnvs_mat_rotate(float radians) {
-    float s = sinf(radians);
+    float const s = sinf(radians);
     float c = cosf(radians);
     return (cnvs_mat){ .a = c, .c = -s, .e = 0.0f,
                        .b = s, .d =  c, .f = 0.0f };
@@ -43,11 +43,11 @@ cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p) {
 }
 
 cnvs_mat cnvs_mat_invert(cnvs_mat m) {
-    float det = m.a * m.d - m.b * m.c;
+    float const det = m.a * m.d - m.b * m.c;
     if (det < 1e-12f && det > -1e-12f) {
         return cnvs_mat_identity();
     }
-    float inv = 1.0f / det;
+    float const inv = 1.0f / det;
     cnvs_mat r = { .a =  m.d * inv, .c = -m.c * inv,
                    .b = -m.b * inv, .d =  m.a * inv };
     r.e = -(r.a * m.e + r.c * m.f);
@@ -63,7 +63,7 @@ cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {
 cnvs_premul cnvs_premultiply(cnvs_unpremul c) {
     // {r*a, g*a, b*a, a}, clamped to [0,1], in _Float16 directly
     // (docs/decisions/color-axis.md).
-    half4 p = { c.r, c.g, c.b, c.a };
+    half4 const p = { c.r, c.g, c.b, c.a };
     _Float16 a = p[3];
     half4 out = p * (half4){ a, a, a, (_Float16)1.0f };
     out = __builtin_elementwise_min((half4)(_Float16)1.0f,

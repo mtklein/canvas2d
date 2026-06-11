@@ -74,9 +74,9 @@ int main(void) {
     canvas_set_fill_rgba(cv, 1.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);
     for (int i = 0; i < 5; i++) {
-        float a = -(float)M_PI * 0.5f + (float)i * (4.0f * (float)M_PI / 5.0f);
-        float sx = 32.0f + 28.0f * cosf(a);
-        float sy = 32.0f + 28.0f * sinf(a);
+        float const a = -(float)M_PI * 0.5f + (float)i * (4.0f * (float)M_PI / 5.0f);
+        float const sx = 32.0f + 28.0f * cosf(a);
+        float const sy = 32.0f + 28.0f * sinf(a);
         if (i == 0) {
             canvas_move_to(cv, sx, sy);
         } else {

@@ -251,7 +251,7 @@ static void check_draw_measure(void) {
     }
     canvas_set_font_size(cv, 24.0f);
     canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
-    float w = canvas_measure_text(cv, heb);
+    float const w = canvas_measure_text(cv, heb);
     CHECK(w > 0.0f);
 
     canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
@@ -298,11 +298,11 @@ static void check_mixed_reorders(void) {
         return;
     }
     canvas_set_font_size(cv, 24.0f);
-    float wl = canvas_measure_text(cv, mixed);
+    float const wl = canvas_measure_text(cv, mixed);
     canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
-    float wr = canvas_measure_text(cv, mixed);
+    float const wr = canvas_measure_text(cv, mixed);
     CHECK(wl > 0.0f);
-    float d = wl - wr;  // same advances, summed in another order
+    float const d = wl - wr;  // same advances, summed in another order
     CHECK(d < 0.01f && d > -0.01f);
     canvas_free(cv);
 }

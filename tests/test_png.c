@@ -151,7 +151,7 @@ static void test_encode_structure(void) {
     CHECK(rd32be(enc, sz, 20) == (uint32_t)h);
 
     // IEND is the final 12 bytes.
-    int e = sz - 12;
+    int const e = sz - 12;
     CHECK(rd32be(enc, sz, e) == 0u);
     CHECK(enc[e + 4] == 'I' && enc[e + 5] == 'E' &&
           enc[e + 6] == 'N' && enc[e + 7] == 'D');
@@ -224,7 +224,7 @@ static void test_reject_corruption(void) {
     static int const damage[] = { 8 + 8, 8 + 8 + 13, idat_off + 9, 0 /*IEND crc*/ };
     for (int d = 0; d < 4; d++) {
         memcpy(m, enc, (size_t)sz);
-        int off = damage[d] != 0 ? damage[d] : sz - 1;
+        int const off = damage[d] != 0 ? damage[d] : sz - 1;
         m[off] ^= 0x01u;
         expect_reject(m, sz);
     }
@@ -438,7 +438,7 @@ static void test_chunk_sequencing(void) {
     {  // ...but an ancillary chunk with a bad CRC rejects (CRC checked on all)
         memcpy(png, sig, sizeof sig);
         int at = put_chunk(png, cap, 8, "IHDR", ihdr, 13);
-        int text_at = at;
+        int const text_at = at;
         at = put_chunk(png, cap, at, "tEXt", note, 4);
         png[text_at + 8 + 4] ^= 0x01u;  // CRC byte
         at = put_chunk(png, cap, at, "IDAT", z, zn);
