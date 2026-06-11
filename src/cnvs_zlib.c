@@ -323,8 +323,8 @@ int cnvs_zlib_deflate(uint8_t *__counted_by(dcap) dst, int dcap,
     uint32_t adler = cnvs_zlib_adler32(src, (size_t)n);
     putbits(&w, (adler >> 24) & 0xFFu, 8);  // trailer is big-endian, unlike the
     putbits(&w, (adler >> 16) & 0xFFu, 8);  // deflate bit stream
-    putbits(&w, (adler >> 8) & 0xFFu, 8);
-    putbits(&w, adler & 0xFFu, 8);
+    putbits(&w, (adler >>  8) & 0xFFu, 8);
+    putbits(&w,  adler        & 0xFFu, 8);
     return w.full ? -1 : w.at;
 }
 
@@ -660,7 +660,7 @@ static bool stored_block(struct bitrd *b, uint8_t *__counted_by(dcap) dst, int d
     if (b->n - b->at < 4) {
         return false;  // truncated LEN/NLEN
     }
-    uint32_t const len = (uint32_t)b->src[b->at] | ((uint32_t)b->src[b->at + 1] << 8);
+    uint32_t const len  = (uint32_t)b->src[b->at]     | ((uint32_t)b->src[b->at + 1] << 8);
     uint32_t const nlen = (uint32_t)b->src[b->at + 2] | ((uint32_t)b->src[b->at + 3] << 8);
     b->at += 4;
     if ((len ^ nlen) != 0xFFFFu) {
@@ -841,8 +841,8 @@ int cnvs_zlib_inflate(uint8_t *__counted_by(dcap) dst, int dcap,
     if (n - pos != 4) {
         return -1;
     }
-    uint32_t want = ((uint32_t)src[pos] << 24) | ((uint32_t)src[pos + 1] << 16) |
-                    ((uint32_t)src[pos + 2] << 8) | (uint32_t)src[pos + 3];
+    uint32_t want = ((uint32_t)src[pos]     << 24) | ((uint32_t)src[pos + 1] << 16) |
+                    ((uint32_t)src[pos + 2] <<  8) |  (uint32_t)src[pos + 3]       ;
     if (want != cnvs_zlib_adler32(dst, (size_t)out)) {
         return -1;
     }
