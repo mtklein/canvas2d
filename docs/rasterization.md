@@ -251,7 +251,7 @@ Each entry: the idea, what it buys, what it costs, how it composes with
 ### 3.1 Finish the planar conversion through the shade stage
 
 **Idea.** `paint_tile`'s inner loop, 8 pixels per step: load 8 coverage bytes as
-one f16 plane (`cnvs_h8_from_u8` — exists), fold `paint_alpha × global_alpha ×
+one f16 plane (`half8_from_u8` — exists), fold `paint_alpha × global_alpha ×
 coverage` as plane math, `cnvs_px8_premultiply` (exists), `cnvs_px8_store`
 (exists). For solid paint the whole loop is a color splat, ~4 multiplies, and an
 st4 per 8 pixels. For gradients, `cnvs_gradient_color_row` already produces a row
