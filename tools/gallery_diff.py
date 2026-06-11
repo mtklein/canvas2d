@@ -14,7 +14,8 @@ data: URIs keep the canvas untainted for pixel work).
 Keys in the page: `o` for the ranked overview; j/k scan scenes in the nav's
 ranked order (arrows are left to the browser, for scrolling); 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
 the blink clock and steps it by hand (Enter resumes), [ and ] adjust heatmap
-gain, + and - adjust loupe zoom, m toggles the loupe.
+gain, + and - adjust loupe zoom, m toggles the loupe, and a left-click pins
+the loupe in place (another click releases it back to following the mouse).
 
 Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
 per-pixel magnitude crediting with diminishing (sqrt) returns.  Hovering any
@@ -156,7 +157,7 @@ TEMPLATE = r"""<!doctype html>
 <script>
 const scenes = __SCENES__;
 let cur = -1, mode = "blink", gain = 16, blinkShow = 0, blinkTimer = null,
-    paused = false, zoom = 8, loupeOn = true, swipeFrac = 0.5,
+    paused = false, zoom = 8, loupeOn = true, swipeFrac = 0.5, pinned = false,
     hover = null;  // {x, y} in image space; persists across modes and wiggles
 const nav = document.getElementById("nav"), view = document.getElementById("view"),
       stats = document.getElementById("stats"),
@@ -274,16 +275,26 @@ function overview() {
 
 function hideLoupe() { loupe.style.display = "none"; }
 
+function imgXY(el, e) {  // event -> image-space pixel, or null off-image
+  const s = scenes[cur]; if (!s.px) return null;
+  const r = el.getBoundingClientRect();
+  // Displayed at natural size (border 1px); map to pixel coords directly.
+  const x = Math.floor((e.clientX - r.left - 1) * s.px.w / (r.width - 2));
+  const y = Math.floor((e.clientY - r.top  - 1) * s.px.h / (r.height - 2));
+  return (x < 0 || y < 0 || x >= s.px.w || y >= s.px.h) ? null : {x, y};
+}
+
 function watch(el) {  // arm an element as a loupe position source
   el.addEventListener("mousemove", e => {
+    if (!loupeOn || cur < 0 || pinned) return;  // a pinned loupe stays put
+    const at = imgXY(el, e); if (!at) return;
+    hover = at;
+    drawLoupe();
+  });
+  el.addEventListener("click", e => {  // click pins the loupe; click frees it
     if (!loupeOn || cur < 0) return;
-    const s = scenes[cur]; if (!s.px) return;
-    const r = el.getBoundingClientRect();
-    // Displayed at natural size (border 1px); map to pixel coords directly.
-    const x = Math.floor((e.clientX - r.left - 1) * s.px.w / (r.width - 2));
-    const y = Math.floor((e.clientY - r.top  - 1) * s.px.h / (r.height - 2));
-    if (x < 0 || y < 0 || x >= s.px.w || y >= s.px.h) return;
-    hover = {x, y};
+    pinned = !pinned;
+    if (!pinned) { const at = imgXY(el, e); if (at) hover = at; }  // resume here
     drawLoupe();
   });
 }
@@ -301,7 +312,7 @@ function drawLoupe() {
   const n = Math.max(3, Math.floor(200 / zoom) | 1), half = n >> 1;
   cx.clearRect(0, 0, 200, 200);
   cx.drawImage(blinkShow ? cvb : cva, x - half, y - half, n, n, 0, 0, n * zoom, n * zoom);
-  cx.strokeStyle = "#3d77d8"; cx.lineWidth = 2;
+  cx.strokeStyle = pinned ? "#e8b34b" : "#3d77d8"; cx.lineWidth = 2;
   cx.strokeRect(half * zoom, half * zoom, zoom, zoom);  // the metered pixel
   const i = 4 * (y * w + x);
   const hex = p => "#" + [0,1,2,3].map(k => p[i+k].toString(16).padStart(2, "0")).join("").toUpperCase();
@@ -316,7 +327,8 @@ function drawLoupe() {
     // text changes (blink/pause flips, cursor moves) -- that jars the eye
     // off the pixels.  Status is always present; numbers pad to max width.
     `<span class="dim">Δmax ${String(dmax).padStart(3)}/255 (${String(x).padStart(4)},${String(y).padStart(4)})`
-      + ` ${String(zoom).padStart(2)}x ${paused ? "paused" : "auto  "}</span>`,
+      + ` ${String(zoom).padStart(2)}x ${paused ? "paused" : "auto  "}`
+      + ` ${pinned ? "pinned" : "      "}</span>`,
   ].join("\n");
   loupe.style.display = "block";
 }
