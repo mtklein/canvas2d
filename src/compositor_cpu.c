@@ -35,11 +35,14 @@
 // mode blends at full strength and lerps (test_coverage_lerp is the
 // supersampled-oracle gate).
 
-// minh/maxh as lane selects -- exactly the scalar `a < b ? a : b`, which can
-// differ from fminnm/fmaxnm on signed zeros and NaN ordering, so spell the
-// select out and let the compiler substitute only what it can prove.
-static cnvs_h8 minh8(cnvs_h8 a, cnvs_h8 b) { return cnvs_h8_sel(a < b, a, b); }
-static cnvs_h8 maxh8(cnvs_h8 a, cnvs_h8 b) { return cnvs_h8_sel(a > b, a, b); }
+// minh/maxh: one fminnm/fmaxnm per plane.  These differ from the old
+// compare+select spelling (`a < b ? a : b`) only on signed zeros and NaN
+// ordering: every NaN reaching a min/max here sits in a lane a bitwise select
+// later discards, and the premultiplied inputs are non-negative, so neither
+// case survives to an output byte.  The select spelling existed to bit-match
+// the scalar kernel the planar conversion replaced; that reference is gone.
+static cnvs_h8 minh8(cnvs_h8 a, cnvs_h8 b) { return __builtin_elementwise_min(a, b); }
+static cnvs_h8 maxh8(cnvs_h8 a, cnvs_h8 b) { return __builtin_elementwise_max(a, b); }
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
 static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
