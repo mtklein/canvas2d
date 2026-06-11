@@ -98,12 +98,14 @@ static bool emit_disc(struct cnvs_verts *out, cnvs_vec2 c, float r) {
 // between incoming dir d0 and outgoing dir d1; `cross` is d0 x d1, nonzero.
 // Returns the vertex count staged: 3 or 6.
 static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 d0,
-                       cnvs_vec2 d1, float cross, float hw, enum cnvs_line_join join,
-                       float miter_limit) {
+                       cnvs_vec2 d1, float cross, float half_width,
+                       enum cnvs_line_join join, float miter_limit) {
     // Outer side is opposite the turn.
     float sgn = cross > 0.0f ? -1.0f : 1.0f;
-    cnvs_vec2 pa = { .x = v.x + sgn * -d0.y * hw, .y = v.y + sgn * d0.x * hw };
-    cnvs_vec2 pb = { .x = v.x + sgn * -d1.y * hw, .y = v.y + sgn * d1.x * hw };
+    cnvs_vec2 pa = { .x = v.x + sgn * -d0.y * half_width,
+                     .y = v.y + sgn * d0.x * half_width };
+    cnvs_vec2 pb = { .x = v.x + sgn * -d1.y * half_width,
+                     .y = v.y + sgn * d1.x * half_width };
     stage[0] = pa;  // bevel wedge
     stage[1] = v;
     stage[2] = pb;
@@ -113,7 +115,7 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
         cnvs_vec2 tip = { .x = pa.x + d0.x * s, .y = pa.y + d0.y * s };
         float mx = tip.x - v.x;
         float my = tip.y - v.y;
-        if (sqrtf(mx * mx + my * my) <= miter_limit * hw) {
+        if (sqrtf(mx * mx + my * my) <= miter_limit * half_width) {
             stage[3] = pa;
             stage[4] = tip;
             stage[5] = pb;
@@ -128,50 +130,50 @@ static int stage_wedge(cnvs_vec2 *__counted_by(6) stage, cnvs_vec2 v, cnvs_vec2 
 // flush first so emission order holds).  Returns the new stage cursor, or -1
 // on allocation failure.
 static int join_at(struct cnvs_verts *out, cnvs_vec2 *__counted_by(48) stage, int k,
-                   cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1, float hw,
+                   cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1, float half_width,
                    enum cnvs_line_join join, float miter_limit) {
     float cross = d0.x * d1.y - d0.y * d1.x;
     if (cross > -1e-6f && cross < 1e-6f) {
         return k;  // collinear: no gap to fill
     }
     if (join == CNVS_JOIN_ROUND) {
-        if (!cnvs_verts_append(out, stage, k) || !emit_disc(out, v, hw)) {
+        if (!cnvs_verts_append(out, stage, k) || !emit_disc(out, v, half_width)) {
             return -1;
         }
         return 0;
     }
-    return k + stage_wedge(stage + k, v, d0, d1, cross, hw, join, miter_limit);
+    return k + stage_wedge(stage + k, v, d0, d1, cross, half_width, join, miter_limit);
 }
 
 // Fill the join at vertex v between incoming dir d0 and outgoing dir d1.
 static bool emit_join(struct cnvs_verts *out, cnvs_vec2 v, cnvs_vec2 d0, cnvs_vec2 d1,
-                      float hw, enum cnvs_line_join join, float miter_limit) {
+                      float half_width, enum cnvs_line_join join, float miter_limit) {
     cnvs_vec2 stage[48];
-    int k = join_at(out, stage, 0, v, d0, d1, hw, join, miter_limit);
+    int k = join_at(out, stage, 0, v, d0, d1, half_width, join, miter_limit);
     return k >= 0 && cnvs_verts_append(out, stage, k);
 }
 
 // Cap at open end `e`, with `capdir` pointing outward along the line.
-static bool emit_cap(struct cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir, float hw,
-                     enum cnvs_line_cap cap) {
+static bool emit_cap(struct cnvs_verts *out, cnvs_vec2 e, cnvs_vec2 capdir,
+                     float half_width, enum cnvs_line_cap cap) {
     if (cap == CNVS_CAP_BUTT) {
         return true;
     }
     if (cap == CNVS_CAP_ROUND) {
-        return emit_disc(out, e, hw);
+        return emit_disc(out, e, half_width);
     }
-    cnvs_vec2 nrm = { .x = -capdir.y * hw, .y = capdir.x * hw };
-    cnvs_vec2 e2 = { .x = e.x + capdir.x * hw, .y = e.y + capdir.y * hw };
-    return emit_quad(out, e, e2, nrm);  // square: extend by hw
+    cnvs_vec2 nrm = { .x = -capdir.y * half_width, .y = capdir.x * half_width };
+    cnvs_vec2 e2 = { .x = e.x + capdir.x * half_width, .y = e.y + capdir.y * half_width };
+    return emit_quad(out, e, e2, nrm);  // square: extend by half_width
 }
 
 bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,
-                          float half_width, enum cnvs_line_join join, enum cnvs_line_cap cap,
-                          float miter_limit, struct cnvs_verts *out) {
+                          float half_width, enum cnvs_line_join join,
+                          enum cnvs_line_cap cap, float miter_limit,
+                          struct cnvs_verts *out) {
     if (n < 2 || half_width <= 0.0f) {
         return true;
     }
-    float hw = half_width;
     // A closed loop whose last vertex (nearly) coincides with the first -- e.g. a
     // full-circle arc that returns to its start, where sinf(2*pi) leaves a sub-
     // pixel gap -- would stroke a microscopic closing segment.  That segment is
@@ -221,8 +223,8 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             // the emission pass skips them exactly where seg_dir bails.
             float4 dirx = dx / len;
             float4 diry = dy / len;
-            float4 nrmx = -diry * hw;
-            float4 nrmy =  dirx * hw;
+            float4 nrmx = -diry * half_width;
+            float4 nrmy =  dirx * half_width;
             // Corners in AoS form: nrm re-interleaved, then p +/- nrm is the
             // same lane-wise fadd/fsub the scalar corner math does.
             float8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
@@ -290,17 +292,17 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
                 // Outer side is opposite the turn (bit-exact +/-1 select).
                 float4 sgn = (float4)((pos & (int4)(float4)-1.0f) |
                                       (~pos & (int4)(float4)1.0f));
-                float4 pax = p0x + sgn * -d0y  * hw;
-                float4 pay = p0y + sgn *  d0x  * hw;
-                float4 pbx = p0x + sgn * -diry * hw;
-                float4 pby = p0y + sgn *  dirx * hw;
+                float4 pax = p0x + sgn * -d0y  * half_width;
+                float4 pay = p0y + sgn *  d0x  * half_width;
+                float4 pbx = p0x + sgn * -diry * half_width;
+                float4 pby = p0y + sgn *  dirx * half_width;
                 // Miter tip = intersection of the outer edges (pa,d0),(pb,d1).
                 float4 sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
                 float4 tipx = pax + d0x * sm;
                 float4 tipy = pay + d0y * sm;
                 float4 mx = tipx - p0x;
                 float4 my = tipy - p0y;
-                float mlim = miter_limit * hw;
+                float mlim = miter_limit * half_width;
                 int4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
                 float8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
                 float8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
@@ -347,7 +349,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
                             }
                         }
                     } else {
-                        k = join_at(out, stage, k, pp0[i], prev_dir, dir, hw,
+                        k = join_at(out, stage, k, pp0[i], prev_dir, dir, half_width,
                                     join, miter_limit);
                         if (k < 0) {
                             return false;
@@ -373,12 +375,12 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             cnvs_vec2 dir;
             float len;
             if (seg_dir(p0, p1, &dir, &len)) {
-                cnvs_vec2 nrm = { .x = -dir.y * hw, .y = dir.x * hw };
+                cnvs_vec2 nrm = { .x = -dir.y * half_width, .y = dir.x * half_width };
                 if (!emit_quad(out, p0, p1, nrm)) {
                     return false;
                 }
                 if (have_prev &&
-                    !emit_join(out, p0, prev_dir, dir, hw, join, miter_limit)) {
+                    !emit_join(out, p0, prev_dir, dir, half_width, join, miter_limit)) {
                     return false;
                 }
                 if (!have_first) {
@@ -398,11 +400,11 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
     }
 
     if (closed) {
-        return emit_join(out, pts[0], prev_dir, first_dir, hw, join, miter_limit);
+        return emit_join(out, pts[0], prev_dir, first_dir, half_width, join, miter_limit);
     }
     cnvs_vec2 back = { .x = -first_dir.x, .y = -first_dir.y };
-    return emit_cap(out, first_pt, back, hw, cap) &&
-           emit_cap(out, last_pt, prev_dir, hw, cap);
+    return emit_cap(out, first_pt, back, half_width, cap) &&
+           emit_cap(out, last_pt, prev_dir, half_width, cap);
 }
 
 bool cnvs_stroke_dashed(cnvs_vec2 const *__counted_by(n) pts, int n, bool closed,

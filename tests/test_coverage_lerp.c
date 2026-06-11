@@ -465,9 +465,9 @@ static void part_b(void) {
     }
     // The thin diagonal: a 1.3px-wide quad from (4.2, 3.1) to (23.8, 20.6) --
     // every pixel it touches is partial coverage.
-    double x0 = 4.2, y0 = 3.1, x1 = 23.8, y1 = 20.6, hw = 0.65;
+    double x0 = 4.2, y0 = 3.1, x1 = 23.8, y1 = 20.6, half_width = 0.65;
     double len = hypot(x1 - x0, y1 - y0);
-    double nx = -(y1 - y0) / len * hw, ny = (x1 - x0) / len * hw;
+    double nx = -(y1 - y0) / len * half_width, ny = (x1 - x0) / len * half_width;
     float qx[4] = { (float)(x0 + nx), (float)(x1 + nx),
                     (float)(x1 - nx), (float)(x0 - nx) };
     float qy[4] = { (float)(y0 + ny), (float)(y1 + ny),

@@ -2434,7 +2434,7 @@ static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path cons
     cnvs_verts_reset(&cv->scratch_verts);
     // Line width and dash lengths are in user units; bake the CTM scale in.
     float scale = ctm_scale(cv->cur.ctm);
-    float hw = cv->cur.line_width * 0.5f * scale;
+    float half_width = cv->cur.line_width * 0.5f * scale;
 
     bool dashed = cv->cur.dash_count > 0;
     float sdash[CANVAS_DASH_MAX];
@@ -2450,10 +2450,10 @@ static bool build_stroke_verts(struct canvas *__single cv, struct cnvs_path cons
         }
         cnvs_vec2 *poly = p->pts + sp.start;
         bool ok = dashed
-                      ? cnvs_stroke_dashed(poly, sp.count, sp.closed, hw, sdash,
+                      ? cnvs_stroke_dashed(poly, sp.count, sp.closed, half_width, sdash,
                                            cv->cur.dash_count, soff,
                                            &cv->scratch_verts)
-                      : cnvs_stroke_polyline(poly, sp.count, sp.closed, hw,
+                      : cnvs_stroke_polyline(poly, sp.count, sp.closed, half_width,
                                              cv->cur.line_join, cv->cur.line_cap,
                                              cv->cur.miter_limit,
                                              &cv->scratch_verts);
@@ -3249,7 +3249,7 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
 // Every 8-bit edge value still quantizes back exactly (test_image's
 // exhaustive round-trip).  Returns finished byte values in [0.5, 255.5) for
 // the truncating store seam (cnvs_px8_store_rgba8).
-static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
+static cnvs_px8 unpremul_to_unorm8(cnvs_px8 p) {
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
     short8 opaque = p.a > zero;
     cnvs_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
@@ -3261,9 +3261,9 @@ static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
                         __builtin_elementwise_max(zero, u.b)), zero);
     u.a = half8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.a)), zero);
-    _Float16 const half = (_Float16)0.5f, k255 = (_Float16)255.0f;
-    return (cnvs_px8){ u.r * k255 + half, u.g * k255 + half,
-                       u.b * k255 + half, u.a * k255 + half };
+    _Float16 const bias = (_Float16)0.5f, k255 = (_Float16)255.0f;
+    return (cnvs_px8){ u.r * k255 + bias, u.g * k255 + bias,
+                       u.b * k255 + bias, u.a * k255 + bias };
 }
 
 // Read the canvas back as unpremultiplied RGBA8, straight off the
@@ -3279,12 +3279,12 @@ void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out
     int i = 0;
     for (; i + 8 <= n; i += 8) {
         cnvs_px8_store_rgba8(out + i * 4,
-                             unpremul_quant8(cnvs_px8_load(cv->target + i)));
+                             unpremul_to_unorm8(cnvs_px8_load(cv->target + i)));
     }
     if (i < n) {
         int k = n - i;
         cnvs_px8_store_rgba8_k(out + i * 4, k,
-                               unpremul_quant8(cnvs_px8_load_k(cv->target + i, k)));
+                               unpremul_to_unorm8(cnvs_px8_load_k(cv->target + i, k)));
     }
 }
 

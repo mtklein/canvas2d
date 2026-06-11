@@ -26,12 +26,13 @@ static inline int8 load8_widen(uint8_t const *__counted_by(8) p) {
     return __builtin_convertvector(b, int8);
 }
 
-// Quantize 8 window sums to (sum + win/2) / win exactly, matching the scalar
-// integer division: a float reciprocal multiply lands within +-1 of the true
-// quotient (n < 2^24 is exact in float, and the relative error is ~2^-23), and
-// one remainder comparison snaps it.  No NEON integer divide needed.
-static inline uchar8 quant8(int8 wsum, int win, int half, float recip) {
-    int8 n = wsum + half;
+// Divide 8 window sums by the window EXACTLY, rounded: (sum + win/2) / win,
+// matching the scalar integer division.  A float reciprocal multiply lands
+// within +-1 of the true quotient (n < 2^24 is exact in float, and the
+// relative error is ~2^-23), and one remainder comparison snaps it.  No NEON
+// integer divide needed.
+static inline uchar8 div_round8(int8 wsum, int win, int bias, float recip) {
+    int8 n = wsum + bias;
     float8 f = __builtin_convertvector(n, float8);
     int8 q = __builtin_convertvector(f * recip, int8);  // truncates
     int8 rem = n - q * win;
@@ -46,13 +47,13 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
         return;
     }
     int win = 2 * r + 1;
-    int half = win / 2;
+    int bias = win / 2;
     float recip = 1.0f / (float)win;
-    // quant8's exactness needs n = 255*win + win/2 < 2^24; a window that wide
+    // div_round8's exactness needs n = 255*win + win/2 < 2^24; a window that wide
     // is degenerate (every output is the row average), so it keeps the
     // scalar loop.
     static_assert(255 * (2 * 32767 + 1) + 32767 < (1 << 24),
-                  "quant8 stays exact up to the vector-path radius cutoff");
+                  "div_round8 stays exact up to the vector-path radius cutoff");
     bool wide = r < 32768;
     for (int y = 0; y < h; y++) {
         int base = y * w;
@@ -63,7 +64,7 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
         int x = 0;
         // Left edge: the leaving index x-r still clamps to 0.
         for (; x < w && x < r; x++) {
-            dst[base + x] = (uint8_t)((sum + half) / win);
+            dst[base + x] = (uint8_t)((sum + bias) / win);
             int in  = base + clampi(x + r + 1, 0, w - 1);  // entering on the right
             int out = base + clampi(x - r,     0, w - 1);  // leaving on the left
             sum += (int)src[in] - (int)src[out];
@@ -79,14 +80,14 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
                 int8 l = load8_widen(src + base + x - r);
                 int8 d = e - l;
                 int8 ws = sum + excl_prefix8(d);
-                uchar8 q = quant8(ws, win, half, recip);
+                uchar8 q = div_round8(ws, win, bias, recip);
                 memcpy(dst + base + x, &q, sizeof q);  // bounds-checked vector store
                 sum = ws[7] + d[7];
             }
         }
         // Right edge (and the tail): the entering index clamps to w-1.
         for (; x < w; x++) {
-            dst[base + x] = (uint8_t)((sum + half) / win);
+            dst[base + x] = (uint8_t)((sum + bias) / win);
             int in  = base + clampi(x + r + 1, 0, w - 1);
             int out = base + clampi(x - r,     0, w - 1);
             sum += (int)src[in] - (int)src[out];
@@ -100,7 +101,7 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
         return;
     }
     int win = 2 * r + 1;
-    int half = win / 2;
+    int bias = win / 2;
     float recip = 1.0f / (float)win;
     int x = 0;
     // Eight adjacent columns at a time: columns are independent, so each lane
@@ -109,7 +110,7 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
     // contiguously from one row (one bounds check each), and the row-index
     // clamps are shared by every lane, so even the edge rows run vectorized;
     // the only scalar work left is the w%8 tail columns.  r >= 32768 keeps
-    // the scalar loop, as in the horizontal pass (quant8 needs n < 2^24).
+    // the scalar loop, as in the horizontal pass (div_round8 needs n < 2^24).
     if (r < 32768) {
         for (; x + 8 <= w; x += 8) {
             int8 sum = (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -117,7 +118,7 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
                 sum += load8_widen(src + clampi(k, 0, h - 1) * w + x);  // window centred at y = 0
             }
             for (int y = 0; y < h; y++) {
-                uchar8 q = quant8(sum, win, half, recip);
+                uchar8 q = div_round8(sum, win, bias, recip);
                 memcpy(dst + y * w + x, &q, sizeof q);  // bounds-checked vector store
                 int in  = clampi(y + r + 1, 0, h - 1) * w + x;  // entering below
                 int out = clampi(y - r,     0, h - 1) * w + x;  // leaving above
@@ -131,7 +132,7 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
             sum += src[clampi(k, 0, h - 1) * w + x];
         }
         for (int y = 0; y < h; y++) {
-            dst[y * w + x] = (uint8_t)((sum + half) / win);
+            dst[y * w + x] = (uint8_t)((sum + bias) / win);
             int in  = clampi(y + r + 1, 0, h - 1) * w + x;
             int out = clampi(y - r,     0, h - 1) * w + x;
             sum += (int)src[in] - (int)src[out];

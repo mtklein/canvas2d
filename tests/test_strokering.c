@@ -23,9 +23,9 @@ int main(void) {
         return TEST_REPORT();
     }
 
-    float const cx = 80.0f, cy = 80.0f, r = 46.0f, hw = 7.5f;  // ring radius +/- hw
+    float const cx = 80.0f, cy = 80.0f, r = 46.0f, half_width = 7.5f;  // ring radius +/- half_width
     canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_line_width(cv, 2.0f * hw);
+    canvas_set_line_width(cv, 2.0f * half_width);
     canvas_begin_path(cv);
     canvas_arc(cv, cx, cy, r, 0.0f, 2.0f * (float)M_PI, false);
     canvas_close_path(cv);
@@ -46,7 +46,7 @@ int main(void) {
     // And specifically the outer half of the ring at the seam (x just inside the
     // outer radius, on the y=80 centreline) -- this is exactly where the notch ate
     // the coverage back.
-    CHECK(pixel_at(px, len, W, (int)(cx + r + hw - 2.0f), 80).a > 250);
+    CHECK(pixel_at(px, len, W, (int)(cx + r + half_width - 2.0f), 80).a > 250);
 
     canvas_free(cv);
     free(px);
