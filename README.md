@@ -255,6 +255,12 @@ ninja coverage           # refresh docs/coverage.md (llvm-cov over src/, all tes
 The coverage report is checked in at **[docs/coverage.md](docs/coverage.md)** so it
 browses on GitHub; `ninja coverage` regenerates it, so a `git diff` shows what moved.
 
+When a change re-baselines gallery pixels, `python3 tools/gallery_diff.py [ref]`
+is the image equivalent of `git diff <ref> -- gallery/`: every changed scene as
+before/after in one self-contained HTML page — side-by-side, swipe, blink, and
+an amplified diff heatmap with exact changed-pixel stats (defaults to
+`github/main`, i.e. "what would this push change visually?").
+
 Requirements: macOS with Xcode (Apple clang 21+, which has `-fbounds-safety` and
 `#embed`), and ninja. `ninja benchcmp` also needs
 [hyperfine](https://github.com/sharkdp/hyperfine). Core Text supplies glyph
