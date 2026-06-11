@@ -139,6 +139,8 @@ TEMPLATE = r"""<!doctype html>
            border-radius:8px; padding:8px; display:none; z-index:9; box-shadow:0 4px 24px #000a; }
   #loupe canvas { display:block; border:1px solid #2a2e38; background:#000; }
   #loupe pre { margin:6px 0 0; font:11px/1.5 ui-monospace, monospace; color:#cdd3df; }
+  #loupe .sw { display:inline-block; width:10px; height:10px; margin-right:6px;
+               vertical-align:-1px; border:1px solid #3a4152; }
   #loupe pre .on { color:#fff; font-weight:600; }
   #loupe pre .dim { color:#8b93a7; }
 </style>
@@ -318,15 +320,22 @@ function drawLoupe() {
   const hex = p => "#" + [0,1,2,3].map(k => p[i+k].toString(16).padStart(2, "0")).join("").toUpperCase();
   const flt = p => [0,1,2,3].map(k => (p[i+k] / 255).toFixed(4)).join(" ");
   const dmax = Math.max(...[0,1,2,3].map(k => Math.abs(pa[i+k] - pb[i+k])));
+  // A swatch of the metered pixel heads each line -- the colour itself says
+  // which row is which.  The pixel's rgba layers over a 5px checker so alpha
+  // reads honestly at swatch size.
+  const sw = p => `<span class="sw" style="background:`
+    + `linear-gradient(rgba(${p[i]},${p[i+1]},${p[i+2]},${p[i+3]/255}),`
+    + `rgba(${p[i]},${p[i+1]},${p[i+2]},${p[i+3]/255})),`
+    + `repeating-conic-gradient(#888 0 25%, #ccc 0 50%) 0 0/5px 5px"></span>`;
   const row = (tag, p, on) =>
-    `<span class="${on ? "on" : "dim"}">${tag}  ${hex(p)}  ${flt(p)}</span>`;
+    `${sw(p)}<span class="${on ? "on" : "dim"}">${tag}  ${hex(p)}  ${flt(p)}</span>`;
   lpre.innerHTML = [
     row("ref", pa, side === "before"),
     row("wt ", pb, side === "after"),
     // Fixed-width fields throughout: the panel must not relayout when the
     // text changes (blink/pause flips, cursor moves) -- that jars the eye
     // off the pixels.  Status is always present; numbers pad to max width.
-    `<span class="dim">Δmax ${String(dmax).padStart(3)}/255 (${String(x).padStart(4)},${String(y).padStart(4)})`
+    `<span class="sw" style="visibility:hidden"></span><span class="dim">Δmax ${String(dmax).padStart(3)}/255 (${String(x).padStart(4)},${String(y).padStart(4)})`
       + ` ${String(zoom).padStart(2)}x ${paused ? "paused" : "auto  "}`
       + ` ${pinned ? "pinned" : "      "}</span>`,
   ].join("\n");
