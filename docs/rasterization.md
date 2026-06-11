@@ -663,18 +663,21 @@ byte-still except the licensed re-fold:
    bit-for-bit; blend8 now delegates source-over to src_over8 — the generic
    `fa*s + fb*d` arm contracts differently than `s + fb*d`, a 1-ULP trap no
    caller could previously reach).
-2. **The block predicates:** the model's `if (cov==0) return` as one u64
-   compare per 8-px block on the u8 planes (op cov, clip), a 4-op vector test
-   for transparent-black source blocks on the folded path, and the k = 1
-   short path for all-255 coverage — all bit-exact (k=0/k=1 are exact by the
-   two-product lerp form; s=0 blending to d IS the fold criterion).  Priced
-   ~flat on the committed mixes — the re-measured histogram (§1: 85 % full
-   coverage) explains why — kept for what the benches don't contain
-   (expensive blends over sparse shapes, closed-clip regions).
-3. **The re-fold:** all 15 blend modes fold coverage shade-side again, per the
-   homogeneity license (the ruling bullet above) — no coverage plane, no
-   lerp, on the flagship's hottest non-over modes.  blend.png moved 368 px ×
-   ≤ 1/255, re-baselined lockstep; oracle green.
+2. **The block predicates — landed flat, then REMOVED (Mike's razor).** The
+   model's `if (cov==0) return` as one u64 compare per 8-px block, a vector
+   test for transparent-black source blocks, the k = 1 short path — all
+   bit-exact, all priced ~flat on the committed mixes (the §1 histogram's
+   85 % full coverage explains why).  "Extra code complexity for no perf
+   win?" — removed; and the paired removal bench says the tests themselves
+   were a small tax: deleting them measured −1 %/−3 % flagship.  The design
+   and prices live here and in git history if sparse content ever arrives to
+   re-purchase them.
+3. **The re-fold — landed flat, then REMOVED (same razor).** Blends folding
+   coverage shade-side again per the homogeneity license priced
+   ~flat-to-−1 %; removal restores the one-sentence rule (the proven
+   over-family folds, everything else lerps — no theorem needed at the call
+   site) and blend.png's lerp pixels (≤ 1/255, lockstep).  The homogeneity
+   finding stays true and recorded above — a license nobody currently needs.
 4. **The row-granular handoff — tried, measured, DROPPED.** Unfiltered ops
    shading one reused tile row and compositing it cache-hot (the staged shape
    of the §3.8 race at row granularity) was implemented and priced: −3 % on
@@ -687,9 +690,13 @@ byte-still except the licensed re-fold:
    (registers), not by shrinking its granularity.
 
 Measured (interleaved A/B medians, gallery + flagships): the splat bought
-−7.8 % `bench_render` / −6.8 % `bench_render_large`; the predicates and the
-re-fold each priced ~flat-to-−1 % on the committed mixes (the histogram, the
-fuller-than-assumed truth); row-granular lost (above).  What remains for
+−7.8 % `bench_render` / −6.8 % `bench_render_large` and is the pass's one
+survivor; the predicates and the re-fold priced flat and were removed
+(removal itself measured −1 %/−3 % — the flat paths were a small net tax);
+row-granular lost outright (above).  The economics, per Mike: buffer-based
+handoff's benefit is each stage ripping at its own full speed, its cost one
+memory round trip per handoff — so the seam wins came from deleting traffic
+(the splat), never from finer scheduling or speculative skips.  What remains for
 the unification question (#27, step 3): the folding paths still write and
 re-read the whole-op tile (16 B/px round trip, DRAM-scale for large ops);
 the u8 coverage seam between resolve and shade (2 B/px + the /255 refold)
