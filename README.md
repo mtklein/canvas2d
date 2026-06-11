@@ -13,7 +13,7 @@ The point of the project is twofold:
    compiles under `-std=c23 -fbounds-safety -Werror -Weverything` with only six
    warnings disabled (each documented), and the interesting work — path math,
    curve flattening, analytic-coverage antialiasing, stroking, gradients, the
-   software compositor, a from-scratch zlib and PNG codec — lives in bounds-checked
+   planar blend kernels, a from-scratch zlib and PNG codec — lives in bounds-checked
    C.
 
 If you want the reflective version — what worked, what fought back, what we'd do
@@ -302,32 +302,29 @@ the `tsan` variant's `-fsanitize=thread`.
 ```
         public API (include/canvas.h)
                   │
-   canvas.c  ── state stack, CTM, styles; rasterizes coverage, builds tiles
-      │  │
-      │  ├── cnvs_math     2x3 affine transforms
-      │  ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
-      │  ├── cnvs_cover     analytic (signed-area) coverage → per-pixel alpha
-      │  ├── cnvs_gradient linear/radial/conic gradients, evaluated per pixel into a tile
-      │  ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
-      │  ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
-      │  ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
-      │  ├── cnvs_geom     growable vertex/int buffers
-      │  ├── cnvs_zlib     deflate + strict inflate (RFC 1950/1951) + adler32, from scratch
-      │  ├── cnvs_png      RGBA8 ↔ PNG: Up-filtered encoder + strict own-output decoder
-      │  ├── cnvs_record   draw calls → text canvas-program (the write side)
-      │  ├── cnvs_replay   text canvas-program → draw calls (the read side)
-      │  │
-      │  ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
-      │  cnvs_text_ct.c  ── unsafe boundary #1: Core Text shaping + glyphs (C, no ARC)
+   canvas.c  ── state stack, CTM, styles; rasterizes coverage, shades tiles, and
+      │          blends them onto its own premultiplied RGBA16F target (all 26
+      │          composite/blend modes, one checked-C planar kernel)
+      ├── cnvs_math     2x3 affine transforms
+      ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
+      ├── cnvs_cover     analytic (signed-area) coverage → per-pixel alpha
+      ├── cnvs_gradient linear/radial/conic gradients, evaluated per pixel into a tile
+      ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
+      ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
+      ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
+      ├── cnvs_geom     growable vertex/int buffers
+      ├── cnvs_zlib     deflate + strict inflate (RFC 1950/1951) + adler32, from scratch
+      ├── cnvs_png      RGBA8 ↔ PNG: Up-filtered encoder + strict own-output decoder
+      ├── cnvs_record   draw calls → text canvas-program (the write side)
+      ├── cnvs_replay   text canvas-program → draw calls (the read side)
       │
-      ▼   compositor.h  (C ABI: set clip · composite a premultiplied tile · read)
-   compositor_cpu.c   ── the software compositor: one checked-C blend kernel over
-                          __counted_by tiles (still pure C23 under -fbounds-safety)
+      ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
+      cnvs_text_ct.c  ── the unsafe boundary: Core Text shaping + glyphs (C, no ARC)
 ```
 
-Everything above the `cnvs_text.h` ABI line is pure C23 under `-fbounds-safety` —
-and so is the software compositor below `compositor.h`. There is exactly **one**
-boundary to a system framework, behind a bounds-safe C ABI:
+Everything above the `cnvs_text.h` ABI line is pure C23 under `-fbounds-safety`.
+There is exactly **one** boundary to a system framework, behind a bounds-safe C
+ABI:
 
 - The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with font
   fallback) and hands each glyph across once in canonical form: font-unit outline
@@ -336,14 +333,15 @@ boundary to a system framework, behind a bounds-safe C ABI:
   color glyph (emoji), one fixed-size RGBA8 capture that every draw samples
   through a checked-C mip pyramid.
 
-The [compositor](src/compositor_cpu.c) is no longer a boundary at all: all geometry,
+Compositing is not a boundary at all — not even a separate machine: all geometry,
 **analytic antialiasing**, gradient evaluation, and clipping happen in checked C and
 bake into finished `_Float16` RGBA16F tiles (the narrowest storage type that
 round-trips the spec's 8-bit edges exactly — every colour×alpha pair survives the
 premultiplied store unchanged — at half f32's footprint; see
-[docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md)), and a
-file-local planar blend kernel composites them in ~350 lines of checked C over
-`__counted_by` tiles, with no frameworks. `_Float16` is the pipeline's *compute*
+[docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md)), and
+[canvas.c](src/canvas.c)'s own planar blend kernels composite them onto its
+premultiplied target in ~350 lines of checked C over `__counted_by` tiles, with no
+frameworks. `_Float16` is the pipeline's *compute*
 type, not just its storage, and **planar (SoA) is its compute layout**: the blend,
 filter, premultiply, and readback kernels work eight pixels at a time as four
 8-lane channel *planes* — a full 128-bit NEON register of native fp16 per channel,
@@ -353,8 +351,9 @@ shuffles — which measured 13–15% faster than the f32-compute pipeline on the
 flagship renders while still AoS, and a further 17–25% on top when the kernels
 went planar, while keeping every 8-bit round-trip exact and every blend within
 1/255 of a double reference (the ruling, its measurements, and the planar-layout
-addendum: [docs/decisions/color-axis.md](docs/decisions/color-axis.md)). (A Metal GPU backend implemented the same
-`compositor.h` ABI and was held bit-for-bit identical to this one by a tolerance-0
+addendum: [docs/decisions/color-axis.md](docs/decisions/color-axis.md)). (A Metal GPU backend once implemented the same
+compositing ABI — since dissolved into canvas.c — and was held bit-for-bit
+identical to this kernel by a tolerance-0
 differential; it was removed once the measurements showed the CPU path winning the
 flagship workload — see
 [docs/decisions/metal-backend.md](docs/decisions/metal-backend.md) and
@@ -577,7 +576,7 @@ spends its time).
 exists to exercise `-fbounds-safety`, the near-term picks are the ones whose hot
 path is dense indexed-buffer work, where bounds checking actually has something to
 say (and which vectorize well). The picks on those grounds —
-`globalCompositeOperation`, the software compositor, shadows, and `filter` — are
+`globalCompositeOperation`, the blend kernels, shadows, and `filter` — are
 all done:
 
 - **`filter`** is complete — the eight colour functions (`brightness`,
@@ -604,7 +603,7 @@ What we deliberately **won't** do:
 ```
 configure.py             generates build.ninja (all variants + gates; self-regenerates)
 include/canvas.h         public API
-src/                     C core; the software compositor (compositor_cpu.c); Core Text shim
+src/                     C core; Core Text shim
 tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep, the threaded tile-stitch harness
 bench/                   isolated kernel benches + end-to-end (ninja benchcmp / profile / throughput)
 fuzz/                    libFuzzer harnesses + committed regression corpus (ninja fuzzers)

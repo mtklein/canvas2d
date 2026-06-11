@@ -9,7 +9,7 @@ The rasterizer produces an 8-bit coverage value for every pixel of a fill's
 bounding box ([cnvs_cover.c](../src/cnvs_cover.c)): `add_edge` accumulates signed
 area into a dense `w*h` float buffer, `resolve` turns it into a dense `w*h` byte
 mask, [paint_tile](../src/canvas.c) shades that into a dense premultiplied tile, and
-the compositor blends the whole tile. Clip masks are dense coverage too, held by
+the blend stage composites the whole tile. Clip masks are dense coverage too, held by
 value in every saved state.
 
 ## The case for sparse
@@ -43,10 +43,11 @@ skipping that work across resolve → paint → blit.
    across vectorized passes, so the absolute headroom is far less than the 39–59%
    sparsity suggests.
 
-3. **The dense tile is the compositor boundary.** Geometry/AA happen on the CPU and
-   bake into a dense premultiplied tile; the GPU (Metal) blends every tile pixel by
-   design ("the GPU just composites"). RLE can't reach the GPU blend without
-   reworking that interface, so it would only help the CPU-side stages.
+3. **The dense tile was the GPU-compositor boundary.** Geometry/AA happen on the
+   CPU and bake into a dense premultiplied tile; the since-removed GPU (Metal)
+   backend blended every tile pixel by design ("the GPU just composites"), so RLE
+   could only help the CPU-side stages. With blending now in-house (canvas.c),
+   this constraint no longer binds — but the dense-tile seam itself remains.
 
 ## Where it *would* pay off (if revisited)
 
@@ -56,8 +57,8 @@ skipping that work across resolve → paint → blit.
   (clip intersection is CPU-only). This is the slice to prototype first.
 - **Very sparse content** — text runs, thin strokes, intricate paths — where the
   bbox is mostly empty and runs are long enough to amortize the per-run overhead.
-- **The software compositor blend** ([compositor_cpu.c](../src/compositor_cpu.c))
-  skipping fully-transparent source runs (the GPU path can't).
+- **The blend kernels** ([canvas.c](../src/canvas.c))
+  skipping fully-transparent source runs.
 
 ## Bottom line
 

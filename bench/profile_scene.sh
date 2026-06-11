@@ -10,7 +10,7 @@
 # the sample window never reaches, so disk I/O stays out of the profile).
 #
 # Uses the release gallery: `sample` sees only CPU program counters, and the whole
-# pipeline (including the software compositor) runs on the CPU.
+# pipeline (including the blend kernels) runs on the CPU.
 #
 # Usage: bench/profile_scene.sh [gallery-binary]   (default build/release/gallery)
 #   GALLERY_REPS  repeat count        (default 200)

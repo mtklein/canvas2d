@@ -117,19 +117,20 @@ One pipeline, per op, over the op's device-space bounding box
    dense u8 coverage buffer.
 4. **Shade** (`paint_tile` / `paint_tile_pattern` / `draw_image_quad`): eight
    pixels per step over channel planes (the §3.1 conversion). For folding
-   composite modes — the over-family AND all 15 blend modes (§3.8's ruling
-   plus the homogeneity re-fold) and any filtered op — coverage normalizes as
+   composite modes — the over-family (§3.8's ruling) and any filtered op —
+   coverage normalizes as
    one f16 multiply by RN16(1/255) and the fold (paint alpha × global alpha ×
    coverage) runs in f16, the pipeline's compute type, with one narrowing
    convert where the colour data is born f32 (the sampling taps) — the §3.1
    f16 arm, taken in the simplification sweep (task #30); for the lerp
-   family (copy, in/out, dst-atop, lighter) the tile is the source at full
+   family (copy, the in/out family, dst-atop, lighter, the blends) the tile
+   is the source at full
    strength (paint alpha × global alpha only) and the op's u8 coverage buffer
    rides to composite as its own plane. Either way: one narrowing convert to
    f16, then the planar premultiply (`cnvs_px8_premultiply`) and an st4 into
    the premultiplied RGBA16F tile. One seam shortcut (the §3.8 efficiency
    pass, landed): a lerp-family **solid** paint writes no tile at all — the
-   one premultiplied colour goes to `compositor_blend_solid` as a splat (so
+   one premultiplied colour goes to `cnvs_blend_solid` as a splat (so
    do clearRect/reset's unit-alpha erase and the full-strength shadow tint).
    Gradients get their parameters and
    colors solved 8-wide per row
@@ -138,17 +139,18 @@ One pipeline, per op, over the op's device-space bounding box
    per lane — the taps are data-dependent gathers — inside the planar fold,
    with the device→source coordinate chain vectorized (elementwise, bit-exact
    per lane).
-5. **Composite** ([compositor_cpu.c](../src/compositor_cpu.c) +
+5. **Blend** ([canvas.c](../src/canvas.c)'s blend kernels +
    [cnvs_planar.h](../src/cnvs_planar.h)): 8 pixels per step as four f16 channel
-   planes, ld4/st4 at the seams, all 26 modes straight-line vector code.
-   Effective coverage (op plane × clip mask) applies per the §3.8 ruling:
-   folded into src for the over-family and the blends, `lerp(dst, blend, cov)`
-   after the full-strength blend for copy/in-out/dst-atop/lighter. Block
-   predicates implement the §3.8 model's `if (cov == 0) return` eight lanes at
-   a time: all-zero coverage (u8-plane u64 test) or a transparent-black source
-   block (folded zeros; three vector ORs + a reduce) skips the dst round trip,
-   and all-255 coverage with no clip takes the k = 1 short path — all
-   bit-exact by construction. This is the fast, finished part.
+   planes, ld4/st4 at the seams, all 26 modes straight-line vector code,
+   compositing onto the canvas's own premultiplied RGBA16F target.  There is
+   no compositor: the old object, its ABI, and its copies (the per-clip-change
+   mask copy, the per-readback target copy) dissolved into canvas.c — the
+   kernels read the canvas's clip mask directly (`cnvs_blend.h` is the
+   internal seam the oracle tests drive) and readback un-premultiplies
+   straight off the target.  Effective coverage (op plane × clip mask)
+   applies per the §3.8 ruling: folded into src for the over-family,
+   `lerp(dst, blend, cov)` after the full-strength blend for everything
+   else. This is the fast, finished part.
 
 Strokes go through the same path: [cnvs_stroke.c](../src/cnvs_stroke.c) expands
 the polyline to triangles, `stroke_device_path` feeds each triangle's edges with
@@ -534,7 +536,7 @@ fork/join overhead eats the win below ~1.5× at 4 workers on
   exact (it's integer today; keep it integer).
 - **Sparse clip masks** (the old memo's "highest value, lowest friction" pick):
   intervals per row instead of a full-canvas byte plane. Pays in clip-heavy
-  scenes, per-state copy cost, and composes with the compositor's clip
+  scenes, per-state copy cost, and composes with the blend stage's clip
   attenuation (skip fully-open rows). Becomes more attractive if clip usage
   grows; the profile says 7 % today, mostly the intersect loop above — do the
   cheap fix first and re-look.
@@ -609,7 +611,7 @@ store_dst(ptr, fmt, blend)
 Mapped onto today's pipeline: `cov_fn` is the resolved coverage plane (it stays
 materialized in every variant — analytic coverage is born from scanline
 accumulation, not point evaluation); `shader_fn` is `paint_tile`'s planar fold;
-`load/blend/store_dst` is the compositor; and the seam between them is a full
+`load/blend/store_dst` is the blend stage; and the seam between them is a full
 premultiplied f16 **tile**, written by shade and re-read by composite — a
 ~16 B/px round trip that exists only because these were once different
 machines. The experiment: evolve the structure literally to the model, racing
@@ -625,12 +627,12 @@ Two things the model surfaces that a refactor must not blur past:
   and the destination" — folding coverage into source alpha "is correct math
   for several blend modes, but not all of them." The criterion, from
   `co = Fa·s + Fb·d`: fold ≡ lerp exactly when `Fa` is `sa`-free and `Fb` is
-  affine in `sa` with `Fb(0)=1`. As landed (`compositor_coverage_folds`,
-  [compositor.h](../src/compositor.h), re-folded in the seam-efficiency
+  affine in `sa` with `Fb(0)=1`. As landed (`coverage_folds`, now in
+  [canvas.c](../src/canvas.c), re-folded in the seam-efficiency
   pass): source-over, destination-over, destination-out, source-atop, xor,
   AND all 15 blend modes fold; copy, the in/out family, destination-atop,
   and **lighter** lerp — shade skips its coverage fold for those, the op's
-  u8 coverage buffer rides to `compositor_blend` as its own plane, and the
+  u8 coverage buffer rides to `cnvs_blend` as its own plane, and the
   kernel computes `out = lerp(dst, blend(src,dst), op_cov × clip_cov)` (clip
   coverage was the same bug and takes the same lerp). Two findings sharpened
   the ruling while implementing, both pinned by the oracle
@@ -665,7 +667,7 @@ byte-still except the licensed re-fold:
 
 1. **The splat:** lerp-family solid paints (and clearRect/reset's unit-alpha
    erase, and the full-strength shadow tint) write no tile —
-   `compositor_blend_solid` takes the one premultiplied colour and the region
+   `cnvs_blend_solid` takes the one premultiplied colour and the region
    walk splats it, deleting a ~16 B/px round trip that carried zero
    information.  Byte-identical by construction and by test
    (test_compositor's solid_vs_tile pins all 26 modes × coverage shapes
@@ -690,7 +692,7 @@ byte-still except the licensed re-fold:
 4. **The row-granular handoff — tried, measured, DROPPED.** Unfiltered ops
    shading one reused tile row and compositing it cache-hot (the staged shape
    of the §3.8 race at row granularity) was implemented and priced: −3 % on
-   `bench_render` (the gallery's many small ops pay a compositor call per ROW
+   `bench_render` (the gallery's many small ops pay a blend call per ROW
    instead of per op), +0.8 % ≈ 1σ on `bench_render_large`, flat e2e.  The
    per-call overhead beats the cache win at our op sizes; the code is not
    committed (this entry is its record).  The result is also the first real
@@ -712,6 +714,22 @@ the u8 coverage seam between resolve and shade (2 B/px + the /255 refold)
 still stands; the lerp family still rides its plane.  Full fusion would move
 blocks through q0–q3 registers instead — and the row-granular loss says the
 win has to come from deleting the handoff, not rescheduling it.
+
+**Landed (2026-06-11, task #36): the compositor stopped existing.**  The
+object, its ABI (compositor.h), and compositor_cpu.c are gone; the kernels
+moved verbatim into canvas.c, dispatching on the public web-named
+`canvas_composite_op` (the COMPOSITOR_* mirror and the static_asserts that
+pinned it retired).  Two copies died with the machine line: the full-canvas
+clip copy (per clip change AND per restore — the kernels now take the
+canvas's own mask as a call parameter, so putImageData's ignore-the-clip is
+just passing NULL) and the readback staging copy (canvas_read_rgba
+un-premultiplies straight off the target the canvas now owns).  Byte-still at
+every commit; the oracle tests retargeted to the internal seam
+([cnvs_blend.h](../src/cnvs_blend.h)) with every bound intact.  Paired
+hyperfine (deleted-copy traffic, same kernels): `bench_render_large`
+95.6→89.5 ms (−6.4 %, the 1024² per-frame readback + clip copies),
+`bench_render` 10.6→10.3 ms (−2.8 %, ≈1σ), e2e `bench` and `bench_blit`
+flat.
 
 ## 4. Ranked next experiments
 

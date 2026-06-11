@@ -237,8 +237,8 @@ entirely in bounds-checked C.** Coverage is computed analytically on the CPU
 it leaves to its right into a per-pixel accumulation buffer, and a per-row prefix
 sum turns that into winding-weighted coverage the fill rule folds to `[0,1]` —
 exact in *both* axes. Clipping is a per-pixel coverage mask, gradients are
-evaluated per pixel, and the result is a finished tile the compositor only blends
-([compositor_cpu.c](../src/compositor_cpu.c)).
+evaluated per pixel, and the result is a finished tile the blend stage only
+composites ([canvas.c](../src/canvas.c)'s planar blend kernels).
 
 The alternative — MSAA on a GPU — can't match it for a CPU-fed renderer: MSAA
 only antialiases the geometry it's actually handed, and a scan-converted fill is a

@@ -60,7 +60,7 @@ harness's `main` (compiled *without* `-DFUZZ_NO_MAIN`) replays files:
 python3 configure.py && ninja build/release/test_png   # builds release core objects
 cc -std=c23 -Os -Iinclude -Isrc -c fuzz/fuzz_api.c -o /tmp/h.o      # Apple clang, no -fbounds-safety
 cc -Os /tmp/h.o \
-   build/release/obj/{canvas,blur,cnvs_cover,cnvs_geom,cnvs_gradient,cnvs_image,cnvs_math,cnvs_mem,cnvs_path,cnvs_png,cnvs_record,cnvs_replay,cnvs_stroke,cnvs_text,cnvs_text_ct,compositor_cpu}.o \
+   build/release/obj/{canvas,blur,cnvs_cover,cnvs_geom,cnvs_gradient,cnvs_image,cnvs_math,cnvs_mem,cnvs_path,cnvs_png,cnvs_record,cnvs_replay,cnvs_stroke,cnvs_text,cnvs_text_ct}.o \
    -framework CoreText -framework CoreGraphics -framework CoreFoundation -o /tmp/fuzz_replay
 ./tmp/fuzz_replay <crash-file>     # OOB-write classes -> exit 133 (SIGTRAP)
 ```

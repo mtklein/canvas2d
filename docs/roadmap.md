@@ -16,18 +16,21 @@ say, over features that are mostly plumbing or string parsing.
 Chosen because their kernels are exactly the kind of dense, per-pixel,
 indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
 
-1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes), as the software
-   compositor's checked-C blend kernel (item 2). (A since-removed Metal backend ran
+1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes), as the
+   checked-C blend kernels (item 2). (A since-removed Metal backend ran
    the same math as fixed-function source-over plus a framebuffer-fetch shader; see
    [decisions/metal-backend.md](decisions/metal-backend.md).)
-2. ~~**A software compositor backend**~~ — **done**, and now the *only* backend.
-   [compositor_cpu.c](../src/compositor_cpu.c) implements the `compositor.h`
-   ABI in ~300 lines of checked C; its file-local per-pixel `blend(src, dst, mode)`
+2. ~~**A software blend stage**~~ — **done**, and blending is now a stage of
+   [canvas.c](../src/canvas.c) itself, not a backend: the per-pixel
+   `blend8(src, dst, mode)`
    kernel is all 26 composite/blend modes, premultiplied, over `__counted_by`
-   tiles. It was originally chosen against a Metal GPU backend at build time and held
+   tiles, ~350 lines of checked C compositing onto the canvas's own RGBA16F
+   target. It began life behind a compositor ABI chosen against a Metal GPU
+   backend at build time and held
    bit-for-bit identical to it by a tolerance-0 differential; once measurements showed
-   the CPU path winning the flagship workload, Metal was removed and the GPU-parity
-   rounding it required was dropped (see
+   the CPU path winning the flagship workload, Metal was removed, the GPU-parity
+   rounding it required was dropped, and the compositor object itself was later
+   dissolved into canvas.c (see
    [decisions/backend-differential.md](decisions/backend-differential.md) and
    [decisions/metal-backend.md](decisions/metal-backend.md)).
 3. ~~**Shadows**~~ — **done** (fills/strokes/text). The op's coverage mask is

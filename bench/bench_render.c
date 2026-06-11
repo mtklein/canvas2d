@@ -1,7 +1,7 @@
 // Real-pipeline benchmark: a representative frame driven through the public canvas
 // API -- solid + gradient fills, strokes, a clip, blend-mode composites, and a
 // readback -- so it exercises the whole shipping pipeline (rasterize -> paint_tile
-// -> compositor blend -> premultiply/unpremultiply conversions) the way actual
+// -> blend -> premultiply/unpremultiply conversions) the way actual
 // rendering does, not isolated kernels.  Profile it with `sample`.
 #include "bench_reps.h"
 
@@ -67,7 +67,7 @@ static void scene(canvas *__single cv, int f) {
     canvas_fill_rect(cv, 60.0f, 60.0f, 140.0f, 140.0f);
     canvas_restore(cv);
 
-    // A blend-mode composite (compositor blend math beyond source-over).
+    // A blend-mode composite (blend math beyond source-over).
     canvas_composite_op modes[3] = { CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN,
                                      CANVAS_OP_LIGHTEN };
     canvas_set_global_composite_operation(cv, modes[f % 3]);
@@ -100,7 +100,7 @@ int main(void) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
             if (read_each) {
-                canvas_read_rgba(cv, px, len);  // readback: compositor_read + unpremultiply
+                canvas_read_rgba(cv, px, len);  // readback: in-place unpremultiply
                 sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
             }
         }
