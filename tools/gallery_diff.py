@@ -14,8 +14,9 @@ data: URIs keep the canvas untainted for pixel work).
 Keys in the page: `o` for the ranked overview; j/k scan scenes in the nav's
 ranked order (arrows are left to the browser, for scrolling); 1/2/3/4 switch modes (blink / heatmap / swipe / side-by-side), space pauses
 the blink clock and steps it by hand, shift-space resumes auto-blink, [ and ] adjust heatmap
-gain, + and - adjust loupe zoom, m toggles the loupe, and a left-click pins
-the loupe in place (another click releases it back to following the mouse).
+gain, + and - adjust loupe zoom, m toggles the loupe.  Clicking a magnified
+cell IN the loupe pins that pixel and recenters on it (repeat clicks walk
+pixel by pixel); clicking back on the image releases the pin to follow again.
 
 Scenes rank worst-first by weighted change -- %-of-pixels-changed dominating,
 per-pixel magnitude crediting with diminishing (sqrt) returns.  Hovering any
@@ -293,13 +294,25 @@ function watch(el) {  // arm an element as a loupe position source
     hover = at;
     drawLoupe();
   });
-  el.addEventListener("click", e => {  // click pins the loupe; click frees it
-    if (!loupeOn || cur < 0) return;
-    pinned = !pinned;
-    if (!pinned) { const at = imgXY(el, e); if (at) hover = at; }  // resume here
+  el.addEventListener("click", e => {  // image click releases a pinned loupe
+    if (!loupeOn || cur < 0 || !pinned) return;
+    pinned = false;
+    const at = imgXY(el, e); if (at) hover = at;  // resume following from here
     drawLoupe();
   });
 }
+
+lcv.addEventListener("click", e => {
+  if (cur < 0) return;
+  const s = scenes[cur]; if (!s.px || !hover) return;
+  const n = Math.max(3, Math.floor(200 / zoom) | 1), half = n >> 1;
+  const cx = Math.min(n - 1, Math.max(0, Math.floor(e.offsetX / zoom)));
+  const cy = Math.min(n - 1, Math.max(0, Math.floor(e.offsetY / zoom)));
+  hover = {x: Math.min(s.px.w - 1, Math.max(0, Math.min(hover.x, s.px.w - 1) - half + cx)),
+           y: Math.min(s.px.h - 1, Math.max(0, Math.min(hover.y, s.px.h - 1) - half + cy))};
+  pinned = true;   // clicking a magnified cell pins it, recentered
+  drawLoupe();
+});
 
 function drawLoupe() {
   if (cur < 0 || !loupeOn) return;
