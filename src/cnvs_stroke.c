@@ -73,14 +73,26 @@ static int disc_segs(float r) {
 // A filled disc as a triangle fan -- serves round joins and round caps (the
 // extra coverage over a half-disc lands on already-stroked geometry).  The
 // whole fan (at most 64 triangles) is staged and lands as one block.
+// Vertices come from a rotation recurrence: sin/cos of the step once, then a
+// 2x2 rotation per vertex -- two libm calls per disc instead of two per
+// vertex (matrix math, not trig, per the house rule).  The recurrence drifts
+// by ~1 ULP per step, a few 1e-6 r over the worst-case 64 segments --
+// far below the coverage quantizer; the fan still closes onto stroked
+// geometry the same way the per-vertex trig's inexact final point did.
 static bool emit_disc(cnvs_verts *out, cnvs_vec2 c, float r) {
     int segs = disc_segs(r);
     cnvs_vec2 stage[3 * 64];
+    float const step = TAU / (float)segs;
+    float const cs = cosf(step), sn = sinf(step);
+    float dx = r, dy = 0.0f;
     cnvs_vec2 prev = { .x = c.x + r, .y = c.y };
     int k = 0;
     for (int i = 1; i <= segs; i++) {
-        float a = TAU * (float)i / (float)segs;
-        cnvs_vec2 cur = { .x = c.x + r * cosf(a), .y = c.y + r * sinf(a) };
+        float const nx = dx * cs - dy * sn;
+        float const ny = dx * sn + dy * cs;
+        dx = nx;
+        dy = ny;
+        cnvs_vec2 cur = { .x = c.x + dx, .y = c.y + dy };
         cnvs_vec2 *__counted_by(3) tri = stage + k;
         tri[0] = c;
         tri[1] = prev;
