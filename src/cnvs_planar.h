@@ -1,12 +1,13 @@
 #pragma once
 
-// Planar (SoA) colour vocabulary: eight premultiplied pixels held as four
-// 8-lane _Float16 channel planes -- one full 128-bit NEON register of native
-// fp16 arithmetic per channel (docs/decisions/color-axis.md).  Planar is the
-// pipeline's house layout: per-channel math needs no alpha-splat shuffles
+// Planar (SoA) colour vocabulary: a SLAB -- eight premultiplied pixels held
+// as four 8-lane _Float16 channel planes, one full 128-bit NEON register of
+// native fp16 arithmetic per channel (docs/decisions/color-axis.md).  Slab is
+// the house word for this 8-pixel planar unit (block stays the format's and
+// DEFLATE's word).  Planar is the pipeline's house layout: per-channel math needs no alpha-splat shuffles
 // (sa IS a vector) and per-pixel branches become lane selects.  A cnvs_px8
 // is a four-member homogeneous vector aggregate, so the arm64 ABI passes and
-// returns it in q0-q3 -- stages can call each other with whole pixel blocks
+// returns it in q0-q3 -- stages can call each other with whole pixel slabs
 // in registers.
 //
 // The AoS<->planar seams use explicit arm_neon.h ld4/st4 intrinsics (there
@@ -14,7 +15,7 @@
 // unannotated, so the intrinsics' own pointer parameters carry no bounds --
 // each wrapper below takes __counted_by(8) (or (32) for RGBA8), making the
 // implicit conversion at every call site the bounds check: exactly one per
-// 8-pixel block.
+// 8-pixel slab.
 
 #include "cnvs_math.h"  // cnvs_premul
 
@@ -23,8 +24,9 @@
 #include <stdint.h>
 #include <string.h>
 
-// Eight pixels, channel-planar: a half8 is one channel plane (cnvs_math.h's
-// generic lane vocabulary; a half4 is one AoS pixel, a uchar8 one byte plane).
+// One slab: eight pixels, channel-planar.  A half8 is one channel plane
+// (cnvs_math.h's generic lane vocabulary; a half4 is one AoS pixel, a uchar8
+// one byte plane).
 typedef struct {
     half8 r, g, b, a;
 } cnvs_px8;

@@ -1169,7 +1169,7 @@ static half8 blend_term8(enum canvas_composite_op mode,
     }
 }
 
-// Source-over for one planar block: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
+// Source-over for one planar slab: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
 // the same fold over every channel plane, alpha included.
 static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
     half8 fb = (half8)(_Float16)1.0f - s.a;
@@ -1243,7 +1243,7 @@ static rgb8 blend_nonsep8(enum canvas_composite_op mode, rgb8 cb, rgb8 cs) {
     }
 }
 
-// `s` is one planar block of premultiplied source pixels, already
+// `s` is one planar slab of premultiplied source pixels, already
 // clip-attenuated.  The composite fold runs the same expression over every
 // plane: in the Porter-Duff arm the
 // alpha plane of Fa*s + Fb*d is Fa*sa + Fb*da = ao, and in the blend arm the
@@ -1324,9 +1324,9 @@ static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 cov) {
 }
 
 // The generic modes, shared by the tile and solid-colour entry points: the
-// same planar block walk as the source-over fast path, with the 26-mode
+// same planar slab walk as the source-over fast path, with the 26-mode
 // kernel in place of the source-over fold.  `tile` may be NULL, in which case
-// every block's source is `splat` -- one solid colour broadcast across the
+// every slab's source is `splat` -- one solid colour broadcast across the
 // lanes.  Effective coverage is the op plane x the clip mask (each absent
 // factor is 1); the over-family folds it into the source exactly as the fast
 // path does, every other mode blends at full strength and lerps toward the
@@ -3241,7 +3241,7 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
     cnvs_rec_leave(cv->rec);
 }
 
-// One planar block's un-premultiply and 8-bit quantize, in _Float16: the
+// One planar slab's un-premultiply and 8-bit quantize, in _Float16: the
 // divide, clamp, and 255-scale with no f32 anywhere (docs/decisions/
 // color-axis.md).  A fully transparent lane (a <= 0) un-premultiplies to all
 // zero -- selected bitwise BEFORE the byte convert, so the masked divide's
@@ -3269,7 +3269,7 @@ static cnvs_px8 unpremul_to_unorm8(cnvs_px8 p) {
 // Read the canvas back as unpremultiplied RGBA8, straight off the
 // premultiplied target: the un-premultiply and 8-bit quantize happen here,
 // eight pixels per step over channel planes with st4 re-interleaving at the
-// RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same block gathered.
+// RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same slab gathered.
 // write_png and get_image_data read back through this same entry point.
 void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {

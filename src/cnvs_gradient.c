@@ -247,7 +247,7 @@ static gradpx8 gradpx8_sel(short8 m, gradpx8 x, gradpx8 y) {
 
 // The planar->AoS seam for unpremultiplied colours, mirroring cnvs_px8_store:
 // the __counted_by(8) parameter makes the implicit conversion at the call site
-// the bounds check, one per 8-pixel block.
+// the bounds check, one per 8-pixel slab.
 static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
     float16x8x4_t v = { { (float16x8_t)px.r, (float16x8_t)px.g,
                           (float16x8_t)px.b, (float16x8_t)px.a } };
