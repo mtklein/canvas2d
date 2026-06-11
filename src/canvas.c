@@ -1077,9 +1077,6 @@ static void cover_path_edges(canvas *__single cv, cbbox b, cnvs_path const *p) {
 // colour data is born in (f16 for solid and gradient paint, f32 for image
 // and pattern samples), with one narrowing convert.
 
-typedef float foldf8 __attribute__((ext_vector_type(8)));  // f32 lanes for the
-// coordinate chain and the sampled colours (data born f32 at the taps)
-
 // Eight coverage bytes as an f16 plane in [0, 1]: exact widen (every u8 value
 // is exact in _Float16), one multiply by RN16(1/255).
 static half8 cover8(uint8_t const *__counted_by(8) cov) {
@@ -1099,10 +1096,10 @@ static cnvs_px8 shade8(half8 r, half8 g, half8 b, half8 alpha) {
 // affine map is elementwise, so the scalar expression runs per lane bit for
 // bit.
 typedef struct {
-    foldf8 x, y;
+    float8 x, y;
 } foldv8;
 
-static foldv8 mat_apply8(cnvs_mat m, foldf8 x, float y) {
+static foldv8 mat_apply8(cnvs_mat m, float8 x, float y) {
     return (foldv8){ .x = m.a * x + m.c * y + m.e,
                      .y = m.b * x + m.d * y + m.f };
 }
@@ -1288,7 +1285,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
-    foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const dy = (float)b.y + (float)py + 0.5f;
         for (int px = 0; px < b.w; px += 8) {
@@ -1296,10 +1293,10 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
             int const k = b.w - px < 8 ? b.w - px : 8;
             // Pixel-centre x per lane: integer-exact f32 sums, so the grouping
             // can't differ from the scalar (float)b.x + (float)(px+l) + 0.5f.
-            foldf8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
+            float8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
             foldv8 const uv = mat_apply8(p->to_pattern, xs, dy);
-            foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
-                   sa = (foldf8)0.0f;
+            float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
+                   sa = (float8)0.0f;
             for (int l = 0; l < k; l++) {
                 if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
                     continue;
@@ -2672,7 +2669,7 @@ static void draw_image_quad(canvas *__single cv,
     half8 const gah = (half8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
-    foldf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const devy = (float)b.y + (float)py + 0.5f;
         for (int px = 0; px < b.w; px += 8) {
@@ -2683,12 +2680,12 @@ static void draw_image_quad(canvas *__single cv,
             // per lane, bit for bit).  The pixel-centre x sums are
             // integer-exact f32, so the grouping can't differ from the
             // scalar (float)b.x + (float)(px+l) + 0.5f.
-            foldf8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
+            float8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
             foldv8 const u = mat_apply8(inv, xs, devy);
-            foldf8 const fsx = sx + ((u.x - dx) / dw) * sww;
-            foldf8 const fsy = sy + ((u.y - dy) / dh) * shh;
-            foldf8 sr = (foldf8)0.0f, sg = (foldf8)0.0f, sb = (foldf8)0.0f,
-                   sa = (foldf8)0.0f;
+            float8 const fsx = sx + ((u.x - dx) / dw) * sww;
+            float8 const fsy = sy + ((u.y - dy) / dh) * shh;
+            float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
+                   sa = (float8)0.0f;
             for (int l = 0; l < k; l++) {
                 if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
                     continue;

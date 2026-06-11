@@ -5,9 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef float cnvs_geom_f8 __attribute__((ext_vector_type(8)));
-typedef float cnvs_geom_f16 __attribute__((ext_vector_type(16)));
-
 static bool verts_reserve(cnvs_verts *v, int need) {
     if (need <= v->cap) {
         return true;
@@ -40,12 +37,12 @@ bool cnvs_verts_append(cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int 
     cnvs_vec2 *__counted_by(cnt) dst = v->data + v->len;
     int i = 0;
     for (; i + 8 <= cnt; i += 8) {  // a stroke block stages 36-48 verts
-        cnvs_geom_f16 q;
+        float16 q;
         memcpy(&q, src + i, sizeof q);
         memcpy(dst + i, &q, sizeof q);
     }
     for (; i + 4 <= cnt; i += 4) {
-        cnvs_geom_f8 q;
+        float8 q;
         memcpy(&q, src + i, sizeof q);
         memcpy(dst + i, &q, sizeof q);
     }

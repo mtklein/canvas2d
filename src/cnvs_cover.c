@@ -6,9 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef float covf8 __attribute__((ext_vector_type(8)));
-typedef uint8_t covu8x8 __attribute__((ext_vector_type(8)));
-
 void cnvs_cover_free(cnvs_cover *c) {
     free(c->acc);
     c->acc = NULL;
@@ -118,7 +115,7 @@ static void accum_row(cnvs_cover *c, int w, int y,
         }
         int x = clo + 2;
         for (; x + 8 <= chi; x += 8) {
-            covf8 v;
+            float8 v;
             memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
             v += d;
             memcpy(c->acc + base + x, &v, sizeof v);  // bounds-checked vector store
@@ -189,25 +186,25 @@ static uint8_t cover_to_u8(cnvs_fill_rule rule, float run) {
 // Coverage-fold a vector of 8 winding values to 0..255, matching cover_to_u8 lane
 // by lane.  run values are finite (a prefix sum of finite areas), so the saturating
 // guards in cnvs_f2u8 reduce to a [0,255] clamp the convert handles by construction.
-static covu8x8 cover_to_u8x8(cnvs_fill_rule rule, covf8 run) {
-    covf8 cov;
+static byte8 cover_to_u8x8(cnvs_fill_rule rule, float8 run) {
+    float8 cov;
     if (rule == CNVS_EVENODD) {
-        covf8 t = run * 0.5f;
-        covf8 m = (t - __builtin_elementwise_floor(t)) * 2.0f;  // [0, 2)
+        float8 t = run * 0.5f;
+        float8 m = (t - __builtin_elementwise_floor(t)) * 2.0f;  // [0, 2)
         cov = __builtin_elementwise_min(m, 2.0f - m);           // == m>1 ? 2-m : m, bit-exact
     } else {
-        cov = __builtin_elementwise_min((covf8)1.0f, __builtin_elementwise_abs(run));
+        cov = __builtin_elementwise_min((float8)1.0f, __builtin_elementwise_abs(run));
     }
-    covf8 v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
-    return __builtin_convertvector(v, covu8x8);
+    float8 v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
+    return __builtin_convertvector(v, byte8);
 }
 
 // Inclusive prefix sum across the 8 lanes, in-register (Hillis-Steele: 3
 // shift-add steps, each adding the lane d positions back, low lanes
 // zero-filled).  The tree association differs from a left-to-right scalar
 // sum, so the float rounding differs by <=1 ULP before the 8-bit quantize.
-static inline covf8 prefix_sum8(covf8 v) {
-    covf8 z = (covf8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+static inline float8 prefix_sum8(float8 v) {
+    float8 z = (float8){ 0, 0, 0, 0, 0, 0, 0, 0 };
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1 (zero-fill)
     v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
     v += __builtin_shufflevector(v, z, 8, 8, 8, 8, 0, 1, 2, 3);  // += lane-4
@@ -224,10 +221,10 @@ void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
         float carry = 0.0f;  // running total of all deltas before this block, this row
         int x = 0;
         for (; x + 8 <= w; x += 8) {
-            covf8 v;
+            float8 v;
             memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
             v = prefix_sum8(v) + carry;               // inclusive prefix sum + carry-in
-            covu8x8 b = cover_to_u8x8(rule, v);
+            byte8 b = cover_to_u8x8(rule, v);
             memcpy(out + base + x, &b, sizeof b);     // bounds-checked vector store
             carry = v[7];                             // running total through this block
         }

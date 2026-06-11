@@ -8,15 +8,11 @@ static int clampi(int v, int lo, int hi) {
     return v;
 }
 
-typedef int32_t blr32x8 __attribute__((ext_vector_type(8)));
-typedef float blrf8 __attribute__((ext_vector_type(8)));
-typedef uint8_t blru8x8 __attribute__((ext_vector_type(8)));
-
 // Exclusive 8-lane prefix sum (lane i = sum of lanes 0..i-1), in-register:
 // shift in a zero, then the three Hillis-Steele shift-add steps (the coverage
 // resolve's prefix_sum8, exclusive).
-static inline blr32x8 excl_prefix8(blr32x8 v) {
-    blr32x8 z = (blr32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+static inline int8 excl_prefix8(int8 v) {
+    int8 z = (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
     v  = __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // shift in the zero
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1
     v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
@@ -24,24 +20,24 @@ static inline blr32x8 excl_prefix8(blr32x8 v) {
     return v;
 }
 
-static inline blr32x8 load8_widen(uint8_t const *__counted_by(8) p) {
-    blru8x8 b;
+static inline int8 load8_widen(uint8_t const *__counted_by(8) p) {
+    byte8 b;
     memcpy(&b, p, sizeof b);  // one bounds check for all 8 samples
-    return __builtin_convertvector(b, blr32x8);
+    return __builtin_convertvector(b, int8);
 }
 
 // Quantize 8 window sums to (sum + win/2) / win exactly, matching the scalar
 // integer division: a float reciprocal multiply lands within +-1 of the true
 // quotient (n < 2^24 is exact in float, and the relative error is ~2^-23), and
 // one remainder comparison snaps it.  No NEON integer divide needed.
-static inline blru8x8 quant8(blr32x8 wsum, int win, int half, float recip) {
-    blr32x8 n = wsum + half;
-    blrf8 f = __builtin_convertvector(n, blrf8);
-    blr32x8 q = __builtin_convertvector(f * recip, blr32x8);  // truncates
-    blr32x8 rem = n - q * win;
+static inline byte8 quant8(int8 wsum, int win, int half, float recip) {
+    int8 n = wsum + half;
+    float8 f = __builtin_convertvector(n, float8);
+    int8 q = __builtin_convertvector(f * recip, int8);  // truncates
+    int8 rem = n - q * win;
     q -= (rem >= win);  // comparison lanes are -1/0: snap a low guess up
     q += (rem < 0);     //                           ...and a high guess down
-    return __builtin_convertvector(q, blru8x8);
+    return __builtin_convertvector(q, byte8);
 }
 
 void blur_box_h(uint8_t *__counted_by(w * h) dst,
@@ -79,11 +75,11 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
         // window sums at once; the carry to the next block is just lane math.
         if (wide) {
             for (; x + r + 9 <= w; x += 8) {
-                blr32x8 e = load8_widen(src + base + x + r + 1);
-                blr32x8 l = load8_widen(src + base + x - r);
-                blr32x8 d = e - l;
-                blr32x8 ws = sum + excl_prefix8(d);
-                blru8x8 q = quant8(ws, win, half, recip);
+                int8 e = load8_widen(src + base + x + r + 1);
+                int8 l = load8_widen(src + base + x - r);
+                int8 d = e - l;
+                int8 ws = sum + excl_prefix8(d);
+                byte8 q = quant8(ws, win, half, recip);
                 memcpy(dst + base + x, &q, sizeof q);  // bounds-checked vector store
                 sum = ws[7] + d[7];
             }
@@ -116,12 +112,12 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
     // the scalar loop, as in the horizontal pass (quant8 needs n < 2^24).
     if (r < 32768) {
         for (; x + 8 <= w; x += 8) {
-            blr32x8 sum = (blr32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+            int8 sum = (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
             for (int k = -r; k <= r; k++) {
                 sum += load8_widen(src + clampi(k, 0, h - 1) * w + x);  // window centred at y = 0
             }
             for (int y = 0; y < h; y++) {
-                blru8x8 q = quant8(sum, win, half, recip);
+                byte8 q = quant8(sum, win, half, recip);
                 memcpy(dst + y * w + x, &q, sizeof q);  // bounds-checked vector store
                 int in  = clampi(y + r + 1, 0, h - 1) * w + x;  // entering below
                 int out = clampi(y - r,     0, h - 1) * w + x;  // leaving above
@@ -153,30 +149,27 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
 // adds/subtracts nothing outside, and every output still divides by the full
 // window (the missing samples really are zeros, not replicated edge pixels).
 
-typedef float blrf4 __attribute__((ext_vector_type(4)));
-typedef float blrf16 __attribute__((ext_vector_type(16)));
-
 // Load/store one premultiplied pixel (four contiguous _Float16) widened to f32:
 // the memcpy is one bounds check for all four channels (the cnvs_filter idiom).
-static inline blrf4 load4f(cnvs_premul const *__counted_by(1) p) {
+static inline float4 load4f(cnvs_premul const *__counted_by(1) p) {
     half4 v;
     memcpy(&v, p, sizeof v);
-    return __builtin_convertvector(v, blrf4);
+    return __builtin_convertvector(v, float4);
 }
 
-static inline void store4f(cnvs_premul *__counted_by(1) p, blrf4 v) {
+static inline void store4f(cnvs_premul *__counted_by(1) p, float4 v) {
     half4 q = __builtin_convertvector(v, half4);
     memcpy(p, &q, sizeof q);
 }
 
 // Four adjacent pixels (16 lanes) at once; one bounds check covers all four.
-static inline blrf16 load16f(cnvs_premul const *__counted_by(4) p) {
+static inline float16 load16f(cnvs_premul const *__counted_by(4) p) {
     half16 v;
     memcpy(&v, p, sizeof v);
-    return __builtin_convertvector(v, blrf16);
+    return __builtin_convertvector(v, float16);
 }
 
-static inline void store16f(cnvs_premul *__counted_by(4) p, blrf16 v) {
+static inline void store16f(cnvs_premul *__counted_by(4) p, float16 v) {
     half16 q = __builtin_convertvector(v, half16);
     memcpy(p, &q, sizeof q);
 }
@@ -184,8 +177,8 @@ static inline void store16f(cnvs_premul *__counted_by(4) p, blrf16 v) {
 // Exclusive prefix sum over the four pixel groups of a 16-lane block (group g =
 // sum of groups 0..g-1): excl_prefix8 with a pixel's four lanes as the unit --
 // shift in a zero group, then the two Hillis-Steele shift-add steps.
-static inline blrf16 excl_prefix4px(blrf16 v) {
-    blrf16 z = (blrf16)0.0f;
+static inline float16 excl_prefix4px(float16 v) {
+    float16 z = (float16)0.0f;
     v  = __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
                                  4, 5, 6, 7, 8, 9, 10, 11);  // shift in the zero group
     v += __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
@@ -196,12 +189,12 @@ static inline blrf16 excl_prefix4px(blrf16 v) {
 }
 
 // One pixel repeated across the four groups, and the last group extracted.
-static inline blrf16 splat4px(blrf4 p) {
+static inline float16 splat4px(float4 p) {
     return __builtin_shufflevector(p, p, 0, 1, 2, 3, 0, 1, 2, 3,
                                    0, 1, 2, 3, 0, 1, 2, 3);
 }
 
-static inline blrf4 group3(blrf16 v) {
+static inline float4 group3(float16 v) {
     return __builtin_shufflevector(v, v, 12, 13, 14, 15);
 }
 
@@ -215,7 +208,7 @@ void blur_box_h_f16(cnvs_premul *__counted_by(w * h) dst,
     for (int y = 0; y < h; y++) {
         int base = y * w;
         // Window centred at x = 0: only src[0..r] exist; outside is transparent.
-        blrf4 sum = (blrf4)0.0f;
+        float4 sum = (float4)0.0f;
         int top = r < w - 1 ? r : w - 1;
         for (int k = 0; k <= top; k++) {
             sum += load4f(src + base + k);
@@ -235,10 +228,10 @@ void blur_box_h_f16(cnvs_premul *__counted_by(w * h) dst,
         // groups turns the serial running sum into four window sums at once;
         // the carry to the next block is lane math.
         for (; x >= r && x + r + 4 < w; x += 4) {
-            blrf16 e = load16f(src + base + x + r + 1);
-            blrf16 l = load16f(src + base + x - r);
-            blrf16 d = e - l;
-            blrf16 ws = splat4px(sum) + excl_prefix4px(d);
+            float16 e = load16f(src + base + x + r + 1);
+            float16 l = load16f(src + base + x - r);
+            float16 d = e - l;
+            float16 ws = splat4px(sum) + excl_prefix4px(d);
             store16f(dst + base + x, ws * recip);
             sum = group3(ws) + group3(d);
         }
@@ -271,7 +264,7 @@ void blur_box_v_f16(cnvs_premul *__counted_by(w * h) dst,
     // y, not x), so even the edge rows run vectorized; an out-of-tile row is
     // transparent and simply adds nothing.
     for (; x + 4 <= w; x += 4) {
-        blrf16 sum = (blrf16)0.0f;
+        float16 sum = (float16)0.0f;
         for (int k = 0; k <= top; k++) {
             sum += load16f(src + k * w + x);
         }
@@ -287,7 +280,7 @@ void blur_box_v_f16(cnvs_premul *__counted_by(w * h) dst,
     }
     // The w%4 tail columns, one pixel's four lanes at a time.
     for (; x < w; x++) {
-        blrf4 sum = (blrf4)0.0f;
+        float4 sum = (float4)0.0f;
         for (int k = 0; k <= top; k++) {
             sum += load4f(src + k * w + x);
         }

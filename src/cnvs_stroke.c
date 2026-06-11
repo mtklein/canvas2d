@@ -14,9 +14,6 @@ static float const TAU = 6.2831853f;
 // Lane values the scalar join/bookkeeping code needs are spilled ONCE per
 // block into small arrays: a variable-index vector subscript makes clang
 // round-trip the whole register through the stack at every access.
-typedef float cnvs_f4 __attribute__((ext_vector_type(4)));
-typedef float cnvs_f8 __attribute__((ext_vector_type(8)));
-typedef int cnvs_i4 __attribute__((ext_vector_type(4)));  // f32 compare mask
 
 // Unit direction and length of p0->p1; false if degenerate.
 static bool seg_dir(cnvs_vec2 p0, cnvs_vec2 p1, cnvs_vec2 *dir, float *len) {
@@ -203,7 +200,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
     cnvs_vec2 last_pt = { .x = 0.0f, .y = 0.0f };
 
     // Segments go four per block: two AoS point loads, direction/normal math
-    // on x/y planes (see the cnvs_f4 comment above), the four quads transposed
+    // on x/y planes (see the batching comment above), the four quads transposed
     // back to vertex order with constant-index shuffles, then a scalar pass
     // over the lanes stages each segment's quad and join in emission order and
     // lands the block with one checked append.  The loads want pts[s..s+4]
@@ -213,42 +210,42 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
     int s = 0;
     while (s < nseg) {
         if (nseg - s >= 4 && s + 4 < m) {
-            cnvs_f8 q0, q1;
+            float8 q0, q1;
             memcpy(&q0, pts + s, sizeof q0);      // one bounds check, 4 points
             memcpy(&q1, pts + s + 1, sizeof q1);  // (x0,y0,x1,y1,...)
-            cnvs_f8 dq = q1 - q0;                 // lane-wise p1 - p0
-            cnvs_f4 dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
-            cnvs_f4 dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
-            cnvs_f4 len = __builtin_elementwise_sqrt(dx * dx + dy * dy);
+            float8 dq = q1 - q0;                 // lane-wise p1 - p0
+            float4 dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
+            float4 dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
+            float4 len = __builtin_elementwise_sqrt(dx * dx + dy * dy);
             // Degenerate lanes divide too (IEEE: huge/inf/NaN, all discarded);
             // the emission pass skips them exactly where seg_dir bails.
-            cnvs_f4 dirx = dx / len;
-            cnvs_f4 diry = dy / len;
-            cnvs_f4 nrmx = -diry * hw;
-            cnvs_f4 nrmy =  dirx * hw;
+            float4 dirx = dx / len;
+            float4 diry = dy / len;
+            float4 nrmx = -diry * hw;
+            float4 nrmy =  dirx * hw;
             // Corners in AoS form: nrm re-interleaved, then p +/- nrm is the
             // same lane-wise fadd/fsub the scalar corner math does.
-            cnvs_f8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
-            cnvs_f8 za0 = q0 + nrm;
-            cnvs_f8 zb0 = q0 - nrm;
-            cnvs_f8 za1 = q1 + nrm;
-            cnvs_f8 zb1 = q1 - nrm;
+            float8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
+            float8 za0 = q0 + nrm;
+            float8 zb0 = q0 - nrm;
+            float8 za1 = q1 + nrm;
+            float8 zb1 = q1 - nrm;
 
             // Transpose each quad's corners into vertex order -- (a0,b0,b1)
             // (a0,b1,a1) -- as three 16-byte stores.  A macro because shuffle
             // indices must be literal constants.
             cnvs_vec2 quads[24];
-#define CNVS_PUT_QUAD(i)                                                          \
-    do {                                                                          \
-        cnvs_f4 t0 = __builtin_shufflevector(za0, zb0, 2 * (i), 2 * (i) + 1,      \
-                                             8 + 2 * (i), 9 + 2 * (i));           \
-        cnvs_f4 t1 = __builtin_shufflevector(zb1, za0, 2 * (i), 2 * (i) + 1,      \
-                                             8 + 2 * (i), 9 + 2 * (i));           \
-        cnvs_f4 t2 = __builtin_shufflevector(zb1, za1, 2 * (i), 2 * (i) + 1,      \
-                                             8 + 2 * (i), 9 + 2 * (i));           \
-        memcpy(quads + 6 * (i), &t0, sizeof t0);                                  \
-        memcpy(quads + 6 * (i) + 2, &t1, sizeof t1);                              \
-        memcpy(quads + 6 * (i) + 4, &t2, sizeof t2);                              \
+#define CNVS_PUT_QUAD(i)                                                         \
+    do {                                                                         \
+        float4 t0 = __builtin_shufflevector(za0, zb0, 2 * (i), 2 * (i) + 1,      \
+                                            8 + 2 * (i), 9 + 2 * (i));           \
+        float4 t1 = __builtin_shufflevector(zb1, za0, 2 * (i), 2 * (i) + 1,      \
+                                            8 + 2 * (i), 9 + 2 * (i));           \
+        float4 t2 = __builtin_shufflevector(zb1, za1, 2 * (i), 2 * (i) + 1,      \
+                                            8 + 2 * (i), 9 + 2 * (i));           \
+        memcpy(quads + 6 * (i), &t0, sizeof t0);                                 \
+        memcpy(quads + 6 * (i) + 2, &t1, sizeof t1);                             \
+        memcpy(quads + 6 * (i) + 4, &t2, sizeof t2);                             \
     } while (0)
             CNVS_PUT_QUAD(0);
             CNVS_PUT_QUAD(1);
@@ -276,49 +273,49 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
             // lane 0 with no carry yet) are computed and discarded.  Like the
             // quads, the wedges transpose to vertex order in-register; only
             // the two decision masks spill.
-            cnvs_i4 degen = len < (cnvs_f4)1e-6f;
+            int4 degen = len < (float4)1e-6f;
             bool vjoin = join != CNVS_JOIN_ROUND && !__builtin_reduce_or(degen);
             cnvs_vec2 wedges[24];  // 4 joins x (pa, v, pb, pa, tip, pb)
             int col4[4], ok4[4];
             if (vjoin) {
-                cnvs_f4 p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
-                cnvs_f4 p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
-                cnvs_f4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
-                cnvs_f4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
+                float4 p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
+                float4 p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
+                float4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
+                float4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
                 d0x[0] = prev_dir.x;  // constant-index insert: stays in-register
                 d0y[0] = prev_dir.y;
-                cnvs_f4 crs = d0x * diry - d0y * dirx;
-                cnvs_i4 col = (crs > (cnvs_f4)-1e-6f) & (crs < (cnvs_f4)1e-6f);
-                cnvs_i4 pos = crs > (cnvs_f4)0.0f;
+                float4 crs = d0x * diry - d0y * dirx;
+                int4 col = (crs > (float4)-1e-6f) & (crs < (float4)1e-6f);
+                int4 pos = crs > (float4)0.0f;
                 // Outer side is opposite the turn (bit-exact +/-1 select).
-                cnvs_f4 sgn = (cnvs_f4)((pos & (cnvs_i4)(cnvs_f4)-1.0f) |
-                                        (~pos & (cnvs_i4)(cnvs_f4)1.0f));
-                cnvs_f4 pax = p0x + sgn * -d0y  * hw;
-                cnvs_f4 pay = p0y + sgn *  d0x  * hw;
-                cnvs_f4 pbx = p0x + sgn * -diry * hw;
-                cnvs_f4 pby = p0y + sgn *  dirx * hw;
+                float4 sgn = (float4)((pos & (int4)(float4)-1.0f) |
+                                      (~pos & (int4)(float4)1.0f));
+                float4 pax = p0x + sgn * -d0y  * hw;
+                float4 pay = p0y + sgn *  d0x  * hw;
+                float4 pbx = p0x + sgn * -diry * hw;
+                float4 pby = p0y + sgn *  dirx * hw;
                 // Miter tip = intersection of the outer edges (pa,d0),(pb,d1).
-                cnvs_f4 sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
-                cnvs_f4 tipx = pax + d0x * sm;
-                cnvs_f4 tipy = pay + d0y * sm;
-                cnvs_f4 mx = tipx - p0x;
-                cnvs_f4 my = tipy - p0y;
+                float4 sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
+                float4 tipx = pax + d0x * sm;
+                float4 tipy = pay + d0y * sm;
+                float4 mx = tipx - p0x;
+                float4 my = tipy - p0y;
                 float mlim = miter_limit * hw;
-                cnvs_i4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
-                cnvs_f8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
-                cnvs_f8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
-                cnvs_f8 ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
-#define CNVS_PUT_WEDGE(i)                                                         \
-    do {                                                                          \
-        cnvs_f4 t0 = __builtin_shufflevector(zpa, q0, 2 * (i), 2 * (i) + 1,       \
-                                             8 + 2 * (i), 9 + 2 * (i));           \
-        cnvs_f4 t1 = __builtin_shufflevector(zpb, zpa, 2 * (i), 2 * (i) + 1,      \
-                                             8 + 2 * (i), 9 + 2 * (i));           \
-        cnvs_f4 t2 = __builtin_shufflevector(ztip, zpb, 2 * (i), 2 * (i) + 1,     \
-                                             8 + 2 * (i), 9 + 2 * (i));           \
-        memcpy(wedges + 6 * (i), &t0, sizeof t0);                                 \
-        memcpy(wedges + 6 * (i) + 2, &t1, sizeof t1);                             \
-        memcpy(wedges + 6 * (i) + 4, &t2, sizeof t2);                             \
+                int4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
+                float8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
+                float8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
+                float8 ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
+#define CNVS_PUT_WEDGE(i)                                                        \
+    do {                                                                         \
+        float4 t0 = __builtin_shufflevector(zpa, q0, 2 * (i), 2 * (i) + 1,       \
+                                            8 + 2 * (i), 9 + 2 * (i));           \
+        float4 t1 = __builtin_shufflevector(zpb, zpa, 2 * (i), 2 * (i) + 1,      \
+                                            8 + 2 * (i), 9 + 2 * (i));           \
+        float4 t2 = __builtin_shufflevector(ztip, zpb, 2 * (i), 2 * (i) + 1,     \
+                                            8 + 2 * (i), 9 + 2 * (i));           \
+        memcpy(wedges + 6 * (i), &t0, sizeof t0);                                \
+        memcpy(wedges + 6 * (i) + 2, &t1, sizeof t1);                            \
+        memcpy(wedges + 6 * (i) + 4, &t2, sizeof t2);                            \
     } while (0)
                 CNVS_PUT_WEDGE(0);
                 CNVS_PUT_WEDGE(1);

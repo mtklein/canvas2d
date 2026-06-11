@@ -138,20 +138,17 @@ cnvs_unpremul cnvs_gradient_sample(cnvs_gradient const *gr, cnvs_vec2 p, float a
     return c;
 }
 
-typedef float gradf8 __attribute__((ext_vector_type(8)));
-typedef int gradi8 __attribute__((ext_vector_type(8)));
-
 // Bit-exact f32 lane select, the 32-bit twin of half8_sel: a where the mask
 // lane is set (-1, from a vector comparison), else b.  Bitwise: the selected
 // lane passes through untouched (an arithmetic b + (a-b)*m re-rounds it), and
 // an unselected lane's inf/NaN is discarded exactly.
-static gradf8 vsel_bits(gradi8 m, gradf8 a, gradf8 b) {
-    return (gradf8)(((gradi8)a & m) | ((gradi8)b & ~m));
+static float8 vsel_bits(int8 m, float8 a, float8 b) {
+    return (float8)(((int8)a & m) | ((int8)b & ~m));
 }
 
-static gradf8 vclamp01(gradf8 v) {
-    v = __builtin_elementwise_max((gradf8)0.0f, v);
-    return __builtin_elementwise_min((gradf8)1.0f, v);
+static float8 vclamp01(float8 v) {
+    v = __builtin_elementwise_max((float8)0.0f, v);
+    return __builtin_elementwise_min((float8)1.0f, v);
 }
 
 // Parameter solve for a horizontal run of `n` pixel centres
@@ -161,7 +158,7 @@ static gradf8 vclamp01(gradf8 v) {
 // vectorizes 8 wide.
 void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out) {
-    gradf8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     float base = (float)x0 + 0.5f - gr->p0.x;
     int i = 0;
     if (gr->kind == CNVS_GRAD_LINEAR) {
@@ -171,8 +168,8 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
         float inv = denom > 1e-12f ? 1.0f / denom : 0.0f;  // inv == 0 -> all-zero t
         float cy = (y - gr->p0.y) * dy;                    // y term constant per row
         for (; i + 8 <= n; i += 8) {
-            gradf8 px = base + ((float)i + lane);
-            gradf8 v = vclamp01((px * dx + cy) * inv);  // clamp01(((p-p0).d)/|d|^2)
+            float8 px = base + ((float)i + lane);
+            float8 v = vclamp01((px * dx + cy) * inv);  // clamp01(((p-p0).d)/|d|^2)
             memcpy(t_out + i, &v, sizeof v);            // bounds-checked vector store
         }
     } else if (gr->kind == CNVS_GRAD_RADIAL) {
@@ -185,30 +182,30 @@ void cnvs_gradient_param_row(cnvs_gradient const *gr, int x0, float y, int n,
         float bconst = cdy * pdy + r0 * dr;  // b = -2*(cdx*pdx + bconst)
         float cconst = pdy * pdy - r0 * r0;  // c = pdx*pdx + cconst
         bool a_lin = fabsf(a) < 1e-9f;       // a is constant along the row
-        gradf8 inv2a = (gradf8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
+        float8 inv2a = (float8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
         for (; i + 8 <= n; i += 8) {
-            gradf8 pdx = base + ((float)i + lane);
-            gradf8 b = -2.0f * (cdx * pdx + bconst);
-            gradf8 c = pdx * pdx + cconst;
-            gradf8 root;
-            gradi8 valid;
+            float8 pdx = base + ((float)i + lane);
+            float8 b = -2.0f * (cdx * pdx + bconst);
+            float8 c = pdx * pdx + cconst;
+            float8 root;
+            int8 valid;
             if (a_lin) {  // degenerate: the t^2 term vanishes -> b t + c = 0
                 root = -c / b;
                 valid = ((b > 1e-12f) | (b < -1e-12f)) & (r0 + root * dr >= 0.0f);
             } else {
-                gradf8 disc = b * b - 4.0f * a * c;
-                gradf8 sq = __builtin_elementwise_sqrt(
-                    __builtin_elementwise_max((gradf8)0.0f, disc));
-                gradf8 r1_ = (-b + sq) * inv2a;
-                gradf8 r2_ = (-b - sq) * inv2a;
-                gradf8 hi = __builtin_elementwise_max(r1_, r2_);
-                gradf8 lo = __builtin_elementwise_min(r1_, r2_);
-                gradi8 hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
-                gradi8 look = r0 + lo * dr >= 0.0f;
-                root = vsel_bits(hiok, hi, vsel_bits(look, lo, (gradf8)0.0f));
+                float8 disc = b * b - 4.0f * a * c;
+                float8 sq = __builtin_elementwise_sqrt(
+                    __builtin_elementwise_max((float8)0.0f, disc));
+                float8 r1_ = (-b + sq) * inv2a;
+                float8 r2_ = (-b - sq) * inv2a;
+                float8 hi = __builtin_elementwise_max(r1_, r2_);
+                float8 lo = __builtin_elementwise_min(r1_, r2_);
+                int8 hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
+                int8 look = r0 + lo * dr >= 0.0f;
+                root = vsel_bits(hiok, hi, vsel_bits(look, lo, (float8)0.0f));
                 valid = (disc >= 0.0f) & (hiok | look);
             }
-            gradf8 out = vsel_bits(valid, vclamp01(root), (gradf8)-1.0f);
+            float8 out = vsel_bits(valid, vclamp01(root), (float8)-1.0f);
             memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
         }
     }
@@ -258,27 +255,27 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
         // Per-stop lane constants, splatted once per row: offsets in f32 (they
         // are geometry, like the parameter), channels in _Float16 (the colour
         // compute type, docs/decisions/color-axis.md).
-        gradf8 off[CNVS_MAX_STOPS];
+        float8 off[CNVS_MAX_STOPS];
         gradpx8 col[CNVS_MAX_STOPS];
         for (int s = 0; s < sc; s++) {
             cnvs_stop st = gr->stops[s];
-            off[s] = (gradf8)st.offset;
+            off[s] = (float8)st.offset;
             col[s] = (gradpx8){ (half8)st.color.r, (half8)st.color.g,
                                 (half8)st.color.b, (half8)st.color.a };
         }
         int const last = sc - 1;
         half8 const zero = (half8)(_Float16)0.0f;
         for (; i + 8 <= n; i += 8) {
-            gradf8 tv;
+            float8 tv;
             memcpy(&tv, t + i, sizeof tv);  // bounds-checked vector load
             // Stop search: lo starts at stop 0 and advances to the last stop
             // whose offset is strictly below t, hi to the stop after it --
             // strict, so a lane between coincident offsets resolves to the
             // same pair as the scalar scan.
-            gradf8  lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
+            float8  lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
             gradpx8 lo     = col[0], hi     = col[last > 0 ? 1 : 0];
             for (int s = 1; s + 1 < sc; s++) {
-                gradi8 m = tv > off[s];
+                int8 m = tv > off[s];
                 mask8 mh = __builtin_convertvector(m, mask8);
                 lo_off = vsel_bits(m, off[s],     lo_off);
                 hi_off = vsel_bits(m, off[s + 1], hi_off);
@@ -288,9 +285,9 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             // The scalar lerp, eight lanes wide.  Lanes the edge selects below
             // overwrite may divide by a zero span; the bitwise selects discard
             // the resulting inf/NaN exactly.
-            gradf8 span = hi_off - lo_off;
-            gradf8 u32 = vsel_bits(span > 0.0f, (tv - lo_off) / span,
-                                   (gradf8)0.0f);
+            float8 span = hi_off - lo_off;
+            float8 u32 = vsel_bits(span > 0.0f, (tv - lo_off) / span,
+                                   (float8)0.0f);
             half8 u = __builtin_convertvector(u32, half8);
             gradpx8 c = { lo.r + (hi.r - lo.r) * u, lo.g + (hi.g - lo.g) * u,
                           lo.b + (hi.b - lo.b) * u, lo.a + (hi.a - lo.a) * u };
@@ -300,7 +297,7 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             // like the scalar's early-out order), and t < 0 is transparent.
             mask8 mlast  = __builtin_convertvector(tv >= off[last],    mask8);
             mask8 mfirst = __builtin_convertvector(tv <= off[0],       mask8);
-            mask8 mout   = __builtin_convertvector(tv <  (gradf8)0.0f, mask8);
+            mask8 mout   = __builtin_convertvector(tv <  (float8)0.0f, mask8);
             c = gradpx8_sel(mlast,  col[last], c);
             c = gradpx8_sel(mfirst, col[0],    c);
             c = gradpx8_sel(mout,   (gradpx8){ zero, zero, zero, zero }, c);
