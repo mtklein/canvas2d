@@ -1114,12 +1114,12 @@ static bool replay_line(canvas *__single cv, struct replay_blocks *__single blk,
 
     // --- 2 float ---
     else if (tok_eq(data, le, cs, cl, "translate")) { if (!read_floats(data, le, &j, f, 2)) return false; canvas_translate(cv, f[0], f[1]); }
+    else if (tok_eq(data, le, cs, cl, "scale"))     { if (!read_floats(data, le, &j, f, 2)) return false; canvas_scale(cv, f[0], f[1]); }
+    else if (tok_eq(data, le, cs, cl, "move_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_move_to(cv, f[0], f[1]); }
+    else if (tok_eq(data, le, cs, cl, "line_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_line_to(cv, f[0], f[1]); }
     // --- 3 float ---
     else if (tok_eq(data, le, cs, cl, "set_fill_conic_gradient"))   { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_fill_conic_gradient(cv, f[0], f[1], f[2]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_conic_gradient")) { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_stroke_conic_gradient(cv, f[0], f[1], f[2]); }
-    else if (tok_eq(data, le, cs, cl, "scale"))                     { if (!read_floats(data, le, &j, f, 2)) return false; canvas_scale(cv, f[0], f[1]); }
-    else if (tok_eq(data, le, cs, cl, "move_to"))                   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_move_to(cv, f[0], f[1]); }
-    else if (tok_eq(data, le, cs, cl, "line_to"))                   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_line_to(cv, f[0], f[1]); }
 
     // --- 4 float ---
     else if (tok_eq(data, le, cs, cl, "rect"))                       { if (!read_floats(data, le, &j, f, 4)) return false; canvas_rect(cv, f[0], f[1], f[2], f[3]); }

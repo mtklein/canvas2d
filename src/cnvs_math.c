@@ -3,36 +3,36 @@
 #include <math.h>
 
 cnvs_mat cnvs_mat_identity(void) {
-    return (cnvs_mat){ .a = 1.0f, .b = 0.0f, .c = 0.0f,
-                       .d = 1.0f, .e = 0.0f, .f = 0.0f };
+    return (cnvs_mat){ .a = 1.0f, .c = 0.0f, .e = 0.0f,
+                       .b = 0.0f, .d = 1.0f, .f = 0.0f };
 }
 
 cnvs_mat cnvs_mat_mul(cnvs_mat m, cnvs_mat n) {
     return (cnvs_mat){
         .a = m.a * n.a + m.c * n.b,
-        .b = m.b * n.a + m.d * n.b,
         .c = m.a * n.c + m.c * n.d,
-        .d = m.b * n.c + m.d * n.d,
         .e = m.a * n.e + m.c * n.f + m.e,
+        .b = m.b * n.a + m.d * n.b,
+        .d = m.b * n.c + m.d * n.d,
         .f = m.b * n.e + m.d * n.f + m.f,
     };
 }
 
 cnvs_mat cnvs_mat_translate(float tx, float ty) {
-    return (cnvs_mat){ .a = 1.0f, .b = 0.0f, .c = 0.0f,
-                       .d = 1.0f, .e = tx,   .f = ty   };
+    return (cnvs_mat){ .a = 1.0f, .c = 0.0f, .e = tx,
+                       .b = 0.0f, .d = 1.0f, .f = ty };
 }
 
 cnvs_mat cnvs_mat_scale(float sx, float sy) {
-    return (cnvs_mat){ .a = sx, .b = 0.0f, .c = 0.0f,
-                       .d = sy, .e = 0.0f, .f = 0.0f };
+    return (cnvs_mat){ .a = sx,   .c = 0.0f, .e = 0.0f,
+                       .b = 0.0f, .d = sy,   .f = 0.0f };
 }
 
 cnvs_mat cnvs_mat_rotate(float radians) {
     float s = sinf(radians);
     float k = cosf(radians);
-    return (cnvs_mat){ .a = k, .b = s,    .c = -s,
-                       .d = k, .e = 0.0f, .f = 0.0f };
+    return (cnvs_mat){ .a = k, .c = -s, .e = 0.0f,
+                       .b = s, .d =  k, .f = 0.0f };
 }
 
 cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p) {
@@ -48,8 +48,8 @@ cnvs_mat cnvs_mat_invert(cnvs_mat m) {
         return cnvs_mat_identity();
     }
     float inv = 1.0f / det;
-    cnvs_mat r = { .a =  m.d * inv, .b = -m.b * inv,
-                   .c = -m.c * inv, .d =  m.a * inv };
+    cnvs_mat r = { .a =  m.d * inv, .c = -m.c * inv,
+                   .b = -m.b * inv, .d =  m.a * inv };
     r.e = -(r.a * m.e + r.c * m.f);
     r.f = -(r.b * m.e + r.d * m.f);
     return r;
