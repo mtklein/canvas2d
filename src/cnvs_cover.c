@@ -186,7 +186,7 @@ static uint8_t cover_to_u8(cnvs_fill_rule rule, float run) {
 // Coverage-fold a vector of 8 winding values to 0..255, matching cover_to_u8 lane
 // by lane.  run values are finite (a prefix sum of finite areas), so the saturating
 // guards in cnvs_f2u8 reduce to a [0,255] clamp the convert handles by construction.
-static byte8 cover_to_u8x8(cnvs_fill_rule rule, float8 run) {
+static uchar8 cover_to_u8x8(cnvs_fill_rule rule, float8 run) {
     float8 cov;
     if (rule == CNVS_EVENODD) {
         float8 t = run * 0.5f;
@@ -196,7 +196,7 @@ static byte8 cover_to_u8x8(cnvs_fill_rule rule, float8 run) {
         cov = __builtin_elementwise_min((float8)1.0f, __builtin_elementwise_abs(run));
     }
     float8 v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
-    return __builtin_convertvector(v, byte8);
+    return __builtin_convertvector(v, uchar8);
 }
 
 // Inclusive prefix sum across the 8 lanes, in-register (Hillis-Steele: 3
@@ -224,7 +224,7 @@ void cnvs_cover_resolve(cnvs_cover *c, int w, int h, cnvs_fill_rule rule,
             float8 v;
             memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
             v = prefix_sum8(v) + carry;               // inclusive prefix sum + carry-in
-            byte8 b = cover_to_u8x8(rule, v);
+            uchar8 b = cover_to_u8x8(rule, v);
             memcpy(out + base + x, &b, sizeof b);     // bounds-checked vector store
             carry = v[7];                             // running total through this block
         }

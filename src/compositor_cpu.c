@@ -109,7 +109,7 @@ static rgb8 clip_color8(rgb8 c) {
     half8 l = lum8(c);
     half8 n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
     half8 x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    mask8 lo = n < zero;  // lanes with a channel below 0: scale about l
+    short8 lo = n < zero;  // lanes with a channel below 0: scale about l
     half8 kn = l / (l - n);
     c.r = half8_sel(lo, l + (c.r - l) * kn, c.r);
     c.g = half8_sel(lo, l + (c.g - l) * kn, c.g);
@@ -117,7 +117,7 @@ static rgb8 clip_color8(rgb8 c) {
     // The W3C ClipColor computes n and x ONCE, before either fix: the x > 1
     // test and the kx denominator both read the pre-fix maximum even though
     // the channels they rescale may have just been pulled toward l.
-    mask8 hi = x > one;   // lanes with a channel above 1
+    short8 hi = x > one;   // lanes with a channel above 1
     half8 kx = (one - l) / (x - l);
     c.r = half8_sel(hi, l + (c.r - l) * kx, c.r);
     c.g = half8_sel(hi, l + (c.g - l) * kx, c.g);
@@ -144,7 +144,7 @@ static rgb8 set_sat8(rgb8 c, half8 s) {
     half8 const zero = (half8)(_Float16)0.0f;
     half8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
     half8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    mask8 flat = mx <= mn;
+    short8 flat = mx <= mn;
     half8 k = s / (mx - mn);
     return (rgb8){ .r = half8_sel(flat, zero, (c.r - mn) * k),
                    .g = half8_sel(flat, zero, (c.g - mn) * k),
@@ -202,7 +202,7 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, compositor_blend_mode mode) {
     } else {
         cnvs_px8 t;
         if ((int)mode >= COMPOSITOR_HUE) {
-            mask8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
+            short8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
             rgb8 cs = { half8_sel(sm, s.r / sa, zero),
                         half8_sel(sm, s.g / sa, zero),
                         half8_sel(sm, s.b / sa, zero) };

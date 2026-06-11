@@ -21,7 +21,7 @@ static inline int8 excl_prefix8(int8 v) {
 }
 
 static inline int8 load8_widen(uint8_t const *__counted_by(8) p) {
-    byte8 b;
+    uchar8 b;
     memcpy(&b, p, sizeof b);  // one bounds check for all 8 samples
     return __builtin_convertvector(b, int8);
 }
@@ -30,14 +30,14 @@ static inline int8 load8_widen(uint8_t const *__counted_by(8) p) {
 // integer division: a float reciprocal multiply lands within +-1 of the true
 // quotient (n < 2^24 is exact in float, and the relative error is ~2^-23), and
 // one remainder comparison snaps it.  No NEON integer divide needed.
-static inline byte8 quant8(int8 wsum, int win, int half, float recip) {
+static inline uchar8 quant8(int8 wsum, int win, int half, float recip) {
     int8 n = wsum + half;
     float8 f = __builtin_convertvector(n, float8);
     int8 q = __builtin_convertvector(f * recip, int8);  // truncates
     int8 rem = n - q * win;
     q -= (rem >= win);  // comparison lanes are -1/0: snap a low guess up
     q += (rem < 0);     //                           ...and a high guess down
-    return __builtin_convertvector(q, byte8);
+    return __builtin_convertvector(q, uchar8);
 }
 
 void blur_box_h(uint8_t *__counted_by(w * h) dst,
@@ -79,7 +79,7 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
                 int8 l = load8_widen(src + base + x - r);
                 int8 d = e - l;
                 int8 ws = sum + excl_prefix8(d);
-                byte8 q = quant8(ws, win, half, recip);
+                uchar8 q = quant8(ws, win, half, recip);
                 memcpy(dst + base + x, &q, sizeof q);  // bounds-checked vector store
                 sum = ws[7] + d[7];
             }
@@ -117,7 +117,7 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
                 sum += load8_widen(src + clampi(k, 0, h - 1) * w + x);  // window centred at y = 0
             }
             for (int y = 0; y < h; y++) {
-                byte8 q = quant8(sum, win, half, recip);
+                uchar8 q = quant8(sum, win, half, recip);
                 memcpy(dst + y * w + x, &q, sizeof q);  // bounds-checked vector store
                 int in  = clampi(y + r + 1, 0, h - 1) * w + x;  // entering below
                 int out = clampi(y - r,     0, h - 1) * w + x;  // leaving above

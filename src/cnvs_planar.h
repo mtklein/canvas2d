@@ -24,7 +24,7 @@
 #include <string.h>
 
 // Eight pixels, channel-planar: a half8 is one channel plane (cnvs_math.h's
-// generic lane vocabulary; a half4 is one AoS pixel, a byte8 one byte plane).
+// generic lane vocabulary; a half4 is one AoS pixel, a uchar8 one byte plane).
 typedef struct {
     half8 r, g, b, a;
 } cnvs_px8;
@@ -34,8 +34,8 @@ typedef struct {
 // unselected lane may hold the inf/NaN of a guarded divide and must be
 // discarded exactly -- this is how scalar `p ? q : r` branches translate to
 // lanes without changing any selected value.
-static inline half8 half8_sel(mask8 m, half8 a, half8 b) {
-    return (half8)(((mask8)a & m) | ((mask8)b & ~m));
+static inline half8 half8_sel(short8 m, half8 a, half8 b) {
+    return (half8)(((short8)a & m) | ((short8)b & ~m));
 }
 
 // --- the f16 tile seam (cnvs_premul is four contiguous _Float16) ------------
@@ -84,19 +84,19 @@ static inline void cnvs_px8_store_k(cnvs_premul *__counted_by(k) p, int k,
 // stays visible at the call site.
 static inline cnvs_px8 cnvs_px8_load_rgba8(uint8_t const *__counted_by(32) p) {
     uint8x8x4_t v = vld4_u8(p);
-    return (cnvs_px8){ __builtin_convertvector((byte8)v.val[0], half8),
-                       __builtin_convertvector((byte8)v.val[1], half8),
-                       __builtin_convertvector((byte8)v.val[2], half8),
-                       __builtin_convertvector((byte8)v.val[3], half8) };
+    return (cnvs_px8){ __builtin_convertvector((uchar8)v.val[0], half8),
+                       __builtin_convertvector((uchar8)v.val[1], half8),
+                       __builtin_convertvector((uchar8)v.val[2], half8),
+                       __builtin_convertvector((uchar8)v.val[3], half8) };
 }
 
 // Planes of finished byte values in [0, 255.5) narrowed (truncating, the
 // convert's rounding) and re-interleaved to eight RGBA8 pixels.
 static inline void cnvs_px8_store_rgba8(uint8_t *__counted_by(32) p, cnvs_px8 px) {
-    uint8x8x4_t v = { { (uint8x8_t)__builtin_convertvector(px.r, byte8),
-                        (uint8x8_t)__builtin_convertvector(px.g, byte8),
-                        (uint8x8_t)__builtin_convertvector(px.b, byte8),
-                        (uint8x8_t)__builtin_convertvector(px.a, byte8) } };
+    uint8x8x4_t v = { { (uint8x8_t)__builtin_convertvector(px.r, uchar8),
+                        (uint8x8_t)__builtin_convertvector(px.g, uchar8),
+                        (uint8x8_t)__builtin_convertvector(px.b, uchar8),
+                        (uint8x8_t)__builtin_convertvector(px.a, uchar8) } };
     vst4_u8(p, v);
 }
 
@@ -119,7 +119,7 @@ static inline void cnvs_px8_store_rgba8_k(uint8_t *__counted_by(4 * k) p, int k,
                                           cnvs_px8 px) {
     for (int i = 0; i < k && i < 8; i++) {
         half4 v = { px.r[i], px.g[i], px.b[i], px.a[i] };
-        byte4 q = __builtin_convertvector(v, byte4);
+        uchar4 q = __builtin_convertvector(v, uchar4);
         memcpy(&p[i * 4], &q, sizeof q);
     }
 }
@@ -153,7 +153,7 @@ static inline cnvs_px8 cnvs_px8_load_unpremul_k(cnvs_unpremul const *__counted_b
 // --- the coverage seam (one contiguous byte per pixel; no deinterleave) -----
 
 static inline half8 half8_from_u8(uint8_t const *__counted_by(8) p) {
-    byte8 b;
+    uchar8 b;
     memcpy(&b, p, sizeof b);  // one bounds check, eight samples
     return __builtin_convertvector(b, half8);
 }

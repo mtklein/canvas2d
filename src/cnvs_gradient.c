@@ -240,7 +240,7 @@ typedef struct {
     half8 r, g, b, a;
 } gradpx8;
 
-static gradpx8 gradpx8_sel(mask8 m, gradpx8 x, gradpx8 y) {
+static gradpx8 gradpx8_sel(short8 m, gradpx8 x, gradpx8 y) {
     return (gradpx8){ half8_sel(m, x.r, y.r), half8_sel(m, x.g, y.g),
                       half8_sel(m, x.b, y.b), half8_sel(m, x.a, y.a) };
 }
@@ -291,7 +291,7 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             gradpx8 lo     = col[0], hi     = col[last > 0 ? 1 : 0];
             for (int s = 1; s + 1 < sc; s++) {
                 int8 m = tv > off[s];
-                mask8 mh = __builtin_convertvector(m, mask8);
+                short8 mh = __builtin_convertvector(m, short8);
                 lo_off = vsel_bits(m, off[s],     lo_off);
                 hi_off = vsel_bits(m, off[s + 1], hi_off);
                 lo = gradpx8_sel(mh, col[s],     lo);
@@ -310,9 +310,9 @@ void cnvs_gradient_color_row(cnvs_gradient const *gr,
             // past the last stop takes the last colour, t at or before the
             // first takes the first (applied second, so it wins ties exactly
             // like the scalar's early-out order), and t < 0 is transparent.
-            mask8 mlast  = __builtin_convertvector(tv >= off[last],    mask8);
-            mask8 mfirst = __builtin_convertvector(tv <= off[0],       mask8);
-            mask8 mout   = __builtin_convertvector(tv <  (float8)0.0f, mask8);
+            short8 mlast  = __builtin_convertvector(tv >= off[last],    short8);
+            short8 mfirst = __builtin_convertvector(tv <= off[0],       short8);
+            short8 mout   = __builtin_convertvector(tv <  (float8)0.0f, short8);
             c = gradpx8_sel(mlast,  col[last], c);
             c = gradpx8_sel(mfirst, col[0],    c);
             c = gradpx8_sel(mout,   (gradpx8){ zero, zero, zero, zero }, c);

@@ -2810,7 +2810,7 @@ void canvas_draw_image_scaled(canvas *__single cv,
 // the truncating store seam (cnvs_px8_store_rgba8).
 static cnvs_px8 unpremul_quant8(cnvs_px8 p) {
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    mask8 opaque = p.a > zero;
+    short8 opaque = p.a > zero;
     cnvs_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
     u.r = half8_sel(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.r)), zero);
