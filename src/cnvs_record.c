@@ -195,13 +195,13 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
     fputs("bits ", f);
     for (int i = 0; i < n; i += 3) {
         int const m = n - i;
-        uint32_t v = (uint32_t)p[i] << 16;
-        if (m > 1) { v |= (uint32_t)p[i + 1] << 8; }
-        if (m > 2) { v |= (uint32_t)p[i + 2]; }
-        fputc(k[(v >> 18) & 63u], f);
-        fputc(k[(v >> 12) & 63u], f);
-        fputc(m > 1 ? k[(v >> 6) & 63u] : '=', f);
-        fputc(m > 2 ? k[v & 63u] : '=', f);
+        uint32_t v =      (uint32_t)p[i]     << 16;
+        if (m > 1) { v |= (uint32_t)p[i + 1] <<  8; }
+        if (m > 2) { v |= (uint32_t)p[i + 2]      ; }
+        fputc(        k[(v >> 18) & 63u]      , f);
+        fputc(        k[(v >> 12) & 63u]      , f);
+        fputc(m > 1 ? k[(v >>  6) & 63u] : '=', f);
+        fputc(m > 2 ? k[ v        & 63u] : '=', f);
     }
     fputc('\n', f);
 }
