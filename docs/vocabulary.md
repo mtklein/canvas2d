@@ -359,11 +359,13 @@ both read very clear to me.
   The selection/caret text API is REAL, not neglected: gallery demos coming.
   Large coherent files are fine — one concern per file, large concerns make
   large files.
-- 2026-06-11 (types): enums always `enum foo`, never typedef'd.  Large
-  reference types (not meant to be copied; anything with a constructor or
-  free) are tagged: `struct canvas`, spelled at every use.  Small value
-  types meant for by-value handling keep typedefs (float8, cnvs_vec2,
-  cnvs_px8, cnvs_mat...).  The copy criterion decides, not size alone —
-  state embedded and copied on save/restore is value-typed.  Constructors
-  are the bare type name (`struct canvas *canvas(...)`); destructors are
-  `foo_free()`, NULL-accepting like free() itself.
+- 2026-06-11 (types): enums always `enum foo`, never typedef'd.  Structs
+  split by LITERAL C usage, read off the call signatures: worked with
+  almost always by copying values -> typedef (float8, cnvs_vec2, cnvs_px8,
+  cnvs_mat); worked with almost always through pointer indirection ->
+  tagged `struct foo`, no typedef, spelled at every use (struct canvas,
+  struct cnvs_gradient -- its functions all take pointers, the occasional
+  save/restore copy notwithstanding).  Anything with a constructor or free
+  is tagged by nature.  Constructors are the bare type name
+  (`struct canvas *canvas(...)`); destructors are `foo_free()`,
+  NULL-accepting like free() itself.
