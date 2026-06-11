@@ -35,15 +35,6 @@
 // mode blends at full strength and lerps (test_coverage_lerp is the
 // supersampled-oracle gate).
 
-// minh/maxh: one fminnm/fmaxnm per plane.  These differ from the old
-// compare+select spelling (`a < b ? a : b`) only on signed zeros and NaN
-// ordering: every NaN reaching a min/max here sits in a lane a bitwise select
-// later discards, and the premultiplied inputs are non-negative, so neither
-// case survives to an output byte.  The select spelling existed to bit-match
-// the scalar kernel the planar conversion replaced; that reference is gone.
-static cnvs_h8 minh8(cnvs_h8 a, cnvs_h8 b) { return __builtin_elementwise_min(a, b); }
-static cnvs_h8 maxh8(cnvs_h8 a, cnvs_h8 b) { return __builtin_elementwise_max(a, b); }
-
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
 static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
     cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
@@ -51,11 +42,11 @@ static cnvs_h8 blend_sep8(compositor_blend_mode mode, cnvs_h8 cb, cnvs_h8 cs) {
         case COMPOSITOR_COLOR_DODGE:
             return cnvs_h8_sel(cb <= zero, zero,
                    cnvs_h8_sel(cs >= one, one,
-                               minh8(one, cb / (one - cs))));
+                               __builtin_elementwise_min(one, cb / (one - cs))));
         case COMPOSITOR_COLOR_BURN:
             return cnvs_h8_sel(cb >= one, one,
                    cnvs_h8_sel(cs <= zero, zero,
-                               one - minh8(one, (one - cb) / cs)));
+                               one - __builtin_elementwise_min(one, (one - cb) / cs)));
         case COMPOSITOR_SOFT_LIGHT: {
             cnvs_h8 dd = cnvs_h8_sel(cb <= (cnvs_h8)(_Float16)0.25f,
                 (((_Float16)16.0f * cb - (_Float16)12.0f) * cb + (_Float16)4.0f) * cb,
@@ -79,8 +70,8 @@ static cnvs_h8 blend_term8(compositor_blend_mode mode,
             return cnvs_h8_sel((_Float16)2.0f * d <= da,
                                (_Float16)2.0f * s * d,
                                sa * da - (_Float16)2.0f * (da - d) * (sa - s));
-        case COMPOSITOR_DARKEN:     return minh8(s * da, d * sa);
-        case COMPOSITOR_LIGHTEN:    return maxh8(s * da, d * sa);
+        case COMPOSITOR_DARKEN:     return __builtin_elementwise_min(s * da, d * sa);
+        case COMPOSITOR_LIGHTEN:    return __builtin_elementwise_max(s * da, d * sa);
         case COMPOSITOR_HARD_LIGHT:
             return cnvs_h8_sel((_Float16)2.0f * s <= sa,
                                (_Float16)2.0f * s * d,
@@ -119,8 +110,8 @@ static cnvs_h8 lum8(rgb8 c) {
 static rgb8 clip_color8(rgb8 c) {
     cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f, one = (cnvs_h8)(_Float16)1.0f;
     cnvs_h8 l = lum8(c);
-    cnvs_h8 n = minh8(c.r, minh8(c.g, c.b));
-    cnvs_h8 x = maxh8(c.r, maxh8(c.g, c.b));
+    cnvs_h8 n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    cnvs_h8 x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
     cnvs_m8 lo = n < zero;  // lanes with a channel below 0: scale about l
     cnvs_h8 kn = l / (l - n);
     c.r = cnvs_h8_sel(lo, l + (c.r - l) * kn, c.r);
@@ -146,15 +137,16 @@ static rgb8 set_lum8(rgb8 c, cnvs_h8 l) {
 }
 
 static cnvs_h8 sat8(rgb8 c) {
-    return maxh8(c.r, maxh8(c.g, c.b)) - minh8(c.r, minh8(c.g, c.b));
+    return __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b))
+         - __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
 }
 
 // Set saturation: max channel -> s, min -> 0, mid proportional; an all-equal
 // lane (mx <= mn) has no saturation axis and goes to black.
 static rgb8 set_sat8(rgb8 c, cnvs_h8 s) {
     cnvs_h8 const zero = (cnvs_h8)(_Float16)0.0f;
-    cnvs_h8 mn = minh8(c.r, minh8(c.g, c.b));
-    cnvs_h8 mx = maxh8(c.r, maxh8(c.g, c.b));
+    cnvs_h8 mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    cnvs_h8 mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
     cnvs_m8 flat = mx <= mn;
     cnvs_h8 k = s / (mx - mn);
     return (rgb8){ .r = cnvs_h8_sel(flat, zero, (c.r - mn) * k),
