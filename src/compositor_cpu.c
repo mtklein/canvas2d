@@ -419,15 +419,8 @@ void compositor_blend(compositor *__single c, int x, int y, int w, int h,
         // _Float16 arithmetic end to end (docs/decisions/color-axis.md).
         // Source-over folds: op coverage (normally already folded by the
         // shade stage, so cov is NULL here) and clip attenuation both scale
-        // the premultiplied source, in f16.  The normalize is one multiply
-        // by RN16(1/255), chosen on merit: exact where exactness matters
-        // (0, and 255 * RN16(1/255) == 1.0, so full coverage perturbs
-        // nothing), and the same idiom as the shade stage's fold.  A true
-        // f16 divide would be correctly rounded on the 10 of 256 coverage
-        // bytes where the two differ -- one f16 ULP, sub-quantizer -- at
-        // several times fmul's latency and a fraction of its throughput.
-        // A w%8 tail runs the same planar block over gathered pixels,
-        // zero-filled.
+        // the premultiplied source, in f16.  A w%8 tail runs the same planar
+        // block over gathered pixels, zero-filled.
         _Float16 const k255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
             int col = 0;
