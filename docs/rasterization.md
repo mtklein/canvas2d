@@ -118,9 +118,11 @@ One pipeline, per op, over the op's device-space bounding box
 4. **Shade** (`paint_tile` / `paint_tile_pattern` / `draw_image_quad`): eight
    pixels per step over channel planes (the §3.1 conversion). For folding
    composite modes — the over-family AND all 15 blend modes (§3.8's ruling
-   plus the homogeneity re-fold) and any filtered op — coverage widens to one
-   f32 plane and the fold (paint alpha × global alpha × coverage) is f32
-   vector arithmetic with the scalar form's exact association; for the lerp
+   plus the homogeneity re-fold) and any filtered op — coverage normalizes as
+   one f16 multiply by RN16(1/255) and the fold (paint alpha × global alpha ×
+   coverage) runs in f16, the pipeline's compute type, with one narrowing
+   convert where the colour data is born f32 (the sampling taps) — the §3.1
+   f16 arm, taken in the simplification sweep (task #30); for the lerp
    family (copy, in/out, dst-atop, lighter) the tile is the source at full
    strength (paint alpha × global alpha only) and the op's u8 coverage buffer
    rides to composite as its own plane. Either way: one narrowing convert to
@@ -311,6 +313,13 @@ the stop search — fusion would buy a registers-only handoff at the cost of
 restructuring the gradient module's API; re-look only if `paint_tile`'s
 gradient share ever grows) and the resolve→shade f16-coverage fusion (step
 two above — still open, re-price against the new pie).
+
+**Postscript (2026-06-11, the simplification sweep):** the deferred f16-fold
+arm landed once byte-stillness stopped being a constraint — the fold now runs
+in f16 end to end (coverage × RN16(1/255), alpha factors folded in the colour
+data's native type, one narrow at the f32 sampling taps).  24 scenes
+re-baselined, every change AA-edge-only at max 1/255 (interiors are exact:
+255 × RN16(1/255) == 1.0); `bench_render_large` −3 %, the rest flat.
 
 ### 3.2 Sparse / RLE coverage and strip formats
 
@@ -724,7 +733,7 @@ next, then the unification question.)
 
 (#1, seam efficiency, **landed 2026-06-10** — the splat, the block
 predicates, and the blend re-fold; row-granular tried and dropped; outcome and the
-honest残り recorded in §3.8's landed note. The staged-row shape won by
+honest remainder recorded in §3.8's landed note. The staged-row shape won by
 default at row granularity; the fused-register shape is #27's remaining
 question, now fighting for row-cache bandwidth rather than DRAM.)
 

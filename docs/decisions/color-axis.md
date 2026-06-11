@@ -361,7 +361,10 @@ held all 33 gallery PNGs byte-identical, and a differential sweep of the planar
 and branch thresholds included) found zero bit mismatches.  Two idioms made that
 exact: selects are bitwise (an arithmetic `b + (a-b)*m` select poisons on a guarded
 divide's inf/NaN), and min/max stay spelled as compare+select, not fminnm/fmaxnm,
-which disagree on signed zeros.
+which disagree on signed zeros.  (2026-06-11 update: with the scalar reference
+retired, the simplification sweep moved min/max to the natural fminnm/fmaxnm form —
+no output byte can see the difference, and none did.  Bitwise selects remain
+doctrine; they exist for correctness, not bit-matching.)
 
 **Measured** (paired hyperfine, both binaries in one invocation, copied to /tmp,
 quiet machine, medians ± σ; sentinel re-run drifted +1.9%, ~1.3σ):
