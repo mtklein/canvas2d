@@ -7,7 +7,7 @@
 // font/glyph/bitmap/shape blocks the text needs, the image blocks behind
 // drawImage/putImageData/patterns, and the path blocks behind the Path2D
 // draws).  This test is the determinism gate: for each program it
-//   (a) loads the committed PNG via canvas_load_png (the Z2 decoder),
+//   (a) loads the committed PNG via canvas_read_png (the Z2 decoder),
 //   (b) replays the program onto a fresh canvas of the PNG's dimensions,
 //   (c) byte-compares the canvas's read_rgba to the decoded PNG, and
 //   (d) asserts the replay took ZERO shape/glyph boundary cache-misses.
@@ -45,7 +45,7 @@
 // All 33 scenes, each a (program, image) pair of committed artifacts; `text`
 // marks the eight text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
-// test_pngload.c lists its corpus rather than assembling paths from dirent
+// test_pngread.c lists its corpus rather than assembling paths from dirent
 // names: -fbounds-safety has no safe runtime-bytes -> __null_terminated
 // bridge).  The directory walk below counts the committed .canvas files to
 // prove this list is complete -- recording a new scene without listing it
@@ -98,7 +98,7 @@ enum { SCENE_N = (int)(sizeof k_scenes / sizeof k_scenes[0]) };
 // boundary.
 static void check_scene(scene_pair s) {
     int w = 0, h = 0, len = 0;
-    uint8_t *ref = canvas_load_png(s.png, &w, &h, &len);
+    uint8_t *ref = canvas_read_png(s.png, &w, &h, &len);
     CHECK(ref != NULL);
     CHECK(w > 0 && h > 0 && len == w * h * 4);
     if (!ref || len <= 0) {
@@ -161,7 +161,7 @@ static void check_scene(scene_pair s) {
 // The scene list covers every committed gallery/*.canvas (and the directory
 // isn't accidentally empty).  d_name is a fixed array from an un-annotated
 // system header, scanned by index -- every access bounds-checked, no strlen, no
-// NUL trust (the test_pngload.c posture).
+// NUL trust (the test_pngread.c posture).
 static void list_is_complete(void) {
     DIR *d = opendir("gallery");
     CHECK(d != NULL);

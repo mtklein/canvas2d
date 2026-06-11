@@ -392,7 +392,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
 canvas_fill / canvas_stroke / canvas_clip / is_point_in_path / is_point_in_stroke
 canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas_path2d_free
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
-canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / load_png
+canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / read_png
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // RGBA8 source
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline / set_direction

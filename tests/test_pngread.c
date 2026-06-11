@@ -1,4 +1,4 @@
-// canvas_write_png -> canvas_load_png round trips through the full pipeline:
+// canvas_write_png -> canvas_read_png round trips through the full pipeline:
 // for each scene, the loaded RGBA must be byte-identical to canvas_read_rgba's
 // view of the canvas that wrote it.  PNG (RGBA8, lossless) and the encoder's
 // strict determinism make exact equality the right bar.  Then every committed
@@ -26,7 +26,7 @@ static void round_trip(struct canvas *__single cv, int w, int h,
     CHECK(canvas_write_png(cv, path));
 
     int lw = 0, lh = 0, llen = 0;
-    uint8_t *back = canvas_load_png(path, &lw, &lh, &llen);
+    uint8_t *back = canvas_read_png(path, &lw, &lh, &llen);
     CHECK(back != NULL && lw == w && lh == h && llen == len);
     if (back && llen == len) {
         CHECK(memcmp(back, px, (size_t)len) == 0);
@@ -44,7 +44,7 @@ static void scene_solid(void) {
     }
     canvas_set_fill_rgba(cv, 0.8f, 0.3f, 0.1f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    round_trip(cv, w, h, "build/test_pngload_solid.png");
+    round_trip(cv, w, h, "build/test_pngread_solid.png");
     canvas_free(cv);
 }
 
@@ -59,7 +59,7 @@ static void scene_gradient(void) {
     canvas_add_fill_color_stop(cv, 0.0f, 0.1f, 0.2f, 0.9f, 1.0f);
     canvas_add_fill_color_stop(cv, 1.0f, 0.9f, 0.8f, 0.1f, 0.5f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    round_trip(cv, w, h, "build/test_pngload_gradient.png");
+    round_trip(cv, w, h, "build/test_pngread_gradient.png");
     canvas_free(cv);
 }
 
@@ -75,7 +75,7 @@ static void scene_text(void) {
     canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.4f, 1.0f);
     canvas_set_font_size(cv, 28.0f);
     canvas_fill_text(cv, "PNG \xE5\xBE\x80\xE8\xBF\x94", 8.0f, 40.0f);  // "PNG 往返"
-    round_trip(cv, w, h, "build/test_pngload_text.png");
+    round_trip(cv, w, h, "build/test_pngread_text.png");
     canvas_free(cv);
 }
 
@@ -90,14 +90,14 @@ static void scene_emoji(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 64.0f);  // rainbow U+1F308
-    round_trip(cv, w, h, "build/test_pngload_emoji.png");
+    round_trip(cv, w, h, "build/test_pngread_emoji.png");
     canvas_free(cv);
 }
 
 // Every committed gallery PNG loads with sane dimensions: the decoder accepts
 // the entire corpus the encoder ships.
 //
-// canvas_load_png takes a __null_terminated path, and -fbounds-safety has no
+// canvas_read_png takes a __null_terminated path, and -fbounds-safety has no
 // safe conversion from a runtime-built byte buffer to __null_terminated -- a
 // path assembled from dirent names could only cross via an unsafe bridge.  So
 // the corpus is this explicit list of literal paths (string literals are
@@ -166,7 +166,7 @@ static void gallery_corpus(void) {
 
     for (int i = 0; i < GALLERY_N; i++) {
         int w = 0, h = 0, len = 0;
-        uint8_t *px = canvas_load_png(k_gallery[i], &w, &h, &len);
+        uint8_t *px = canvas_read_png(k_gallery[i], &w, &h, &len);
         CHECK(px != NULL);
         CHECK(w > 0 && h > 0 && len == w * h * 4);
         if (!px) {

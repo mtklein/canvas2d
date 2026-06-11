@@ -3301,7 +3301,7 @@ bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated 
 }
 
 uint8_t *__counted_by_or_null(*len)
-canvas_load_png(char const *__null_terminated path,
+canvas_read_png(char const *__null_terminated path,
                 int *__single w, int *__single h, int *__single len) {
     return cnvs_png_read(path, w, h, len);
 }

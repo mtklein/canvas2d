@@ -419,7 +419,7 @@ void canvas_stroke_text_max_n(struct canvas *__single cv,
 void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out, int len);
 bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated path);
 
-// Load a PNG that canvas_write_png wrote.  Returns a freshly malloc'd RGBA8
+// Read back a PNG that canvas_write_png wrote.  Returns a freshly malloc'd RGBA8
 // buffer (tightly packed, top row first -- the layout read_rgba and
 // put_image_data use; free it with free()), storing the dimensions in *w/*h
 // and the byte length (w*h*4) in *len -- the same ownership convention as
@@ -430,7 +430,7 @@ bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated 
 // interlaced, Sub/Avg/Paeth-filtered) and any corruption -- bad magic or CRC,
 // truncation, trailing bytes -- fail cleanly: NULL, with *w/*h/*len zeroed.
 uint8_t *__counted_by_or_null(*len)
-canvas_load_png(char const *__null_terminated path,
+canvas_read_png(char const *__null_terminated path,
                 int *__single w, int *__single h, int *__single len);
 
 // Pixel I/O for a w*h sub-image (tightly packed RGBA8, len must be w*h*4).
