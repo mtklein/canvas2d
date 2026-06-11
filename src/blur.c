@@ -17,7 +17,7 @@ typedef uint8_t blru8x8 __attribute__((ext_vector_type(8)));
 // resolve's prefix_sum8, exclusive).
 static inline blr32x8 excl_prefix8(blr32x8 v) {
     blr32x8 z = (blr32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
-    v = __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);   // shift in the zero
+    v  = __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // shift in the zero
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1
     v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
     v += __builtin_shufflevector(v, z, 8, 8, 8, 8, 0, 1, 2, 3);  // += lane-4
@@ -66,8 +66,8 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
         // Left edge: the leaving index x-r still clamps to 0.
         for (; x < w && x < r; x++) {
             dst[base + x] = (uint8_t)((sum + half) / win);
-            int in = base + clampi(x + r + 1, 0, w - 1);   // entering on the right
-            int out = base + clampi(x - r, 0, w - 1);      // leaving on the left
+            int in  = base + clampi(x + r + 1, 0, w - 1);  // entering on the right
+            int out = base + clampi(x - r,     0, w - 1);  // leaving on the left
             sum += (int)src[in] - (int)src[out];
         }
         // Interior: both window ends in-range, so no clamping -- 8 outputs per
@@ -89,8 +89,8 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
         // Right edge (and the tail): the entering index clamps to w-1.
         for (; x < w; x++) {
             dst[base + x] = (uint8_t)((sum + half) / win);
-            int in = base + clampi(x + r + 1, 0, w - 1);
-            int out = base + clampi(x - r, 0, w - 1);
+            int in  = base + clampi(x + r + 1, 0, w - 1);
+            int out = base + clampi(x - r,     0, w - 1);
             sum += (int)src[in] - (int)src[out];
         }
     }
@@ -121,8 +121,8 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
             for (int y = 0; y < h; y++) {
                 blru8x8 q = quant8(sum, win, half, recip);
                 memcpy(dst + y * w + x, &q, sizeof q);  // bounds-checked vector store
-                int in = clampi(y + r + 1, 0, h - 1) * w + x;   // entering below
-                int out = clampi(y - r, 0, h - 1) * w + x;      // leaving above
+                int in  = clampi(y + r + 1, 0, h - 1) * w + x;  // entering below
+                int out = clampi(y - r,     0, h - 1) * w + x;  // leaving above
                 sum += load8_widen(src + in) - load8_widen(src + out);
             }
         }
@@ -134,8 +134,8 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
         }
         for (int y = 0; y < h; y++) {
             dst[y * w + x] = (uint8_t)((sum + half) / win);
-            int in = clampi(y + r + 1, 0, h - 1) * w + x;
-            int out = clampi(y - r, 0, h - 1) * w + x;
+            int in  = clampi(y + r + 1, 0, h - 1) * w + x;
+            int out = clampi(y - r,     0, h - 1) * w + x;
             sum += (int)src[in] - (int)src[out];
         }
     }
@@ -186,8 +186,8 @@ static inline void store16f(cnvs_premul *__counted_by(4) p, blrf16 v) {
 // shift in a zero group, then the two Hillis-Steele shift-add steps.
 static inline blrf16 excl_prefix4px(blrf16 v) {
     blrf16 z = (blrf16)0.0f;
-    v = __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
-                                4, 5, 6, 7, 8, 9, 10, 11);   // shift in the zero group
+    v  = __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
+                                 4, 5, 6, 7, 8, 9, 10, 11);  // shift in the zero group
     v += __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
                                  4, 5, 6, 7, 8, 9, 10, 11);  // += group-1
     v += __builtin_shufflevector(v, z, 16, 17, 18, 19, 16, 17, 18, 19,
@@ -281,7 +281,7 @@ void blur_box_v_f16(cnvs_premul *__counted_by(w * h) dst,
                 sum += load16f(src + (y + r + 1) * w + x);  // entering below
             }
             if (y - r >= 0) {
-                sum -= load16f(src + (y - r) * w + x);      // leaving above
+                sum -= load16f(src + (y - r)     * w + x);  // leaving above
             }
         }
     }
@@ -297,7 +297,7 @@ void blur_box_v_f16(cnvs_premul *__counted_by(w * h) dst,
                 sum += load4f(src + (y + r + 1) * w + x);
             }
             if (y - r >= 0) {
-                sum -= load4f(src + (y - r) * w + x);
+                sum -= load4f(src + (y - r)     * w + x);
             }
         }
     }
