@@ -226,8 +226,8 @@ def main():
         "affine", "batch", "blend", "clip", "conic", "dashes", "dirtyrect",
         "drawimage", "emoji", "emojiscale", "filters", "gradients", "hittest",
         "imagedata", "joins", "miterdash", "path2d", "paths", "pattern",
-        "porterduff", "roundrect", "rtl", "shadows", "shapes", "shaping",
-        "smoothing", "strokerect", "subrect", "text", "textgrid",
+        "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
+        "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",
         "textmaxwidth", "textmetrics", "winding",
     ]
     gallery_pngs = [f"gallery/{name}.png" for name in gallery_scenes]

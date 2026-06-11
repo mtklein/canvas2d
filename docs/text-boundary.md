@@ -486,9 +486,9 @@ there — which is why the byte-for-byte gate (`gate.yml`) only covers the ten
 text-free scenes. The fontless proof had to come from inside the suite, which
 the runner runs via bare `ninja`.
 
-It now does. Every gallery scene — all 33, the eight text scenes (`text`,
+It now does. Every gallery scene — all 34, the nine text scenes (`text`,
 `textgrid`, `textmetrics`, `textmaxwidth`, `emoji`, `emojiscale`, `shaping`,
-`rtl`) among them — records a self-contained `gallery/<scene>.canvas` program
+`rtl`, `selection`) among them — records a self-contained `gallery/<scene>.canvas` program
 alongside its committed PNG
 ([../examples/gallery.c](../examples/gallery.c)'s `record_scene`), and
 [../tests/test_replay_gallery.c](../tests/test_replay_gallery.c) replays each
@@ -529,7 +529,7 @@ by content within a file), Path2D draws ride numbered `path` blocks (one verb
 line per builder command, serialized at first draw — the canvas-free builders
 have nothing to hook until then), and the scalar stragglers — conic gradients,
 `round_rect_radii`, image smoothing, the filter list, `reset`/`resize` —
-record as plain op lines. So the determinism gate covers all 33 gallery
+record as plain op lines. So the determinism gate covers all 34 gallery
 scenes, not just the text ones, byte-for-byte.
 
 That is the arc's end state: glyph outlines and emoji captures cross the Core

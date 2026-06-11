@@ -227,7 +227,7 @@ the same way, then intersect into a full-canvas u8 mask with a scalar
 
 ### Determinism, the two senses
 
-The byte-gate (33 committed PNGs, replayed byte-for-byte across machines) imposes
+The byte-gate (34 committed PNGs, replayed byte-for-byte across machines) imposes
 two distinct constraints, worth keeping separate when pricing options:
 
 1. **Run-to-run / machine-to-machine identity for fixed code.** Threatened only

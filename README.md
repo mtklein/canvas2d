@@ -212,6 +212,16 @@ string hangs off a single anchor under every direction × `start`/`end` pairing:
 
 ![rtl](gallery/rtl.png)
 
+Selection & carets — the shaped line answers hit-testing queries. A Latin
+selection fills one highlight span under the glyphs; **one logical range** over
+a mixed-direction line comes back as **two visual spans** (the embedded Latin
+reorders — the case bidi selection exists for); carets sit at cluster edges,
+with an index inside the emoji's surrogate pair snapping onto the cluster's
+leading edge; and a click round-trips through `index_at_x` → `x_at_index` to
+the caret on its glyph's left edge:
+
+![selection](gallery/selection.png)
+
 Mip quality on a ruler — the classic minification test is an animation zooming
 over time; laying the sweep along x captures it in one still. One emoji at
 geometrically increasing sizes (equal steps cross mip levels at equal rates, so
@@ -421,7 +431,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end) | ◑ no font-family/weight; full `measureText` TextMetrics |
-| Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering **every pixel-affecting op** (font/glyph/bitmap/shape blocks for text, numbered image blocks for drawImage/putImageData/pattern sources, numbered path blocks for Path2D, plus op lines); replay reproduces the render with **no Core Text call** — all 33 gallery scenes replay byte-for-byte on a machine **without the fonts** (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
+| Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering **every pixel-affecting op** (font/glyph/bitmap/shape blocks for text, numbered image blocks for drawImage/putImageData/pattern sources, numbered path blocks for Path2D, plus op lines); replay reproduces the render with **no Core Text call** — all 34 gallery scenes replay byte-for-byte on a machine **without the fonts** (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Hit testing — `isPointInPath` / `isPointInStroke` (+ `Path2D` overloads) | ✅ winding + even-odd, transform-aware |
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |

@@ -86,14 +86,20 @@ Internals (not API features) considered and deferred:
   and none of `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`,
   `fontVariantCaps`, `textRendering`.
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
-  `maxWidth` all go through Core Text shaping (`cnvs_shape`) with font fallback — so
-  code points Libian TC lacks now both draw and measure (color emoji from one
+  `maxWidth` all go through Core Text shaping (`cnvs_shape_text`) with font fallback
+  — so code points Libian TC lacks now both draw and measure (color emoji from one
   canonical 160px RGBA8 capture per glyph, mip-sampled at draw; other fallback
   runs as outlines), and a string measures the way it draws. The shaper's
   complex layout is surfaced too: ligatures, contextual forms (Arabic joining),
   and bidi reordering all draw through the public API, with the `direction`
   attribute setting the paragraph base the runs are ordered against (the
-  gallery's `rtl` scene; `test_rtl`, `test_shape`).
+  gallery's `rtl` scene; `test_rtl`, `test_shape`). The shaped line also
+  answers selection and caret queries — `cnvs_shaped_selection` maps a logical
+  range to its visual x-spans (a bidi range splits into several),
+  `cnvs_shaped_x_at_index` places a caret with mid-cluster indices snapped to
+  the cluster's edge, and `cnvs_shaped_index_at_x` hit-tests a click back to a
+  logical index (the gallery's `selection` scene; `test_shaping`). These are
+  internal (`cnvs_text.h`) — no public mirror yet.
 - **PNG I/O**: `canvas_write_png` writes real compression (Up-filtered rows +
   the in-house `cnvs_zlib` deflate — Up-only because it vectorizes as whole-row
   ops with no left-neighbor recurrence, and the adaptive five-filter chooser
@@ -132,7 +138,7 @@ Internals (not API features) considered and deferred:
   ride `path` blocks, and the scalar ops — conic gradients, `roundRect` radii,
   smoothing, the filter list, reset/resize — are plain op lines; pure queries
   move no pixels and stay out), and the cross-machine claim is *gated* over the
-  whole gallery: all 33 scenes commit a self-contained `.canvas` program next
+  whole gallery: all 34 scenes commit a self-contained `.canvas` program next
   to their PNG, and `test_replay_gallery` replays each one and proves it
   reproduces the committed PNG byte-for-byte with zero shape/glyph boundary
   misses — so on the fontless CI runner (no Libian TC; it's download-on-demand,

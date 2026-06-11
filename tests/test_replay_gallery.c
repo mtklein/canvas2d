@@ -1,6 +1,6 @@
 // The capstone of the record/replay arc: each committed gallery/<scene>.canvas
 // program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls -- all 33 scenes, the format's whole surface.
+// ZERO Core Text boundary calls -- all 34 scenes, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
 // (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
@@ -20,7 +20,7 @@
 // fonts -- the CI runner has no Libian TC, it is download-on-demand -- that
 // fallback would also have produced different, wrong, or blank glyphs, which
 // the byte compare independently catches).  Scenes that draw no text pass (d)
-// trivially; the eight TEXT scenes additionally assert the cache saw real
+// trivially; the nine TEXT scenes additionally assert the cache saw real
 // traffic (shape/glyph hits > 0), so the zero-miss claim can't pass vacuously
 // where it matters.  Run on the fontless runner via bare ninja, this is what
 // proves replay used the embedded data, not the host's fonts; locally (where
@@ -42,8 +42,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// All 33 scenes, each a (program, image) pair of committed artifacts; `text`
-// marks the eight text scenes whose cache traffic must be non-trivial.
+// All 34 scenes, each a (program, image) pair of committed artifacts; `text`
+// marks the nine text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
 // test_pngread.c lists its corpus rather than assembling paths from dirent
 // names: -fbounds-safety has no safe runtime-bytes -> __null_terminated
@@ -79,6 +79,7 @@ static scene_pair const k_scenes[] = {
     { "gallery/porterduff.canvas",   "gallery/porterduff.png",   false },
     { "gallery/roundrect.canvas",    "gallery/roundrect.png",    false },
     { "gallery/rtl.canvas",          "gallery/rtl.png",          true  },
+    { "gallery/selection.canvas",    "gallery/selection.png",    true  },
     { "gallery/shadows.canvas",      "gallery/shadows.png",      false },
     { "gallery/shapes.canvas",       "gallery/shapes.png",       false },
     { "gallery/shaping.canvas",      "gallery/shaping.png",      true  },

@@ -1,7 +1,12 @@
 // Renders the showcase PNGs in gallery/.  Built like any consumer (public API,
-// -std=c23 -fbounds-safety -Weverything), then run by `ninja images`.
+// -std=c23 -fbounds-safety -Weverything), then run by `ninja images`.  One
+// deliberate exception: the selection scene reaches into the internal text API
+// (cnvs_text.h) for shaped-line hit-testing geometry -- selection spans and
+// caret positions have no public mirror yet -- while its drawing stays public
+// ops, so its program replays fontless like every other scene's.
 
 #include "canvas.h"
+#include "cnvs_text.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -2017,6 +2022,173 @@ static void rtl(void) {
     save(c, "gallery/rtl.png");
 }
 
+// cnvs_shape_text takes counted (bytes, len) slices; a string literal carries
+// its byte length at compile time, so S(lit) expands to exactly that pair (the
+// test_shaping.c idiom).
+#define S(lit) ("" lit), ((int)sizeof lit - 1)
+
+// The pinned family the canvas itself shapes with (canvas.h: the typeface is
+// fixed to Libian TC).  Shaping here with the same name, size, and direction
+// reproduces fill_text's layout exactly, so hit-test geometry computed from
+// these lines lands where the canvas draws the glyphs.
+#define SELECTION_FONT "Libian TC"
+
+// The selection scene's lines, each shared between a counted cnvs_shape_text
+// call (geometry) and a NUL-terminated canvas_fill_text call (pixels).
+#define SEL_LATIN "The quick brown fox"
+#define SEL_BIDI  "טקסט עם canvas2d בפנים"
+#define SEL_CARET "abc 😀 مرحبا"
+#define SEL_CLICK "click anywhere"
+
+// A caret: a thin vertical stroke in the current fill, spanning `h` from `top`.
+static void caret(struct canvas *__single cv, float x, float top, float h) {
+    canvas_fill_rect(cv, x - 0.75f, top, 1.5f, h);
+}
+
+// Selection and carets: the shaped-line hit-testing API (cnvs_text.h) made
+// visible.  All geometry is computed at record time -- cnvs_shape_text with the
+// canvas's pinned family/size/direction shapes exactly the lines fill_text
+// draws -- and lands in the program as plain rects, so the scene replays
+// fontless like every other.  Row 1: a Latin selection is one highlight span
+// under the glyphs.  Row 2: the bidi money shot -- ONE logical range over a
+// mixed-direction line comes back from cnvs_shaped_selection as TWO visual
+// spans (the embedded Latin reorders; the gap is the Latin run's unselected
+// middle).  Row 3: carets from cnvs_shaped_x_at_index at cluster edges; index
+// 5 sits INSIDE the emoji's surrogate pair, so its caret (pink, shorter) snaps
+// onto index 4's leading edge.  Row 4: the round trip -- a click x maps through
+// cnvs_shaped_index_at_x to a logical index and back through
+// cnvs_shaped_x_at_index to the caret on that glyph's left edge.
+static void selection(void) {
+    struct canvas *__single c = canvas(520, 352);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/selection.canvas");
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 352.0f);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    // Headline.
+    canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 484.0f, 0.0f);
+    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_set_font_size(c, 20.0f);
+    canvas_fill_text(c, "selection & carets", 36.0f, 36.0f);
+
+    // Every line is set at one size; the highlight and caret heights come from
+    // the font's vertical metrics at that size (the classic editor line box).
+    float const lx = 36.0f, size = 26.0f;
+    canvas_set_font_size(c, size);
+    canvas_text_metrics const m = canvas_measure_text_full(c, "Hg");
+    float const asc = m.font_bounding_box_ascent, desc = m.font_bounding_box_descent;
+
+    // Row 1: a Latin selection -- logical [4,15) "quick brown" is one visual
+    // span, filled selection-blue under the glyphs.
+    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "a Latin selection [4,15): one visual span", lx, 66.0f);
+    float const y1 = 102.0f;
+    struct cnvs_shaped *__single latin = cnvs_shape_text(S(SELECTION_FONT), size,
+                                                         false, S(SEL_LATIN));
+    cnvs_xspan sp[4];
+    if (latin) {
+        int const n = cnvs_shaped_selection(latin, 4, 15, sp, 4);
+        canvas_set_fill_rgba(c, 0.25f, 0.47f, 0.90f, 0.45f);
+        for (int k = 0; k < n; k++) {
+            canvas_fill_rect(c, lx + sp[k].x0, y1 - asc, sp[k].x1 - sp[k].x0, asc + desc);
+        }
+    }
+    cnvs_shaped_free(latin);
+    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_font_size(c, size);
+    canvas_fill_text(c, SEL_LATIN, lx, y1);
+
+    // Row 2: ONE logical range over a mixed-direction line.  Under the rtl
+    // paragraph base the embedded Latin reorders, so logical [5,12) -- Hebrew
+    // "עם", a space, and "canv" -- maps to TWO visual spans with the Latin
+    // run's unselected middle between them.
+    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "bidi: one logical range [5,12), two visual spans", lx, 142.0f);
+    float const y2 = 178.0f;
+    struct cnvs_shaped *__single bidi = cnvs_shape_text(S(SELECTION_FONT), size,
+                                                        true, S(SEL_BIDI));
+    if (bidi) {
+        float const bx = 484.0f - cnvs_shaped_width(bidi);  // hang from the right margin
+        int const n = cnvs_shaped_selection(bidi, 5, 12, sp, 4);
+        canvas_set_fill_rgba(c, 0.25f, 0.47f, 0.90f, 0.45f);
+        for (int k = 0; k < n; k++) {
+            canvas_fill_rect(c, bx + sp[k].x0, y2 - asc, sp[k].x1 - sp[k].x0, asc + desc);
+        }
+        canvas_set_direction(c, CANVAS_DIRECTION_RTL);  // the base the spans assume
+        canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+        canvas_set_font_size(c, size);
+        canvas_fill_text(c, SEL_BIDI, bx, y2);  // align left: the pen origin is bx
+        canvas_set_direction(c, CANVAS_DIRECTION_LTR);
+    }
+    cnvs_shaped_free(bidi);
+
+    // Row 3: carets at cluster edges.  Indices 0/4/9/12 (amber) are the line
+    // start, the emoji's leading edge, a boundary inside joined Arabic, and the
+    // end-of-line caret; index 5 (pink, shorter) is the emoji's low surrogate
+    // -- inside the cluster -- and snaps onto index 4's caret.
+    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "carets at indices 0, 4, 9, 12; 5 is inside the emoji and snaps onto 4",
+                     lx, 218.0f);
+    float const y3 = 254.0f;
+    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_font_size(c, size);
+    canvas_fill_text(c, SEL_CARET, lx, y3);
+    struct cnvs_shaped *__single line = cnvs_shape_text(S(SELECTION_FONT), size,
+                                                        false, S(SEL_CARET));
+    if (line) {
+        int const at[4] = { 0, 4, 9, 12 };
+        char const *const lbl[4] = { "0", "4 = 5", "9", "12" };
+        canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+        for (int i = 0; i < 4; i++) {
+            float const x = lx + cnvs_shaped_x_at_index(line, at[i]);
+            canvas_set_fill_rgba(c, 0.99f, 0.80f, 0.26f, 1.0f);
+            caret(c, x, y3 - asc, asc + desc);
+            canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+            canvas_set_font_size(c, 11.0f);
+            canvas_fill_text(c, lbl[i], x, y3 + desc + 14.0f);
+        }
+        canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+        canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);  // the snapped caret
+        caret(c, lx + cnvs_shaped_x_at_index(line, 5), y3 - asc * 0.5f, asc * 0.5f + desc);
+    }
+    cnvs_shaped_free(line);
+
+    // Row 4: the round trip.  A click (pink dot) hit-tests to a logical index,
+    // and that index's caret (amber) lands on the clicked glyph's left edge.
+    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "caret from a click: index_at_x, then x_at_index back to the glyph edge",
+                     lx, 300.0f);
+    float const y4 = 336.0f;
+    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_font_size(c, size);
+    canvas_fill_text(c, SEL_CLICK, lx, y4);
+    struct cnvs_shaped *__single click = cnvs_shape_text(S(SELECTION_FONT), size,
+                                                         false, S(SEL_CLICK));
+    if (click) {
+        float const cx = cnvs_shaped_width(click) * 0.5f;     // the click, mid-line
+        int const idx = cnvs_shaped_index_at_x(click, cx);
+        canvas_set_fill_rgba(c, 0.99f, 0.80f, 0.26f, 1.0f);
+        caret(c, lx + cnvs_shaped_x_at_index(click, idx), y4 - asc, asc + desc);
+        canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);
+        canvas_begin_path(c);
+        canvas_arc(c, lx + cx, y4 - asc * 0.35f, 3.0f, 0.0f, TAU, false);
+        canvas_fill(c, CANVAS_NONZERO);
+    }
+    cnvs_shaped_free(click);
+
+    save(c, "gallery/selection.png");
+}
+
 // The CSS filter functions: each cell paints the same motif -- a
 // diagonal-gradient rounded tile under two translucent discs -- through one
 // filter (top-left unfiltered for reference).  Each colour function is a
@@ -2156,6 +2328,7 @@ static void render_all(void) {
     emojiscale();
     shaping();
     rtl();
+    selection();
     filters();
 }
 
