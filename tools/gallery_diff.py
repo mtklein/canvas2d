@@ -308,8 +308,11 @@ function drawLoupe() {
   lpre.innerHTML = [
     row("ref", pa, side === "before"),
     row("wt ", pb, side === "after"),
-    `<span class="dim">Δmax ${dmax}/255 · (${x},${y}) · ${zoom}x (+/-)`
-      + `${paused ? " · paused (space steps)" : ""}</span>`,
+    // Fixed-width fields throughout: the panel must not relayout when the
+    // text changes (blink/pause flips, cursor moves) -- that jars the eye
+    // off the pixels.  Status is always present; numbers pad to max width.
+    `<span class="dim">Δmax ${String(dmax).padStart(3)}/255 (${String(x).padStart(4)},${String(y).padStart(4)})`
+      + ` ${String(zoom).padStart(2)}x ${paused ? "paused" : "auto  "}</span>`,
   ].join("\n");
   loupe.style.display = "block";
 }
