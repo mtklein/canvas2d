@@ -2,7 +2,7 @@ font 0 1.05999756 0.339996338 Libian TC
 font 1 0.961914062 0.250976562 ArialHebrew
 glyph 1 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z
 glyph 1 3 0 0 0 0 0
-shape 17.5 1 4 2 6 Hi 隸
+shaping 17.5 1 4 2 6 Hi 隸
 run 1 1 0 2 43 7.22399998 3 3 2.83200002 2
 run 1 0 0 2 43 3.5 0 43 12 1
 set_font_size 17.5

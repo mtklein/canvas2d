@@ -2713,7 +2713,7 @@ static float text_baseline_offset(struct canvas *__single cv) {
 static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                               char const *__counted_by(len) text,
                                               int len) {
-    return cnvs_text_cache_shape(&cv->text_cache, k_font_family,
+    return cnvs_text_cache_shaping(&cv->text_cache, k_font_family,
                                  (int)sizeof k_font_family - 1,
                                  cv->cur.font_size,
                                  cv->cur.direction == CANVAS_DIRECTION_RTL,

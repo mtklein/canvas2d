@@ -165,10 +165,10 @@ void cnvs_text_cache_init(struct cnvs_text_cache *__single c) {
 }
 
 void cnvs_text_cache_reset(struct cnvs_text_cache *__single c) {
-    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        if (c->shape[i].s) {
-            cnvs_shaped_free(c->shape[i].s);  // releases the runs' CTFontRefs too
-            free(c->shape[i].text);
+    for (int i = 0; i < CNVS_SHAPING_CACHE_N; i++) {
+        if (c->shaping[i].s) {
+            cnvs_shaped_free(c->shaping[i].s);  // releases the runs' CTFontRefs too
+            free(c->shaping[i].text);
         }
     }
     for (int i = 0; i < c->glyph_cap; i++) {
@@ -191,30 +191,30 @@ void cnvs_text_cache_reset(struct cnvs_text_cache *__single c) {
 
 // The slot a fresh shaped line lands in: the first empty slot, else the
 // least-recently-used one.
-static struct cnvs_shape_slot *__single shape_lru_victim(struct cnvs_text_cache *__single c) {
-    struct cnvs_shape_slot *victim = &c->shape[0];
-    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        if (!c->shape[i].s) {
-            return &c->shape[i];
+static struct cnvs_shaping_slot *__single shaping_lru_victim(struct cnvs_text_cache *__single c) {
+    struct cnvs_shaping_slot *victim = &c->shaping[0];
+    for (int i = 0; i < CNVS_SHAPING_CACHE_N; i++) {
+        if (!c->shaping[i].s) {
+            return &c->shaping[i];
         }
-        if (c->shape[i].last_use < victim->last_use) {
-            victim = &c->shape[i];
+        if (c->shaping[i].last_use < victim->last_use) {
+            victim = &c->shaping[i];
         }
     }
     return victim;
 }
 
-struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache *__single c,
+struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, char const *__counted_by(len) text, int len) {
-    struct cnvs_shape_slot *__single hit = cnvs_text_cache_shape_slot(c, size_px, rtl,
+    struct cnvs_shaping_slot *__single hit = cnvs_text_cache_shaping_slot(c, size_px, rtl,
                                                                text, len);
     if (hit) {
         hit->last_use = ++c->tick;
-        c->shape_hits++;
+        c->shaping_hits++;
         return hit->s;
     }
-    c->shape_misses++;
+    c->shaping_misses++;
     // Miss.  Copy the key bytes the slot will own (+1 so a zero-length key
     // still has an allocation to own), then shape through the counted
     // boundary: (text, len) crosses as-is, so no NUL-terminated copy exists
@@ -224,7 +224,7 @@ struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache 
         return NULL;
     }
     memcpy(copy, text, (size_t)len);
-    struct cnvs_shaped *__single s = cnvs_shape(name, name_len, size_px, rtl, text, len);
+    struct cnvs_shaped *__single s = cnvs_shape_text(name, name_len, size_px, rtl, text, len);
     if (!s) {
         free(copy);
         return NULL;  // boundary failure: nothing to cache, nothing to draw
@@ -234,7 +234,7 @@ struct cnvs_shaped const *__single cnvs_text_cache_shape(struct cnvs_text_cache 
     // never nest, so no borrow is alive across an insert.
     uint32_t size_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
-    struct cnvs_shape_slot *victim = shape_lru_victim(c);
+    struct cnvs_shaping_slot *victim = shaping_lru_victim(c);
     if (victim->s) {
         cnvs_shaped_free(victim->s);
         free(victim->text);
@@ -681,15 +681,15 @@ cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint) 
     return pick;
 }
 
-struct cnvs_shape_slot *__single cnvs_text_cache_shape_slot(struct cnvs_text_cache *__single c,
+struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         float size_px, bool rtl, char const *__counted_by(len) text, int len) {
     if (!c || len < 0) {
         return NULL;
     }
     uint32_t size_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
-    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        struct cnvs_shape_slot *slot = &c->shape[i];
+    for (int i = 0; i < CNVS_SHAPING_CACHE_N; i++) {
+        struct cnvs_shaping_slot *slot = &c->shaping[i];
         if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
             slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
             return slot;
@@ -698,7 +698,7 @@ struct cnvs_shape_slot *__single cnvs_text_cache_shape_slot(struct cnvs_text_cac
     return NULL;
 }
 
-void cnvs_text_cache_put_shape(struct cnvs_text_cache *__single c, float size_px,
+void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c, float size_px,
         bool rtl, char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s) {
     if (!c || !s || len < 0) {
@@ -715,10 +715,10 @@ void cnvs_text_cache_put_shape(struct cnvs_text_cache *__single c, float size_px
     // Replace an existing entry for the key (a re-recorded shape block after
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.
-    struct cnvs_shape_slot *victim = cnvs_text_cache_shape_slot(c, size_px, rtl, text,
+    struct cnvs_shaping_slot *victim = cnvs_text_cache_shaping_slot(c, size_px, rtl, text,
                                                          len);
     if (!victim) {
-        victim = shape_lru_victim(c);
+        victim = shaping_lru_victim(c);
     }
     if (victim->s) {
         cnvs_shaped_free(victim->s);
@@ -739,8 +739,8 @@ void cnvs_text_cache_unmark(struct cnvs_text_cache *__single c) {
     if (!c) {
         return;
     }
-    for (int i = 0; i < CNVS_SHAPE_CACHE_N; i++) {
-        c->shape[i].emitted = false;
+    for (int i = 0; i < CNVS_SHAPING_CACHE_N; i++) {
+        c->shaping[i].emitted = false;
     }
     for (int i = 0; i < c->glyph_cap; i++) {
         c->glyph[i].emitted = false;

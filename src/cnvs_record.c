@@ -225,7 +225,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     if (!r || r->suspend != 0 || !c) {
         return;
     }
-    struct cnvs_shape_slot *__single slot = cnvs_text_cache_shape_slot(c, size_px, rtl,
+    struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, size_px, rtl,
                                                                 text, len);
     if (!slot || slot->emitted) {
         return;  // not cached (shaping failed: nothing to carry), or this
@@ -346,7 +346,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // rtl, so replay must key its insert with it or the two would alias.  The
     // text is length-prefixed raw bytes to end of line (the key, byte for
     // byte).
-    fprintf(r->f, "shape %.9g %d %d %d %d ", (double)size_px, rtl ? 1 : 0,
+    fprintf(r->f, "shaping %.9g %d %d %d %d ", (double)size_px, rtl ? 1 : 0,
             s->utf16s, s->nruns, len);
     if (len > 0) {
         fwrite(text, 1, (size_t)len, r->f);

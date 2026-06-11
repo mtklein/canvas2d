@@ -235,7 +235,7 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
     *x1 = (float)CGRectGetMaxX(r); *y1 = (float)CGRectGetMaxY(r);
 }
 
-struct cnvs_shaped *cnvs_shape(char const *name, int name_len, float size_px, bool rtl,
+struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_px, bool rtl,
                         char const *text, int text_len) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     CFStringRef str = str_from_bytes(text, text_len);

@@ -125,16 +125,16 @@ static void check_scene(scene_pair s) {
     // embedded blocks.  A nonzero miss is a Core Text fallback -- exactly what a
     // fontless machine cannot do.  (Trivially zero for a scene with no text.)
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
-    CHECK(c->shape_misses == 0);
+    CHECK(c->shaping_misses == 0);
     CHECK(c->glyph_misses == 0);
     if (s.text) {
-        CHECK(c->shape_hits > 0);  // the program really exercised the text cache
+        CHECK(c->shaping_hits > 0);  // the program really exercised the text cache
         CHECK(c->glyph_hits > 0);
     }
-    if (c->shape_misses != 0 || c->glyph_misses != 0) {
+    if (c->shaping_misses != 0 || c->glyph_misses != 0) {
         (void)fprintf(stderr,
                       "  %s crossed the boundary: shape_miss=%d glyph_miss=%d\n",
-                      s.canvas, c->shape_misses, c->glyph_misses);
+                      s.canvas, c->shaping_misses, c->glyph_misses);
     }
 
     int const n = len;

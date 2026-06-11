@@ -268,7 +268,7 @@ static bool read_bool(char const *__counted_by(le) data, size_t le,
 }
 
 // ---------------------------------------------------------------------------
-// Text blocks: `font` / `glyph` / `bitmap`+`bits` / `shape`+`run` lines
+// Text blocks: `font` / `glyph` / `bitmap`+`bits` / `shaping`+`run` lines
 // (written by cnvs_rec_text_blocks) pre-populate the canvas's text cache so
 // the text ops that follow replay with no Core Text boundary call at all --
 // the serialized half of the params -> derived-data lookup
@@ -388,9 +388,9 @@ static void paths_drop(struct replay_blocks *__single b) {
 // ownership, under its (size_px, rtl, text) key -- exactly the key a live
 // lookup uses, so the fill_text/stroke_text op that follows hits (and an ltr
 // and an rtl shaping of the same bytes land in distinct slots, never aliased).
-static void blocks_finish_shape(struct canvas *__single cv,
+static void blocks_finish_shaping(struct canvas *__single cv,
                                 struct replay_blocks *__single b) {
-    cnvs_text_cache_put_shape(cnvs_canvas_text_cache(cv), b->size_px, b->rtl,
+    cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->size_px, b->rtl,
                               b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
     blocks_drop(b);
@@ -852,7 +852,7 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
     return true;
 }
 
-// shape <size_px> <rtl 0|1> <utf16-len> <nruns> <byte-len> <text...> -- begin
+// shaping <size_px> <rtl 0|1> <utf16-len> <nruns> <byte-len> <text...> -- begin
 // one shaped line; its `run` lines must follow immediately.  rtl is the
 // paragraph direction the line was shaped under -- the other half of the cache
 // key, since the same bytes shape differently under ltr and rtl.  The text is
@@ -860,7 +860,7 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
 // key, byte for byte).  Strict: finite size, utf16-len <= byte-len (every
 // UTF-16 unit costs at least one UTF-8 byte), and the byte count exactly fills
 // the line.
-static bool replay_shape(struct canvas *__single cv, struct replay_blocks *__single b,
+static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
     float size = 0.0f;
     bool rtl = false;
@@ -910,7 +910,7 @@ static bool replay_shape(struct canvas *__single cv, struct replay_blocks *__sin
     b->text = txt;
     b->text_len = (int)blen;
     if (nruns == 0) {
-        blocks_finish_shape(cv, b);  // nothing more to wait for
+        blocks_finish_shaping(cv, b);  // nothing more to wait for
     }
     return true;
 }
@@ -925,7 +925,7 @@ static bool replay_shape(struct canvas *__single cv, struct replay_blocks *__sin
 static bool replay_run(struct canvas *__single cv, struct replay_blocks *__single b,
                        char const *__counted_by(le) data, size_t le, size_t j) {
     if (!b->s) {
-        return false;  // no shape block pending
+        return false;  // no shaping block pending
     }
     int name_id = -1;
     size_t j0 = j, ts = 0, tl = 0;
@@ -987,7 +987,7 @@ static bool replay_run(struct canvas *__single cv, struct replay_blocks *__singl
     run->font = NULL;
     b->runs_done++;
     if (b->runs_done == b->s->nruns) {
-        blocks_finish_shape(cv, b);
+        blocks_finish_shaping(cv, b);
     }
     return true;
 }
@@ -1019,7 +1019,7 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
                blk->pend_path == NULL;  // comment line (ditto)
     }
     if (blk->s && !tok_eq(data, le, cs, cl, "run")) {
-        return false;  // a shape block's run lines must follow it directly
+        return false;  // a shaping block's run lines must follow it directly
     }
     if (blk->bm_lines > 0 && !tok_eq(data, le, cs, cl, "bits")) {
         return false;  // a bitmap/image block's bits lines must follow directly
@@ -1243,7 +1243,7 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "glyph"))  { return replay_glyph(cv, blk, data, le, j); }
     else if (tok_eq(data, le, cs, cl, "bitmap")) { return replay_bitmap(blk, data, le, j); }
     else if (tok_eq(data, le, cs, cl, "bits"))   { return replay_bits(cv, blk, data, le, j); }
-    else if (tok_eq(data, le, cs, cl, "shape"))  { return replay_shape(cv, blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "shaping")) { return replay_shaping(cv, blk, data, le, j); }
     else if (tok_eq(data, le, cs, cl, "run"))    { return replay_run(cv, blk, data, le, j); }
 
     // --- image blocks + the ops that reference them by id ---
@@ -1390,7 +1390,7 @@ bool cnvs_replay_text(struct canvas *__single cv, char const *__counted_by(len) 
         i = le + 1;  // past the '\n' (or past end)
     }
     if (b.s || b.bm_lines > 0 || b.pend_path) {
-        ok = false;  // truncated shape/bitmap/path block: its run/bits/command
+        ok = false;  // truncated shaping/bitmap/path block: its run/bits/command
     }                // lines never arrived
     blocks_drop(&b);
     bitmap_drop(&b);

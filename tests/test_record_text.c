@@ -1,5 +1,5 @@
 // The serialized half of the text lookup: a recorded program carries inline
-// font/glyph/bitmap/shape blocks (canonical font-unit curves, ink bounds,
+// font/glyph/bitmap/shaping blocks (canonical font-unit curves, ink bounds,
 // vmetrics, emoji captures, shaped runs), so replay pre-populates the text
 // cache and never crosses the Core Text boundary.  Pinned here:
 //   - round trip: record a text scene (emoji included), replay it onto a
@@ -87,7 +87,7 @@ static int slurp(char const *__null_terminated path, char *__counted_by(cap) buf
 }
 
 // Count the lines of `buf` starting with `prefix` (which includes its trailing
-// space, so "shape " doesn't match a hypothetical "shapex").
+// space, so "shaping " doesn't match a hypothetical "shapingx").
 static int count_lines(char const *__counted_by(len) buf, int len,
                        char const *__null_terminated prefix) {
     int n = 0;
@@ -185,9 +185,9 @@ static void check_round_trip(void) {
         // the cache the blocks pre-populated -- the boundary was never asked
         // to shape a line or fetch a glyph.
         struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
-        CHECK(c->shape_misses == 0);
+        CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
-        CHECK(c->shape_hits > 0);
+        CHECK(c->shaping_hits > 0);
         CHECK(c->glyph_hits > 0);
 
         uint8_t replayed_px[NPX];
@@ -207,7 +207,7 @@ static void check_round_trip(void) {
         canvas_set_font_size(cv, 21.0f);
         CHECK(feq_bits(canvas_measure_text(cv, "a\xF0\x9F\x8C\x88z"), we));
         CHECK(metrics_eq(canvas_measure_text_full(cv, "a\xF0\x9F\x8C\x88z"), me));
-        CHECK(c->shape_misses == 0);
+        CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
 
         canvas_free(cv);
@@ -262,8 +262,8 @@ static void check_dedup(void) {
     CHECK(count_lines(a, na, "glyph ") == count_lines(b, nb, "glyph "));
     CHECK(count_lines(a, na, "bitmap ") == count_lines(b, nb, "bitmap "));
     CHECK(count_lines(a, na, "bits ") == count_lines(b, nb, "bits "));
-    CHECK(count_lines(a, na, "shape ") == 2);
-    CHECK(count_lines(b, nb, "shape ") == 2);
+    CHECK(count_lines(a, na, "shaping ") == 2);
+    CHECK(count_lines(b, nb, "shaping ") == 2);
     // ...and the blocks really exist (three distinct outline glyphs, one
     // capture whose deflated stream takes at least one bits line -- the exact
     // count is the compressor's business, not the format's).
@@ -370,14 +370,14 @@ static void check_strict(void) {
         "font 1 1.05 0.33 STLibianTC-Regular\n"
         "glyph 1 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
         "glyph 1 3 0 0 0 0 0\n"
-        "shape 12 0 2 1 2 H \n"
+        "shaping 12 0 2 1 2 H \n"
         "run 1 0 0 2 43 7.224 0 3 2.8 1\n"
         "fill_text 4 20 H \n"));
 
     // An rtl-shaped block parses too, and its op draws under the direction the
     // line was shaped at.
     CHECK(REPLAY(cv,
-        "shape 12 1 1 1 1 W\n"
+        "shaping 12 1 1 1 1 W\n"
         "run -1 1 0 1 7 5.5 0\n"
         "set_direction rtl\n"
         "fill_text 4 40 W\n"));
@@ -394,25 +394,25 @@ static void check_strict(void) {
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 1e999 0 0 1 1 z\n"));    // inf upem
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 0 0 0 0 0 m 1 2\n"));    // blank w/ curves
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 -1 0 0 1 1 z\n"));       // negative upem
-    CHECK(!REPLAY(cv, "shape 12 2 1 2 H \n"));                 // the pre-direction
+    CHECK(!REPLAY(cv, "shaping 12 2 1 2 H \n"));                 // the pre-direction
                                                                // header: "2" is no
                                                                // direction bit
-    CHECK(!REPLAY(cv, "shape 12 x 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
-    CHECK(!REPLAY(cv, "shape 12 0 1 1 3 A\n"));                // byte-len mismatch
-    CHECK(!REPLAY(cv, "shape 12 0 4 1 2 Hi\n"));               // utf16 len > bytes
-    CHECK(!REPLAY(cv, "shape 12 0 1 1 1 A\n"));                // truncated: no run line
-    CHECK(!REPLAY(cv, "shape 12 0 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
-    CHECK(!REPLAY(cv, "shape 12 0 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
+    CHECK(!REPLAY(cv, "shaping 12 x 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
+    CHECK(!REPLAY(cv, "shaping 12 0 1 1 3 A\n"));                // byte-len mismatch
+    CHECK(!REPLAY(cv, "shaping 12 0 4 1 2 Hi\n"));               // utf16 len > bytes
+    CHECK(!REPLAY(cv, "shaping 12 0 1 1 1 A\n"));                // truncated: no run line
+    CHECK(!REPLAY(cv, "shaping 12 0 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
+    CHECK(!REPLAY(cv, "shaping 12 0 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
     CHECK(!REPLAY(cv, "run 0 0 0 0\n"));                     // run with no shape
     CHECK(!REPLAY(cv,
         "font 0 1 0.2 A\n"
-        "shape 12 0 1 1 1 A\n"
+        "shaping 12 0 1 1 1 A\n"
         "run 0 0 0 1 10 5 1\n"));                            // cluster >= utf16 len
     CHECK(!REPLAY(cv,
-        "shape 12 0 1 1 1 A\n"
+        "shaping 12 0 1 1 1 A\n"
         "run 3 0 0 1 10 5 0\n"));                            // undeclared run font
     CHECK(!REPLAY(cv,
-        "shape 12 0 1 1 1 A\n"
+        "shaping 12 0 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
     // Bitmap blocks carry the capture DEFLATED under the base64, so the
@@ -680,9 +680,9 @@ static void check_new_ops(void) {
         }
         CHECK(canvas_replay_from(cv, path));
         struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
-        CHECK(c->shape_misses == 0);  // fill_text_max replayed boundary-free
+        CHECK(c->shaping_misses == 0);  // fill_text_max replayed boundary-free
         CHECK(c->glyph_misses == 0);
-        CHECK(c->shape_hits > 0);
+        CHECK(c->shaping_hits > 0);
         CHECK(c->glyph_hits > 0);
 
         uint8_t replayed_px[NPX];
@@ -705,7 +705,7 @@ static void check_new_ops(void) {
     CHECK(REPLAY(cv,
         "font 0 1.05 0.33 Libian TC\n"
         "glyph 0 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
-        "shape 12 0 1 1 1 H\n"
+        "shaping 12 0 1 1 1 H\n"
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
@@ -748,7 +748,7 @@ static void check_shadow_ops(void) {
         }
         CHECK(canvas_replay_from(cv, path));
         struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
-        CHECK(c->shape_misses == 0);
+        CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
         uint8_t replayed_px[NPX];
         canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
@@ -813,8 +813,8 @@ static void check_direction_blocks(void) {
     if (n <= 0) {
         return;
     }
-    CHECK(count_lines(buf, n, "shape 20 0 ") == 1);
-    CHECK(count_lines(buf, n, "shape 20 1 ") == 1);
+    CHECK(count_lines(buf, n, "shaping 20 0 ") == 1);
+    CHECK(count_lines(buf, n, "shaping 20 1 ") == 1);
     CHECK(count_lines(buf, n, "set_direction ") == 1);
 
     {
@@ -825,9 +825,9 @@ static void check_direction_blocks(void) {
         }
         CHECK(canvas_replay_from(cv, path));
         struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
-        CHECK(c->shape_misses == 0);  // both lines came from their blocks
+        CHECK(c->shaping_misses == 0);  // both lines came from their blocks
         CHECK(c->glyph_misses == 0);
-        CHECK(c->shape_hits > 0);
+        CHECK(c->shaping_hits > 0);
 
         uint8_t replayed_px[NPX];
         canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
@@ -840,7 +840,7 @@ static void check_direction_blocks(void) {
         CHECK(feq_bits(canvas_measure_text(cv, mixed), w_ltr));
         canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         CHECK(feq_bits(canvas_measure_text(cv, mixed), w_rtl));
-        CHECK(c->shape_misses == 0);
+        CHECK(c->shaping_misses == 0);
         canvas_free(cv);
     }
 }

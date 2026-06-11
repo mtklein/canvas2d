@@ -44,11 +44,11 @@ static void check_transparent(void) {
     draw_scene(warm);  // populate the caches
     canvas_clear_rect(warm, 0.0f, 0.0f, (float)W, (float)H);
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(warm);
-    int smiss = c->shape_misses, gmiss = c->glyph_misses;
+    int smiss = c->shaping_misses, gmiss = c->glyph_misses;
     draw_scene(warm);  // every lookup must hit
-    CHECK(c->shape_misses == smiss);
+    CHECK(c->shaping_misses == smiss);
     CHECK(c->glyph_misses == gmiss);
-    CHECK(c->shape_hits >= 2);
+    CHECK(c->shaping_hits >= 2);
     CHECK(c->glyph_hits > 0);
 
     uint8_t a[LEN], b[LEN];
@@ -72,34 +72,34 @@ static void check_keys(void) {
     canvas_set_font_size(cv, 20.0f);
 
     canvas_fill_text(cv, "kerning", 4.0f, 30.0f);
-    CHECK(c->shape_misses == 1 && c->shape_hits == 0);
+    CHECK(c->shaping_misses == 1 && c->shaping_hits == 0);
     CHECK(canvas_measure_text(cv, "kerning") > 0.0f);  // measure after draw: hit
-    CHECK(c->shape_misses == 1 && c->shape_hits == 1);
+    CHECK(c->shaping_misses == 1 && c->shaping_hits == 1);
     (void)canvas_measure_text_full(cv, "kerning");     // the full metrics too
-    CHECK(c->shape_misses == 1 && c->shape_hits == 2);
+    CHECK(c->shaping_misses == 1 && c->shaping_hits == 2);
 
     canvas_set_font_size(cv, 21.0f);                   // same bytes, other size
     (void)canvas_measure_text(cv, "kerning");
-    CHECK(c->shape_misses == 2 && c->shape_hits == 2);
+    CHECK(c->shaping_misses == 2 && c->shaping_hits == 2);
 
     canvas_set_font_size(cv, 20.0f);                   // same size, other bytes
     (void)canvas_measure_text(cv, "kerninG");
-    CHECK(c->shape_misses == 3 && c->shape_hits == 2);
+    CHECK(c->shaping_misses == 3 && c->shaping_hits == 2);
 
     (void)canvas_measure_text(cv, "kerning");          // the original is still hot
-    CHECK(c->shape_misses == 3 && c->shape_hits == 3);
+    CHECK(c->shaping_misses == 3 && c->shaping_hits == 3);
 
     // Same size, same bytes, other paragraph direction: a different key (the
     // same text shapes differently under ltr and rtl, so aliasing the two
     // would replay one as the other).  Both stay hot side by side.
     canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
     (void)canvas_measure_text(cv, "kerning");
-    CHECK(c->shape_misses == 4 && c->shape_hits == 3);
+    CHECK(c->shaping_misses == 4 && c->shaping_hits == 3);
     (void)canvas_measure_text(cv, "kerning");          // the rtl line is hot...
-    CHECK(c->shape_misses == 4 && c->shape_hits == 4);
+    CHECK(c->shaping_misses == 4 && c->shaping_hits == 4);
     canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
     (void)canvas_measure_text(cv, "kerning");          // ...and the ltr one kept
-    CHECK(c->shape_misses == 4 && c->shape_hits == 5);
+    CHECK(c->shaping_misses == 4 && c->shaping_hits == 5);
 
     canvas_free(cv);
 }
@@ -128,23 +128,23 @@ static void check_eviction(void) {
 
     float w0 = canvas_measure_text(churn, "s0");
     char last[3] = { 0 };
-    for (int i = 1; i <= CNVS_SHAPE_CACHE_N; i++) {  // fill every slot, plus one
+    for (int i = 1; i <= CNVS_SHAPING_CACHE_N; i++) {  // fill every slot, plus one
         last[0] = 's';                               // distinct two-letter keys
         last[1] = (char)('a' + i / 26);
         last[2] = (char)('a' + i % 26);
-        (void)cnvs_text_cache_shape(c, k_family, (int)sizeof k_family - 1,
+        (void)cnvs_text_cache_shaping(c, k_family, (int)sizeof k_family - 1,
                                     16.0f, false, last, (int)sizeof last);
     }
-    CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 1);
+    CHECK(c->shaping_misses == CNVS_SHAPING_CACHE_N + 1);
 
-    int hits = c->shape_hits;
+    int hits = c->shaping_hits;
     // Evicted: re-shaped from the boundary, to the bit-identical width.
     CHECK(fabsf(canvas_measure_text(churn, "s0") - w0) <= 0.0f);
-    CHECK(c->shape_misses == CNVS_SHAPE_CACHE_N + 2);
-    CHECK(c->shape_hits == hits);
-    (void)cnvs_text_cache_shape(c, k_family, (int)sizeof k_family - 1,
+    CHECK(c->shaping_misses == CNVS_SHAPING_CACHE_N + 2);
+    CHECK(c->shaping_hits == hits);
+    (void)cnvs_text_cache_shaping(c, k_family, (int)sizeof k_family - 1,
                                 16.0f, false, last, (int)sizeof last);
-    CHECK(c->shape_hits == hits + 1);  // the newest entry survived
+    CHECK(c->shaping_hits == hits + 1);  // the newest entry survived
 
     canvas_set_fill_rgba(churn, 0.2f, 0.2f, 0.7f, 1.0f);
     canvas_fill_text(churn, "s0", 4.0f, 30.0f);
@@ -220,16 +220,16 @@ static void check_reset(void) {
     struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
     canvas_set_font_size(cv, 18.0f);
     canvas_fill_text(cv, "Reset", 4.0f, 30.0f);
-    CHECK(c->shape_misses > 0 && c->glyph_count > 0 && c->nfonts > 0);
+    CHECK(c->shaping_misses > 0 && c->glyph_count > 0 && c->nfonts > 0);
 
     canvas_reset(cv);
-    CHECK(c->shape_misses == 0 && c->shape_hits == 0);
+    CHECK(c->shaping_misses == 0 && c->shaping_hits == 0);
     CHECK(c->glyph_misses == 0 && c->glyph_hits == 0);
     CHECK(c->glyph_count == 0 && c->glyph_cap == 0 && c->nfonts == 0);
 
     canvas_set_font_size(cv, 18.0f);  // reset dropped the 18px state too
     canvas_fill_text(cv, "Reset", 4.0f, 30.0f);
-    CHECK(c->shape_misses == 1);      // cold again
+    CHECK(c->shaping_misses == 1);      // cold again
 
     canvas_set_font_size(fresh, 18.0f);
     canvas_fill_text(fresh, "Reset", 4.0f, 30.0f);
