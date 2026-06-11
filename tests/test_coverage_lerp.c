@@ -1,4 +1,4 @@
-// The coverage-lerp oracle (docs/rasterization.md §3.8): partial coverage
+// The coverage-lerp oracle (docs/rasterization.md): partial coverage
 // composites as out = lerp(dst, blend(src, dst), cov) -- the uncovered
 // fraction of a pixel keeps its destination.  This test pins that ruling for
 // EVERY one of the 26 modes against a double-precision reference, two ways,

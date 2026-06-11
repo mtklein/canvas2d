@@ -172,14 +172,11 @@ FUZZ_LINK_SAN = "-fsanitize=fuzzer " + FUZZ_SAN_COMMON
 FUZZ_CFLAGS = ("-std=c23 -g -O1 -fno-omit-frame-pointer -Ifuzz/shim -Ifuzz "
                "-Iinclude -Isrc -Wall -Wno-unknown-warning-option")
 # Modules the libFuzzer harnesses do NOT link.  Currently empty: every src/*.c is
-# part of the render core a harness can reach.  (It used to hold the pixvm VM, the
-# colour LUT, and the ring buffer -- self-contained -fbounds-safety probes no
-# harness exercised -- but those have been retired from the tree.)  The fuzz core
-# is the whole canvas render core (core_c, globbed) plus the CPU compositor backend,
-# so a new cnvs_*.c module is picked up automatically.  Kept as an *exclude* set
-# (rather than an include list) because the include list grows with every feature
-# and silently drifting out of date is exactly how the old hand-listed CORE rotted;
-# an empty exclude needs no maintenance.
+# part of the render core a harness can reach.  The fuzz core is the whole canvas
+# render core (core_c, globbed) plus the CPU compositor backend, so a new
+# cnvs_*.c module is picked up automatically.  Kept as an *exclude* set (rather
+# than an include list) because an include list grows with every feature and
+# silently drifts out of date; an empty exclude needs no maintenance.
 FUZZ_CORE_EXCLUDE = set()
 
 # variant -> (opt flags, bounds-safety?, build tests?, build bench?).
@@ -539,10 +536,9 @@ def main():
         w(f"build fuzzcorpus: phony {fuzz_stamp}")
 
     # `ninja fuzzers`: build the libFuzzer harnesses (opt-in -- needs Homebrew clang;
-    # see homebrew_clang()).  This is the whole fuzz build -- previously a
-    # standalone shell script, now folded in so `ninja` is the single entry point:
-    # native per-TU edges (real incremental + parallel builds, header deps tracked
-    # via -MMD), not a serial shell loop.  Harnesses are globbed (fuzz/fuzz_*.c), so
+    # see homebrew_clang()).  This is the whole fuzz build, so `ninja` is the
+    # single entry point: native per-TU edges (real incremental + parallel builds,
+    # header deps tracked via -MMD).  Harnesses are globbed (fuzz/fuzz_*.c), so
     # adding one needs no edit here.  Each links the fuzz core + libFuzzer + ASan/
     # UBSan (see FUZZ_CORE_EXCLUDE / FUZZ_*_SAN above); the
     # seed generator runs into the gitignored fuzz/seeds/.  Stays opt-in (not in
