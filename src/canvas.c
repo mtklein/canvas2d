@@ -1116,50 +1116,66 @@ static bool shade_folds_coverage(canvas const *__single cv) {
            cv->cur.filter_count > 0;
 }
 
-// Build an RGBA16F tile from the coverage in cv->cov and the given paint, then
-// composite it.  Each pixel's alpha is paint_alpha * global_alpha * coverage
-// when the composite mode folds coverage (shade_folds_coverage); otherwise
-// paint_alpha * global_alpha, with cv->cov handed to the compositor's lerp.
-static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
-                       cnvs_gradient const *gr, cnvs_unpremul solid) {
+// Finish a freshly shaded tile: run the state's filter list over it, then
+// composite -- the shared tail of every tile-building paint loop.  `fold` is
+// the caller's shade_folds_coverage answer: a folded tile already carries the
+// op's coverage in its alpha; otherwise cv->cov rides to the compositor's lerp.
+static void blend_tile(canvas *__single cv, cbbox b, bool fold) {
+    apply_filters(cv, b.w, b.h);
+    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
+                     fold ? NULL : cv->cov, cv->cur.composite);
+}
+
+// Paint the resolved coverage in cv->cov with a solid colour.  Each pixel's
+// alpha is paint_alpha * global_alpha * coverage when the composite mode folds
+// coverage (shade_folds_coverage); otherwise paint_alpha * global_alpha, with
+// cv->cov handed to the compositor's lerp.
+static void paint_tile_solid(canvas *__single cv, cbbox b, cnvs_unpremul solid) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
-    if (!is_grad) {
-        // Solid paint: the colour planes are splats and every alpha factor but
-        // coverage is one constant, so the loop is a coverage widen, two
-        // multiplies, and the premultiply -> st4.  Coverage and tile are both
-        // dense over the bbox, so one flat loop covers all rows.
-        half8 const base = (half8)(_Float16)((float)solid.a * ga);
-        half8 const cr = (half8)solid.r, cg = (half8)solid.g,
-                    cb = (half8)solid.b;
-        int const npix = b.w * b.h;
-        if (fold) {
-            int i = 0;
-            for (; i + 8 <= npix; i += 8) {
-                cnvs_px8_store(cv->tile + i,
-                               shade8(cr, cg, cb, base * cover8(cv->cov + i)));
-            }
-            if (i < npix) {
-                int const k = npix - i;
-                cnvs_px8_store_k(cv->tile + i, k,
-                                 shade8(cr, cg, cb,
-                                        base * cover8_k(cv->cov + i, k)));
-            }
-        } else {
-            // Full-strength source: every pixel is the same premultiplied
-            // colour (at full coverage the folded form's base * 1.0 is base
-            // exactly, so interiors agree bit for bit).  No tile at all --
-            // the compositor takes the colour as a splat and the op's
-            // coverage plane drives its lerp.  (!fold implies no filters:
-            // shade_folds_coverage forces the fold whenever filters are
-            // active, so skipping apply_filters here drops only a no-op.)
-            cnvs_premul px;
-            cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
-            compositor_blend_solid(cv->comp, b.x, b.y, b.w, b.h, px, cv->cov,
-                                   cv->cur.composite);
-            return;
-        }
-    } else if (ensure_grad_rows(cv, b.w)) {
+    // The colour planes are splats and every alpha factor but coverage is one
+    // constant, so the loop is a coverage widen, two multiplies, and the
+    // premultiply -> st4.  Coverage and tile are both dense over the bbox, so
+    // one flat loop covers all rows.
+    half8 const base = (half8)(_Float16)((float)solid.a * ga);
+    half8 const cr = (half8)solid.r, cg = (half8)solid.g,
+                cb = (half8)solid.b;
+    int const npix = b.w * b.h;
+    if (!fold) {
+        // Full-strength source: every pixel is the same premultiplied
+        // colour (at full coverage the folded form's base * 1.0 is base
+        // exactly, so interiors agree bit for bit).  No tile at all --
+        // the compositor takes the colour as a splat and the op's
+        // coverage plane drives its lerp.  (!fold implies no filters:
+        // shade_folds_coverage forces the fold whenever filters are
+        // active, so skipping apply_filters here drops only a no-op.)
+        cnvs_premul px;
+        cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
+        compositor_blend_solid(cv->comp, b.x, b.y, b.w, b.h, px, cv->cov,
+                               cv->cur.composite);
+        return;
+    }
+    int i = 0;
+    for (; i + 8 <= npix; i += 8) {
+        cnvs_px8_store(cv->tile + i,
+                       shade8(cr, cg, cb, base * cover8(cv->cov + i)));
+    }
+    if (i < npix) {
+        int const k = npix - i;
+        cnvs_px8_store_k(cv->tile + i, k,
+                         shade8(cr, cg, cb,
+                                base * cover8_k(cv->cov + i, k)));
+    }
+    blend_tile(cv, b, fold);
+}
+
+// Paint the resolved coverage with a gradient; the same alpha fold as
+// paint_tile_solid, with the colour solved per pixel instead of splatted.
+static void paint_tile_gradient(canvas *__single cv, cbbox b,
+                                cnvs_gradient const *gr) {
+    float const ga = cv->cur.global_alpha;
+    bool const fold = shade_folds_coverage(cv);
+    if (ensure_grad_rows(cv, b.w)) {
         // Evaluate the gradient a row at a time, all three stages vectorized:
         // solve the parameters (cnvs_gradient_param_row), lerp the stop
         // colours from them (cnvs_gradient_color_row) -- the exact
@@ -1217,9 +1233,7 @@ static void paint_tile(canvas *__single cv, cbbox b, int is_grad,
             }
         }
     }
-    apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
-                     fold ? NULL : cv->cov, cv->cur.composite);
+    blend_tile(cv, b, fold);
 }
 
 // Map a sample index onto an axis of length n: wrap mod n for a repeating axis
@@ -1324,9 +1338,7 @@ static void paint_tile_pattern(canvas *__single cv, cbbox b, cnvs_pattern const 
             }
         }
     }
-    apply_filters(cv, b.w, b.h);
-    compositor_blend(cv->comp, b.x, b.y, b.w, b.h, cv->tile,
-                     fold ? NULL : cv->cov, cv->cur.composite);
+    blend_tile(cv, b, fold);
 }
 
 // Grow the two shadow ping-pong masks to at least n bytes each.
@@ -1473,19 +1485,17 @@ static void emit_shadow(canvas *__single cv, cbbox b) {
 }
 
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
-// on its kind (solid and gradient share paint_tile; pattern has its own loop).
-// The shadow, if any, is cast first so it lands under the shape.
+// on its kind.  The shadow, if any, is cast first so it lands under the shape.
 static void paint_fill(canvas *__single cv, cbbox b) {
     if (cv->cur.fill_kind == CNVS_PAINT_GRADIENT &&
         cnvs_gradient_paints_nothing(&cv->cur.fill_grad)) {
         return;
     }
     emit_shadow(cv, b);
-    if (cv->cur.fill_kind == CNVS_PAINT_PATTERN) {
-        paint_tile_pattern(cv, b, &cv->cur.fill_pattern);
-    } else {
-        paint_tile(cv, b, cv->cur.fill_kind == CNVS_PAINT_GRADIENT,
-                   &cv->cur.fill_grad, cv->cur.fill);
+    switch (cv->cur.fill_kind) {
+        case CNVS_PAINT_SOLID:    paint_tile_solid(cv, b, cv->cur.fill);            break;
+        case CNVS_PAINT_GRADIENT: paint_tile_gradient(cv, b, &cv->cur.fill_grad);   break;
+        case CNVS_PAINT_PATTERN:  paint_tile_pattern(cv, b, &cv->cur.fill_pattern); break;
     }
 }
 
@@ -1495,11 +1505,10 @@ static void paint_stroke(canvas *__single cv, cbbox b) {
         return;
     }
     emit_shadow(cv, b);
-    if (cv->cur.stroke_kind == CNVS_PAINT_PATTERN) {
-        paint_tile_pattern(cv, b, &cv->cur.stroke_pattern);
-    } else {
-        paint_tile(cv, b, cv->cur.stroke_kind == CNVS_PAINT_GRADIENT,
-                   &cv->cur.stroke_grad, cv->cur.stroke);
+    switch (cv->cur.stroke_kind) {
+        case CNVS_PAINT_SOLID:    paint_tile_solid(cv, b, cv->cur.stroke);            break;
+        case CNVS_PAINT_GRADIENT: paint_tile_gradient(cv, b, &cv->cur.stroke_grad);   break;
+        case CNVS_PAINT_PATTERN:  paint_tile_pattern(cv, b, &cv->cur.stroke_pattern); break;
     }
 }
 
