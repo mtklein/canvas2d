@@ -188,6 +188,20 @@ function heatCanvas(s) {  // the one heatmap renderer: mode 2 and the overview
 // raw pixel arrays, keep each side as a canvas the loupe can drawImage from.
 function pixels(s, cb) {
   if (s.px) return cb(s.px);
+  if (!s.before || !s.after) {  // new/gone: the absent side IS transparent
+    const one = new Image();    // black, which is what compositing against
+    one.onload = () => {        // absence means -- everything works unchanged
+      const w = one.naturalWidth, h = one.naturalHeight;
+      const cv = new OffscreenCanvas(w, h), cx = cv.getContext("2d", {willReadFrequently:true});
+      cx.drawImage(one, 0, 0); const pe = cx.getImageData(0, 0, w, h).data;
+      const zero = new Uint8ClampedArray(w * h * 4);
+      const mk = p => { const c = new OffscreenCanvas(w, h);
+        c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(p), w, h), 0, 0); return c; };
+      const pa = s.before ? pe : zero, pb = s.after ? pe : zero;
+      s.px = {w, h, pa, pb, cva: mk(pa), cvb: mk(pb)}; cb(s.px);
+    };
+    one.src = s.before || s.after; return;
+  }
   const a = new Image(), b = new Image(); let n = 0;
   const done = () => { if (++n < 2) return;
     const w = b.naturalWidth, h = b.naturalHeight;
@@ -386,12 +400,15 @@ function render() {
   scenes.forEach(x => x.btn && x.btn.classList.toggle("sel", x === s));
   document.querySelectorAll(".mode").forEach(b => b.classList.toggle("sel", b.dataset.m === mode));
   view.innerHTML = ""; stats.textContent = "";
-  if (!s.before || !s.after) {  // new or deleted scene: nothing to compare
+  if (!s.before || !s.after) {  // new or deleted: compare against absence
     const f = document.createElement("figure");
-    f.append(img(s.after || s.before));
+    const e = img(s.after || s.before); watch(e); f.append(e);
     f.insertAdjacentHTML("beforeend",
       `<figcaption class="badge">${s.after ? "new scene (not in __REF__)" : "deleted scene"}</figcaption>`);
-    view.append(f); hideLoupe(); clearInterval(blinkTimer); blinkTimer = null; return;
+    view.append(f);
+    pixels(s, () => { applyPhase(); });
+    startClock();
+    return;
   }
   pixels(s, () => { applyPhase(); });  // warm the loupe; draw it immediately
   startClock();
