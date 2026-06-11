@@ -1,5 +1,10 @@
-// Isolated benchmark: gradient evaluation (radial parameter solve + multi-stop ramp
-// lookup) sampled across a pixel grid; radial is the costlier of the two kinds.
+// The deliberate naive comparator: per-pixel SCALAR gradient evaluation
+// (radial parameter solve + stop scan) across a grid, one cnvs_gradient_sample
+// call per pixel.  The renderer never takes this path -- paint_tile runs the
+// 8-wide row kernels (bench_gradient_fill) -- but keeping the scalar walk
+// benchmarked is what lets the README quote the vectorized path's speedup as a
+// measured ratio rather than folklore, and it exercises the scalar evaluators
+// the row kernels are pinned against (test_gradient_solve).
 #include "bench_reps.h"
 
 #include "cnvs_gradient.h"

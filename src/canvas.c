@@ -30,8 +30,7 @@
 
 // Cap canvas dimensions so width*height and width*height*4 stay well within a
 // positive int -- the whole pipeline's RGBA8 size math is `int`.  Mirrors the
-// cnvs_png.c clamp and the Metal max-texture limit (a larger canvas would fail
-// texture creation anyway).
+// cnvs_png.c clamp.
 #define CANVAS_MAX_DIM 16384
 
 // A caller-supplied image rectangle (get/put_image_data region, drawImage

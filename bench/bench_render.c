@@ -39,7 +39,7 @@ static void scene(canvas *__single cv, int f) {
         canvas_fill(cv);
     }
 
-    // Linear + radial gradient fills (paint_tile premultiply + gradient ramp/solve).
+    // Linear + radial gradient fills (the 8-wide param solve + stop lerp rows).
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, w, h);
     canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.3f, 0.2f, 0.9f);
     canvas_add_fill_color_stop(cv, 1.0f, 0.2f, 0.4f, 1.0f, 0.9f);
@@ -86,10 +86,10 @@ int main(void) {
         return 1;
     }
 
-    // BENCH_READBACK=end renders every frame but reads back only once at the very
-    // end -- the render-without-per-frame-readback case, where the GPU pipelines
-    // frames instead of syncing each one (Metal's strength).  Default reads each
-    // frame (the getImageData / PNG-export shape, which forces a sync per frame).
+    // BENCH_READBACK=end renders every frame but reads back only once at the
+    // very end -- the render-only shape, isolating the pipeline from the
+    // readback's unpremultiply+quantize.  Default reads each frame (the
+    // getImageData / PNG-export shape).
     char const *__null_terminated rb = getenv("BENCH_READBACK");
     bool read_each = !(rb && rb[0] == 'e');
 
