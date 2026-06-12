@@ -4,7 +4,9 @@ The README's capability table shows what works. This is the complement: a sweep 
 the full [`CanvasRenderingContext2D`](https://html.spec.whatwg.org/multipage/canvas.html#canvasrenderingcontext2d)
 surface against what we actually implement, splitting **partial** (we have it, but
 narrower than spec) from **missing entirely**, plus the handful that are genuinely
-out of scope for a headless C library.
+out of scope for a headless C library. (Last swept against the living spec:
+June 2026 — the sweep that caught `lang`, `colorType`/`pixelFormat`, and
+`scrollPathIntoView`'s removal.)
 
 This project isn't chasing spec completeness for its own sake — it's a vehicle for
 learning `-fbounds-safety`. So the selection is biased: we prioritize features
@@ -33,7 +35,7 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    dissolved into canvas.c (see
    [decisions/backend-differential.md](decisions/backend-differential.md) and
    [decisions/metal-backend.md](decisions/metal-backend.md)).
-3. ~~**Shadows**~~ — **done** (fills/strokes/text). The op's coverage mask is
+3. ~~**Shadows**~~ — **done** (fills/strokes/text/images). The op's coverage mask is
    blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
    shape — all in checked C. `filter`
@@ -56,7 +58,9 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    shadow-under-drawing as one image, which later list entries keep filtering
    (a colour function after a drop-shadow recolours the shadow too; both
    orders pinned in `test_filter`). All that's left of `filter` spec-wise is
-   the CSS string form, deliberately out of scope — see the partial row below.
+   the CSS string form (deliberately out of scope — see the partial row below)
+   and `url()` references to SVG filter elements (nothing to point into
+   without a document — the out-of-scope list).
 
 Internals (not API features) considered and deferred:
 
@@ -83,8 +87,8 @@ Internals (not API features) considered and deferred:
   paragraph base -- it reorders mixed-direction text, resolves neutrals, and
   rides the shape-block cache key through record/replay). No font-family
   selection (pinned to Libian TC), weight, style, or the CSS `font` shorthand;
-  and none of `letterSpacing`, `wordSpacing`, `fontKerning`, `fontStretch`,
-  `fontVariantCaps`, `textRendering`.
+  and none of `lang` (a recent spec addition), `letterSpacing`, `wordSpacing`,
+  `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
   `maxWidth` all go through Core Text shaping (`cnvs_shape_text`) with font fallback
   — so code points Libian TC lacks now both draw and measure (color emoji from one
@@ -93,7 +97,7 @@ Internals (not API features) considered and deferred:
   complex layout is surfaced too: ligatures, contextual forms (Arabic joining),
   and bidi reordering all draw through the public API, with the `direction`
   attribute setting the paragraph base the runs are ordered against (the
-  gallery's `rtl` scene; `test_rtl`, `test_shape`). The shaped line also
+  gallery's `rtl` scene; `test_rtl`, `test_shaping`). The shaped line also
   answers selection and caret queries — `cnvs_shaped_selection` maps a logical
   range to its visual x-spans (a bidi range splits into several),
   `cnvs_shaped_x_at_index` places a caret with mid-cluster indices snapped to
@@ -110,17 +114,17 @@ Internals (not API features) considered and deferred:
   universe (palette, gray, 16-bit, interlace, Sub/Avg/Paeth), keeping the
   untrusted-parser surface small. There is no general-purpose PNG importer,
   and no `toDataURL`/`toBlob` string forms.
-- **`fill`/`stroke`/`clip`** on the *current* path take the fill rule from state,
-  not an explicit argument (the `Path2D` overloads — `fill_path`/`stroke_path`/
-  `clip_path` — do take an explicit rule).
 - **`Path2D`** has no SVG path-data string constructor (string parsing); the
   constructible object, `add_path`, the builders, and the
   fill/stroke/clip/isPointIn* overloads are all supported.
 - **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color
   strings), linear/radial/conic gradients, and image patterns — and the
   gradients/patterns are state setters (the pattern image is borrowed), not
-  reusable first-class objects.
-- **`getImageData`** is fixed RGBA8; no `colorSpace`/settings.
+  reusable first-class objects, so `CanvasPattern.setTransform` has no
+  analogue: a pattern is pinned to the CTM in effect when it is set.
+- **`getImageData`** is fixed RGBA8; none of `ImageDataSettings` —
+  `colorSpace`, or the recent `pixelFormat` (`rgba-unorm8` | `rgba-float16`,
+  the `Float16Array`-backed `ImageData` flavour).
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
   it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
 - **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
@@ -161,8 +165,10 @@ Internals (not API features) considered and deferred:
   (`canvas_add_filter_*`), and the CSS string form (`ctx.filter =
   "grayscale(1) blur(2px)"`) is deliberately not parsed — string parsing has
   nothing for `-fbounds-safety` to say, the same call as `Path2D`'s SVG
-  path-data strings above. `drop-shadow()`'s offsets also round to whole
-  device pixels, the shadowOffset deviation above.
+  path-data strings above. (The spec's other `filter` form, `url()` into an
+  SVG filter element, has nothing to reference headless — the out-of-scope
+  list.) `drop-shadow()`'s offsets also round to whole device pixels, the
+  shadowOffset deviation above.
 
 ## Missing entirely
 
@@ -174,8 +180,29 @@ Internals (not API features) considered and deferred:
 Listed for completeness; these have no meaning without a document/host, so we don't
 intend to implement them:
 
-- `drawFocusIfNeeded`, `scrollPathIntoView` — accessibility / DOM focus.
-- Context attributes (`alpha`, `desynchronized`, `willReadFrequently`,
-  `colorSpace`) and the context-loss machinery.
+- `drawFocusIfNeeded` — accessibility / DOM focus. (Its old sibling
+  `scrollPathIntoView` has since been removed from the spec entirely, so it no
+  longer counts against anyone.)
+- Context attributes and the context-loss machinery, each for its own reason:
+  - `alpha: false` exists so a page compositor can skip blending the element
+    over the page; headless, an opaque canvas is just a background fill.
+  - `desynchronized` requests out-of-band presentation (lower input-to-pixel
+    latency); there is no display pipeline here to desynchronize from.
+  - `willReadFrequently` hints the backing store be kept CPU-side so
+    `getImageData` doesn't stall on a GPU readback — a CPU-only renderer
+    satisfies it by construction.
+  - `colorSpace` would be inert metadata: with no CSS color strings and no
+    tagged image sources, there is no conversion boundary for it to act on —
+    the typed API's floats mean whatever the caller says they mean. It would
+    acquire meaning only alongside the string/tagged features deliberately
+    skipped above (CSS colors, a general image decoder, tagged PNG output).
+  - `colorType` (`unorm8` | `float16`, a recent spec addition) is pinned by
+    design: storage is `_Float16` that round-trips every 8-bit edge exactly
+    and is clamped to the premultiplied range like `unorm8`
+    ([decisions/float16-color-type.md](decisions/float16-color-type.md),
+    [decisions/color-axis.md](decisions/color-axis.md)) — in effect a
+    higher-precision `unorm8`, neither switchable nor extended-range.
+  - Context loss is GPU-process death; a CPU renderer has nothing to lose
+    (`canvas_is_context_lost` honestly returns false).
 - Non-buffer `drawImage` sources tied to the DOM (`HTMLVideoElement`, `VideoFrame`,
   `ImageBitmap`, …). "Canvas-as-source" is the one genuine gap here, noted above.

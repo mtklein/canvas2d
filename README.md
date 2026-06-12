@@ -596,9 +596,10 @@ all done:
   shadow pipeline's separable box blur ([blur.c](src/blur.c)) that blurs the
   op's tile against transparency, and `drop-shadow()`, which composites the
   tile over a blurred, offset, tinted copy of its own alpha. The one piece of
-  `filter` not offered is the CSS string form — the typed `canvas_add_filter_*`
-  calls are the API, since string parsing is exactly the kind of work this
-  project deprioritizes.
+  `filter` not offered is the CSS string form (and `url()` SVG reference
+  filters, which need a document to point into) — the typed
+  `canvas_add_filter_*` calls are the API, since string parsing is exactly the
+  kind of work this project deprioritizes.
 
 What we deliberately **won't** do:
 
