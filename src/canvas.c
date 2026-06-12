@@ -175,7 +175,8 @@ static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
-                            float dw, float dh, bool premul_src);
+                            float dw, float dh, bool premul_src,
+                            cnvs_mip hi, cnvs_mip lo, float lt);
 
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
 // be paired with a positive count under -fbounds-safety.  An empty pattern stays
@@ -2774,9 +2775,9 @@ static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
 }
 
 // Render one color (emoji) glyph from its canonical capture: pick the mip
-// level whose resolution best matches the glyph quad's device footprint and
-// sample it through the same transform-aware bilinear path drawImage takes --
-// so the emoji takes the transform, clip, global alpha, and shadow like any
+// level pair around the glyph quad's device footprint and sample it through
+// the same transform-aware trilinear path drawImage minification takes -- so
+// the emoji takes the transform, clip, global alpha, and shadow like any
 // other image, and no boundary call (indeed, no CTFontRef at all) is needed
 // once the capture exists.  The capture covers the glyph-space rect
 // [ink_x0, ink_x0 + capture_w] x [ink_y0, ink_y0 + capture_h] in capture px (y up,
@@ -2792,19 +2793,21 @@ static void draw_glyph_capture(struct canvas *__single cv, struct cnvs_glyph_slo
     }
     float const dx = pen_x + slot->ink_x0 * k;
     float const dy = baseline_y - (slot->ink_y0 + (float)slot->capture_h) * k;
-    // The mip rule: the quad's device footprint is its longer mapped edge, and
-    // the level sampled is the smallest one >= that footprint -- bilinear then
-    // never downscales by more than 2x within the level, which box-halved
-    // sources handle without visible aliasing or softness.
+    // The mip rule: the quad's device footprint is its longer mapped edge.
+    // The finer level of the pair is the smallest one >= that footprint (so
+    // its taps never downscale by more than 2x), and the blend toward the
+    // ceil-halved level under it tracks the footprint between the two --
+    // level-selection popping along a continuous zoom smooths into a fade.
     cnvs_mat const m = cv->cur.ctm;
     float const ex = hypotf(m.a * dw, m.b * dw);
     float const ey = hypotf(m.c * dh, m.d * dh);
-    cnvs_mip const lvl = cnvs_glyph_mip(slot, ex > ey ? ex : ey);
-    if (!lvl.px) {
+    cnvs_mip hi, lo;
+    float const lt = cnvs_glyph_mip_pair(slot, ex > ey ? ex : ey, &hi, &lo);
+    if (!hi.px) {
         return;
     }
-    draw_image_quad(cv, lvl.px, lvl.len, lvl.w, lvl.h, 0.0f, 0.0f,
-                    (float)lvl.w, (float)lvl.h, dx, dy, dw, dh, true);
+    draw_image_quad(cv, hi.px, hi.len, hi.w, hi.h, 0.0f, 0.0f,
+                    (float)hi.w, (float)hi.h, dx, dy, dw, dh, true, hi, lo, lt);
 }
 
 // The degraded path when the capture cache can't serve (full table, OOM) but
@@ -3266,12 +3269,16 @@ void canvas_set_image_smoothing_quality(struct canvas *__single cv,
 // false = straight (unpremultiplied) alpha, the public drawImage contract;
 // true = premultiplied, the canonical emoji capture -- bilinear interpolation
 // of premultiplied bytes is fringe-free, and the sample just scales by
-// alpha * coverage on its way into the premultiplied tile.
+// alpha * coverage on its way into the premultiplied tile.  `hi`/`lo`/`lt`
+// are a caller-picked trilinear level pair + blend (the emoji captures' cached
+// pyramid, where `src` is `hi`'s own bytes); zero views + 0 for the public
+// path, which picks its own pair from the source's derived chain below.
 static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
-                            float dw, float dh, bool premul_src) {
+                            float dw, float dh, bool premul_src,
+                            cnvs_mip hi, cnvs_mip lo, float lt) {
     if (!rgba8_dims_ok(sw, sh) || slen < sw * sh * 4 ||
         dw <= 0.0f || dh <= 0.0f) {
         return;
@@ -3308,14 +3315,16 @@ static void draw_image_quad(struct canvas *__single cv,
     // device px) at medium/high samples the premultiplied mip chain with
     // trilinear filtering, and a magnifying draw at high runs the 4x4
     // BC-spline (CUBIC_B/CUBIC_C).  The emoji-capture path (premul_src)
-    // keeps its own pre-picked level + bilinear: its mip policy belongs to
-    // the text cache, deliberately untouched until trilinear earns its place
-    // there too.  The footprint is one Jacobian for the whole quad (the CTM
-    // is affine), the emoji rule's max mapped axis.
+    // arrives with its level pair already picked from the text cache's
+    // pyramid (cnvs_glyph_mip_pair, the same doubling rule) and joins at
+    // SAMP_TRILINEAR; a zero blend there is just bilinear on `src`, which IS
+    // the finer level.  The footprint is one Jacobian for the whole quad (the
+    // CTM is affine), the emoji rule's max mapped axis.
     enum { SAMP_NEAREST, SAMP_BILINEAR, SAMP_TRILINEAR, SAMP_CUBIC } samp =
         smooth ? SAMP_BILINEAR : SAMP_NEAREST;
-    mip_level la = { 0, sw, sh }, lb = { 0, sw, sh };  // trilinear's level pair
-    float lt = 0.0f;                                   // ...and its blend
+    if (samp == SAMP_BILINEAR && premul_src && lt > 0.0f && lo.px) {
+        samp = SAMP_TRILINEAR;
+    }
     if (samp == SAMP_BILINEAR && !premul_src &&
         cv->cur.image_smoothing_quality != CANVAS_SMOOTHING_LOW) {
         float const kx = sww / dw, ky = shh / dh;  // source px per user px
@@ -3335,8 +3344,12 @@ static void draw_image_quad(struct canvas *__single cv,
             mip_level lv[MIP_MAX_LEVELS];
             int const n = build_src_mips(cv, src, slen, sw, sh, need + 1, lv);
             if (n > 0) {
-                la = lv[need < n ? need : n - 1];
-                lb = lv[need + 1 < n ? need + 1 : n - 1];
+                mip_level const la = lv[need < n ? need : n - 1];
+                mip_level const lb = lv[need + 1 < n ? need + 1 : n - 1];
+                hi = (cnvs_mip){ .px = cv->mips + la.off, .len = la.w * la.h * 4,
+                                 .w = la.w, .h = la.h };
+                lo = (cnvs_mip){ .px = cv->mips + lb.off, .len = lb.w * lb.h * 4,
+                                 .w = lb.w, .h = lb.h };
                 lt = la.off == lb.off ? 0.0f : (f - scale) / scale;
                 lt = lt < 0.0f ? 0.0f : (lt > 1.0f ? 1.0f : lt);
                 samp = SAMP_TRILINEAR;
@@ -3347,9 +3360,10 @@ static void draw_image_quad(struct canvas *__single cv,
         }
     }
     // Each mip level is the whole source at proportionally shrunk dims; one
-    // coordinate scale per level maps the source coords onto it.
-    float const lax = (float)la.w / (float)sw, lay = (float)la.h / (float)sh;
-    float const lbx = (float)lb.w / (float)sw, lby = (float)lb.h / (float)sh;
+    // coordinate scale per level maps the source coords onto it.  (For the
+    // emoji pair, hi is the source frame itself, so its scale is exactly 1.)
+    float const lax = (float)hi.w / (float)sw, lay = (float)hi.h / (float)sh;
+    float const lbx = (float)lo.w / (float)sw, lby = (float)lo.h / (float)sh;
     bool const premul_data =
         premul_src || samp == SAMP_TRILINEAR || samp == SAMP_CUBIC;
     float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
@@ -3385,13 +3399,12 @@ static void draw_image_quad(struct canvas *__single cv,
                         sample_src_cubic(src, slen, sw, sh, fsx[l], fsy[l], s);
                         break;
                     case SAMP_TRILINEAR:
-                        sample_src(cv->mips + la.off, la.w * la.h * 4,
-                                   la.w, la.h, fsx[l] * lax, fsy[l] * lay, s);
+                        sample_src(hi.px, hi.len, hi.w, hi.h,
+                                   fsx[l] * lax, fsy[l] * lay, s);
                         if (lt > 0.0f) {
                             float s2[4];
-                            sample_src(cv->mips + lb.off, lb.w * lb.h * 4,
-                                       lb.w, lb.h, fsx[l] * lbx, fsy[l] * lby,
-                                       s2);
+                            sample_src(lo.px, lo.len, lo.w, lo.h,
+                                       fsx[l] * lbx, fsy[l] * lby, s2);
                             for (int c = 0; c < 4; c++) {
                                 s[c] += (s2[c] - s[c]) * lt;
                             }
@@ -3453,7 +3466,9 @@ void canvas_draw_image_subrect(struct canvas *__single cv,
         }
     }
     draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
-                    dx, dy, dw, dh, false);
+                    dx, dy, dw, dh, false,
+                    (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
+                    (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
 
 void canvas_draw_image(struct canvas *__single cv,

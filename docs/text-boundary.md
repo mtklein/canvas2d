@@ -426,17 +426,22 @@ Everything derived from the capture is checked C:
   capture alone is canonical, so the derived form can change shape at zero
   format cost.
 - **Drawing.** The glyph quad's device footprint (its longer CTM-mapped edge)
-  selects the *smallest level still >= the footprint*, and the existing
-  transform-aware bilinear image path samples within it — bilinear then never
-  downscales by more than 2x, which box-halved sources handle without visible
-  softness or aliasing (the gallery's emoji scenes moved imperceptibly;
-  trilinear stays in reserve if continuous-zoom popping ever matters). The
-  sampler grew a premultiplied-source flag rather than a second copy of the
-  quad walk — interpolating premultiplied bytes is fringe-free, and emoji keep
-  taking the transform, clip, global alpha, and shadow like any image. No
-  `CTFontRef` is needed to draw: a capture from the cache (or a replayed
-  block) renders fontlessly, and the per-draw boundary render survives only as
-  the degraded path when the cache cannot serve and a live handle exists.
+  selects the level *pair* around it — the smallest level still >= the
+  footprint plus the next one down — and the existing transform-aware image
+  path samples both and lerps (`cnvs_glyph_mip_pair`, the same
+  doubling-plus-exact-fraction rule as drawImage's trilinear minification, no
+  log2f for replay's sake). The finer level's taps never downscale by more
+  than 2x, which box-halved sources handle without visible softness or
+  aliasing, and the blend turns level-selection popping along a size ramp
+  into a fade — the gallery's emojiscale scene shows the periodic sharpness
+  banding smoothing out. At a level's exact size the blend is zero, so the
+  capture-size and half-size draws stay texel-exact. The sampler grew a
+  premultiplied-source flag rather than a second copy of the quad walk —
+  interpolating premultiplied bytes is fringe-free, and emoji keep taking the
+  transform, clip, global alpha, and shadow like any image. No `CTFontRef` is
+  needed to draw: a capture from the cache (or a replayed block) renders
+  fontlessly, and the per-draw boundary render survives only as the degraded
+  path when the cache cannot serve and a live handle exists.
 - **Serialization.** The capture is the recorded form, deflated: a `bitmap`
   block (`bitmap <font-id> <gid> <w> <h> <ink box> <zlen> <nlines>`) followed
   by exactly `nlines` base64 `bits` lines carrying a `zlen`-byte zlib stream

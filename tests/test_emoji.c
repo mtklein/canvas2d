@@ -13,8 +13,12 @@
 //   - the mip pyramid is exact 2x2 box halving (hand-checked, odd dims, the
 //     premul invariant preserved at every level);
 //   - mip selection picks the smallest level >= the device footprint;
+//   - the trilinear pair around a footprint is that level plus the next one
+//     down, with the blend rising 0 -> 1 between them and collapsing to 0 at
+//     the level sizes themselves, at magnification, and at the pyramid floor;
 //   - drawing at exactly the capture size reproduces the capture's bytes
-//     (within compositing rounding), and at half size the level-1 mip's.
+//     (within compositing rounding), and at half size the level-1 mip's --
+//     both blend-free points, so trilinear leaves them exact.
 
 // The emoji capture slot the canvas holds after drawing one emoji: scan the
 // glyph table for the (single) entry carrying a capture.
@@ -252,6 +256,43 @@ static void check_mip_select(void) {
     canvas_free(cv);
 }
 
+// The trilinear pair on the same capture: fine = the single-level rule's
+// pick, coarse = the next level down, the blend exact float arithmetic on the
+// minification ratio (160/footprint).  Pinned at the seams: a level's own
+// size blends 0, magnification and the 1x1 floor collapse to one level.
+static void check_mip_pair(void) {
+    struct canvas *__single cv = canvas(64, 64);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    canvas_set_font_size(cv, 32.0f);
+    canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
+    struct cnvs_glyph_slot *__single slot = find_capture(cv);
+    CHECK(slot != NULL);
+    if (slot) {
+        struct { float f, t; int fine, coarse; } const cases[] = {
+            { 1000.0f, 0.0f, 160, 160 },  // magnifying: the capture, no blend
+            { 160.0f, 0.0f, 160, 160 },   // exactly the capture, ditto
+            { 120.0f, 160.0f / 120.0f - 1.0f, 160, 80 },  // f = 4/3: a third
+                                                          // of the way down
+            { 80.0f, 0.0f, 80, 40 },      // a level's own size: no blend
+            { 50.0f, 0.6f, 80, 40 },      // f = 3.2 between levels 1 and 2
+            { 0.0f, 0.0f, 1, 1 },         // degenerate: the floor, no blend
+        };
+        for (int i = 0; i < (int)(sizeof cases / sizeof cases[0]); i++) {
+            cnvs_mip fine, coarse;
+            float const t = cnvs_glyph_mip_pair(slot, cases[i].f, &fine, &coarse);
+            CHECK(fine.px != NULL && coarse.px != NULL);
+            CHECK(fine.w == cases[i].fine);
+            CHECK(coarse.w == cases[i].coarse);
+            float const d = t > cases[i].t ? t - cases[i].t : cases[i].t - t;
+            CHECK(d < 1e-6f);
+        }
+    }
+    canvas_free(cv);
+}
+
 // Draw an emoji at exactly the capture's size over white and read back: every
 // interior pixel must match the capture composited over white within a few
 // LSB (float->_Float16 tile quantization and the readback rounding).  Then the
@@ -323,6 +364,7 @@ int main(void) {
     check_halve_odd();
     check_halve_premul();
     check_mip_select();
+    check_mip_pair();
     check_draw_equivalence();
     return TEST_REPORT();
 }

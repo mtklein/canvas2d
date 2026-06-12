@@ -339,6 +339,19 @@ void cnvs_mip_halve(uint8_t const *__counted_by(sw * sh * 4) src, int sw, int sh
 // no capture.
 cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint);
 
+// The trilinear flavour of cnvs_glyph_mip: borrow the pyramid level PAIR
+// around `footprint` -- `fine` covering it within a 2x downscale, `coarse`
+// the next level down -- and return the blend toward `coarse`, 0 at fine's
+// own size rising to 1 at coarse's.  The pair is
+// found by doubling and the blend by exact float arithmetic (draw_image_quad's
+// SAMP_TRILINEAR rule -- no log2f, so replay cannot drift across libms).  A
+// magnifying or degenerate footprint, the pyramid floor, and a build that
+// degraded all collapse the same way: coarse == fine and the blend is 0, so a
+// caller can always lerp blindly.  Zero views (px NULL) only when the slot has
+// no capture.
+float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint,
+                          cnvs_mip *__single fine, cnvs_mip *__single coarse);
+
 // Insert a rebuilt shaped line for (size_px, rtl, text): the replay path.
 // Takes ownership of `s` always (freeing it when it can't insert); copies the
 // key bytes; replaces an existing entry for the same key.

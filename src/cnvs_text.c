@@ -692,6 +692,48 @@ cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint) 
     return pick;
 }
 
+float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint,
+                          cnvs_mip *__single fine, cnvs_mip *__single coarse) {
+    *fine = (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 };
+    *coarse = *fine;
+    if (!slot || slot->capture_w <= 0) {
+        return 0.0f;
+    }
+    build_mips(slot);
+    *fine = (cnvs_mip){ .px = slot->capture, .len = slot->capture_size,
+                        .w = slot->capture_w, .h = slot->capture_h };
+    *coarse = *fine;
+    // The footprint in ratio form: minification relative to the capture's
+    // smaller dim (the one the single-level rule's both-dims walk keys on).
+    // Not minifying -- or a degenerate footprint that lands the ratio at
+    // NaN/negative -- is the capture alone.
+    float const cap = (float)(slot->capture_w < slot->capture_h
+                                  ? slot->capture_w : slot->capture_h);
+    float const f = cap / footprint;
+    if (!(f > 1.0f)) {
+        return 0.0f;
+    }
+    // Doubling finds the floor level (capped at the pyramid's last), exact
+    // float arithmetic the blend.
+    int need = 0;
+    float scale = 1.0f;
+    while (scale * 2.0f <= f && need < slot->nmips) {
+        scale *= 2.0f;
+        need++;
+    }
+    if (need > 0) {
+        *fine = slot->mip[need - 1];  // level `need`; level 0 is the capture
+    }
+    if (need < slot->nmips) {
+        *coarse = slot->mip[need];
+    } else {
+        *coarse = *fine;  // the floor: nothing further to blend toward
+        return 0.0f;
+    }
+    float const t = (f - scale) / scale;
+    return t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+}
+
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         float size_px, bool rtl, char const *__counted_by(len) text, int len) {
     if (!c || len < 0) {
