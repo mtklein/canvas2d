@@ -1943,10 +1943,13 @@ static void imagescale(void) {
         canvas_free(c);
         return;
     }
-    canvas_set_font_size(s, 128.0f);
-    canvas_set_text_align(s, CANVAS_ALIGN_CENTER);
-    canvas_set_text_baseline(s, CANVAS_BASELINE_MIDDLE);
-    canvas_fill_text(s, "🚀", 80.0f, 80.0f);
+    // Font size 160 is the canonical emoji capture size (CNVS_CAPTURE_EM), so
+    // this draw is the capture texel-for-texel -- scale 1, no mip blend -- and
+    // the readback is maximally sharp.  The rocket's ink box at 160px spans
+    // x in [0, 160] from the pen and y in [-20, 140] about the baseline, so a
+    // left-aligned alphabetic draw at (0, 140) fills the canvas exactly.
+    canvas_set_font_size(s, 160.0f);
+    canvas_fill_text(s, "🚀", 0.0f, 140.0f);
     canvas_read_rgba(s, src, slen);
     canvas_free(s);
 
