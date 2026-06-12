@@ -135,9 +135,13 @@ EXTRA_LIBS = {
 }
 
 # Tests that read gallery/ files from disk.  Their run edges take the
-# run_gallery outputs as order-only deps so they never race the re-render
-# rewriting those same files mid-read (see the test-loop comment below).
-# A new test that opens gallery/ paths belongs in this set.
+# run_gallery outputs as REAL deps: a re-render re-runs them (and so can't
+# race them mid-read).  These used to be order-only ("pixels don't dirty the
+# test"), but that left a hole a clean CI build caught while local builds
+# stayed green: adding a gallery scene edits only gallery.c, so the readers'
+# stale runok stamps survived and their directory-census CHECKs (the "list
+# every committed file" pattern) never re-fired locally.  A new test that
+# opens gallery/ paths belongs in this set.
 GALLERY_READERS = {"test_replay_gallery", "test_pngread"}
 
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
@@ -440,7 +444,7 @@ def main():
                 # runner.
                 gallery_dep = ""
                 if stem in GALLERY_READERS:
-                    gallery_dep = " || " + " ".join(gallery_pngs + gallery_canvases)
+                    gallery_dep = " | " + " ".join(gallery_pngs + gallery_canvases)
                 w(f"build {stamp}: run {exe}{gallery_dep}")
                 w(f"  bin = {exe}")
                 produced.append(exe)
@@ -728,10 +732,10 @@ def main():
         w(f"build {exe}: link_cov {o} {' '.join(cov_lib)}")
         if os.path.basename(t) in EXTRA_LIBS:
             w(f"  libs = {EXTRA_LIBS[os.path.basename(t)]}")
-        # Same run_gallery ordering as the variant test loop above.
+        # Same run_gallery dependency as the variant test loop above.
         gallery_dep = ""
         if stem in GALLERY_READERS:
-            gallery_dep = " || " + " ".join(gallery_pngs + gallery_canvases)
+            gallery_dep = " | " + " ".join(gallery_pngs + gallery_canvases)
         w(f"build {raw}: cov_run {exe}{gallery_dep}")
         w(f"  bin = ./{exe}")
         cov_raws.append(raw)
