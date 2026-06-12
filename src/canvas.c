@@ -605,7 +605,8 @@ void canvas_set_fill_pattern(struct canvas *__single cv,
     if (cv->rec) {
         // The pattern pixels ride a content-deduped image block; when the
         // block can't be carried (caps/OOM) the op line is skipped with it.
-        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_fill_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
@@ -647,7 +648,8 @@ void canvas_set_stroke_pattern(struct canvas *__single cv,
         return;
     }
     if (cv->rec) {
-        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_stroke_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
@@ -3798,7 +3800,8 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
         // The source's dims ride the image block; the op line carries the two
         // user-space rects.  Suspended when draw_image/draw_image_scaled is
         // the op the caller actually issued (they record as themselves).
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
@@ -3820,7 +3823,8 @@ void canvas_draw_bitmap(struct canvas *__single cv,
     // delegates to.  rgba8_dims_ok gates the w*h*4 the block needs (the same
     // predicate the delegate applies before painting).
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image", id,
@@ -3838,7 +3842,8 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh) {
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
@@ -3851,8 +3856,8 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
     cnvs_rec_leave(cv->rec);
 }
 
-// The reified-image draw trio.  Each records the image's pixels as an
-// image/pimage block (deduplicated -- the object is a natural key, but
+// The reified-image draw trio.  Each records the image's pixels as an image
+// block naming its format (deduplicated -- the object is a natural key, but
 // content-dedup already covers it) plus the same draw_image op lines the
 // bitmap trio writes: the format speaks in images either way.  An
 // `image_mips` line rides along only once the image's chain is built, so a
@@ -3860,7 +3865,7 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
 static int rec_image_obj(struct canvas *__single cv,
                          struct canvas_image const *__single img) {
     int const id = cnvs_rec_image(cv->rec, img->px, img->len, img->w, img->h,
-                                  img->ct, img->at == CANVAS_ALPHA_PREMUL);
+                                  img->ct, img->at);
     if (id >= 0 && img->nlevels > 0) {
         cnvs_rec_image_mips(cv->rec, id);
     }
@@ -3919,8 +3924,8 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
     cnvs_rec_leave(cv->rec);
 }
 
-// Replay's draw of one image block (cnvs_replay.h): premul says how to read
-// the bytes (a `pimage` block), mips whether the block's draws carry
+// Replay's draw of one image block (cnvs_replay.h): ct/at are the block's
+// format as named on its line, mips whether the block's draws carry
 // mip-chain semantics (an `image_mips` line) -- per-draw rebuild here, byte-
 // identical to a cached chain.  Re-records in the replayed op's own spelling
 // (`form`) when replaying onto a recording canvas, so the round trip is
@@ -3928,7 +3933,7 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
 void cnvs_canvas_draw_block(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) px, int slen,
                             int w, int h, enum canvas_color_type ct,
-                            bool premul, bool mips, int form,
+                            enum canvas_alpha_type at, bool mips, int form,
                             float sx, float sy, float sww, float shh,
                             float dx, float dy, float dw, float dh) {
     if (!rgba8_dims_ok(w, h) || slen < w * h * px_bpp(ct)) {
@@ -3936,7 +3941,7 @@ void cnvs_canvas_draw_block(struct canvas *__single cv,
     }
     if (cv->rec) {
         int const id = cnvs_rec_image(cv->rec, px, w * h * px_bpp(ct), w, h,
-                                      ct, premul);
+                                      ct, at);
         if (id >= 0) {
             if (mips) {
                 cnvs_rec_image_mips(cv->rec, id);
@@ -3959,7 +3964,7 @@ void cnvs_canvas_draw_block(struct canvas *__single cv,
         }
     }
     draw_image_quad(cv, px, slen, w, h, sx, sy, sww, shh, dx, dy, dw, dh,
-                    premul, ct, true, mips, NULL,
+                    at == CANVAS_ALPHA_PREMUL, ct, true, mips, NULL,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
@@ -4121,7 +4126,8 @@ void canvas_put_image_data(struct canvas *__single cv,
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
         // placement rides the op line.
-        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data", id,
                                 (int[]){ dx, dy }, 2);
@@ -4141,7 +4147,8 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (cv->rec) {
         // The raw dirty args ride the op line; replay re-normalises them
         // through this very function, so the recorded form stays the call.
-        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data_dirty", id,
                                 (int[]){ dx, dy, dirty_x, dirty_y,

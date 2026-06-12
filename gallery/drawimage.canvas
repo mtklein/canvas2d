@@ -1,6 +1,6 @@
 set_fill_rgba 0.100000001 0.109999999 0.140000001 1
 fill_rect 0 0 300 120
-image 0 16 16 799 1
+image 0 unorm8 unpremul 16 16 799 1
 bits eAH7/////6//v/6/+f/m/w3/N/yv/1//3++/33/V/6r/Of9z/mf4zwCmQXyQOEgepA6kHqTv/9ev/79+vfn/5tcN/zd8rf9f/9Xvv99X1f+qXzn/c35l+M8ApkF8kDhIHqQOpB6k7////zdv/v96c8P/mzfr/2+46fe//qbqf7+bnP9VbzL857zJ+Z/hpup/zpt+/1Vv1v/3u7nhf/3Nm/833PwK0vb/682v//9v2PD/64b6/zc3+P3fsEH1f/0Gzv9+Gxj+q27g/M+5QfU/wwa//5wb6v+rbtjw32/Dzf/1G76CtPy/ueHr/68bbv7/X1///2u93/+b9ar/N9Rz/q+vZ/jvV8/5X7Ve9T9nvd9/hvr6/5z1G/6r1t/871f/FaT8/4b6r/9v1t/8/7V+w///fn7/v/qp/r/px/l/gx/D/3o/zv9+fqr/Vf38/nP61f9n8Nvwn9Pv5n9Vv68gpf/r/b7+3+B38/9Nvw3/v/rV//+vqvr/qyrn/5uqDP83qHL+r1dV/e+n6vdfVbX+P6fqhv8Mqjf/c6p+BSn776f69X+96s3/G1Q3/L+pWv//q6rf//+cnP+/cjL8v8nJ+X8Dp+r/ek6//36c9f9VOTf85+S8+Z+B8ytIyX9Vzq///Thv/q/n3PB/A2f9/5ucfv+/cqr+/8/A8P8rA+f/mwyq/zcw+P2vZ6j/78ew4b8qw83/nAxfQdJgGsQHiYPkQepA6kH6IPargs0DmQsyH2QPyD6QvRD7QXyQOEgepA6kHuJuiP/9wP4B+QvkP5A/Qf4F+Rvi/w3g8ACFCyh8QOEECi9QuEHCvx4cnqBwBYUvKJxB4Q0Kd0j414PjAxQvoPgBxRMovkDxBon/DeD4BMUrKH5B8QyKb1C8Q+LfD5weQOkClD5A6QSUXkDpBpL+boLTEyhdgdIXKJ2B0hso3UHSnyo4PYLSJSh9gtIpKL2C0i0k/UPSMyhdg9I3KJ2D0jso3UPSPyQ/gPIFKH+A8gkov4DyDST//QfnJ1C+AuUvUD4D5TdQvoPkPwZwfgTlS1D+BOVTUH4F5VsAK6Z8Tw==
 image_mips 0
 draw_image 0 20 20

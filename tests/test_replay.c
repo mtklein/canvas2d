@@ -62,7 +62,7 @@ int main(void) {
     // Image blocks: a valid 1x1 block (a 12-byte zlib stream of the 4 RGBA
     // bytes) feeds every op form that references it by id.
     CHECK(REPLAY(cv,
-        "image 0 1 1 12 1\n"
+        "image 0 unorm8 unpremul 1 1 12 1\n"
         "bits eJz7z8DwHwAE/wH/\n"
         "draw_image 0 4 4\n"
         "draw_image_scaled 0 8 4 6 6\n"
@@ -171,23 +171,25 @@ int main(void) {
 
     // Malformed image blocks and references are all rejected.
     CHECK(!REPLAY(cv, "draw_image 7 0 0\n"));            // undeclared id
-    CHECK(!REPLAY(cv, "image 0 0 1 12 1\n"));            // zero dimension
-    CHECK(!REPLAY(cv, "image 0 1 1 0 1\n"));             // zero-length stream
-    CHECK(!REPLAY(cv, "image 0 1 1 12 999\n"));          // nlines > ceil(zlen/3)
-    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 0 1 12 1\n"));            // zero dimension
+    CHECK(!REPLAY(cv, "image 0 rgba9 unpremul 1 1 12 1\n"));   // unknown colour type
+    CHECK(!REPLAY(cv, "image 0 unorm8 sideways 1 1 12 1\n"));  // unknown alpha type
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 0 1\n"));             // zero-length stream
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 12 999\n"));          // nlines > ceil(zlen/3)
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 12 1\n"
                       "fill_rect 0 0 1 1\n"));           // bits must follow
-    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 12 1\n"
                       "bits eJz7z8DwHwAE/wH/\n"
-                      "image 0 1 1 12 1\n"
+                      "image 0 unorm8 unpremul 1 1 12 1\n"
                       "bits eJz7z8DwHwAE/wH/\n"));       // id redeclared
-    CHECK(!REPLAY(cv, "image 0 1 1 4 1\n"
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 4 1\n"
                       "bits AAAAAA==\n"));               // no zlib stream at all
-    CHECK(!REPLAY(cv, "image 0 2 2 12 1\n"
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 2 2 12 1\n"
                       "bits eJz7z8DwHwAE/wH/\n"));       // inflates short of w*h*4
-    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 12 1\n"
                       "bits eJz7z8DwHwAE/wH/\n"
                       "put_image_data 0 1.5 0\n"));      // int arg takes no '.'
-    CHECK(!REPLAY(cv, "image 0 1 1 12 1\n"
+    CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 12 1\n"
                       "bits eJz7z8DwHwAE/wH/\n"
                       "set_fill_pattern 0 sideways\n")); // bad repeat mode
 

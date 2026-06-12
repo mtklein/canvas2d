@@ -578,17 +578,14 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 //
 // Image-block lines carry the RGBA8 sources the image ops need, the capture
 // machinery reused wholesale:
-//     image <id> <w> <h> <zlen> <nlines>
-//     pimage <id> <w> <h> <zlen> <nlines>
-//     fimage <id> <w> <h> <zlen> <nlines>
-//     pfimage <id> <w> <h> <zlen> <nlines>
+//     image <id> <unorm8|f16> <unpremul|premul> <w> <h> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-// declares file-local numbered image <id> -- the keyword spells the format,
-// {image, pimage, fimage, pfimage} for {unorm8, f16} x {straight,
-// premultiplied} (a recorded canvas_snapshot is a pfimage, bit-lossless in
-// the file too) -- w x h x 4 channels, deflated and base64-chunked exactly
-// like a capture, content-deduplicated by the recorder so one buffer used
-// many ways costs one block.  An optional
+// declares file-local numbered image <id>, its colour and alpha types named
+// on the line like every other enum in the format -- the four combinations
+// are peers, none the unmarked default (a recorded canvas_snapshot is
+// `f16 premul`, bit-lossless in the file too) -- w x h x 4 channels,
+// deflated and base64-chunked exactly like a capture, content-deduplicated
+// by the recorder so one buffer used many ways costs one block.  An optional
 //     image_mips <id>
 // line marks the block's draws as carrying mip-chain semantics: the bitmap
 // entry points (per-draw chain rebuild) emit it as soon as their block is

@@ -23,8 +23,8 @@ struct rec_image {
     uint8_t *__counted_by(len) px;
     int len;
     int w, h;
-    enum canvas_color_type ct;  // unorm8 (image/pimage) or f16 (fimage/pfimage)
-    bool premul;     // the premultiplied flavour (pimage/pfimage)
+    enum canvas_color_type ct;  // the block's colour type, written by name
+    enum canvas_alpha_type at;  // ...and its alpha type, likewise
     bool mips_done;  // an `image_mips` line has been emitted for this id
 };
 
@@ -370,7 +370,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
 
 int cnvs_rec_image(struct cnvs_recorder *__single r,
                    uint8_t const *__counted_by(len) px, int len, int w, int h,
-                   enum canvas_color_type ct, bool premul) {
+                   enum canvas_color_type ct, enum canvas_alpha_type at) {
     if (!r || r->suspend != 0) {
         return -1;
     }
@@ -385,7 +385,7 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     // in a different format.
     for (int i = 0; i < r->nimg; i++) {
         if (r->img[i].w == w && r->img[i].h == h && r->img[i].len == len &&
-            r->img[i].ct == ct && r->img[i].premul == premul &&
+            r->img[i].ct == ct && r->img[i].at == at &&
             memcmp(r->img[i].px, px, (size_t)len) == 0) {
             return i;
         }
@@ -416,9 +416,12 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     }
     int const id = r->nimg;
     int const nlines = (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
-    char const *kw = ct == CANVAS_COLOR_F16 ? (premul ? "pfimage" : "fimage")
-                                            : (premul ? "pimage" : "image");
-    fprintf(r->f, "%s %d %d %d %d %d\n", kw, id, w, h, zn, nlines);
+    // The format axes ride the line by name, like every other enum in the
+    // format -- all four combinations are peers, none the unmarked default.
+    fprintf(r->f, "image %d %s %s %d %d %d %d\n", id,
+            ct == CANVAS_COLOR_F16 ? "f16" : "unorm8",
+            at == CANVAS_ALPHA_PREMUL ? "premul" : "unpremul",
+            w, h, zn, nlines);
     for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
         int const rem = zn - off;
         put_bits_line(r->f, z + off,
@@ -430,7 +433,7 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     r->img[id].w = w;
     r->img[id].h = h;
     r->img[id].ct = ct;
-    r->img[id].premul = premul;
+    r->img[id].at = at;
     r->img[id].mips_done = false;
     r->nimg = id + 1;
     return id;

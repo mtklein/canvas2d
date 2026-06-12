@@ -69,9 +69,9 @@ enum {
 };
 
 // Serialize one RGBA image (w*h*bpp == len bytes, top row first; bpp is 4
-// for unorm8 channels, 8 for f16) as an image block -- the keyword spells the
-// format, {image, pimage, fimage, pfimage} for {unorm8, f16} x {straight,
-// premultiplied}, the four formats peers -- deflated (cnvs_zlib) and
+// for unorm8 channels, 8 for f16) as an `image` block whose colour and alpha
+// types ride the line by name -- the four formats are peers, none the
+// unmarked default -- deflated (cnvs_zlib) and
 // base64-chunked into `bits` lines exactly like an emoji capture, returning
 // its file-local id.  Deduplicated by CONTENT + the premul flag within the
 // recording (the recorder keeps its own copy of each emitted image; the
@@ -82,7 +82,7 @@ enum {
 // caller skips its op line too.
 int cnvs_rec_image(struct cnvs_recorder *__single r,
                    uint8_t const *__counted_by(len) px, int len, int w, int h,
-                   enum canvas_color_type ct, bool premul);
+                   enum canvas_color_type ct, enum canvas_alpha_type at);
 
 // `image_mips <id>`: from this point the block's draws have mip-chain
 // semantics -- a bitmap entry point (which rebuilds a chain per minifying

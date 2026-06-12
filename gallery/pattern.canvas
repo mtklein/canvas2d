@@ -2,7 +2,7 @@ set_fill_rgba 0.100000001 0.109999999 0.140000001 1
 fill_rect 0 0 474 212
 save
 translate 18 22
-image 0 32 32 148 1
+image 0 unorm8 unpremul 32 32 148 1
 bits eAH7lJ39HxfW1IuhCsZnx6j9tA17mDsGwt/oeCDtJsYNxOj/fsb9Pz5MqhuIdTshe8lxB63spqYbyLWbGm6g1G5K3TCQ9lPLbnLdMGo/afl91H7qlocj3X4QPZB2Dwb7qeEGcu2lRjxQw25yw4FYswe6/YVOUzPMSLWb1m4YyD4AKXZTOxzIsZuaYTCY7QcAXxkuKA==
 set_fill_pattern 0 repeat
 fill_rect 0 0 96 96
