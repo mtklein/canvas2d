@@ -1915,9 +1915,10 @@ static void emojiscale(void) {
 // one row per quality tier.  The minify ramp draws the same 160px rocket
 // bitmap (rendered once on a scratch canvas, read back as straight RGBA8:
 // exactly the borrowed buffer the public drawImage takes), sweeping 80px down
-// to 6px under a constant small rotation so power-of-two scales can't luck
-// into alignment: low (plain bilinear, the spec default) shimmers as its four
-// taps undersample; medium's premultiplied mip chain + trilinear stays clean.
+// to 6px -- pure axis-aligned scaling, no rotation, and the geometric steps
+// keep most factors away from clean powers of two: low (plain bilinear, the
+// spec default) shimmers as its four taps undersample; medium's premultiplied
+// mip chain + trilinear stays clean.
 // The magnify cell (right) is a hard-edged test card instead -- emoji art is
 // already antialiased, i.e. band-limited, so reconstruction kernels barely
 // differ on it; single-pixel checker, dots, and diagonals are where they
@@ -1999,12 +2000,8 @@ static void imagescale(void) {
         for (int i = 0; i < n; i++) {
             float const t = (float)i / (float)(n - 1);
             float const size = 80.0f * powf(6.0f / 80.0f, t);
-            canvas_save(c);
-            canvas_translate(c, x, top + 42.0f);
-            canvas_rotate(c, -0.18f);
-            canvas_draw_image_scaled(c, src, SRC, SRC, size * -0.5f,
-                                     size * -0.5f, size, size);
-            canvas_restore(c);
+            canvas_draw_image_scaled(c, src, SRC, SRC, x,
+                                     top + 42.0f - size * 0.5f, size, size);
             x += size + 14.0f;
         }
         // The test card, 10 source px blown up to 84 (8.4x).
