@@ -35,7 +35,8 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    dissolved into canvas.c (see
    [decisions/backend-differential.md](decisions/backend-differential.md) and
    [decisions/metal-backend.md](decisions/metal-backend.md)).
-3. ~~**Shadows**~~ — **done** (fills/strokes/text/images). The op's coverage mask is
+3. ~~**Shadows**~~ — **done** (fills/strokes/text/images). The op's source
+   alpha — the spec's "render the shadow from image A", post-filter — is
    blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
    shape — all in checked C. `filter`
@@ -150,13 +151,13 @@ Internals (not API features) considered and deferred:
   replay that matched a text scene's PNG used the embedded blocks, not host
   fonts.
 - **Shadows** are cast from fills, strokes, text, and `drawImage` — the op's
-  coverage is blurred (a CPU box-blur, three passes ≈ Gaussian,
-  [blur.c](../src/blur.c)), tinted, offset, and composited under the shape, all in
-  checked C. The blur approximates the
-  spec's Gaussian; the offset is rounded to whole device pixels; and the shadow's
-  silhouette is the op's coverage (exact for opaque paint/images, an
-  approximation for semi-transparent gradient/pattern alpha or a sprite's own
-  alpha shape).
+  source alpha (the spec's "render the shadow from image A": paint alpha,
+  coverage, global alpha, and any filters all shape it — a transparent sprite
+  shadows its alpha shape, not its quad) is blurred (a CPU box-blur, three
+  passes ≈ Gaussian, [blur.c](../src/blur.c)), tinted, offset, and composited
+  under the shape, all in checked C. Two deviations remain: the blur
+  approximates the spec's Gaussian, and the offset is rounded to whole device
+  pixels.
 - **`filter`** is functionally complete — the eight colour functions
   (`brightness`, `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`,
   `saturate`, `sepia`), `blur()`, and `drop-shadow()` (both three box passes ≈

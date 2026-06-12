@@ -1736,8 +1736,8 @@ static void blend(void) {
 }
 
 // Shadows: a sharp drop shadow, a soft blurred shadow, and a text shadow.  Each
-// is the op's coverage blurred (the in-tree box blur), tinted, offset, and
-// composited under the shape -- all in checked C, so both backends match.
+// is the op's alpha blurred (the in-tree box blur), tinted, offset, and
+// composited under the shape -- all in checked C.
 static void shadows(void) {
     struct canvas *__single c = canvas(400, 130);
     if (!c) {

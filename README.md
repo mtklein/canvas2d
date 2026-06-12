@@ -185,7 +185,7 @@ points within a thick ring's stroke band hit):
 ![hittest](gallery/hittest.png)
 
 Shadows — a sharp drop shadow, a soft blurred shadow, and a text shadow; each is
-the op's coverage blurred by the in-tree separable box blur (≈ Gaussian), tinted,
+the op's alpha blurred by the in-tree separable box blur (≈ Gaussian), tinted,
 offset, and composited under the shape — all in checked C:
 
 ![shadows](gallery/shadows.png)
@@ -436,7 +436,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | Hit testing — `isPointInPath` / `isPointInStroke` (+ `Path2D` overloads) | ✅ winding + even-odd, transform-aware |
 | `createPattern` — image patterns, repeat/repeat-x/-y/no-repeat, transform-pinned | ✅ borrowed RGBA8, bilinear/nearest |
 | `Path2D` — build, `addPath`, fill/stroke/clip/isPointIn* overloads | ✅ no SVG path-data string |
-| Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}`, under fills/strokes/text/images | ✅ CPU box-blur (≈ Gaussian), coverage silhouette |
+| Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}`, under fills/strokes/text/images | ✅ CPU box-blur (≈ Gaussian), cast from the op's source alpha (post-filter, per the spec's drawing model) |
 | `filter` — the eight colour functions (brightness/contrast/grayscale/hue-rotate/invert/opacity/saturate/sepia) + `blur()` + `drop-shadow()` (3-pass box ≈ Gaussian, painted region grows by the spread), per painted op, in list order | ✅ typed API, no CSS string form |
 | Many independent fills in one frame | ✅ composited in order onto a shared target |
 

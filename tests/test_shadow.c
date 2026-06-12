@@ -84,7 +84,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, W, 32, 24), 0, 255, 0, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 12, 24), 255, 0, 0, 255, 2));  // stroke only
 
-    // drawImage casts a shadow too (from the destination-quad coverage): a 2x2
+    // drawImage casts a shadow too, from the image's alpha: a 2x2
     // opaque red image scaled to [8,24) casts a blue shadow at +12,+12 -> [20,36).
     uint8_t img[16] = { 255, 0, 0, 255, 255, 0, 0, 255,
                         255, 0, 0, 255, 255, 0, 0, 255 };
@@ -97,6 +97,30 @@ int main(void) {
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // image only
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 45, 45), 0, 0, 0, 0, 2));      // neither
+
+    // A sprite's transparent pixels cast no shadow -- the shadow is the spec's
+    // "render the shadow from image A" (its alpha), not the destination quad.
+    // Left source column opaque, right transparent; nearest sampling keeps the
+    // seam crisp, so only the left half [8,16) shadows, at +12 -> [20,28).
+    uint8_t sprite[16] = { 255, 0, 0, 255, 0, 0, 0, 0,
+                           255, 0, 0, 255, 0, 0, 0, 0 };
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas_set_image_smoothing_enabled(cv, false);
+    canvas_draw_image_scaled(cv, sprite, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas_set_image_smoothing_enabled(cv, true);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // opaque half
+    CHECK(px_near(pixel_at(px, len, W, 20, 12), 0, 0, 0, 0, 2));      // transparent half
+    CHECK(px_near(pixel_at(px, len, W, 22, 30), 0, 0, 255, 255, 2));  // its shadow
+    CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 0, 0, 2));      // no quad shadow
+
+    // Translucent paint shadows at its own strength: a 50% fill's shadow
+    // carries 50% alpha (shadow = blur(A's alpha), not its coverage).
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 0.5f);
+    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% shadow
 
     canvas_free(cv);
     free(px);

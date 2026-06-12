@@ -824,6 +824,11 @@ typedef struct {
     int x, y, w, h;
 } cbbox;
 
+// Defined with the shadow machinery below; called from the paint tails above
+// it (blend_tile, paint_tile_solid).
+static void emit_shadow(struct canvas *__single cv, cbbox b,
+                        bool from_tile, bool with_cov, _Float16 base);
+
 static cbbox points_bbox(struct canvas *__single cv,
                          cnvs_vec2 const *__counted_by(n) pts, int n, int margin) {
     if (n <= 0) {
@@ -1000,11 +1005,10 @@ static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, 
 // function after a drop-shadow recolours the shadow too.  If the blur scratch
 // can't be grown the spatial entry is skipped -- the op paints unblurred (or
 // shadowless), inset in its widened (transparent) tile, like the other
-// best-effort OOM paths.  Spec order is filter-then-shadow; our shadowColor
-// shadow is already cast from the op's coverage silhouette, not its pixels
-// (emit_shadow), so no filter entry reaches it -- the canvas shadow keeps the
-// shape's sharp silhouette, the same approximation it makes for
-// semi-transparent paint, while a drop-shadow() lives inside the tile.
+// best-effort OOM paths.  Spec order is filter-then-shadow, and blend_tile
+// runs exactly that: the shadowColor shadow is cast from the tile's alpha
+// AFTER this filter pass (emit_shadow), so a blur()'s soft skirt and a
+// drop-shadow()'s offset copy both shape the canvas shadow too.
 static void apply_filters(struct canvas *__single cv, int w, int h) {
     int const count = cv->cur.filter_count;
     int const npix = w * h;
@@ -1536,12 +1540,16 @@ static bool shade_folds_coverage(struct canvas const *__single cv) {
            cv->cur.filter_count > 0;
 }
 
-// Finish a freshly shaded tile: run the state's filter list over it, then
-// composite -- the shared tail of every tile-building paint loop.  `fold` is
-// the caller's shade_folds_coverage answer: a folded tile already carries the
-// op's coverage in its alpha; otherwise cv->cov rides to the blend's lerp.
+// Finish a freshly shaded tile: run the state's filter list over it, cast the
+// shadow from the result's alpha, then composite -- the shared tail of every
+// tile-building paint loop.  `fold` is the caller's shade_folds_coverage
+// answer: a folded tile already carries the op's coverage in its alpha;
+// otherwise cv->cov rides to the blend's lerp (and joins the shadow's alpha).
+// The order is the spec's drawing model: filter the drawing, render the
+// shadow from the filtered result, composite shadow then drawing.
 static void blend_tile(struct canvas *__single cv, cbbox b, bool fold) {
     apply_filters(cv, b.w, b.h);
+    emit_shadow(cv, b, true, !fold, (_Float16)1.0f);
     cnvs_blend(cv, b.x, b.y, b.w, b.h, cv->tile, fold ? NULL : cv->cov,
                cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
 }
@@ -1569,6 +1577,9 @@ static void paint_tile_solid(struct canvas *__single cv, cbbox b, cnvs_unpremul 
         // coverage plane drives its lerp.  (!fold implies no filters:
         // shade_folds_coverage forces the fold whenever filters are
         // active, so skipping apply_filters here drops only a no-op.)
+        // The shadow's alpha is the splat's alpha under the coverage --
+        // the same product the folded tile would carry.
+        emit_shadow(cv, b, false, true, (_Float16)((float)solid.a * ga));
         cnvs_premul px;
         cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
         cnvs_blend_solid(cv, b.x, b.y, b.w, b.h, px, cv->cov,
@@ -1819,12 +1830,19 @@ static int shadow_offset(float v) {
     return cnvs_f2i(roundf(v));
 }
 
-// Cast the current op's shadow from the coverage in cv->cov over bbox b: build a
-// single-channel mask of the op's silhouette, blur it (~Gaussian), tint it with
-// the shadow colour (global alpha folded in), and composite it -- offset, under
-// the shape (which the caller paints next).  Blur and offset are device-space and
-// unaffected by the CTM, per spec.  All CPU-side, so both backends agree.
-static void emit_shadow(struct canvas *__single cv, cbbox b) {
+// Cast the current op's shadow from its source alpha over bbox b: build a
+// single-channel mask of the op's alpha -- the spec's "render the shadow from
+// image A", so paint alpha, coverage, global alpha, and any filters all shape
+// it -- blur it (~Gaussian), and composite the shadow colour through the
+// blurred mask, offset, under the shape (which the caller blends next).  The
+// alpha source is per fold strategy: a folded tile already carries the op's
+// full alpha in its alpha plane (from_tile, !with_cov); an unfolded tile
+// carries paint x ga at full strength with coverage riding separately
+// (from_tile, with_cov); and the tile-less solid splat path is coverage
+// scaled by the splat's alpha (!from_tile, with_cov, base).  Blur and offset
+// are device-space and unaffected by the CTM, per spec.
+static void emit_shadow(struct canvas *__single cv, cbbox b,
+                        bool from_tile, bool with_cov, _Float16 base) {
     if (!shadow_active(cv) || b.w <= 0 || b.h <= 0) {
         return;
     }
@@ -1842,13 +1860,17 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
     if (sx1 > cv->width)  { sx1 = cv->width; }
     if (sy1 > cv->height) { sy1 = cv->height; }
     int sw = sx1 - sx0, sh = sy1 - sy0;
-    if (sw <= 0 || sh <= 0 || !ensure_shadow(cv, sw * sh) || !ensure_tile(cv, sw * sh)) {
+    if (sw <= 0 || sh <= 0 || !ensure_shadow(cv, sw * sh)) {
         return;
     }
     int const n = sw * sh;
     memset(cv->shadow_src, 0, (size_t)n);
-    // Stamp the op coverage into the mask at its offset position (clipped to the
-    // mask, which may be tighter than the offset coverage near the canvas edge).
+    // Stamp the op alpha into the mask at its offset position (clipped to the
+    // mask, which may be tighter than the offset alpha near the canvas edge).
+    // The 255-quantize is the readback idiom (x255 + 0.5, truncating store):
+    // every exact 8-bit alpha -- coverage included -- stamps its byte back
+    // unchanged, so an opaque solid's mask is its coverage bit for bit.
+    _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
     int mx0 = b.x + offx - sx0, my0 = b.y + offy - sy0;
     for (int cy = 0; cy < b.h; cy++) {
         int const my = my0 + cy;
@@ -1858,7 +1880,14 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
         for (int cx = 0; cx < b.w; cx++) {
             int const mx = mx0 + cx;
             if (mx >= 0 && mx < sw) {
-                cv->shadow_src[my * sw + mx] = cv->cov[cy * b.w + cx];
+                int const i = cy * b.w + cx;
+                _Float16 a = base;
+                if (from_tile) { a = a * cv->tile[i].a; }
+                if (with_cov)  { a = a * ((_Float16)cv->cov[i] * inv255); }
+                float const af = (float)a;
+                cv->shadow_src[my * sw + mx] =
+                    (uint8_t)((af < 0.0f ? 0.0f : af > 1.0f ? 1.0f : af)
+                              * 255.0f + 0.5f);
             }
         }
     }
@@ -1868,52 +1897,30 @@ static void emit_shadow(struct canvas *__single cv, cbbox b) {
             blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, radius);
         }
     }
-    // Tint the blurred mask into the tile.  For folding modes, eight pixels
-    // per step: the shadow colour is a splat, so this is the planar f16 shade
-    // fold with the blurred mask as its coverage plane.  For lerping modes
-    // the tile is the full-strength tint and the blurred mask rides to the
-    // blend as the op's coverage plane.  (Filters never apply to the
-    // shadow tile, so unlike paint_tile the decision is the composite mode
-    // alone.)
-    bool const fold = coverage_folds(cv->cur.composite);
+    // Composite the shadow colour through the blurred mask: one splat, the
+    // mask as the blend's coverage plane -- blend_region's fold arm scales
+    // the splat by the mask for folding modes, its lerp arm bounds the blend
+    // by it for the rest, so one call serves both strategies.  Global alpha
+    // is NOT folded here: it already rides in the mask (the op alpha the
+    // stamp loop quantized), per the spec's B = shadow(A) x globalAlpha.
+    // The tile stays untouched -- it holds the op this shadow lands under.
     cnvs_unpremul const sc = cv->cur.shadow_color;
-    float const ga = cv->cur.global_alpha;
-    half8 const cr = (half8)sc.r, cg = (half8)sc.g, cb = (half8)sc.b;
-    half8 const base = (half8)(_Float16)((float)sc.a * ga);
-    if (fold) {
-        int i = 0;
-        for (; i + 8 <= n; i += 8) {
-            cnvs_px8_store(cv->tile + i,
-                           shade8(cr, cg, cb, base * cover8(cv->shadow_src + i)));
-        }
-        if (i < n) {
-            int const k = n - i;
-            cnvs_px8_store_k(cv->tile + i, k,
-                             shade8(cr, cg, cb,
-                                    base * cover8_k(cv->shadow_src + i, k)));
-        }
-    } else {
-        // Full-strength tint: one splat colour, the blurred mask as the
-        // blend's coverage plane -- no tile.
-        cnvs_premul px;
-        cnvs_px8_store_k(&px, 1, shade8(cr, cg, cb, base));
-        cnvs_blend_solid(cv, sx0, sy0, sw, sh, px, cv->shadow_src,
-                         cv->cur.clip_mask, cv->cur.clip_len,
-                         cv->cur.composite);
-        return;
-    }
-    cnvs_blend(cv, sx0, sy0, sw, sh, cv->tile, NULL,
-               cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
+    cnvs_premul px;
+    cnvs_px8_store_k(&px, 1, shade8((half8)sc.r, (half8)sc.g, (half8)sc.b,
+                                    (half8)sc.a));
+    cnvs_blend_solid(cv, sx0, sy0, sw, sh, px, cv->shadow_src,
+                     cv->cur.clip_mask, cv->cur.clip_len,
+                     cv->cur.composite);
 }
 
 // Paint the resolved coverage with the current fill / stroke paint, dispatching
-// on its kind.  The shadow, if any, is cast first so it lands under the shape.
+// on its kind.  Each paint path casts the shadow itself, from the painted
+// alpha, just before its blend -- so it lands under the shape.
 static void paint_fill(struct canvas *__single cv, cbbox b) {
     if (cv->cur.fill_kind == CNVS_PAINT_GRADIENT &&
         cnvs_gradient_paints_nothing(&cv->cur.fill_grad)) {
         return;
     }
-    emit_shadow(cv, b);
     switch (cv->cur.fill_kind) {
         case CNVS_PAINT_SOLID:    paint_tile_solid(cv, b, cv->cur.fill);            break;
         case CNVS_PAINT_GRADIENT: paint_tile_gradient(cv, b, &cv->cur.fill_grad);   break;
@@ -1926,7 +1933,6 @@ static void paint_stroke(struct canvas *__single cv, cbbox b) {
         cnvs_gradient_paints_nothing(&cv->cur.stroke_grad)) {
         return;
     }
-    emit_shadow(cv, b);
     switch (cv->cur.stroke_kind) {
         case CNVS_PAINT_SOLID:    paint_tile_solid(cv, b, cv->cur.stroke);            break;
         case CNVS_PAINT_GRADIENT: paint_tile_gradient(cv, b, &cv->cur.stroke_grad);   break;
@@ -3084,12 +3090,6 @@ static void draw_image_quad(struct canvas *__single cv,
     cover_edge(cv, b, q[3], q[0]);
     cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
 
-    // Cast the shadow from the destination-quad coverage before sampling the image
-    // (the sample loop reuses cv->tile).  As for fills, the shadow is the op's
-    // silhouette -- exact for an opaque image; a transparent sprite still shadows
-    // its whole quad rather than its alpha shape.
-    emit_shadow(cv, b);
-
     // Blocks of eight pixels, the paint_tile_pattern shape: the SAMPLING stays
     // scalar per lane -- four data-dependent taps at arbitrary source coords --
     // with the fold + premultiply around it run as planes: the sampled colours
@@ -3162,9 +3162,7 @@ static void draw_image_quad(struct canvas *__single cv,
             }
         }
     }
-    apply_filters(cv, b.w, b.h);
-    cnvs_blend(cv, b.x, b.y, b.w, b.h, cv->tile, fold ? NULL : cv->cov,
-               cv->cur.clip_mask, cv->cur.clip_len, cv->cur.composite);
+    blend_tile(cv, b, fold);
 }
 
 void canvas_draw_image_subrect(struct canvas *__single cv,

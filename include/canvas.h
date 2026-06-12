@@ -144,7 +144,8 @@ void canvas_set_shadow_offset_y(struct canvas *__single cv, float offset);
 // set_fill_rgba; a non-finite dx/dy/blur or a negative blur is ignored (the
 // call appends nothing), and so is a fully transparent colour (its shadow
 // would composite as nothing).  Independent of the shadow_color state, which
-// still casts the op's own shadow from its coverage silhouette.
+// casts the op's own shadow from the tile's alpha after the whole filter
+// list runs -- so a drop_shadow's skirt shapes that shadow too.
 void canvas_set_filter_none(struct canvas *__single cv);
 void canvas_add_filter_blur(struct canvas *__single cv, float px);
 void canvas_add_filter_brightness(struct canvas *__single cv, float amount);
