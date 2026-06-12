@@ -293,6 +293,8 @@ struct replay_image {
     uint8_t *__counted_by(len) px;
     int len;  // w*h*4
     int w, h;
+    bool premul;  // a `pimage` block: premultiplied pixels (e.g. a snapshot)
+    bool mips;    // an `image_mips` line ran: draws carry mip-chain semantics
 };
 
 struct replay_blocks {
@@ -324,6 +326,7 @@ struct replay_blocks {
     int bm_lines;   // `bits` lines still expected; > 0 = a block is pending
     int bm_fid;     // interned cache id for a capture's insert, or -1
     int bm_img;     // image-table id for an `image` block's insert, or -1
+    bool bm_premul; // the pending block is a `pimage` (premultiplied pixels)
     long bm_gid;
     int bm_w, bm_h;
     float bm_ink[4];  // capture-px ink box x0 y0 x1 y1
@@ -604,7 +607,8 @@ static bool replay_bitmap(struct replay_blocks *__single b,
 // the decoded allocation before either buffer exists), zlen in
 // [1, cnvs_zlib_bound(w*h*4)] and nlines in [1, ceil(zlen / 3)].
 static bool replay_image(struct replay_blocks *__single b,
-                         char const *__counted_by(le) data, size_t le, size_t j) {
+                         char const *__counted_by(le) data, size_t le, size_t j,
+                         bool premul) {
     long id = 0, w = 0, h = 0, zlen = 0, nlines = 0;
     if (!read_uint(data, le, &j, CNVS_REC_IMAGES_MAX - 1, &id) || b->img[id].px) {
         return false;
@@ -634,6 +638,7 @@ static bool replay_image(struct replay_blocks *__single b,
     b->bm = zs;  // count before pointer
     b->bm_fid = -1;
     b->bm_img = (int)id;
+    b->bm_premul = premul;
     b->bm_total = (int)total;
     b->bm_fill = 0;
     b->bm_lines = (int)nlines;
@@ -838,6 +843,8 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
             b->img[b->bm_img].len = b->bm_total;
             b->img[b->bm_img].w = b->bm_w;
             b->img[b->bm_img].h = b->bm_h;
+            b->img[b->bm_img].premul = b->bm_premul;
+            b->img[b->bm_img].mips = false;
         } else if (b->bm_fid >= 0) {
             cnvs_text_cache_put_capture(cnvs_canvas_text_cache(cv), b->bm_fid,
                                         (uint16_t)b->bm_gid, px, b->bm_total,
@@ -1249,7 +1256,13 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "run"))    { return replay_run(cv, blk, data, le, j); }
 
     // --- image blocks + the ops that reference them by id ---
-    else if (tok_eq(data, le, cs, cl, "image"))  { return replay_image(blk, data, le, j); }
+    else if (tok_eq(data, le, cs, cl, "image"))  { return replay_image(blk, data, le, j, false); }
+    else if (tok_eq(data, le, cs, cl, "pimage")) { return replay_image(blk, data, le, j, true); }
+    else if (tok_eq(data, le, cs, cl, "image_mips")) {
+        int id;
+        if (!read_image_id(blk, data, le, &j, &id)) return false;
+        blk->img[id].mips = true;
+    }
 
     // --- path blocks + the Path2D ops that reference them by id ---
     else if (tok_eq(data, le, cs, cl, "path"))   { return replay_path(blk, data, le, j); }
@@ -1277,23 +1290,29 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         int id;
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_floats(data, le, &j, f, 2)) return false;
-        canvas_draw_image(cv, blk->img[id].px, blk->img[id].w, blk->img[id].h,
-                          f[0], f[1]);
+        struct replay_image const im = blk->img[id];
+        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.premul,
+                               im.mips, 0, 0.0f, 0.0f, (float)im.w,
+                               (float)im.h, f[0], f[1], (float)im.w,
+                               (float)im.h);
     }
     else if (tok_eq(data, le, cs, cl, "draw_image_scaled")) {
         int id;
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_floats(data, le, &j, f, 4)) return false;
-        canvas_draw_image_scaled(cv, blk->img[id].px, blk->img[id].w,
-                                 blk->img[id].h, f[0], f[1], f[2], f[3]);
+        struct replay_image const im = blk->img[id];
+        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.premul,
+                               im.mips, 1, 0.0f, 0.0f, (float)im.w,
+                               (float)im.h, f[0], f[1], f[2], f[3]);
     }
     else if (tok_eq(data, le, cs, cl, "draw_image_subrect")) {
         int id;
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_floats(data, le, &j, f, 8)) return false;
-        canvas_draw_image_subrect(cv, blk->img[id].px, blk->img[id].w,
-                                  blk->img[id].h, f[0], f[1], f[2], f[3],
-                                  f[4], f[5], f[6], f[7]);
+        struct replay_image const im = blk->img[id];
+        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.premul,
+                               im.mips, 2, f[0], f[1], f[2], f[3],
+                               f[4], f[5], f[6], f[7]);
     }
     else if (tok_eq(data, le, cs, cl, "put_image_data")) {
         int id;

@@ -333,27 +333,79 @@ void canvas_set_image_smoothing_enabled(struct canvas *__single cv, bool enabled
 // imageSmoothingQuality, applied while smoothing is enabled.  low (the spec
 // default) is plain bilinear.  medium and high antialias minification: a
 // drawImage whose source footprint passes one source px per device px samples
-// a premultiplied mip pyramid (2x2 box-halved levels, rebuilt per such draw
-// -- the source buffer is borrowed, so there is nothing to cache a pyramid
-// against) with trilinear filtering.  high additionally upgrades
-// magnification to a 4x4 Catmull-Rom (the BC-spline family; the (B, C) pair
-// is one line in canvas.c if Mitchell is wanted instead), its taps
-// premultiplied so negative lobes cannot synthesize colour from transparent
-// texels.  The quality knob is the caller's opt-in to the mip-build cost.
+// a premultiplied mip pyramid (2x2 box-halved levels) with trilinear
+// filtering -- a reified image's pyramid caches via the explicit
+// canvas_image_build_mips (without it, the draw stays bilinear); a borrowed
+// bitmap's rebuilds per such draw, the quality knob being the caller's
+// opt-in to that cost.  high additionally upgrades magnification to a 4x4
+// Catmull-Rom (the BC-spline family; the (B, C) pair is one line in canvas.c
+// if Mitchell is wanted instead), its taps premultiplied so negative lobes
+// cannot synthesize colour from transparent texels.
 void canvas_set_image_smoothing_quality(struct canvas *__single cv,
                                         enum canvas_image_smoothing_quality quality);
-void canvas_draw_image(struct canvas *__single cv,
+// drawImage from a borrowed bitmap: straight (unpremultiplied) RGBA8, top row
+// first, the caller's buffer for the duration of the call only.  Because a
+// borrowed buffer has no identity to cache derived data against, a minifying
+// draw at medium/high quality rebuilds its mip chain per call -- reified
+// images below pay that cost once, explicitly.
+void canvas_draw_bitmap(struct canvas *__single cv,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy);
-void canvas_draw_image_scaled(struct canvas *__single cv,
+void canvas_draw_bitmap_scaled(struct canvas *__single cv,
                               uint8_t const *__counted_by(sw * sh * 4) src,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh);
-void canvas_draw_image_subrect(struct canvas *__single cv,
+void canvas_draw_bitmap_subrect(struct canvas *__single cv,
                                uint8_t const *__counted_by(sw * sh * 4) src,
                                int sw, int sh, float sx, float sy,
                                float sww, float shh, float dx, float dy,
                                float dw, float dh);
+
+// Reified images, in the Skia vocabulary: an image is a thing you draw FROM,
+// a surface (the canvas) a thing you draw TO, a bitmap the raw RGBA8 memory
+// realizing either.  An image owns a copy of its pixels, which gives them
+// identity -- the hook derived data caches against.
+struct canvas_image;
+
+// Construct an image from straight RGBA8 pixels (copied in; lossless, so a
+// 1:1 draw of the image is byte-identical to drawing the bitmap directly).
+// NULL on bad dimensions or allocation failure; free with canvas_image_free
+// (which, like free(), accepts NULL).
+struct canvas_image *__single canvas_image(uint8_t const *__counted_by(w * h * 4) px,
+                                           int w, int h);
+
+// Snapshot a canvas as an image -- canvas-as-source.  The surface's
+// premultiplied f16 pixels quantize once (monotone, premultiplied straight
+// across: no unpremultiply round trip), and draws sample them through the
+// same premultiplied path as the emoji captures.  A copy: drawing on the
+// canvas afterwards does not change the snapshot.  NULL on OOM.
+struct canvas_image *__single canvas_snapshot(struct canvas *__single cv);
+
+// Build the image's mip pyramid -- the one-time cost that minifying draws at
+// medium/high smoothing quality then sample with trilinear filtering.
+// Deliberately explicit: WITHOUT built mips a minifying image draw falls
+// back to plain bilinear rather than hiding a rebuild (the bitmap entry
+// points' behaviour) -- the caller decides if and when to pay.  Idempotent;
+// false on allocation failure (the image stays valid, mip-less).
+bool canvas_image_build_mips(struct canvas_image *__single img);
+
+int canvas_image_width(struct canvas_image const *__single img);
+int canvas_image_height(struct canvas_image const *__single img);
+void canvas_image_free(struct canvas_image *__single img);
+
+// drawImage from a reified image: the bitmap trio's three overloads, same
+// transform/clip/alpha/quality semantics, sourcing the image's pixels (and
+// its cached mips, once built).
+void canvas_draw_image(struct canvas *__single cv,
+                       struct canvas_image const *__single img,
+                       float dx, float dy);
+void canvas_draw_image_scaled(struct canvas *__single cv,
+                              struct canvas_image const *__single img,
+                              float dx, float dy, float dw, float dh);
+void canvas_draw_image_subrect(struct canvas *__single cv,
+                               struct canvas_image const *__single img,
+                               float sx, float sy, float sww, float shh,
+                               float dx, float dy, float dw, float dh);
 
 // Text.  The typeface is fixed to Libian TC (clerical-script 隸書), which carries
 // both Latin and Chinese.  Size is user-space px (default 10).  fill_text and
@@ -513,12 +565,21 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 // Image-block lines carry the RGBA8 sources the image ops need, the capture
 // machinery reused wholesale:
 //     image <id> <w> <h> <zlen> <nlines>
+//     pimage <id> <w> <h> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-// declares file-local numbered image <id> -- w x h straight-alpha RGBA8,
+// declares file-local numbered image <id> -- w x h RGBA8, straight-alpha
+// (`image`) or premultiplied (`pimage`, e.g. a recorded canvas_snapshot) --
 // deflated and base64-chunked exactly like a capture, content-deduplicated by
-// the recorder so one buffer used many ways costs one block.  The ops
-// reference it by id (the source dims come from the block; put_image_data's
-// int-typed args are written as integers):
+// the recorder so one buffer used many ways costs one block.  An optional
+//     image_mips <id>
+// line marks the block's draws as carrying mip-chain semantics: the bitmap
+// entry points (per-draw chain rebuild) emit it as soon as their block is
+// declared, and an image-object draw emits it only once
+// canvas_image_build_mips has run -- so a mip-less image's bilinear-fallback
+// draws replay faithfully (the replayer rebuilds the chain per draw,
+// byte-identical to a live cached one).  The ops reference blocks by id (the
+// source dims come from the block; put_image_data's int-typed args are
+// written as integers):
 //     draw_image <id> <dx> <dy>
 //     draw_image_scaled <id> <dx> <dy> <dw> <dh>
 //     draw_image_subrect <id> <sx> <sy> <sw> <sh> <dx> <dy> <dw> <dh>
@@ -526,9 +587,11 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 //     put_image_data_dirty <id> <dx> <dy> <dirty-x> <dirty-y> <dirty-w> <dirty-h>
 //     set_fill_pattern <id> <repeat|repeat-x|repeat-y|no-repeat>
 //     set_stroke_pattern <id> <repeat...>
-// A replayed image lives as long as the canvas (a pattern borrows its
-// source), and one program declares at most 256 images of at most 64 MiB
-// (w*h*4) each -- both validated before the block's buffers are allocated.
+// The format speaks in images: both the bitmap and reified-image draw trios
+// record as the same draw_image* spellings, a block plus op lines.  A
+// replayed image lives as long as the canvas (a pattern borrows its source),
+// and one program declares at most 256 images of at most 64 MiB (w*h*4) each
+// -- both validated before the block's buffers are allocated.
 //
 // Path-block lines carry Path2D objects the same numbered way:
 //     path <id> <ncmds>

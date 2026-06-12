@@ -23,6 +23,8 @@ struct rec_image {
     uint8_t *__counted_by(len) px;
     int len;
     int w, h;
+    bool premul;     // a `pimage` block (premultiplied pixels, e.g. a snapshot)
+    bool mips_done;  // an `image_mips` line has been emitted for this id
 };
 
 // Likewise one `path` block: an owned copy of the Path2D's command list --
@@ -366,7 +368,8 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
 }
 
 int cnvs_rec_image(struct cnvs_recorder *__single r,
-                   uint8_t const *__counted_by(len) px, int len, int w, int h) {
+                   uint8_t const *__counted_by(len) px, int len, int w, int h,
+                   bool premul) {
     if (!r || r->suspend != 0) {
         return -1;
     }
@@ -375,9 +378,12 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
         return -1;  // outside the format's caps: the op degrades un-recorded
     }
     // Content dedupe: a repeated buffer (a pattern reused per repeat mode, an
-    // atlas drawn per subrect) references the block already in the file.
+    // atlas drawn per subrect) references the block already in the file.  The
+    // premul flag is part of the identity: the same bytes mean different
+    // colours straight vs premultiplied.
     for (int i = 0; i < r->nimg; i++) {
         if (r->img[i].w == w && r->img[i].h == h && r->img[i].len == len &&
+            r->img[i].premul == premul &&
             memcmp(r->img[i].px, px, (size_t)len) == 0) {
             return i;
         }
@@ -408,7 +414,8 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     }
     int const id = r->nimg;
     int const nlines = (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
-    fprintf(r->f, "image %d %d %d %d %d\n", id, w, h, zn, nlines);
+    fprintf(r->f, "%s %d %d %d %d %d\n", premul ? "pimage" : "image",
+            id, w, h, zn, nlines);
     for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
         int const rem = zn - off;
         put_bits_line(r->f, z + off,
@@ -419,8 +426,19 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     r->img[id].px = copy;
     r->img[id].w = w;
     r->img[id].h = h;
+    r->img[id].premul = premul;
+    r->img[id].mips_done = false;
     r->nimg = id + 1;
     return id;
+}
+
+void cnvs_rec_image_mips(struct cnvs_recorder *__single r, int id) {
+    if (!r || r->suspend != 0 || id < 0 || id >= r->nimg ||
+        r->img[id].mips_done) {
+        return;
+    }
+    fprintf(r->f, "image_mips %d\n", id);
+    r->img[id].mips_done = true;
 }
 
 void cnvs_rec_image_floats(struct cnvs_recorder *__single r,

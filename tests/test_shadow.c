@@ -92,7 +92,7 @@ int main(void) {
     canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_shadow_offset_x(cv, 12.0f);
     canvas_set_shadow_offset_y(cv, 12.0f);
-    canvas_draw_image_scaled(cv, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas_draw_bitmap_scaled(cv, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // image only
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
@@ -106,7 +106,7 @@ int main(void) {
                            255, 0, 0, 255, 0, 0, 0, 0 };
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_image_smoothing_enabled(cv, false);
-    canvas_draw_image_scaled(cv, sprite, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas_draw_bitmap_scaled(cv, sprite, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_set_image_smoothing_enabled(cv, true);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // opaque half

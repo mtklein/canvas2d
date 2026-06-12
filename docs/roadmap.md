@@ -126,14 +126,20 @@ Internals (not API features) considered and deferred:
 - **`getImageData`** is fixed RGBA8; none of `ImageDataSettings` —
   `colorSpace`, or the recent `pixelFormat` (`rgba-unorm8` | `rgba-float16`,
   the `Float16Array`-backed `ImageData` flavour).
-- **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
-  `imageSmoothingQuality` is live — `low` samples bilinearly (nearest-neighbour
-  when smoothing is disabled), `medium`/`high` antialias minification through a
-  premultiplied mip chain with trilinear filtering (rebuilt per minifying draw:
-  a borrowed buffer has no identity to cache a pyramid against — the planned
-  image type will own that cost via an explicit build call), and `high`
-  magnifies through a 4×4 Catmull-Rom (premultiplied taps, the BC-spline pair
-  one swappable line in canvas.c).
+- **`drawImage`** sources borrowed RGBA8 bitmaps (`canvas_draw_bitmap*`) and
+  reified images (`canvas_draw_image*`) — `canvas_image` copies straight
+  pixels in, and `canvas_snapshot` is **canvas-as-source**: the surface's
+  premultiplied f16 pixels quantized once, no unpremultiply round trip.
+  `imageSmoothingQuality` is live — `low` samples bilinearly
+  (nearest-neighbour when smoothing is disabled), `medium`/`high` antialias
+  minification through a premultiplied mip chain with trilinear filtering
+  (an image's chain caches via the explicit `canvas_image_build_mips`, the
+  user deciding when to pay; a borrowed bitmap has no identity to cache
+  against, so its chain rebuilds per minifying draw; a mip-less image
+  deliberately falls back to bilinear), and `high` magnifies through a 4×4
+  Catmull-Rom (premultiplied taps, the BC-spline pair one swappable line in
+  canvas.c).  What keeps the row here: sources are RGBA8 only, and the DOM
+  source kinds are out of scope below.
 - **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
   every canvas memoizes boundary results — shaped lines by (size, text), and
   canonical glyph data by (font name, glyph id): outline curves + ink bounds, or
@@ -213,4 +219,5 @@ intend to implement them:
   - Context loss is GPU-process death; a CPU renderer has nothing to lose
     (`canvas_is_context_lost` honestly returns false).
 - Non-buffer `drawImage` sources tied to the DOM (`HTMLVideoElement`, `VideoFrame`,
-  `ImageBitmap`, …). "Canvas-as-source" is the one genuine gap here, noted above.
+  `ImageBitmap`, …). Canvas-as-source, once the one genuine gap here, is now
+  `canvas_snapshot` (the partial row above).

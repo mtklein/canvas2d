@@ -75,7 +75,7 @@ int main(void) {
         for (int k = 0; k < (int)sizeof src; k++) {
             src[k] = (uint8_t)(k * 7);
         }
-        canvas_draw_image_scaled(cv, src, 16, 16, 2.0f, 2.0f, 40.0f, 40.0f);
+        canvas_draw_bitmap_scaled(cv, src, 16, 16, 2.0f, 2.0f, 40.0f, 40.0f);
 
         // Font cache: a size change frees the old face and builds a new one.
         canvas_set_font_size(cv, 12.0f + (float)i);
@@ -108,7 +108,7 @@ int main(void) {
         for (int k = 0; k < (int)sizeof src; k++) {
             src[k] = (uint8_t)(k * 3);
         }
-        canvas_draw_image(cv, src, 8, 8, 2.0f, 2.0f);
+        canvas_draw_bitmap(cv, src, 8, 8, 2.0f, 2.0f);
         canvas_set_fill_pattern(cv, src, 8, 8, CANVAS_REPEAT);
         canvas_fill_rect(cv, 0.0f, 0.0f, 24.0f, 24.0f);
         struct canvas_path2d *__single p2 = canvas_path2d();

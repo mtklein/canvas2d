@@ -136,10 +136,10 @@ static void draw_program(struct canvas *__single cv) {
     }
     canvas_set_image_smoothing_enabled(cv, false);
     canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-    canvas_draw_image(cv, img, 4, 3, 2.0f, 2.0f);
+    canvas_draw_bitmap(cv, img, 4, 3, 2.0f, 2.0f);
     canvas_set_image_smoothing_enabled(cv, true);
-    canvas_draw_image_scaled(cv, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
-    canvas_draw_image_subrect(cv, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
+    canvas_draw_bitmap_scaled(cv, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
+    canvas_draw_bitmap_subrect(cv, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
                               18.0f, 2.0f, 6.0f, 6.0f);
     canvas_put_image_data(cv, img, (int)sizeof img, 4, 3, 26, 2);
     canvas_put_image_data_dirty(cv, img, (int)sizeof img, 4, 3, 32, 2,

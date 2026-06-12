@@ -171,11 +171,14 @@ static cnvs_vec2 xf(struct canvas *__single cv, float x, float y);
 static bool ensure_tile(struct canvas *__single cv, int npix);
 static int sigma_box_radius(float sigma);
 static void shadow_offset_split(float v, int *__single whole, int *__single k256);
+struct canvas_image;  // reified drawImage source; defined with its API below
 static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
                             float dw, float dh, bool premul_src,
+                            bool quality_tiers, bool chain_on_demand,
+                            struct canvas_image const *__single img,
                             cnvs_mip hi, cnvs_mip lo, float lt);
 
 // Reset a pattern to empty (no source).  Counts first: a NULL pointer must never
@@ -601,7 +604,7 @@ void canvas_set_fill_pattern(struct canvas *__single cv,
     if (cv->rec) {
         // The pattern pixels ride a content-deduped image block; when the
         // block can't be carried (caps/OOM) the op line is skipped with it.
-        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h);
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, false);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_fill_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
@@ -643,7 +646,7 @@ void canvas_set_stroke_pattern(struct canvas *__single cv,
         return;
     }
     if (cv->rec) {
-        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h);
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, false);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_stroke_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
@@ -2807,13 +2810,14 @@ static void draw_glyph_capture(struct canvas *__single cv, struct cnvs_glyph_slo
         return;
     }
     draw_image_quad(cv, hi.px, hi.len, hi.w, hi.h, 0.0f, 0.0f,
-                    (float)hi.w, (float)hi.h, dx, dy, dw, dh, true, hi, lo, lt);
+                    (float)hi.w, (float)hi.h, dx, dy, dw, dh, true,
+                    false, false, NULL, hi, lo, lt);
 }
 
 // The degraded path when the capture cache can't serve (full table, OOM) but
 // the run still has its boundary handle: ask the boundary for the ink box,
 // draw into a checked RGBA8 buffer at device size, unpremultiply, then
-// composite through the CTM with canvas_draw_image_subrect.
+// composite through the CTM with canvas_draw_bitmap_subrect.
 static void draw_color_glyph(struct canvas *__single cv, void *__single font,
                              uint16_t glyph, float pen_x, float baseline_y) {
     float x0, y0, x1, y1;
@@ -2839,7 +2843,7 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
     // buffer (cnvs_glyph_draw is bitmap space: y up from the bottom).
     cnvs_glyph_draw(font, glyph, (float)margin - x0, (float)margin - y0, buf, gw, gh);
     // CGBitmapContext gives premultiplied RGBA, top row first (the orientation
-    // canvas_draw_image_subrect wants); just unpremultiply to straight alpha.
+    // canvas_draw_bitmap_subrect wants); just unpremultiply to straight alpha.
     for (int i = 0; i < glen; i += 4) {
         int const a = buf[i + 3];
         if (a > 0 && a < 255) {
@@ -2852,7 +2856,7 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
     // the glyph ink, its top edge `gh - margin + y0` glyph-px above the baseline.
     float const dest_x = pen_x + x0 - (float)margin;
     float const dest_y = baseline_y - ((float)gh - (float)margin + y0);
-    canvas_draw_image_subrect(cv, buf, gw, gh, 0.0f, 0.0f, (float)gw, (float)gh,
+    canvas_draw_bitmap_subrect(cv, buf, gw, gh, 0.0f, 0.0f, (float)gw, (float)gh,
                               dest_x, dest_y, (float)gw, (float)gh);
     free(buf);
 }
@@ -3133,14 +3137,15 @@ static float cubic_weight(float x) {
     return 0.0f;
 }
 
-// 4x4 BC-spline sample of a straight-alpha RGBA8 source at source-pixel
-// (fx, fy), clamp-to-edge.  Each tap premultiplies BEFORE weighting -- a
+// 4x4 BC-spline sample of an RGBA8 source at source-pixel (fx, fy),
+// clamp-to-edge.  A straight-alpha tap premultiplies BEFORE weighting -- a
 // negative lobe against straight alpha would synthesize colour out of fully
-// transparent texels -- so the result is premultiplied, clamped back into the
-// premultiplied range (overshoot both ways is part of the kernel; the clamp
-// is the invariant).
+// transparent texels -- and a premultiplied tap (premul true: snapshots)
+// weights as-is; either way the result is premultiplied, clamped back into
+// the premultiplied range (overshoot both ways is part of the kernel; the
+// clamp is the invariant).
 static void sample_src_cubic(uint8_t const *__counted_by(slen) src, int slen,
-                             int sw, int sh, float fx, float fy,
+                             int sw, int sh, float fx, float fy, bool premul,
                              float *__counted_by(4) out) {
     (void)slen;
     float const gx = fx - 0.5f, gy = fy - 0.5f;
@@ -3167,11 +3172,11 @@ static void sample_src_cubic(uint8_t const *__counted_by(slen) src, int slen,
             if (x < 0) { x = 0; } else if (x > sw - 1) { x = sw - 1; }
             int const o = (y * sw + x) * 4;
             float const a = (float)src[o + 3] * (1.0f / 255.0f);
-            float const w = wx[t] * a;
+            float const w = premul ? wx[t] : wx[t] * a;
             row[0] += w * ((float)src[o + 0] * (1.0f / 255.0f));
             row[1] += w * ((float)src[o + 1] * (1.0f / 255.0f));
             row[2] += w * ((float)src[o + 2] * (1.0f / 255.0f));
-            row[3] += w;
+            row[3] += wx[t] * a;
         }
         for (int c = 0; c < 4; c++) {
             acc[c] += wy[j] * row[c];
@@ -3204,23 +3209,17 @@ static bool ensure_mips(struct canvas *__single cv, int n) {
     return true;
 }
 
-// Build the source's premultiplied mip chain into cv->mips: level 0 is the
-// straight-alpha source premultiplied (filtering must happen premultiplied --
-// averaging straight RGBA bleeds colour from transparent texels), each level
-// after it a ceil-halve (cnvs_mip_halve, the emoji captures' kernel:
-// premul-exact, one shared rounding).  Builds levels 0..need, stopping early
-// at the chain's natural 1x1 floor, and records each one's placement in lv.
-// Returns the count built, or 0 when the scratch can't grow -- the caller
-// falls back to bilinear, best-effort like the other OOM paths.
-static int build_src_mips(struct canvas *__single cv,
-                          uint8_t const *__counted_by(slen) src, int slen,
-                          int sw, int sh, int need,
-                          mip_level *__counted_by(MIP_MAX_LEVELS) lv) {
-    (void)slen;
-    int n = 0, total = 0;
+// Plan a sw x sh source's mip chain: level 0 at full size, ceil-halves after,
+// down to `need` levels past 0 (capped at the natural 1x1 floor and the level
+// budget).  Fills lv, returns the count, and leaves the chain's total byte
+// size in *total.
+static int plan_mips(int sw, int sh, int need,
+                     mip_level *__counted_by(MIP_MAX_LEVELS) lv,
+                     int *__single total) {
+    int n = 0, bytes = 0;
     for (int w = sw, h = sh;;) {
-        lv[n] = (mip_level){ .off = total, .w = w, .h = h };
-        total += w * h * 4;
+        lv[n] = (mip_level){ .off = bytes, .w = w, .h = h };
+        bytes += w * h * 4;
         n++;
         if (n > need || n == MIP_MAX_LEVELS || (w == 1 && h == 1)) {
             break;
@@ -3228,21 +3227,181 @@ static int build_src_mips(struct canvas *__single cv,
         w = (w + 1) / 2;
         h = (h + 1) / 2;
     }
+    *total = bytes;
+    return n;
+}
+
+// Fill a planned chain: level 0 premultiplies a straight-alpha source (the
+// house rounding -- filtering must happen premultiplied; averaging straight
+// RGBA bleeds colour from transparent texels) or copies an already
+// premultiplied one, and each level after ceil-halves the one before
+// (cnvs_mip_halve, the emoji captures' kernel: premul-exact, one shared
+// rounding).
+static void fill_mips(uint8_t *__counted_by(total) dst, int total,
+                      uint8_t const *__counted_by(slen) src, int slen,
+                      int sw, int sh, bool premul,
+                      mip_level const *__counted_by(MIP_MAX_LEVELS) lv, int n) {
+    (void)slen;
+    (void)total;
+    if (premul) {
+        memcpy(dst, src, (size_t)(sw * sh * 4));
+    } else {
+        for (int p = 0; p < sw * sh; p++) {
+            int const a = src[p * 4 + 3];
+            dst[p * 4 + 0] = (uint8_t)((src[p * 4 + 0] * a + 127) / 255);
+            dst[p * 4 + 1] = (uint8_t)((src[p * 4 + 1] * a + 127) / 255);
+            dst[p * 4 + 2] = (uint8_t)((src[p * 4 + 2] * a + 127) / 255);
+            dst[p * 4 + 3] = (uint8_t)a;
+        }
+    }
+    for (int i = 1; i < n; i++) {
+        cnvs_mip_halve(dst + lv[i - 1].off, lv[i - 1].w, lv[i - 1].h,
+                       dst + lv[i].off, lv[i].w, lv[i].h);
+    }
+}
+
+// The per-draw chain for a borrowed bitmap source, built into the canvas's
+// reused scratch: a borrowed buffer has no identity to cache a pyramid
+// against (a canvas_image does -- canvas_image_build_mips).  Returns the
+// count built, or 0 when the scratch can't grow -- the caller falls back to
+// bilinear, best-effort like the other OOM paths.
+static int build_src_mips(struct canvas *__single cv,
+                          uint8_t const *__counted_by(slen) src, int slen,
+                          int sw, int sh, int need, bool premul,
+                          mip_level *__counted_by(MIP_MAX_LEVELS) lv) {
+    int total = 0;
+    int const n = plan_mips(sw, sh, need, lv, &total);
     if (!ensure_mips(cv, total)) {
         return 0;
     }
-    for (int p = 0; p < sw * sh; p++) {
-        int const a = src[p * 4 + 3];
-        cv->mips[p * 4 + 0] = (uint8_t)((src[p * 4 + 0] * a + 127) / 255);
-        cv->mips[p * 4 + 1] = (uint8_t)((src[p * 4 + 1] * a + 127) / 255);
-        cv->mips[p * 4 + 2] = (uint8_t)((src[p * 4 + 2] * a + 127) / 255);
-        cv->mips[p * 4 + 3] = (uint8_t)a;
-    }
-    for (int i = 1; i < n; i++) {
-        cnvs_mip_halve(cv->mips + lv[i - 1].off, lv[i - 1].w, lv[i - 1].h,
-                       cv->mips + lv[i].off, lv[i].w, lv[i].h);
-    }
+    fill_mips(cv->mips, cv->mips_cap, src, slen, sw, sh, premul, lv, n);
     return n;
+}
+
+// --- reified images ------------------------------------------------------------
+//
+// A canvas_image is a thing you draw FROM; the canvas is the surface you draw
+// TO; both are bitmaps (RGBA8 memory) underneath.  Reifying the pixels gives
+// them identity, which is what lets derived data live with them:
+// canvas_image_build_mips caches the premultiplied pyramid the bitmap entry
+// points must otherwise rebuild per minifying draw.
+struct canvas_image {
+    int w, h;
+    bool premul;  // snapshot pixels are premultiplied; created ones straight
+    uint8_t *__counted_by(len) px;
+    int len;
+    // The explicit mip chain (canvas_image_build_mips): fill_mips' layout in
+    // one buffer, each level a self-slice in lv.  nlevels == 0 until built.
+    uint8_t *__counted_by(mips_len) mips;
+    int mips_len;
+    cnvs_mip lv[MIP_MAX_LEVELS];
+    int nlevels;
+};
+
+struct canvas_image *__single canvas_image(uint8_t const *__counted_by(w * h * 4) px,
+                                           int w, int h) {
+    if (!rgba8_dims_ok(w, h)) {
+        return NULL;
+    }
+    struct canvas_image *img = calloc(1, sizeof *img);
+    if (!img) {
+        return NULL;
+    }
+    int const len = w * h * 4;
+    uint8_t *__counted_by_or_null(len) copy = malloc((size_t)len);
+    if (!copy) {
+        free(img);
+        return NULL;
+    }
+    memcpy(copy, px, (size_t)len);
+    img->w = w;
+    img->h = h;
+    img->premul = false;
+    img->len = len;
+    img->px = copy;
+    return img;
+}
+
+// One monotone rounding from a surface's premultiplied f16 channel to u8;
+// monotone, so r <= a survives the quantize and the premul invariant holds.
+static uint8_t q8(_Float16 v) {
+    float f = (float)v;
+    f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+    return (uint8_t)(f * 255.0f + 0.5f);
+}
+
+struct canvas_image *__single canvas_snapshot(struct canvas *__single cv) {
+    int const w = cv->width, h = cv->height;
+    if (!rgba8_dims_ok(w, h)) {
+        return NULL;
+    }
+    struct canvas_image *img = calloc(1, sizeof *img);
+    if (!img) {
+        return NULL;
+    }
+    int const len = w * h * 4;
+    uint8_t *__counted_by_or_null(len) copy = malloc((size_t)len);
+    if (!copy) {
+        free(img);
+        return NULL;
+    }
+    // Quantize the premultiplied f16 target straight to premultiplied RGBA8:
+    // no unpremultiply round trip anywhere between surface and sample.
+    for (int p = 0; p < w * h; p++) {
+        cnvs_premul const s = cv->target[p];
+        copy[p * 4 + 0] = q8(s.r);
+        copy[p * 4 + 1] = q8(s.g);
+        copy[p * 4 + 2] = q8(s.b);
+        copy[p * 4 + 3] = q8(s.a);
+    }
+    img->w = w;
+    img->h = h;
+    img->premul = true;
+    img->len = len;
+    img->px = copy;
+    return img;
+}
+
+bool canvas_image_build_mips(struct canvas_image *__single img) {
+    if (img->nlevels > 0) {
+        return true;  // idempotent
+    }
+    mip_level plan[MIP_MAX_LEVELS];
+    int total = 0;
+    int const n = plan_mips(img->w, img->h, MIP_MAX_LEVELS, plan, &total);
+    int const cap = total;
+    uint8_t *__counted_by_or_null(cap) chain = malloc((size_t)cap);
+    if (!chain) {
+        return false;  // the image stays valid, mip-less
+    }
+    fill_mips(chain, cap, img->px, img->len, img->w, img->h, img->premul,
+              plan, n);
+    img->mips_len = cap;
+    img->mips = chain;
+    for (int i = 0; i < n; i++) {
+        img->lv[i] = (cnvs_mip){ .px = img->mips + plan[i].off,
+                                 .len = plan[i].w * plan[i].h * 4,
+                                 .w = plan[i].w, .h = plan[i].h };
+    }
+    img->nlevels = n;
+    return true;
+}
+
+int canvas_image_width(struct canvas_image const *__single img) {
+    return img->w;
+}
+
+int canvas_image_height(struct canvas_image const *__single img) {
+    return img->h;
+}
+
+void canvas_image_free(struct canvas_image *__single img) {
+    if (!img) {
+        return;
+    }
+    free(img->px);
+    free(img->mips);
+    free(img);
 }
 
 void canvas_set_image_smoothing_enabled(struct canvas *__single cv, bool enabled) {
@@ -3278,6 +3437,8 @@ static void draw_image_quad(struct canvas *__single cv,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
                             float dw, float dh, bool premul_src,
+                            bool quality_tiers, bool chain_on_demand,
+                            struct canvas_image const *__single img,
                             cnvs_mip hi, cnvs_mip lo, float lt) {
     if (!rgba8_dims_ok(sw, sh) || slen < sw * sh * 4 ||
         dw <= 0.0f || dh <= 0.0f) {
@@ -3310,22 +3471,25 @@ static void draw_image_quad(struct canvas *__single cv,
     half8 const gah = (half8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
-    // Sampler tier.  imageSmoothingQuality is live for the public straight-
-    // alpha path: a minifying draw (source footprint past one source px per
-    // device px) at medium/high samples the premultiplied mip chain with
-    // trilinear filtering, and a magnifying draw at high runs the 4x4
-    // BC-spline (CUBIC_B/CUBIC_C).  The emoji-capture path (premul_src)
-    // arrives with its level pair already picked from the text cache's
-    // pyramid (cnvs_glyph_mip_pair, the same doubling rule) and joins at
-    // SAMP_TRILINEAR; a zero blend there is just bilinear on `src`, which IS
-    // the finer level.  The footprint is one Jacobian for the whole quad (the
-    // CTM is affine), the emoji rule's max mapped axis.
+    // Sampler tier.  imageSmoothingQuality is live for the quality_tiers
+    // paths (bitmaps, reified images, replayed blocks): a minifying draw
+    // (source footprint past one source px per device px) at medium/high
+    // samples the premultiplied mip chain with trilinear filtering -- an
+    // image's cached chain when built, the per-draw scratch rebuild when
+    // chain_on_demand (bitmaps), plain bilinear otherwise (a mip-less image's
+    // documented fallback: canvas_image_build_mips is the explicit opt-in) --
+    // and a magnifying draw at high runs the 4x4 BC-spline (CUBIC_B/CUBIC_C).
+    // The emoji-capture path arrives with its level pair already picked from
+    // the text cache's pyramid (cnvs_glyph_mip_pair, the same doubling rule)
+    // and joins at SAMP_TRILINEAR; a zero blend there is just bilinear on
+    // `src`, which IS the finer level.  The footprint is one Jacobian for the
+    // whole quad (the CTM is affine), the emoji rule's max mapped axis.
     enum { SAMP_NEAREST, SAMP_BILINEAR, SAMP_TRILINEAR, SAMP_CUBIC } samp =
         smooth ? SAMP_BILINEAR : SAMP_NEAREST;
     if (samp == SAMP_BILINEAR && premul_src && lt > 0.0f && lo.px) {
         samp = SAMP_TRILINEAR;
     }
-    if (samp == SAMP_BILINEAR && !premul_src &&
+    if (samp == SAMP_BILINEAR && quality_tiers &&
         cv->cur.image_smoothing_quality != CANVAS_SMOOTHING_LOW) {
         float const kx = sww / dw, ky = shh / dh;  // source px per user px
         float const ex = hypotf(inv.a * kx, inv.b * ky);
@@ -3341,16 +3505,30 @@ static void draw_image_quad(struct canvas *__single cv,
                 scale *= 2.0f;
                 need++;
             }
-            mip_level lv[MIP_MAX_LEVELS];
-            int const n = build_src_mips(cv, src, slen, sw, sh, need + 1, lv);
-            if (n > 0) {
-                mip_level const la = lv[need < n ? need : n - 1];
-                mip_level const lb = lv[need + 1 < n ? need + 1 : n - 1];
-                hi = (cnvs_mip){ .px = cv->mips + la.off, .len = la.w * la.h * 4,
-                                 .w = la.w, .h = la.h };
-                lo = (cnvs_mip){ .px = cv->mips + lb.off, .len = lb.w * lb.h * 4,
-                                 .w = lb.w, .h = lb.h };
-                lt = la.off == lb.off ? 0.0f : (f - scale) / scale;
+            bool picked = false;
+            if (img && img->nlevels > 0) {
+                int const n = img->nlevels;
+                hi = img->lv[need < n ? need : n - 1];
+                lo = img->lv[need + 1 < n ? need + 1 : n - 1];
+                picked = true;
+            } else if (!img && chain_on_demand) {
+                mip_level lv[MIP_MAX_LEVELS];
+                int const n = build_src_mips(cv, src, slen, sw, sh, need + 1,
+                                             premul_src, lv);
+                if (n > 0) {
+                    mip_level const la = lv[need < n ? need : n - 1];
+                    mip_level const lb = lv[need + 1 < n ? need + 1 : n - 1];
+                    hi = (cnvs_mip){ .px = cv->mips + la.off,
+                                     .len = la.w * la.h * 4,
+                                     .w = la.w, .h = la.h };
+                    lo = (cnvs_mip){ .px = cv->mips + lb.off,
+                                     .len = lb.w * lb.h * 4,
+                                     .w = lb.w, .h = lb.h };
+                    picked = true;
+                }
+            }
+            if (picked) {
+                lt = hi.px == lo.px ? 0.0f : (f - scale) / scale;
                 lt = lt < 0.0f ? 0.0f : (lt > 1.0f ? 1.0f : lt);
                 samp = SAMP_TRILINEAR;
             }
@@ -3396,7 +3574,8 @@ static void draw_image_quad(struct canvas *__single cv,
                         sample_src(src, slen, sw, sh, fsx[l], fsy[l], s);
                         break;
                     case SAMP_CUBIC:
-                        sample_src_cubic(src, slen, sw, sh, fsx[l], fsy[l], s);
+                        sample_src_cubic(src, slen, sw, sh, fsx[l], fsy[l],
+                                         premul_src, s);
                         break;
                     case SAMP_TRILINEAR:
                         sample_src(hi.px, hi.len, hi.w, hi.h,
@@ -3446,7 +3625,7 @@ static void draw_image_quad(struct canvas *__single cv,
     blend_tile(cv, b, fold);
 }
 
-void canvas_draw_image_subrect(struct canvas *__single cv,
+void canvas_draw_bitmap_subrect(struct canvas *__single cv,
                                uint8_t const *__counted_by(sw * sh * 4) src,
                                int sw, int sh, float sx, float sy,
                                float sww, float shh, float dx, float dy,
@@ -3458,53 +3637,166 @@ void canvas_draw_image_subrect(struct canvas *__single cv,
         // The source's dims ride the image block; the op line carries the two
         // user-space rects.  Suspended when draw_image/draw_image_scaled is
         // the op the caller actually issued (they record as themselves).
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, false);
         if (id >= 0) {
+            cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
                                   (float[]){ sx, sy, sww, shh, dx, dy, dw, dh },
                                   8);
         }
     }
     draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
-                    dx, dy, dw, dh, false,
+                    dx, dy, dw, dh, false, true, true, NULL,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
 
-void canvas_draw_image(struct canvas *__single cv,
+void canvas_draw_bitmap(struct canvas *__single cv,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy) {
     // Record `draw_image` as itself, then swallow the subrect form it
     // delegates to.  rgba8_dims_ok gates the w*h*4 the block needs (the same
     // predicate the delegate applies before painting).
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, false);
+        if (id >= 0) {
+            cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
+            cnvs_rec_image_floats(cv->rec, "draw_image", id,
+                                  (float[]){ dx, dy }, 2);
+        }
+    }
+    cnvs_rec_enter(cv->rec);
+    canvas_draw_bitmap_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
+                              dx, dy, (float)sw, (float)sh);
+    cnvs_rec_leave(cv->rec);
+}
+
+void canvas_draw_bitmap_scaled(struct canvas *__single cv,
+                              uint8_t const *__counted_by(sw * sh * 4) src,
+                              int sw, int sh, float dx, float dy,
+                              float dw, float dh) {
+    if (cv->rec && rgba8_dims_ok(sw, sh)) {
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, false);
+        if (id >= 0) {
+            cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
+            cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
+                                  (float[]){ dx, dy, dw, dh }, 4);
+        }
+    }
+    cnvs_rec_enter(cv->rec);
+    canvas_draw_bitmap_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
+                              dx, dy, dw, dh);
+    cnvs_rec_leave(cv->rec);
+}
+
+// The reified-image draw trio.  Each records the image's pixels as an
+// image/pimage block (deduplicated -- the object is a natural key, but
+// content-dedup already covers it) plus the same draw_image op lines the
+// bitmap trio writes: the format speaks in images either way.  An
+// `image_mips` line rides along only once the image's chain is built, so a
+// mip-less image's bilinear-fallback draws replay faithfully.
+static int rec_image_obj(struct canvas *__single cv,
+                         struct canvas_image const *__single img) {
+    int const id = cnvs_rec_image(cv->rec, img->px, img->len, img->w, img->h,
+                                  img->premul);
+    if (id >= 0 && img->nlevels > 0) {
+        cnvs_rec_image_mips(cv->rec, id);
+    }
+    return id;
+}
+
+void canvas_draw_image_subrect(struct canvas *__single cv,
+                               struct canvas_image const *__single img,
+                               float sx, float sy, float sww, float shh,
+                               float dx, float dy, float dw, float dh) {
+    if (cv->rec) {
+        int const id = rec_image_obj(cv, img);
+        if (id >= 0) {
+            cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
+                                  (float[]){ sx, sy, sww, shh, dx, dy, dw, dh },
+                                  8);
+        }
+    }
+    draw_image_quad(cv, img->px, img->len, img->w, img->h, sx, sy, sww, shh,
+                    dx, dy, dw, dh, img->premul, true, false, img,
+                    (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
+                    (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
+}
+
+void canvas_draw_image(struct canvas *__single cv,
+                       struct canvas_image const *__single img,
+                       float dx, float dy) {
+    if (cv->rec) {
+        int const id = rec_image_obj(cv, img);
         if (id >= 0) {
             cnvs_rec_image_floats(cv->rec, "draw_image", id,
                                   (float[]){ dx, dy }, 2);
         }
     }
     cnvs_rec_enter(cv->rec);
-    canvas_draw_image_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
-                              dx, dy, (float)sw, (float)sh);
+    canvas_draw_image_subrect(cv, img, 0.0f, 0.0f, (float)img->w,
+                              (float)img->h, dx, dy, (float)img->w,
+                              (float)img->h);
     cnvs_rec_leave(cv->rec);
 }
 
 void canvas_draw_image_scaled(struct canvas *__single cv,
-                              uint8_t const *__counted_by(sw * sh * 4) src,
-                              int sw, int sh, float dx, float dy,
-                              float dw, float dh) {
-    if (cv->rec && rgba8_dims_ok(sw, sh)) {
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh);
+                              struct canvas_image const *__single img,
+                              float dx, float dy, float dw, float dh) {
+    if (cv->rec) {
+        int const id = rec_image_obj(cv, img);
         if (id >= 0) {
             cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
                                   (float[]){ dx, dy, dw, dh }, 4);
         }
     }
     cnvs_rec_enter(cv->rec);
-    canvas_draw_image_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
-                              dx, dy, dw, dh);
+    canvas_draw_image_subrect(cv, img, 0.0f, 0.0f, (float)img->w,
+                              (float)img->h, dx, dy, dw, dh);
     cnvs_rec_leave(cv->rec);
+}
+
+// Replay's draw of one image block (cnvs_replay.h): premul says how to read
+// the bytes (a `pimage` block), mips whether the block's draws carry
+// mip-chain semantics (an `image_mips` line) -- per-draw rebuild here, byte-
+// identical to a cached chain.  Re-records in the replayed op's own spelling
+// (`form`) when replaying onto a recording canvas, so the round trip is
+// byte-idempotent.
+void cnvs_canvas_draw_block(struct canvas *__single cv,
+                            uint8_t const *__counted_by(slen) px, int slen,
+                            int w, int h, bool premul, bool mips, int form,
+                            float sx, float sy, float sww, float shh,
+                            float dx, float dy, float dw, float dh) {
+    if (!rgba8_dims_ok(w, h) || slen < w * h * 4) {
+        return;
+    }
+    if (cv->rec) {
+        int const id = cnvs_rec_image(cv->rec, px, w * h * 4, w, h, premul);
+        if (id >= 0) {
+            if (mips) {
+                cnvs_rec_image_mips(cv->rec, id);
+            }
+            switch (form) {
+                case 0:
+                    cnvs_rec_image_floats(cv->rec, "draw_image", id,
+                                          (float[]){ dx, dy }, 2);
+                    break;
+                case 1:
+                    cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
+                                          (float[]){ dx, dy, dw, dh }, 4);
+                    break;
+                default:
+                    cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
+                                          (float[]){ sx, sy, sww, shh,
+                                                     dx, dy, dw, dh }, 8);
+                    break;
+            }
+        }
+    }
+    draw_image_quad(cv, px, slen, w, h, sx, sy, sww, shh, dx, dy, dw, dh,
+                    premul, true, mips, NULL,
+                    (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
+                    (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
 
 // One planar slab's un-premultiply and 8-bit quantize, in _Float16: the
@@ -3664,7 +3956,7 @@ void canvas_put_image_data(struct canvas *__single cv,
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
         // placement rides the op line.
-        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h);
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, false);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data", id,
                                 (int[]){ dx, dy }, 2);
@@ -3684,7 +3976,7 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (cv->rec) {
         // The raw dirty args ride the op line; replay re-normalises them
         // through this very function, so the recorded form stays the call.
-        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h);
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, false);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data_dirty", id,
                                 (int[]){ dx, dy, dirty_x, dirty_y,

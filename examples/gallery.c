@@ -641,12 +641,12 @@ static void smoothing(void) {
 
     // Source at 4x (nearest) so the 16x16 grid is legible.
     canvas_set_image_smoothing_enabled(c, false);
-    canvas_draw_image_scaled(c, src, 16, 16, 24.0f, 62.0f, 64.0f, 64.0f);
+    canvas_draw_bitmap_scaled(c, src, 16, 16, 24.0f, 62.0f, 64.0f, 64.0f);
     // Big nearest-neighbour upscale (blocky).
-    canvas_draw_image_scaled(c, src, 16, 16, 120.0f, 24.0f, 140.0f, 140.0f);
+    canvas_draw_bitmap_scaled(c, src, 16, 16, 120.0f, 24.0f, 140.0f, 140.0f);
     // Big bilinear upscale (smooth).
     canvas_set_image_smoothing_enabled(c, true);
-    canvas_draw_image_scaled(c, src, 16, 16, 276.0f, 24.0f, 140.0f, 140.0f);
+    canvas_draw_bitmap_scaled(c, src, 16, 16, 276.0f, 24.0f, 140.0f, 140.0f);
 
     canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
@@ -1291,7 +1291,7 @@ static void subrect(void) {
     canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 196.0f);
 
     // Left: the whole atlas at 1.5x, with a grid showing the tile cells.
-    canvas_draw_image_scaled(c, atlas, AW, AH, 20.0f, 30.0f, 240.0f, 120.0f);
+    canvas_draw_bitmap_scaled(c, atlas, AW, AH, 20.0f, 30.0f, 240.0f, 120.0f);
     canvas_set_stroke_rgba(c, 0.20f, 0.22f, 0.28f, 0.9f);
     canvas_set_line_width(c, 1.0f);
     for (int i = 1; i < 4; i++) {
@@ -1312,7 +1312,7 @@ static void subrect(void) {
         int k = pick[m], tx = k % 4, ty = k / 4;
         float const dx = dx0 + (float)(m % 2) * (ts + gap);
         float const dy = dy0 + (float)(m / 2) * (ts + gap);
-        canvas_draw_image_subrect(c, atlas, AW, AH, (float)(tx * 40),
+        canvas_draw_bitmap_subrect(c, atlas, AW, AH, (float)(tx * 40),
                                   (float)(ty * 40), 40.0f, 40.0f, dx, dy, ts, ts);
     }
 
@@ -1624,12 +1624,12 @@ static void drawimage(void) {
         }
     }
 
-    canvas_draw_image(c, img, 16, 16, 20.0f, 20.0f);                       // 1:1
-    canvas_draw_image_scaled(c, img, 16, 16, 50.0f, 20.0f, 80.0f, 80.0f);  // bilinear
+    canvas_draw_bitmap(c, img, 16, 16, 20.0f, 20.0f);                       // 1:1
+    canvas_draw_bitmap_scaled(c, img, 16, 16, 50.0f, 20.0f, 80.0f, 80.0f);  // bilinear
     canvas_save(c);
     canvas_translate(c, 235.0f, 60.0f);
     canvas_rotate(c, 0.5f);
-    canvas_draw_image_scaled(c, img, 16, 16, -40.0f, -40.0f, 80.0f, 80.0f);  // rotated
+    canvas_draw_bitmap_scaled(c, img, 16, 16, -40.0f, -40.0f, 80.0f, 80.0f);  // rotated
     canvas_restore(c);
 
     save(c, "gallery/drawimage.png");
@@ -1933,31 +1933,38 @@ static void imagescale(void) {
     canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 520.0f);
 
+    // The rocket source: rendered on a scratch canvas and SNAPSHOTTED --
+    // canvas-as-source, the surface's premultiplied f16 pixels quantized once
+    // into a reified image, no read_rgba round trip -- then its mip pyramid
+    // built once, explicitly, where every minifying draw below gets it free.
     enum { SRC = 160 };
-    int const slen = SRC * SRC * 4;
-    uint8_t *__counted_by(slen) src = malloc((size_t)slen);
     struct canvas *__single s = canvas(SRC, SRC);
-    if (!src || !s) {
-        free(src);
-        canvas_free(s);
+    if (!s) {
         canvas_free(c);
         return;
     }
     // Font size 160 is the canonical emoji capture size (CNVS_CAPTURE_EM), so
     // this draw is the capture texel-for-texel -- scale 1, no mip blend -- and
-    // the readback is maximally sharp.  The rocket's ink box at 160px spans
+    // the snapshot is maximally sharp.  The rocket's ink box at 160px spans
     // x in [0, 160] from the pen and y in [-20, 140] about the baseline, so a
     // left-aligned alphabetic draw at (0, 140) fills the canvas exactly.
     canvas_set_font_size(s, 160.0f);
     canvas_fill_text(s, "🚀", 0.0f, 140.0f);
-    canvas_read_rgba(s, src, slen);
+    struct canvas_image *__single rocket = canvas_snapshot(s);
     canvas_free(s);
+    if (!rocket || !canvas_image_build_mips(rocket)) {
+        canvas_image_free(rocket);
+        canvas_free(c);
+        return;
+    }
 
     // The magnification test card: dark ink on a white ground, every feature
     // one pixel wide -- a frame, a diagonal, a 1px checkerboard quadrant, and
-    // isolated dots.
+    // isolated dots.  A straight-RGBA8 reified image, deliberately left
+    // mip-LESS: it only ever magnifies, so the pyramid would be dead weight
+    // (and its block records without an image_mips line).
     enum { CARD = 10 };
-    uint8_t card[CARD * CARD * 4];
+    uint8_t cardpx[CARD * CARD * 4];
     for (int y = 0; y < CARD; y++) {
         for (int x = 0; x < CARD; x++) {
             bool ink = x == 0 || y == 0 || x == CARD - 1 || y == CARD - 1;
@@ -1966,11 +1973,17 @@ static void imagescale(void) {
             ink = ink || (y == 2 && (x == 6 || x == 8));          // bead dots
             int const o = (y * CARD + x) * 4;
             uint8_t const v = ink ? 32 : 255;
-            card[o + 0] = v;
-            card[o + 1] = v;
-            card[o + 2] = v;
-            card[o + 3] = 255;
+            cardpx[o + 0] = v;
+            cardpx[o + 1] = v;
+            cardpx[o + 2] = v;
+            cardpx[o + 3] = 255;
         }
+    }
+    struct canvas_image *__single card = canvas_image(cardpx, CARD, CARD);
+    if (!card) {
+        canvas_image_free(rocket);
+        canvas_free(c);
+        return;
     }
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
@@ -1980,8 +1993,8 @@ static void imagescale(void) {
     // drawImage is an exact passthrough at any quality tier.  The card's
     // reference sits centred atop its magnification column, so each column
     // reads source-then-tiers straight down.
-    canvas_draw_image(c, src, SRC, SRC, 20.0f, 14.0f);
-    canvas_draw_image(c, card, CARD, CARD, 593.0f, 166.0f);
+    canvas_draw_image(c, rocket, 20.0f, 14.0f);
+    canvas_draw_image(c, card, 593.0f, 166.0f);
     canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "the rocket source, 1:1 (160px)", 20.0f, 192.0f);
@@ -2003,18 +2016,19 @@ static void imagescale(void) {
         for (int i = 0; i < n; i++) {
             float const t = (float)i / (float)(n - 1);
             float const size = 80.0f * powf(6.0f / 80.0f, t);
-            canvas_draw_image_scaled(c, src, SRC, SRC, x,
+            canvas_draw_image_scaled(c, rocket, x,
                                      top + 42.0f - size * 0.5f, size, size);
             x += size + 14.0f;
         }
         // The test card, 10 source px blown up to 84 (8.4x).
-        canvas_draw_image_scaled(c, card, CARD, CARD, 556.0f, top, 84.0f, 84.0f);
+        canvas_draw_image_scaled(c, card, 556.0f, top, 84.0f, 84.0f);
         canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_fill_text(c, label[row], 12.0f, top + 96.0f);
     }
     canvas_set_image_smoothing_quality(c, CANVAS_SMOOTHING_LOW);
-    free(src);
+    canvas_image_free(rocket);
+    canvas_image_free(card);
     save(c, "gallery/imagescale.png");
 }
 

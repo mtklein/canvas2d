@@ -825,7 +825,7 @@ int main(void) {
     canvas_add_filter_grayscale(cv, 1.0f);
     uint8_t img[16] = { 255, 0, 0, 255, 255, 0, 0, 255,
                         255, 0, 0, 255, 255, 0, 0, 255 };
-    canvas_draw_image_scaled(cv, img, 2, 2, 4.0f, 4.0f, 8.0f, 8.0f);
+    canvas_draw_bitmap_scaled(cv, img, 2, 2, 4.0f, 4.0f, 8.0f, 8.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 8, 8), 54, 54, 54, 255, 2));
 

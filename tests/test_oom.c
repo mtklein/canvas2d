@@ -61,7 +61,7 @@ static void scene_image(struct canvas *__single cv) {
     for (int i = 0; i < (int)sizeof src; i++) {
         src[i] = (uint8_t)(i * 7);
     }
-    canvas_draw_image_scaled(cv, src, 8, 8, 2.0f, 2.0f, 24.0f, 24.0f);
+    canvas_draw_bitmap_scaled(cv, src, 8, 8, 2.0f, 2.0f, 24.0f, 24.0f);
 }
 
 // Clipping: build a clip mask, then paint through it (exercises the canvas's

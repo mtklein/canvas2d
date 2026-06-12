@@ -69,16 +69,26 @@ enum {
 };
 
 // Serialize one RGBA8 image (w*h*4 == len bytes, top row first) as an `image`
-// block -- deflated (cnvs_zlib) and base64-chunked into `bits` lines exactly
-// like an emoji capture -- returning its file-local id.  Deduplicated by
-// CONTENT within the recording (the recorder keeps its own copy of each
-// emitted image; the caller's buffer is borrowed and may be freed or mutated
-// between ops), so a pattern plus several draw_image of one buffer cost one
-// block.  Returns -1, emitting nothing, when the image cannot be carried:
-// dimensions outside the format's caps, the id space exhausted, or an
-// allocation failure -- the caller skips its op line too.
+// block -- or a `pimage` block when `premul` says the pixels are
+// premultiplied (a canvas snapshot) -- deflated (cnvs_zlib) and
+// base64-chunked into `bits` lines exactly like an emoji capture, returning
+// its file-local id.  Deduplicated by CONTENT + the premul flag within the
+// recording (the recorder keeps its own copy of each emitted image; the
+// caller's buffer is borrowed and may be freed or mutated between ops), so a
+// pattern plus several draw_image of one buffer cost one block.  Returns -1,
+// emitting nothing, when the image cannot be carried: dimensions outside the
+// format's caps, the id space exhausted, or an allocation failure -- the
+// caller skips its op line too.
 int cnvs_rec_image(struct cnvs_recorder *__single r,
-                   uint8_t const *__counted_by(len) px, int len, int w, int h);
+                   uint8_t const *__counted_by(len) px, int len, int w, int h,
+                   bool premul);
+
+// `image_mips <id>`: from this point the block's draws have mip-chain
+// semantics -- a bitmap entry point (which rebuilds a chain per minifying
+// draw) emits it as soon as its block is declared; an image-object draw
+// emits it only once canvas_image_build_mips has run, so a mip-less image's
+// bilinear-fallback draws replay faithfully.  Emitted at most once per id.
+void cnvs_rec_image_mips(struct cnvs_recorder *__single r, int id);
 
 // One op line referencing an image block: `name <image-id> <args...>`, the
 // args as floats (draw_image / draw_image_scaled / draw_image_subrect) or as
