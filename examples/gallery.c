@@ -1912,14 +1912,17 @@ static void emojiscale(void) {
 }
 
 // imageSmoothingQuality made live -- the drawImage flavour of the emoji ruler,
-// one row per quality tier, every cell drawing the same 160px rocket bitmap
-// (rendered once on a scratch canvas, read back as straight RGBA8: exactly the
-// borrowed buffer the public drawImage takes).  The minify ramp sweeps 80px
-// down to 6px under a constant small rotation, so power-of-two scales can't
-// luck into alignment: low (plain bilinear, the spec default) shimmers as its
-// four taps undersample, medium's premultiplied mip chain + trilinear stays
-// clean, and high also upgrades the magnified nose crop (right) from
-// bilinear's blur to the 4x4 Catmull-Rom.
+// one row per quality tier.  The minify ramp draws the same 160px rocket
+// bitmap (rendered once on a scratch canvas, read back as straight RGBA8:
+// exactly the borrowed buffer the public drawImage takes), sweeping 80px down
+// to 6px under a constant small rotation so power-of-two scales can't luck
+// into alignment: low (plain bilinear, the spec default) shimmers as its four
+// taps undersample; medium's premultiplied mip chain + trilinear stays clean.
+// The magnify cell (right) is a hard-edged test card instead -- emoji art is
+// already antialiased, i.e. band-limited, so reconstruction kernels barely
+// differ on it; single-pixel checker, dots, and diagonals are where they
+// part.  At 7x, low/medium's bilinear turns the dots into a soft bead
+// lattice while high's 4x4 Catmull-Rom keeps them round and contrasty.
 static void imagescale(void) {
     struct canvas *__single c = canvas(700, 330);
     if (!c) {
@@ -1945,6 +1948,26 @@ static void imagescale(void) {
     canvas_fill_text(s, "🚀", 80.0f, 80.0f);
     canvas_read_rgba(s, src, slen);
     canvas_free(s);
+
+    // The magnification test card: dark ink on a white ground, every feature
+    // one pixel wide -- a frame, a diagonal, a 1px checkerboard quadrant, and
+    // isolated dots.
+    enum { CARD = 10 };
+    uint8_t card[CARD * CARD * 4];
+    for (int y = 0; y < CARD; y++) {
+        for (int x = 0; x < CARD; x++) {
+            bool ink = x == 0 || y == 0 || x == CARD - 1 || y == CARD - 1;
+            ink = ink || x == y;                                  // diagonal
+            ink = ink || (x >= 6 && y >= 6 && (((unsigned)x ^ (unsigned)y) & 1u));  // checker
+            ink = ink || (y == 2 && (x == 6 || x == 8));          // bead dots
+            int const o = (y * CARD + x) * 4;
+            uint8_t const v = ink ? 32 : 255;
+            card[o + 0] = v;
+            card[o + 1] = v;
+            card[o + 2] = v;
+            card[o + 3] = 255;
+        }
+    }
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
@@ -1972,9 +1995,8 @@ static void imagescale(void) {
             canvas_restore(c);
             x += size + 14.0f;
         }
-        // The nose crop, 36 source px blown up to 84.
-        canvas_draw_image_subrect(c, src, SRC, SRC, 86.0f, 10.0f, 36.0f, 36.0f,
-                                  556.0f, top, 84.0f, 84.0f);
+        // The test card, 10 source px blown up to 84 (8.4x).
+        canvas_draw_image_scaled(c, card, CARD, CARD, 556.0f, top, 84.0f, 84.0f);
         canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_fill_text(c, label[row], 12.0f, top + 96.0f);

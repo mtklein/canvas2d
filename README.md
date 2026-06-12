@@ -236,13 +236,16 @@ answers the transformed device footprint, not the nominal font size:
 ![emojiscale](gallery/emojiscale.png)
 
 `imageSmoothingQuality` — the drawImage flavour of the same ruler, one row per
-quality tier, every cell the same 160px rocket bitmap under a constant small
-rotation (so power-of-two scales can't luck into alignment). `low` (the spec
-default) is plain bilinear and shimmers as the minified taps undersample;
-`medium` samples a premultiplied mip chain with trilinear filtering and stays
-clean; `high` also upgrades the magnified nose crop (right) from bilinear's
-blur to a 4×4 Catmull-Rom (the BC-spline (B, C) is a one-line constant in
-canvas.c if Mitchell is wanted instead):
+quality tier. The minify ramp draws the same 160px rocket bitmap under a
+constant small rotation (so power-of-two scales can't luck into alignment):
+`low` (the spec default) is plain bilinear and shimmers apart as the minified
+taps undersample; `medium` samples a premultiplied mip chain with trilinear
+filtering and stays clean. The magnify cell (right) is a hard-edged test card
+instead — emoji art is already antialiased, so reconstruction kernels barely
+differ on it; single-pixel dots, checker, and a diagonal at 8× are where
+bilinear's bead-lattice blur and `high`'s 4×4 Catmull-Rom part ways (the
+BC-spline (B, C) is a one-line constant in canvas.c if Mitchell is wanted
+instead):
 
 ![imagescale](gallery/imagescale.png)
 
