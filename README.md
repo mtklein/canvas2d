@@ -235,6 +235,17 @@ answers the transformed device footprint, not the nominal font size:
 
 ![emojiscale](gallery/emojiscale.png)
 
+`imageSmoothingQuality` — the drawImage flavour of the same ruler, one row per
+quality tier, every cell the same 160px rocket bitmap under a constant small
+rotation (so power-of-two scales can't luck into alignment). `low` (the spec
+default) is plain bilinear and shimmers as the minified taps undersample;
+`medium` samples a premultiplied mip chain with trilinear filtering and stays
+clean; `high` also upgrades the magnified nose crop (right) from bilinear's
+blur to a 4×4 Catmull-Rom (the BC-spline (B, C) is a one-line constant in
+canvas.c if Mitchell is wanted instead):
+
+![imagescale](gallery/imagescale.png)
+
 `filter` — the same motif (a gradient tile under two translucent discs) through
 each of the eight colour functions, unfiltered at top-left, plus `blur()` and
 `drop-shadow()` rows. Every function is a typed API call (`canvas_add_filter_*`,
@@ -432,7 +443,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel exact stop lerp, 8-wide (≤0.16/255 of exact, hard stops exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest) | ◑ RGBA8 source only |
+| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification) | ◑ RGBA8 source only |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end) | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering **every pixel-affecting op** (font/glyph/bitmap/shape blocks for text, numbered image blocks for drawImage/putImageData/pattern sources, numbered path blocks for Path2D, plus op lines); replay reproduces the render with **no Core Text call** — all 34 gallery scenes replay byte-for-byte on a machine **without the fonts** (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |

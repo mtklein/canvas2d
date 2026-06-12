@@ -127,7 +127,13 @@ Internals (not API features) considered and deferred:
   `colorSpace`, or the recent `pixelFormat` (`rgba-unorm8` | `rgba-float16`,
   the `Float16Array`-backed `ImageData` flavour).
 - **`drawImage`** sources only our packed RGBA8 buffer (no canvas/image-as-source);
-  it samples bilinearly, or nearest-neighbour when image smoothing is disabled.
+  `imageSmoothingQuality` is live — `low` samples bilinearly (nearest-neighbour
+  when smoothing is disabled), `medium`/`high` antialias minification through a
+  premultiplied mip chain with trilinear filtering (rebuilt per minifying draw:
+  a borrowed buffer has no identity to cache a pyramid against — the planned
+  image type will own that cost via an explicit build call), and `high`
+  magnifies through a 4×4 Catmull-Rom (premultiplied taps, the BC-spline pair
+  one swappable line in canvas.c).
 - **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
   every canvas memoizes boundary results — shaped lines by (size, text), and
   canonical glyph data by (font name, glyph id): outline curves + ink bounds, or

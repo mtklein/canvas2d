@@ -42,7 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// All 34 scenes, each a (program, image) pair of committed artifacts; `text`
+// All 35 scenes, each a (program, image) pair of committed artifacts; `text`
 // marks the nine text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
 // test_pngread.c lists its corpus rather than assembling paths from dirent
@@ -71,6 +71,7 @@ static scene_pair const k_scenes[] = {
     { "gallery/gradients.canvas",    "gallery/gradients.png",    false },
     { "gallery/hittest.canvas",      "gallery/hittest.png",      false },
     { "gallery/imagedata.canvas",    "gallery/imagedata.png",    false },
+    { "gallery/imagescale.canvas",   "gallery/imagescale.png",   false },
     { "gallery/joins.canvas",        "gallery/joins.png",        false },
     { "gallery/miterdash.canvas",    "gallery/miterdash.png",    false },
     { "gallery/path2d.canvas",       "gallery/path2d.png",       false },

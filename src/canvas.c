@@ -158,6 +158,13 @@ struct canvas {
     // and ping-pongs against the second, leaving the op's own tile untouched.
     cnvs_premul *__counted_by(blur_tmp_cap) blur_tmp;
     int blur_tmp_cap;
+    // drawImage minification scratch: the source's premultiplied mip chain
+    // (level 0 = the source premultiplied, then ceil-halves), rebuilt per
+    // minifying draw at medium/high smoothing quality.  A borrowed source
+    // buffer has no identity to cache a pyramid against; a first-class image
+    // type will own this cost via an explicit build call.
+    uint8_t *__counted_by(mips_cap) mips;
+    int mips_cap;
 };
 
 static cnvs_vec2 xf(struct canvas *__single cv, float x, float y);
@@ -283,6 +290,7 @@ void canvas_free(struct canvas *__single cv) {
     free(cv->shadow_src);
     free(cv->shadow_dst);
     free(cv->blur_tmp);
+    free(cv->mips);
     for (struct cnvs_owned_image *__single n = cv->owned_images; n;) {
         struct cnvs_owned_image *__single next = n->next;
         free(n->data);
@@ -3096,6 +3104,144 @@ static void sample_src_nearest(uint8_t const *__counted_by(slen) src, int slen,
     }
 }
 
+// High-quality magnification: the BC-spline family (Mitchell-Netravali 1988).
+// Catmull-Rom is (B, C) = (0, 1/2); Mitchell's compromise is (1/3, 1/3).
+// Swap this one line to try the other -- deliberately not runtime state, just
+// easy to fiddle.  (tests/test_sampling.c pins Catmull-Rom's half-phase
+// weights; re-pin there too.)
+static float const CUBIC_B = 0.0f, CUBIC_C = 0.5f;
+
+// The family's kernel: two cubic pieces, |x| < 1 and 1 <= |x| < 2, zero
+// beyond.  The four tap weights around any phase sum to 1.
+static float cubic_weight(float x) {
+    float const B = CUBIC_B, C = CUBIC_C;
+    x = fabsf(x);
+    if (x < 1.0f) {
+        return ((12.0f - 9.0f * B - 6.0f * C) * x * x * x +
+                (-18.0f + 12.0f * B + 6.0f * C) * x * x +
+                (6.0f - 2.0f * B)) * (1.0f / 6.0f);
+    }
+    if (x < 2.0f) {
+        return ((-B - 6.0f * C) * x * x * x +
+                (6.0f * B + 30.0f * C) * x * x +
+                (-12.0f * B - 48.0f * C) * x +
+                (8.0f * B + 24.0f * C)) * (1.0f / 6.0f);
+    }
+    return 0.0f;
+}
+
+// 4x4 BC-spline sample of a straight-alpha RGBA8 source at source-pixel
+// (fx, fy), clamp-to-edge.  Each tap premultiplies BEFORE weighting -- a
+// negative lobe against straight alpha would synthesize colour out of fully
+// transparent texels -- so the result is premultiplied, clamped back into the
+// premultiplied range (overshoot both ways is part of the kernel; the clamp
+// is the invariant).
+static void sample_src_cubic(uint8_t const *__counted_by(slen) src, int slen,
+                             int sw, int sh, float fx, float fy,
+                             float *__counted_by(4) out) {
+    (void)slen;
+    float const gx = fx - 0.5f, gy = fy - 0.5f;
+    float const fxx = floorf(gx), fyy = floorf(gy);
+    // Saturate the bases into a range the +-2 tap walk cannot overflow
+    // (cnvs_f2i saturates huge coords to INT_MAX); the per-tap edge clamp
+    // below does the real work.
+    int bx = cnvs_f2i(fxx), by = cnvs_f2i(fyy);
+    bx = bx < -2 ? -2 : (bx > sw ? sw : bx);
+    by = by < -2 ? -2 : (by > sh ? sh : by);
+    float const tx = gx - fxx, ty = gy - fyy;
+    float wx[4], wy[4];
+    for (int t = 0; t < 4; t++) {
+        wx[t] = cubic_weight((float)(t - 1) - tx);
+        wy[t] = cubic_weight((float)(t - 1) - ty);
+    }
+    float acc[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    for (int j = 0; j < 4; j++) {
+        int y = by - 1 + j;
+        if (y < 0) { y = 0; } else if (y > sh - 1) { y = sh - 1; }
+        float row[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        for (int t = 0; t < 4; t++) {
+            int x = bx - 1 + t;
+            if (x < 0) { x = 0; } else if (x > sw - 1) { x = sw - 1; }
+            int const o = (y * sw + x) * 4;
+            float const a = (float)src[o + 3] * (1.0f / 255.0f);
+            float const w = wx[t] * a;
+            row[0] += w * ((float)src[o + 0] * (1.0f / 255.0f));
+            row[1] += w * ((float)src[o + 1] * (1.0f / 255.0f));
+            row[2] += w * ((float)src[o + 2] * (1.0f / 255.0f));
+            row[3] += w;
+        }
+        for (int c = 0; c < 4; c++) {
+            acc[c] += wy[j] * row[c];
+        }
+    }
+    float const a = acc[3] < 0.0f ? 0.0f : (acc[3] > 1.0f ? 1.0f : acc[3]);
+    out[3] = a;
+    for (int c = 0; c < 3; c++) {
+        float const v = acc[c];
+        out[c] = v < 0.0f ? 0.0f : (v > a ? a : v);
+    }
+}
+
+// One mip level's placement in the canvas's mips scratch.
+typedef struct {
+    int off, w, h;
+} mip_level;
+
+enum { MIP_MAX_LEVELS = 16 };  // 1 << 15 > CANVAS_DIM_MAX: a chain always fits
+
+static bool ensure_mips(struct canvas *__single cv, int n) {
+    if (n > cv->mips_cap) {
+        uint8_t *na = realloc(cv->mips, (size_t)n);
+        if (!na) {
+            return false;
+        }
+        cv->mips = na;
+        cv->mips_cap = n;
+    }
+    return true;
+}
+
+// Build the source's premultiplied mip chain into cv->mips: level 0 is the
+// straight-alpha source premultiplied (filtering must happen premultiplied --
+// averaging straight RGBA bleeds colour from transparent texels), each level
+// after it a ceil-halve (cnvs_mip_halve, the emoji captures' kernel:
+// premul-exact, one shared rounding).  Builds levels 0..need, stopping early
+// at the chain's natural 1x1 floor, and records each one's placement in lv.
+// Returns the count built, or 0 when the scratch can't grow -- the caller
+// falls back to bilinear, best-effort like the other OOM paths.
+static int build_src_mips(struct canvas *__single cv,
+                          uint8_t const *__counted_by(slen) src, int slen,
+                          int sw, int sh, int need,
+                          mip_level *__counted_by(MIP_MAX_LEVELS) lv) {
+    (void)slen;
+    int n = 0, total = 0;
+    for (int w = sw, h = sh;;) {
+        lv[n] = (mip_level){ .off = total, .w = w, .h = h };
+        total += w * h * 4;
+        n++;
+        if (n > need || n == MIP_MAX_LEVELS || (w == 1 && h == 1)) {
+            break;
+        }
+        w = (w + 1) / 2;
+        h = (h + 1) / 2;
+    }
+    if (!ensure_mips(cv, total)) {
+        return 0;
+    }
+    for (int p = 0; p < sw * sh; p++) {
+        int const a = src[p * 4 + 3];
+        cv->mips[p * 4 + 0] = (uint8_t)((src[p * 4 + 0] * a + 127) / 255);
+        cv->mips[p * 4 + 1] = (uint8_t)((src[p * 4 + 1] * a + 127) / 255);
+        cv->mips[p * 4 + 2] = (uint8_t)((src[p * 4 + 2] * a + 127) / 255);
+        cv->mips[p * 4 + 3] = (uint8_t)a;
+    }
+    for (int i = 1; i < n; i++) {
+        cnvs_mip_halve(cv->mips + lv[i - 1].off, lv[i - 1].w, lv[i - 1].h,
+                       cv->mips + lv[i].off, lv[i].w, lv[i].h);
+    }
+    return n;
+}
+
 void canvas_set_image_smoothing_enabled(struct canvas *__single cv, bool enabled) {
     if (cv->rec) { cnvs_rec_floats_bool(cv->rec, "set_image_smoothing_enabled", NULL, 0, enabled); }
     cv->cur.image_smoothing_enabled = enabled;
@@ -3145,18 +3291,67 @@ static void draw_image_quad(struct canvas *__single cv,
     cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
 
     // Blocks of eight pixels, the paint_tile_pattern shape: the SAMPLING stays
-    // scalar per lane -- four data-dependent taps at arbitrary source coords --
+    // scalar per lane -- data-dependent taps at arbitrary source coords --
     // with the fold + premultiply around it run as planes: the sampled colours
     // are born f32, sample alpha x global alpha folds there, narrows once,
     // and the coverage fold finishes in f16.  Zero-coverage lanes skip their
-    // sample and fold to transparent black.  The premultiplied-source arm
-    // (emoji capture) has no premultiply: every channel narrows and scales by
-    // ga x coverage in f16.
+    // sample and fold to transparent black.  The premultiplied-data arm
+    // (emoji captures, mip and cubic samples) has no premultiply: every
+    // channel narrows and scales by ga x coverage in f16.
     cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
     float const ga = cv->cur.global_alpha;
     half8 const gah = (half8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
+    // Sampler tier.  imageSmoothingQuality is live for the public straight-
+    // alpha path: a minifying draw (source footprint past one source px per
+    // device px) at medium/high samples the premultiplied mip chain with
+    // trilinear filtering, and a magnifying draw at high runs the 4x4
+    // BC-spline (CUBIC_B/CUBIC_C).  The emoji-capture path (premul_src)
+    // keeps its own pre-picked level + bilinear: its mip policy belongs to
+    // the text cache, deliberately untouched until trilinear earns its place
+    // there too.  The footprint is one Jacobian for the whole quad (the CTM
+    // is affine), the emoji rule's max mapped axis.
+    enum { SAMP_NEAREST, SAMP_BILINEAR, SAMP_TRILINEAR, SAMP_CUBIC } samp =
+        smooth ? SAMP_BILINEAR : SAMP_NEAREST;
+    mip_level la = { 0, sw, sh }, lb = { 0, sw, sh };  // trilinear's level pair
+    float lt = 0.0f;                                   // ...and its blend
+    if (samp == SAMP_BILINEAR && !premul_src &&
+        cv->cur.image_smoothing_quality != CANVAS_SMOOTHING_LOW) {
+        float const kx = sww / dw, ky = shh / dh;  // source px per user px
+        float const ex = hypotf(inv.a * kx, inv.b * ky);
+        float const ey = hypotf(inv.c * kx, inv.d * ky);
+        float const f = ex > ey ? ex : ey;
+        if (f > 1.0f) {
+            // The level pair around the footprint: doubling finds the floor
+            // level, exact float arithmetic finds the blend -- no log2f, so
+            // replay cannot drift across libms.
+            int need = 0;
+            float scale = 1.0f;
+            while (scale * 2.0f <= f && need < MIP_MAX_LEVELS - 2) {
+                scale *= 2.0f;
+                need++;
+            }
+            mip_level lv[MIP_MAX_LEVELS];
+            int const n = build_src_mips(cv, src, slen, sw, sh, need + 1, lv);
+            if (n > 0) {
+                la = lv[need < n ? need : n - 1];
+                lb = lv[need + 1 < n ? need + 1 : n - 1];
+                lt = la.off == lb.off ? 0.0f : (f - scale) / scale;
+                lt = lt < 0.0f ? 0.0f : (lt > 1.0f ? 1.0f : lt);
+                samp = SAMP_TRILINEAR;
+            }
+        } else if (f < 1.0f &&
+                   cv->cur.image_smoothing_quality == CANVAS_SMOOTHING_HIGH) {
+            samp = SAMP_CUBIC;
+        }
+    }
+    // Each mip level is the whole source at proportionally shrunk dims; one
+    // coordinate scale per level maps the source coords onto it.
+    float const lax = (float)la.w / (float)sw, lay = (float)la.h / (float)sh;
+    float const lbx = (float)lb.w / (float)sw, lby = (float)lb.h / (float)sh;
+    bool const premul_data =
+        premul_src || samp == SAMP_TRILINEAR || samp == SAMP_CUBIC;
     float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const devy = (float)b.y + (float)py + 0.5f;
@@ -3179,10 +3374,29 @@ static void draw_image_quad(struct canvas *__single cv,
                     continue;
                 }
                 float s[4];
-                if (smooth) {
-                    sample_src(src, slen, sw, sh, fsx[l], fsy[l], s);
-                } else {
-                    sample_src_nearest(src, slen, sw, sh, fsx[l], fsy[l], s);
+                switch (samp) {
+                    case SAMP_NEAREST:
+                        sample_src_nearest(src, slen, sw, sh, fsx[l], fsy[l], s);
+                        break;
+                    case SAMP_BILINEAR:
+                        sample_src(src, slen, sw, sh, fsx[l], fsy[l], s);
+                        break;
+                    case SAMP_CUBIC:
+                        sample_src_cubic(src, slen, sw, sh, fsx[l], fsy[l], s);
+                        break;
+                    case SAMP_TRILINEAR:
+                        sample_src(cv->mips + la.off, la.w * la.h * 4,
+                                   la.w, la.h, fsx[l] * lax, fsy[l] * lay, s);
+                        if (lt > 0.0f) {
+                            float s2[4];
+                            sample_src(cv->mips + lb.off, lb.w * lb.h * 4,
+                                       lb.w, lb.h, fsx[l] * lbx, fsy[l] * lby,
+                                       s2);
+                            for (int c = 0; c < 4; c++) {
+                                s[c] += (s2[c] - s[c]) * lt;
+                            }
+                        }
+                        break;
                 }
                 sr[l] = s[0];
                 sg[l] = s[1];
@@ -3193,7 +3407,7 @@ static void draw_image_quad(struct canvas *__single cv,
                                              : cover8(cv->cov + i))
                                     : (half8)(_Float16)1.0f;  // unused when !fold
             cnvs_px8 out;
-            if (premul_src) {
+            if (premul_data) {
                 half8 const m = fold ? gah * covh : gah;
                 out = (cnvs_px8){ __builtin_convertvector(sr, half8) * m,
                                   __builtin_convertvector(sg, half8) * m,

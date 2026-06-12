@@ -30,7 +30,7 @@ enum canvas_text_baseline {
     CANVAS_BASELINE_MIDDLE, CANVAS_BASELINE_IDEOGRAPHIC, CANVAS_BASELINE_BOTTOM,
 };
 
-// imageSmoothingQuality (a hint; see canvas_set_image_smoothing_quality).
+// imageSmoothingQuality (see canvas_set_image_smoothing_quality).
 enum canvas_image_smoothing_quality {
     CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
 };
@@ -330,9 +330,16 @@ void canvas_stroke(struct canvas *__single cv);
 // imageSmoothingEnabled: when true (default), drawImage samples bilinearly; when
 // false, nearest-neighbour -- crisp, blocky upscaling with no blending.
 void canvas_set_image_smoothing_enabled(struct canvas *__single cv, bool enabled);
-// imageSmoothingQuality: a hint (low/medium/high) that applies only while
-// smoothing is enabled.  Stored for API parity; our sampler is one bilinear
-// quality, so it does not change the output.
+// imageSmoothingQuality, applied while smoothing is enabled.  low (the spec
+// default) is plain bilinear.  medium and high antialias minification: a
+// drawImage whose source footprint passes one source px per device px samples
+// a premultiplied mip pyramid (2x2 box-halved levels, rebuilt per such draw
+// -- the source buffer is borrowed, so there is nothing to cache a pyramid
+// against) with trilinear filtering.  high additionally upgrades
+// magnification to a 4x4 Catmull-Rom (the BC-spline family; the (B, C) pair
+// is one line in canvas.c if Mitchell is wanted instead), its taps
+// premultiplied so negative lobes cannot synthesize colour from transparent
+// texels.  The quality knob is the caller's opt-in to the mip-build cost.
 void canvas_set_image_smoothing_quality(struct canvas *__single cv,
                                         enum canvas_image_smoothing_quality quality);
 void canvas_draw_image(struct canvas *__single cv,

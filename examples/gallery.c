@@ -1911,6 +1911,79 @@ static void emojiscale(void) {
     save(c, "gallery/emojiscale.png");
 }
 
+// imageSmoothingQuality made live -- the drawImage flavour of the emoji ruler,
+// one row per quality tier, every cell drawing the same 160px rocket bitmap
+// (rendered once on a scratch canvas, read back as straight RGBA8: exactly the
+// borrowed buffer the public drawImage takes).  The minify ramp sweeps 80px
+// down to 6px under a constant small rotation, so power-of-two scales can't
+// luck into alignment: low (plain bilinear, the spec default) shimmers as its
+// four taps undersample, medium's premultiplied mip chain + trilinear stays
+// clean, and high also upgrades the magnified nose crop (right) from
+// bilinear's blur to the 4x4 Catmull-Rom.
+static void imagescale(void) {
+    struct canvas *__single c = canvas(700, 330);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/imagescale.canvas");
+    canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 330.0f);
+
+    enum { SRC = 160 };
+    int const slen = SRC * SRC * 4;
+    uint8_t *__counted_by(slen) src = malloc((size_t)slen);
+    struct canvas *__single s = canvas(SRC, SRC);
+    if (!src || !s) {
+        free(src);
+        canvas_free(s);
+        canvas_free(c);
+        return;
+    }
+    canvas_set_font_size(s, 128.0f);
+    canvas_set_text_align(s, CANVAS_ALIGN_CENTER);
+    canvas_set_text_baseline(s, CANVAS_BASELINE_MIDDLE);
+    canvas_fill_text(s, "🚀", 80.0f, 80.0f);
+    canvas_read_rgba(s, src, slen);
+    canvas_free(s);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    static enum canvas_image_smoothing_quality const tier[3] = {
+        CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
+    };
+    static char const *const label[3] = {
+        "low: bilinear",
+        "medium: + premultiplied mips, trilinear minification",
+        "high: + 4x4 Catmull-Rom magnification",
+    };
+    for (int row = 0; row < 3; row++) {
+        float const top = 26.0f + 100.0f * (float)row;
+        canvas_set_image_smoothing_quality(c, tier[row]);
+        float x = 88.0f;
+        int const n = 7;
+        for (int i = 0; i < n; i++) {
+            float const t = (float)i / (float)(n - 1);
+            float const size = 80.0f * powf(6.0f / 80.0f, t);
+            canvas_save(c);
+            canvas_translate(c, x, top + 42.0f);
+            canvas_rotate(c, -0.18f);
+            canvas_draw_image_scaled(c, src, SRC, SRC, size * -0.5f,
+                                     size * -0.5f, size, size);
+            canvas_restore(c);
+            x += size + 14.0f;
+        }
+        // The nose crop, 36 source px blown up to 84.
+        canvas_draw_image_subrect(c, src, SRC, SRC, 86.0f, 10.0f, 36.0f, 36.0f,
+                                  556.0f, top, 84.0f, 84.0f);
+        canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+        canvas_set_font_size(c, 12.0f);
+        canvas_fill_text(c, label[row], 12.0f, top + 96.0f);
+    }
+    canvas_set_image_smoothing_quality(c, CANVAS_SMOOTHING_LOW);
+    free(src);
+    save(c, "gallery/imagescale.png");
+}
+
 // Text shaping + font fallback: one fill_text per line, each a greeting in a
 // different script.  Core Text picks the right fallback font per run, joins Arabic
 // contextually, lays RTL out right-to-left, reorders Devanagari -- all rendered by
@@ -2343,6 +2416,7 @@ static void render_all(void) {
     shadows();
     emoji();
     emojiscale();
+    imagescale();
     shaping();
     rtl();
     selection();
