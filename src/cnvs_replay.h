@@ -37,6 +37,7 @@ bool cnvs_canvas_own_image(struct canvas *__single cv,
 // idempotence).
 void cnvs_canvas_draw_block(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) px, int slen,
-                            int w, int h, bool premul, bool mips, int form,
+                            int w, int h, enum canvas_color_type ct,
+                            bool premul, bool mips, int form,
                             float sx, float sy, float sww, float shh,
                             float dx, float dy, float dw, float dh);

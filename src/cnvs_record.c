@@ -23,7 +23,8 @@ struct rec_image {
     uint8_t *__counted_by(len) px;
     int len;
     int w, h;
-    bool premul;     // a `pimage` block (premultiplied pixels, e.g. a snapshot)
+    enum canvas_color_type ct;  // unorm8 (image/pimage) or f16 (fimage/pfimage)
+    bool premul;     // the premultiplied flavour (pimage/pfimage)
     bool mips_done;  // an `image_mips` line has been emitted for this id
 };
 
@@ -369,21 +370,22 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
 
 int cnvs_rec_image(struct cnvs_recorder *__single r,
                    uint8_t const *__counted_by(len) px, int len, int w, int h,
-                   bool premul) {
+                   enum canvas_color_type ct, bool premul) {
     if (!r || r->suspend != 0) {
         return -1;
     }
-    if (w < 1 || h < 1 || (int64_t)w * h * 4 != (int64_t)len ||
+    int const bpp = ct == CANVAS_COLOR_F16 ? 8 : 4;
+    if (w < 1 || h < 1 || (int64_t)w * h * bpp != (int64_t)len ||
         len > CNVS_REC_IMAGE_BYTES_MAX) {
         return -1;  // outside the format's caps: the op degrades un-recorded
     }
     // Content dedupe: a repeated buffer (a pattern reused per repeat mode, an
     // atlas drawn per subrect) references the block already in the file.  The
-    // premul flag is part of the identity: the same bytes mean different
-    // colours straight vs premultiplied.
+    // format is part of the identity: the same bytes mean different colours
+    // in a different format.
     for (int i = 0; i < r->nimg; i++) {
         if (r->img[i].w == w && r->img[i].h == h && r->img[i].len == len &&
-            r->img[i].premul == premul &&
+            r->img[i].ct == ct && r->img[i].premul == premul &&
             memcmp(r->img[i].px, px, (size_t)len) == 0) {
             return i;
         }
@@ -414,8 +416,9 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     }
     int const id = r->nimg;
     int const nlines = (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
-    fprintf(r->f, "%s %d %d %d %d %d\n", premul ? "pimage" : "image",
-            id, w, h, zn, nlines);
+    char const *kw = ct == CANVAS_COLOR_F16 ? (premul ? "pfimage" : "fimage")
+                                            : (premul ? "pimage" : "image");
+    fprintf(r->f, "%s %d %d %d %d %d\n", kw, id, w, h, zn, nlines);
     for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
         int const rem = zn - off;
         put_bits_line(r->f, z + off,
@@ -426,6 +429,7 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     r->img[id].px = copy;
     r->img[id].w = w;
     r->img[id].h = h;
+    r->img[id].ct = ct;
     r->img[id].premul = premul;
     r->img[id].mips_done = false;
     r->nimg = id + 1;

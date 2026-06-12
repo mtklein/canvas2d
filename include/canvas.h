@@ -40,6 +40,14 @@ enum canvas_pattern_repeat {
     CANVAS_REPEAT, CANVAS_REPEAT_X, CANVAS_REPEAT_Y, CANVAS_NO_REPEAT,
 };
 
+// Image pixel formats, two orthogonal axes (the Skia colorType/alphaType
+// split): how a channel is stored, and whether colour rides premultiplied by
+// alpha.  The canvas surface itself stays deliberately locked premultiplied
+// f16; images parameterize over this 2x2 -- which is the whole planned
+// space, with no third axis or format until a real need shows up.
+enum canvas_color_type { CANVAS_COLOR_UNORM8, CANVAS_COLOR_F16 };
+enum canvas_alpha_type { CANVAS_ALPHA_UNPREMUL, CANVAS_ALPHA_PREMUL };
+
 // globalCompositeOperation.  The blend kernels (canvas.c) dispatch on this
 // order directly: the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
@@ -367,18 +375,24 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
 // identity -- the hook derived data caches against.
 struct canvas_image;
 
-// Construct an image from straight RGBA8 pixels (copied in; lossless, so a
-// 1:1 draw of the image is byte-identical to drawing the bitmap directly).
-// NULL on bad dimensions or allocation failure; free with canvas_image_free
-// (which, like free(), accepts NULL).
-struct canvas_image *__single canvas_image(uint8_t const *__counted_by(w * h * 4) px,
-                                           int w, int h);
+// Construct an image, one typed constructor per colour type, each taking its
+// alpha type -- the four formats are peers, none favoured.  Pixels are RGBA,
+// top row first, copied in (lossless: a 1:1 draw of an unorm8 unpremul image
+// is byte-identical to drawing the bitmap directly).  NULL on bad dimensions
+// or allocation failure; free with canvas_image_free (which, like free(),
+// accepts NULL).
+struct canvas_image *__single canvas_image_unorm8(
+    uint8_t const *__counted_by(w * h * 4) px, int w, int h,
+    enum canvas_alpha_type at);
+struct canvas_image *__single canvas_image_f16(
+    _Float16 const *__counted_by(w * h * 4) px, int w, int h,
+    enum canvas_alpha_type at);
 
-// Snapshot a canvas as an image -- canvas-as-source.  The surface's
-// premultiplied f16 pixels quantize once (monotone, premultiplied straight
-// across: no unpremultiply round trip), and draws sample them through the
-// same premultiplied path as the emoji captures.  A copy: drawing on the
-// canvas afterwards does not change the snapshot.  NULL on OOM.
+// Snapshot a canvas as an image -- canvas-as-source, THE fast path.  The
+// surface is premultiplied f16 and so is the snapshot: a straight memcpy,
+// bit-lossless, no quantize and no unpremultiply anywhere between surface
+// and sample.  A copy: drawing on the canvas afterwards does not change the
+// snapshot.  NULL on OOM.
 struct canvas_image *__single canvas_snapshot(struct canvas *__single cv);
 
 // Build the image's mip pyramid -- the one-time cost that minifying draws at
@@ -566,11 +580,15 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 // machinery reused wholesale:
 //     image <id> <w> <h> <zlen> <nlines>
 //     pimage <id> <w> <h> <zlen> <nlines>
+//     fimage <id> <w> <h> <zlen> <nlines>
+//     pfimage <id> <w> <h> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-// declares file-local numbered image <id> -- w x h RGBA8, straight-alpha
-// (`image`) or premultiplied (`pimage`, e.g. a recorded canvas_snapshot) --
-// deflated and base64-chunked exactly like a capture, content-deduplicated by
-// the recorder so one buffer used many ways costs one block.  An optional
+// declares file-local numbered image <id> -- the keyword spells the format,
+// {image, pimage, fimage, pfimage} for {unorm8, f16} x {straight,
+// premultiplied} (a recorded canvas_snapshot is a pfimage, bit-lossless in
+// the file too) -- w x h x 4 channels, deflated and base64-chunked exactly
+// like a capture, content-deduplicated by the recorder so one buffer used
+// many ways costs one block.  An optional
 //     image_mips <id>
 // line marks the block's draws as carrying mip-chain semantics: the bitmap
 // entry points (per-draw chain rebuild) emit it as soon as their block is

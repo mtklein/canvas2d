@@ -127,9 +127,11 @@ Internals (not API features) considered and deferred:
   `colorSpace`, or the recent `pixelFormat` (`rgba-unorm8` | `rgba-float16`,
   the `Float16Array`-backed `ImageData` flavour).
 - **`drawImage`** sources borrowed RGBA8 bitmaps (`canvas_draw_bitmap*`) and
-  reified images (`canvas_draw_image*`) — `canvas_image` copies straight
-  pixels in, and `canvas_snapshot` is **canvas-as-source**: the surface's
-  premultiplied f16 pixels quantized once, no unpremultiply round trip.
+  reified images (`canvas_draw_image*`) over the full 2×2 format space
+  ({unorm8, f16} × {straight, premultiplied}, four peers — and the whole
+  planned space).  `canvas_snapshot` is **canvas-as-source**, THE fast path:
+  the surface is premultiplied f16 and so is the snapshot, one memcpy,
+  bit-lossless end to end.
   `imageSmoothingQuality` is live — `low` samples bilinearly
   (nearest-neighbour when smoothing is disabled), `medium`/`high` antialias
   minification through a premultiplied mip chain with trilinear filtering

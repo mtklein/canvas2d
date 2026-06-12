@@ -37,7 +37,7 @@ static void image_matches_bitmap(void) {
     uint8_t pa[N * N * 4];
     uint8_t pb[N * N * 4];
     fill_src(src);
-    struct canvas_image *__single img = canvas_image(src, N, N);
+    struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);
     struct canvas *__single a = canvas(N, N);
     struct canvas *__single b = canvas(N, N);
     CHECK(img != NULL && a != NULL && b != NULL);
@@ -75,7 +75,7 @@ static void no_mips_falls_back_bilinear(void) {
     uint8_t pa[N * N * 4];
     uint8_t pb[N * N * 4];
     fill_src(src);
-    struct canvas_image *__single img = canvas_image(src, N, N);
+    struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);
     struct canvas *__single a = canvas(N, N);
     struct canvas *__single b = canvas(N, N);
     CHECK(img != NULL && a != NULL && b != NULL);
@@ -93,9 +93,9 @@ static void no_mips_falls_back_bilinear(void) {
     if (b) { canvas_free(b); }
 }
 
-// canvas_snapshot: a 1:1 draw of the snapshot reproduces the source canvas --
-// exactly for opaque pixels, within 1/255 where translucency pays the
-// premultiplied quantize once.
+// canvas_snapshot: a 1:1 draw of the snapshot reproduces the source canvas
+// EXACTLY, translucency included -- the snapshot is the premultiplied f16
+// surface memcpy'd, so there is no quantize anywhere in the round trip.
 static void snapshot_roundtrip(void) {
     int const len = N * N * 4;
     uint8_t pa[N * N * 4];
@@ -119,7 +119,7 @@ static void snapshot_roundtrip(void) {
                           pa[(4 * N + 4) * 4 + 3], 0));  // opaque: exact
             CHECK(px_near(pixel_at(pb, len, N, 24, 4), pa[(4 * N + 24) * 4 + 0],
                           pa[(4 * N + 24) * 4 + 1], pa[(4 * N + 24) * 4 + 2],
-                          pa[(4 * N + 24) * 4 + 3], 1));  // translucent: +-1
+                          pa[(4 * N + 24) * 4 + 3], 0));  // translucent: exact
             canvas_image_free(snap);
         }
         canvas_free(a);
@@ -146,7 +146,7 @@ static void record_replay_roundtrip(void) {
         canvas_set_fill_rgba(content, 0.2f, 0.7f, 0.4f, 0.8f);
         canvas_fill_rect(content, 4.0f, 4.0f, 24.0f, 24.0f);
         struct canvas_image *__single snap = canvas_snapshot(content);
-        struct canvas_image *__single img = canvas_image(src, N, N);
+        struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);
         CHECK(snap != NULL && img != NULL);
         if (snap && img) {
             CHECK(canvas_image_build_mips(snap));
@@ -170,10 +170,56 @@ static void record_replay_roundtrip(void) {
     if (b) { canvas_free(b); }
 }
 
+// The f16 constructors, both alpha types: known f16 values draw 1:1 to the
+// expected bytes, and a premultiplied f16 image minifies through its own f16
+// chain (a solid colour survives exactly).  All four formats are peers --
+// this plus the unorm8 cases above covers the 2x2.
+static void f16_formats(void) {
+    int const len = N * N * 4;
+    uint8_t px[N * N * 4];
+    _Float16 src[N * N * 4];
+    // Straight f16: a 50%-alpha pure red.
+    for (int i = 0; i < N * N; i++) {
+        src[i * 4 + 0] = (_Float16)1.0f;
+        src[i * 4 + 1] = (_Float16)0.0f;
+        src[i * 4 + 2] = (_Float16)0.0f;
+        src[i * 4 + 3] = (_Float16)0.5f;
+    }
+    struct canvas_image *__single un =
+        canvas_image_f16(src, N, N, CANVAS_ALPHA_UNPREMUL);
+    struct canvas *__single cv = canvas(N, N);
+    CHECK(un != NULL && cv != NULL);
+    if (un && cv) {
+        canvas_draw_image(cv, un, 0.0f, 0.0f);
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 8, 8), 255, 0, 0, 128, 0));
+    }
+    canvas_image_free(un);
+
+    // Premultiplied f16: the same colour spelled premultiplied.
+    for (int i = 0; i < N * N; i++) {
+        src[i * 4 + 0] = (_Float16)0.5f;
+    }
+    struct canvas_image *__single pm =
+        canvas_image_f16(src, N, N, CANVAS_ALPHA_PREMUL);
+    CHECK(pm != NULL);
+    if (pm && cv) {
+        CHECK(canvas_image_build_mips(pm));
+        canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
+        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
+        canvas_draw_image_scaled(cv, pm, 4.0f, 4.0f, 8.0f, 8.0f);  // 4x minify
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 8, 8), 255, 0, 0, 128, 0));
+    }
+    canvas_image_free(pm);
+    if (cv) { canvas_free(cv); }
+}
+
 int main(void) {
     image_matches_bitmap();
     no_mips_falls_back_bilinear();
     snapshot_roundtrip();
     record_replay_roundtrip();
+    f16_formats();
     return TEST_REPORT();
 }

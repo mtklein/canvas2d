@@ -177,6 +177,7 @@ static void draw_image_quad(struct canvas *__single cv,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
                             float dw, float dh, bool premul_src,
+                            enum canvas_color_type src_ct,
                             bool quality_tiers, bool chain_on_demand,
                             struct canvas_image const *__single img,
                             cnvs_mip hi, cnvs_mip lo, float lt);
@@ -604,7 +605,7 @@ void canvas_set_fill_pattern(struct canvas *__single cv,
     if (cv->rec) {
         // The pattern pixels ride a content-deduped image block; when the
         // block can't be carried (caps/OOM) the op line is skipped with it.
-        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, false);
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_fill_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
@@ -646,7 +647,7 @@ void canvas_set_stroke_pattern(struct canvas *__single cv,
         return;
     }
     if (cv->rec) {
-        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, false);
+        int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_stroke_pattern", id, repeat); }
     }
     pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
@@ -2811,7 +2812,7 @@ static void draw_glyph_capture(struct canvas *__single cv, struct cnvs_glyph_slo
     }
     draw_image_quad(cv, hi.px, hi.len, hi.w, hi.h, 0.0f, 0.0f,
                     (float)hi.w, (float)hi.h, dx, dy, dw, dh, true,
-                    false, false, NULL, hi, lo, lt);
+                    CANVAS_COLOR_UNORM8, false, false, NULL, hi, lo, lt);
 }
 
 // The degraded path when the capture cache can't serve (full table, OOM) but
@@ -3190,10 +3191,102 @@ static void sample_src_cubic(uint8_t const *__counted_by(slen) src, int slen,
     }
 }
 
+// The f16 sampler twins -- same shapes as the u8 three above, reading
+// _Float16 channels from byte buffers (ld16, defined with the mip machinery
+// below).  Values come back as the stored numbers, straight or premultiplied
+// per the image's alpha type; no 1/255 normalize.  None of the four image
+// formats is the favourite: u8 and f16 each get the full sampler set.
+static _Float16 ld16(uint8_t const *__counted_by(2) p);
+
+static void sample_src_f16(uint8_t const *__counted_by(slen) src, int slen,
+                           int sw, int sh, float fx, float fy,
+                           float *__counted_by(4) out) {
+    (void)slen;
+    float gx = fx - 0.5f, gy = fy - 0.5f;
+    float fxx = floorf(gx), fyy = floorf(gy);
+    int x0 = cnvs_f2i(fxx), y0 = cnvs_f2i(fyy);
+    int x1 = x0 < INT_MAX ? x0 + 1 : x0, y1 = y0 < INT_MAX ? y0 + 1 : y0;
+    float tx = gx - fxx, ty = gy - fyy;
+    if (x0 < 0) { x0 = 0; } else if (x0 > sw - 1) { x0 = sw - 1; }
+    if (x1 < 0) { x1 = 0; } else if (x1 > sw - 1) { x1 = sw - 1; }
+    if (y0 < 0) { y0 = 0; } else if (y0 > sh - 1) { y0 = sh - 1; }
+    if (y1 < 0) { y1 = 0; } else if (y1 > sh - 1) { y1 = sh - 1; }
+    for (int k = 0; k < 4; k++) {
+        float const c00 = (float)ld16(src + ((y0 * sw + x0) * 4 + k) * 2);
+        float const c10 = (float)ld16(src + ((y0 * sw + x1) * 4 + k) * 2);
+        float const c01 = (float)ld16(src + ((y1 * sw + x0) * 4 + k) * 2);
+        float const c11 = (float)ld16(src + ((y1 * sw + x1) * 4 + k) * 2);
+        float const top = c00 + (c10 - c00) * tx;
+        float const bot = c01 + (c11 - c01) * tx;
+        out[k] = top + (bot - top) * ty;
+    }
+}
+
+static void sample_src_nearest_f16(uint8_t const *__counted_by(slen) src,
+                                   int slen, int sw, int sh, float fx,
+                                   float fy, float *__counted_by(4) out) {
+    (void)slen;
+    int x = cnvs_f2i(floorf(fx));
+    int y = cnvs_f2i(floorf(fy));
+    if (x < 0) { x = 0; } else if (x > sw - 1) { x = sw - 1; }
+    if (y < 0) { y = 0; } else if (y > sh - 1) { y = sh - 1; }
+    for (int k = 0; k < 4; k++) {
+        out[k] = (float)ld16(src + ((y * sw + x) * 4 + k) * 2);
+    }
+}
+
+static void sample_src_cubic_f16(uint8_t const *__counted_by(slen) src,
+                                 int slen, int sw, int sh, float fx, float fy,
+                                 bool premul, float *__counted_by(4) out) {
+    (void)slen;
+    float const gx = fx - 0.5f, gy = fy - 0.5f;
+    float const fxx = floorf(gx), fyy = floorf(gy);
+    int bx = cnvs_f2i(fxx), by = cnvs_f2i(fyy);
+    bx = bx < -2 ? -2 : (bx > sw ? sw : bx);
+    by = by < -2 ? -2 : (by > sh ? sh : by);
+    float const tx = gx - fxx, ty = gy - fyy;
+    float wx[4], wy[4];
+    for (int t = 0; t < 4; t++) {
+        wx[t] = cubic_weight((float)(t - 1) - tx);
+        wy[t] = cubic_weight((float)(t - 1) - ty);
+    }
+    float acc[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    for (int j = 0; j < 4; j++) {
+        int y = by - 1 + j;
+        if (y < 0) { y = 0; } else if (y > sh - 1) { y = sh - 1; }
+        float row[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        for (int t = 0; t < 4; t++) {
+            int x = bx - 1 + t;
+            if (x < 0) { x = 0; } else if (x > sw - 1) { x = sw - 1; }
+            int const o = ((y * sw + x) * 4) * 2;
+            float const a = (float)ld16(src + o + 3 * 2);
+            float const w = premul ? wx[t] : wx[t] * a;
+            row[0] += w * (float)ld16(src + o + 0);
+            row[1] += w * (float)ld16(src + o + 1 * 2);
+            row[2] += w * (float)ld16(src + o + 2 * 2);
+            row[3] += wx[t] * a;
+        }
+        for (int c = 0; c < 4; c++) {
+            acc[c] += wy[j] * row[c];
+        }
+    }
+    float const a = acc[3] < 0.0f ? 0.0f : (acc[3] > 1.0f ? 1.0f : acc[3]);
+    out[3] = a;
+    for (int c = 0; c < 3; c++) {
+        float const v = acc[c];
+        out[c] = v < 0.0f ? 0.0f : (v > a ? a : v);
+    }
+}
+
 // One mip level's placement in the canvas's mips scratch.
 typedef struct {
     int off, w, h;
 } mip_level;
+
+// Bytes per pixel for each colour type: 4 RGBA channels, u8 or _Float16.
+static int px_bpp(enum canvas_color_type ct) {
+    return ct == CANVAS_COLOR_F16 ? 8 : 4;
+}
 
 enum { MIP_MAX_LEVELS = 16 };  // 1 << 15 > CANVAS_DIM_MAX: a chain always fits
 
@@ -3213,13 +3306,13 @@ static bool ensure_mips(struct canvas *__single cv, int n) {
 // down to `need` levels past 0 (capped at the natural 1x1 floor and the level
 // budget).  Fills lv, returns the count, and leaves the chain's total byte
 // size in *total.
-static int plan_mips(int sw, int sh, int need,
+static int plan_mips(int sw, int sh, int need, int bpp,
                      mip_level *__counted_by(MIP_MAX_LEVELS) lv,
                      int *__single total) {
     int n = 0, bytes = 0;
     for (int w = sw, h = sh;;) {
         lv[n] = (mip_level){ .off = bytes, .w = w, .h = h };
-        bytes += w * h * 4;
+        bytes += w * h * bpp;
         n++;
         if (n > need || n == MIP_MAX_LEVELS || (w == 1 && h == 1)) {
             break;
@@ -3231,20 +3324,76 @@ static int plan_mips(int sw, int sh, int need,
     return n;
 }
 
-// Fill a planned chain: level 0 premultiplies a straight-alpha source (the
-// house rounding -- filtering must happen premultiplied; averaging straight
-// RGBA bleeds colour from transparent texels) or copies an already
-// premultiplied one, and each level after ceil-halves the one before
-// (cnvs_mip_halve, the emoji captures' kernel: premul-exact, one shared
-// rounding).
+// f16 channels live in byte buffers (every image format shares one byte
+// layout); these two are the alignment-clean load/store seam.
+static _Float16 ld16(uint8_t const *__counted_by(2) p) {
+    _Float16 v;
+    memcpy(&v, p, sizeof v);
+    return v;
+}
+
+static void st16(uint8_t *__counted_by(2) p, _Float16 v) {
+    memcpy(p, &v, sizeof v);
+}
+
+// The f16 chain halve: 2x2 average in float, rounded once per channel to
+// f16.  Float averaging preserves the premul invariant exactly, but the
+// independent f16 roundings could break rgb <= a by an ulp, so the clamp
+// restores the contract (the u8 halve's shared-rounding trick, by other
+// means).
+static void mip_halve_f16(uint8_t const *__counted_by(sw * sh * 8) src,
+                          int sw, int sh,
+                          uint8_t *__counted_by(dw * dh * 8) dst,
+                          int dw, int dh) {
+    for (int y = 0; y < dh; y++) {
+        int const y0 = 2 * y;
+        int const y1 = y0 + 1 < sh ? y0 + 1 : y0;
+        for (int x = 0; x < dw; x++) {
+            int const x0 = 2 * x;
+            int const x1 = x0 + 1 < sw ? x0 + 1 : x0;
+            float c[4];
+            for (int k = 0; k < 4; k++) {
+                c[k] = 0.25f *
+                       ((float)ld16(src + ((y0 * sw + x0) * 4 + k) * 2) +
+                        (float)ld16(src + ((y0 * sw + x1) * 4 + k) * 2) +
+                        (float)ld16(src + ((y1 * sw + x0) * 4 + k) * 2) +
+                        (float)ld16(src + ((y1 * sw + x1) * 4 + k) * 2));
+            }
+            int const o = ((y * dw + x) * 4) * 2;
+            _Float16 const a = (_Float16)c[3];
+            for (int k = 0; k < 3; k++) {
+                _Float16 const v = (_Float16)c[k];
+                st16(dst + o + k * 2, v > a ? a : v);
+            }
+            st16(dst + o + 3 * 2, a);
+        }
+    }
+}
+
+// Fill a planned chain: level 0 premultiplies a straight-alpha source
+// (filtering must happen premultiplied; averaging straight RGBA bleeds
+// colour from transparent texels) or copies an already premultiplied one,
+// and each level after ceil-halves the one before -- the u8 arm through
+// cnvs_mip_halve (the emoji captures' kernel), the f16 arm through
+// mip_halve_f16.  The four image formats are peers here: each colour type
+// has its own halve, each alpha type its own level-0 entry.
 static void fill_mips(uint8_t *__counted_by(total) dst, int total,
                       uint8_t const *__counted_by(slen) src, int slen,
-                      int sw, int sh, bool premul,
+                      int sw, int sh, enum canvas_color_type ct, bool premul,
                       mip_level const *__counted_by(MIP_MAX_LEVELS) lv, int n) {
     (void)slen;
     (void)total;
     if (premul) {
-        memcpy(dst, src, (size_t)(sw * sh * 4));
+        memcpy(dst, src, (size_t)(sw * sh * px_bpp(ct)));
+    } else if (ct == CANVAS_COLOR_F16) {
+        for (int p = 0; p < sw * sh; p++) {
+            float const a = (float)ld16(src + (p * 4 + 3) * 2);
+            for (int k = 0; k < 3; k++) {
+                float const v = (float)ld16(src + (p * 4 + k) * 2) * a;
+                st16(dst + (p * 4 + k) * 2, (_Float16)v);
+            }
+            st16(dst + (p * 4 + 3) * 2, (_Float16)a);
+        }
     } else {
         for (int p = 0; p < sw * sh; p++) {
             int const a = src[p * 4 + 3];
@@ -3255,8 +3404,13 @@ static void fill_mips(uint8_t *__counted_by(total) dst, int total,
         }
     }
     for (int i = 1; i < n; i++) {
-        cnvs_mip_halve(dst + lv[i - 1].off, lv[i - 1].w, lv[i - 1].h,
-                       dst + lv[i].off, lv[i].w, lv[i].h);
+        if (ct == CANVAS_COLOR_F16) {
+            mip_halve_f16(dst + lv[i - 1].off, lv[i - 1].w, lv[i - 1].h,
+                          dst + lv[i].off, lv[i].w, lv[i].h);
+        } else {
+            cnvs_mip_halve(dst + lv[i - 1].off, lv[i - 1].w, lv[i - 1].h,
+                           dst + lv[i].off, lv[i].w, lv[i].h);
+        }
     }
 }
 
@@ -3267,14 +3421,15 @@ static void fill_mips(uint8_t *__counted_by(total) dst, int total,
 // bilinear, best-effort like the other OOM paths.
 static int build_src_mips(struct canvas *__single cv,
                           uint8_t const *__counted_by(slen) src, int slen,
-                          int sw, int sh, int need, bool premul,
+                          int sw, int sh, int need,
+                          enum canvas_color_type ct, bool premul,
                           mip_level *__counted_by(MIP_MAX_LEVELS) lv) {
     int total = 0;
-    int const n = plan_mips(sw, sh, need, lv, &total);
+    int const n = plan_mips(sw, sh, need, px_bpp(ct), lv, &total);
     if (!ensure_mips(cv, total)) {
         return 0;
     }
-    fill_mips(cv->mips, cv->mips_cap, src, slen, sw, sh, premul, lv, n);
+    fill_mips(cv->mips, cv->mips_cap, src, slen, sw, sh, ct, premul, lv, n);
     return n;
 }
 
@@ -3287,8 +3442,10 @@ static int build_src_mips(struct canvas *__single cv,
 // points must otherwise rebuild per minifying draw.
 struct canvas_image {
     int w, h;
-    bool premul;  // snapshot pixels are premultiplied; created ones straight
-    uint8_t *__counted_by(len) px;
+    enum canvas_color_type ct;  // unorm8 or f16 channels...
+    enum canvas_alpha_type at;  // ...straight or premultiplied -- all four
+                                // format combinations are peers
+    uint8_t *__counted_by(len) px;  // raw bytes, w * h * px_bpp(ct)
     int len;
     // The explicit mip chain (canvas_image_build_mips): fill_mips' layout in
     // one buffer, each level a self-slice in lv.  nlevels == 0 until built.
@@ -3298,36 +3455,52 @@ struct canvas_image {
     int nlevels;
 };
 
-struct canvas_image *__single canvas_image(uint8_t const *__counted_by(w * h * 4) px,
-                                           int w, int h) {
-    if (!rgba8_dims_ok(w, h)) {
+// The shared constructor body: copy `len` bytes of pixels into a fresh image
+// of the given format.  NULL on bad dims or OOM.
+static struct canvas_image *__single image_make(
+        uint8_t const *__counted_by(len) px, int len, int w, int h,
+        enum canvas_color_type ct, enum canvas_alpha_type at) {
+    if (!rgba8_dims_ok(w, h) || len != w * h * px_bpp(ct)) {
         return NULL;
     }
     struct canvas_image *img = calloc(1, sizeof *img);
     if (!img) {
         return NULL;
     }
-    int const len = w * h * 4;
-    uint8_t *__counted_by_or_null(len) copy = malloc((size_t)len);
+    int const n = len;  // a counted local cannot bind a parameter's count
+    uint8_t *__counted_by_or_null(n) copy = malloc((size_t)n);
     if (!copy) {
         free(img);
         return NULL;
     }
-    memcpy(copy, px, (size_t)len);
+    memcpy(copy, px, (size_t)n);
     img->w = w;
     img->h = h;
-    img->premul = false;
+    img->ct = ct;
+    img->at = at;
     img->len = len;
     img->px = copy;
     return img;
 }
 
-// One monotone rounding from a surface's premultiplied f16 channel to u8;
-// monotone, so r <= a survives the quantize and the premul invariant holds.
-static uint8_t q8(_Float16 v) {
-    float f = (float)v;
-    f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
-    return (uint8_t)(f * 255.0f + 0.5f);
+struct canvas_image *__single canvas_image_unorm8(
+        uint8_t const *__counted_by(w * h * 4) px, int w, int h,
+        enum canvas_alpha_type at) {
+    if (!rgba8_dims_ok(w, h)) {
+        return NULL;
+    }
+    return image_make(px, w * h * 4, w, h, CANVAS_COLOR_UNORM8, at);
+}
+
+struct canvas_image *__single canvas_image_f16(
+        _Float16 const *__counted_by(w * h * 4) px, int w, int h,
+        enum canvas_alpha_type at) {
+    if (!rgba8_dims_ok(w, h)) {
+        return NULL;
+    }
+    int const len = w * h * 4 * (int)sizeof(_Float16);
+    uint8_t const *bytes = (uint8_t const *)px;
+    return image_make(bytes, len, w, h, CANVAS_COLOR_F16, at);
 }
 
 struct canvas_image *__single canvas_snapshot(struct canvas *__single cv) {
@@ -3335,52 +3508,33 @@ struct canvas_image *__single canvas_snapshot(struct canvas *__single cv) {
     if (!rgba8_dims_ok(w, h)) {
         return NULL;
     }
-    struct canvas_image *img = calloc(1, sizeof *img);
-    if (!img) {
-        return NULL;
-    }
-    int const len = w * h * 4;
-    uint8_t *__counted_by_or_null(len) copy = malloc((size_t)len);
-    if (!copy) {
-        free(img);
-        return NULL;
-    }
-    // Quantize the premultiplied f16 target straight to premultiplied RGBA8:
-    // no unpremultiply round trip anywhere between surface and sample.
-    for (int p = 0; p < w * h; p++) {
-        cnvs_premul const s = cv->target[p];
-        copy[p * 4 + 0] = q8(s.r);
-        copy[p * 4 + 1] = q8(s.g);
-        copy[p * 4 + 2] = q8(s.b);
-        copy[p * 4 + 3] = q8(s.a);
-    }
-    img->w = w;
-    img->h = h;
-    img->premul = true;
-    img->len = len;
-    img->px = copy;
-    return img;
+    // The surface is premultiplied f16 and so is the snapshot: one memcpy,
+    // bit-lossless -- THE fast path, no quantize, no unpremultiply.
+    uint8_t const *bytes = (uint8_t const *)cv->target;
+    return image_make(bytes, w * h * 8, w, h,
+                      CANVAS_COLOR_F16, CANVAS_ALPHA_PREMUL);
 }
 
 bool canvas_image_build_mips(struct canvas_image *__single img) {
     if (img->nlevels > 0) {
         return true;  // idempotent
     }
+    int const bpp = px_bpp(img->ct);
     mip_level plan[MIP_MAX_LEVELS];
     int total = 0;
-    int const n = plan_mips(img->w, img->h, MIP_MAX_LEVELS, plan, &total);
+    int const n = plan_mips(img->w, img->h, MIP_MAX_LEVELS, bpp, plan, &total);
     int const cap = total;
     uint8_t *__counted_by_or_null(cap) chain = malloc((size_t)cap);
     if (!chain) {
         return false;  // the image stays valid, mip-less
     }
-    fill_mips(chain, cap, img->px, img->len, img->w, img->h, img->premul,
-              plan, n);
+    fill_mips(chain, cap, img->px, img->len, img->w, img->h, img->ct,
+              img->at == CANVAS_ALPHA_PREMUL, plan, n);
     img->mips_len = cap;
     img->mips = chain;
     for (int i = 0; i < n; i++) {
         img->lv[i] = (cnvs_mip){ .px = img->mips + plan[i].off,
-                                 .len = plan[i].w * plan[i].h * 4,
+                                 .len = plan[i].w * plan[i].h * bpp,
                                  .w = plan[i].w, .h = plan[i].h };
     }
     img->nlevels = n;
@@ -3437,10 +3591,11 @@ static void draw_image_quad(struct canvas *__single cv,
                             int sw, int sh, float sx, float sy,
                             float sww, float shh, float dx, float dy,
                             float dw, float dh, bool premul_src,
+                            enum canvas_color_type src_ct,
                             bool quality_tiers, bool chain_on_demand,
                             struct canvas_image const *__single img,
                             cnvs_mip hi, cnvs_mip lo, float lt) {
-    if (!rgba8_dims_ok(sw, sh) || slen < sw * sh * 4 ||
+    if (!rgba8_dims_ok(sw, sh) || slen < sw * sh * px_bpp(src_ct) ||
         dw <= 0.0f || dh <= 0.0f) {
         return;
     }
@@ -3514,15 +3669,16 @@ static void draw_image_quad(struct canvas *__single cv,
             } else if (!img && chain_on_demand) {
                 mip_level lv[MIP_MAX_LEVELS];
                 int const n = build_src_mips(cv, src, slen, sw, sh, need + 1,
-                                             premul_src, lv);
+                                             src_ct, premul_src, lv);
                 if (n > 0) {
                     mip_level const la = lv[need < n ? need : n - 1];
                     mip_level const lb = lv[need + 1 < n ? need + 1 : n - 1];
+                    int const bpp = px_bpp(src_ct);
                     hi = (cnvs_mip){ .px = cv->mips + la.off,
-                                     .len = la.w * la.h * 4,
+                                     .len = la.w * la.h * bpp,
                                      .w = la.w, .h = la.h };
                     lo = (cnvs_mip){ .px = cv->mips + lb.off,
-                                     .len = lb.w * lb.h * 4,
+                                     .len = lb.w * lb.h * bpp,
                                      .w = lb.w, .h = lb.h };
                     picked = true;
                 }
@@ -3566,24 +3722,29 @@ static void draw_image_quad(struct canvas *__single cv,
                     continue;
                 }
                 float s[4];
+                bool const f16 = src_ct == CANVAS_COLOR_F16;
                 switch (samp) {
                     case SAMP_NEAREST:
-                        sample_src_nearest(src, slen, sw, sh, fsx[l], fsy[l], s);
+                        (f16 ? sample_src_nearest_f16 : sample_src_nearest)(
+                            src, slen, sw, sh, fsx[l], fsy[l], s);
                         break;
                     case SAMP_BILINEAR:
-                        sample_src(src, slen, sw, sh, fsx[l], fsy[l], s);
+                        (f16 ? sample_src_f16 : sample_src)(
+                            src, slen, sw, sh, fsx[l], fsy[l], s);
                         break;
                     case SAMP_CUBIC:
-                        sample_src_cubic(src, slen, sw, sh, fsx[l], fsy[l],
-                                         premul_src, s);
+                        (f16 ? sample_src_cubic_f16 : sample_src_cubic)(
+                            src, slen, sw, sh, fsx[l], fsy[l], premul_src, s);
                         break;
                     case SAMP_TRILINEAR:
-                        sample_src(hi.px, hi.len, hi.w, hi.h,
-                                   fsx[l] * lax, fsy[l] * lay, s);
+                        (f16 ? sample_src_f16 : sample_src)(
+                            hi.px, hi.len, hi.w, hi.h,
+                            fsx[l] * lax, fsy[l] * lay, s);
                         if (lt > 0.0f) {
                             float s2[4];
-                            sample_src(lo.px, lo.len, lo.w, lo.h,
-                                       fsx[l] * lbx, fsy[l] * lby, s2);
+                            (f16 ? sample_src_f16 : sample_src)(
+                                lo.px, lo.len, lo.w, lo.h,
+                                fsx[l] * lbx, fsy[l] * lby, s2);
                             for (int c = 0; c < 4; c++) {
                                 s[c] += (s2[c] - s[c]) * lt;
                             }
@@ -3637,7 +3798,7 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
         // The source's dims ride the image block; the op line carries the two
         // user-space rects.  Suspended when draw_image/draw_image_scaled is
         // the op the caller actually issued (they record as themselves).
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, false);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
@@ -3646,7 +3807,8 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
         }
     }
     draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
-                    dx, dy, dw, dh, false, true, true, NULL,
+                    dx, dy, dw, dh, false, CANVAS_COLOR_UNORM8, true, true,
+                    NULL,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
@@ -3658,7 +3820,7 @@ void canvas_draw_bitmap(struct canvas *__single cv,
     // delegates to.  rgba8_dims_ok gates the w*h*4 the block needs (the same
     // predicate the delegate applies before painting).
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, false);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image", id,
@@ -3676,7 +3838,7 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh) {
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
-        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, false);
+        int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
@@ -3698,7 +3860,7 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
 static int rec_image_obj(struct canvas *__single cv,
                          struct canvas_image const *__single img) {
     int const id = cnvs_rec_image(cv->rec, img->px, img->len, img->w, img->h,
-                                  img->premul);
+                                  img->ct, img->at == CANVAS_ALPHA_PREMUL);
     if (id >= 0 && img->nlevels > 0) {
         cnvs_rec_image_mips(cv->rec, id);
     }
@@ -3718,7 +3880,8 @@ void canvas_draw_image_subrect(struct canvas *__single cv,
         }
     }
     draw_image_quad(cv, img->px, img->len, img->w, img->h, sx, sy, sww, shh,
-                    dx, dy, dw, dh, img->premul, true, false, img,
+                    dx, dy, dw, dh, img->at == CANVAS_ALPHA_PREMUL, img->ct,
+                    true, false, img,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
@@ -3764,14 +3927,16 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
 // byte-idempotent.
 void cnvs_canvas_draw_block(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) px, int slen,
-                            int w, int h, bool premul, bool mips, int form,
+                            int w, int h, enum canvas_color_type ct,
+                            bool premul, bool mips, int form,
                             float sx, float sy, float sww, float shh,
                             float dx, float dy, float dw, float dh) {
-    if (!rgba8_dims_ok(w, h) || slen < w * h * 4) {
+    if (!rgba8_dims_ok(w, h) || slen < w * h * px_bpp(ct)) {
         return;
     }
     if (cv->rec) {
-        int const id = cnvs_rec_image(cv->rec, px, w * h * 4, w, h, premul);
+        int const id = cnvs_rec_image(cv->rec, px, w * h * px_bpp(ct), w, h,
+                                      ct, premul);
         if (id >= 0) {
             if (mips) {
                 cnvs_rec_image_mips(cv->rec, id);
@@ -3794,7 +3959,7 @@ void cnvs_canvas_draw_block(struct canvas *__single cv,
         }
     }
     draw_image_quad(cv, px, slen, w, h, sx, sy, sww, shh, dx, dy, dw, dh,
-                    premul, true, mips, NULL,
+                    premul, ct, true, mips, NULL,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
@@ -3956,7 +4121,7 @@ void canvas_put_image_data(struct canvas *__single cv,
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
         // placement rides the op line.
-        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, false);
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data", id,
                                 (int[]){ dx, dy }, 2);
@@ -3976,7 +4141,7 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (cv->rec) {
         // The raw dirty args ride the op line; replay re-normalises them
         // through this very function, so the recorded form stays the call.
-        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, false);
+        int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h, CANVAS_COLOR_UNORM8, false);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data_dirty", id,
                                 (int[]){ dx, dy, dirty_x, dirty_y,

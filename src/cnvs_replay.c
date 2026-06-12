@@ -291,9 +291,10 @@ static bool read_bool(char const *__counted_by(le) data, size_t le,
 // pixels.
 struct replay_image {
     uint8_t *__counted_by(len) px;
-    int len;  // w*h*4
+    int len;  // w * h * bpp bytes
     int w, h;
-    bool premul;  // a `pimage` block: premultiplied pixels (e.g. a snapshot)
+    enum canvas_color_type ct;  // unorm8 (image/pimage) or f16 (fimage/pfimage)
+    bool premul;  // the premultiplied flavour (pimage/pfimage)
     bool mips;    // an `image_mips` line ran: draws carry mip-chain semantics
 };
 
@@ -326,7 +327,8 @@ struct replay_blocks {
     int bm_lines;   // `bits` lines still expected; > 0 = a block is pending
     int bm_fid;     // interned cache id for a capture's insert, or -1
     int bm_img;     // image-table id for an `image` block's insert, or -1
-    bool bm_premul; // the pending block is a `pimage` (premultiplied pixels)
+    enum canvas_color_type bm_ct;  // the pending image block's colour type
+    bool bm_premul; // the pending block's premultiplied flavour
     long bm_gid;
     int bm_w, bm_h;
     float bm_ink[4];  // capture-px ink box x0 y0 x1 y1
@@ -608,18 +610,19 @@ static bool replay_bitmap(struct replay_blocks *__single b,
 // [1, cnvs_zlib_bound(w*h*4)] and nlines in [1, ceil(zlen / 3)].
 static bool replay_image(struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j,
-                         bool premul) {
+                         enum canvas_color_type ct, bool premul) {
     long id = 0, w = 0, h = 0, zlen = 0, nlines = 0;
     if (!read_uint(data, le, &j, CNVS_REC_IMAGES_MAX - 1, &id) || b->img[id].px) {
         return false;
     }
-    long const dcap = CNVS_REC_IMAGE_BYTES_MAX / 4;  // a 1-px-tall image's max w
+    long const bpp = ct == CANVAS_COLOR_F16 ? 8 : 4;
+    long const dcap = CNVS_REC_IMAGE_BYTES_MAX / bpp;  // a 1-px-tall image's max w
     if (!read_uint(data, le, &j, dcap, &w) || w < 1 ||
         !read_uint(data, le, &j, dcap, &h) || h < 1 ||
-        w * h * 4 > CNVS_REC_IMAGE_BYTES_MAX) {  // both <= 2^24: no overflow
+        w * h * bpp > CNVS_REC_IMAGE_BYTES_MAX) {  // both <= 2^24: no overflow
         return false;
     }
-    long const total = w * h * 4;
+    long const total = w * h * bpp;
     if (!read_uint(data, le, &j, cnvs_zlib_bound((int)total), &zlen) ||
         zlen < 1) {
         return false;
@@ -638,6 +641,7 @@ static bool replay_image(struct replay_blocks *__single b,
     b->bm = zs;  // count before pointer
     b->bm_fid = -1;
     b->bm_img = (int)id;
+    b->bm_ct = ct;
     b->bm_premul = premul;
     b->bm_total = (int)total;
     b->bm_fill = 0;
@@ -843,6 +847,7 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
             b->img[b->bm_img].len = b->bm_total;
             b->img[b->bm_img].w = b->bm_w;
             b->img[b->bm_img].h = b->bm_h;
+            b->img[b->bm_img].ct = b->bm_ct;
             b->img[b->bm_img].premul = b->bm_premul;
             b->img[b->bm_img].mips = false;
         } else if (b->bm_fid >= 0) {
@@ -1256,8 +1261,10 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "run"))    { return replay_run(cv, blk, data, le, j); }
 
     // --- image blocks + the ops that reference them by id ---
-    else if (tok_eq(data, le, cs, cl, "image"))  { return replay_image(blk, data, le, j, false); }
-    else if (tok_eq(data, le, cs, cl, "pimage")) { return replay_image(blk, data, le, j, true); }
+    else if (tok_eq(data, le, cs, cl, "image"))   { return replay_image(blk, data, le, j, CANVAS_COLOR_UNORM8, false); }
+    else if (tok_eq(data, le, cs, cl, "pimage"))  { return replay_image(blk, data, le, j, CANVAS_COLOR_UNORM8, true); }
+    else if (tok_eq(data, le, cs, cl, "fimage"))  { return replay_image(blk, data, le, j, CANVAS_COLOR_F16, false); }
+    else if (tok_eq(data, le, cs, cl, "pfimage")) { return replay_image(blk, data, le, j, CANVAS_COLOR_F16, true); }
     else if (tok_eq(data, le, cs, cl, "image_mips")) {
         int id;
         if (!read_image_id(blk, data, le, &j, &id)) return false;
@@ -1291,8 +1298,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_floats(data, le, &j, f, 2)) return false;
         struct replay_image const im = blk->img[id];
-        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.premul,
-                               im.mips, 0, 0.0f, 0.0f, (float)im.w,
+        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.ct,
+                               im.premul, im.mips, 0, 0.0f, 0.0f, (float)im.w,
                                (float)im.h, f[0], f[1], (float)im.w,
                                (float)im.h);
     }
@@ -1301,8 +1308,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_floats(data, le, &j, f, 4)) return false;
         struct replay_image const im = blk->img[id];
-        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.premul,
-                               im.mips, 1, 0.0f, 0.0f, (float)im.w,
+        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.ct,
+                               im.premul, im.mips, 1, 0.0f, 0.0f, (float)im.w,
                                (float)im.h, f[0], f[1], f[2], f[3]);
     }
     else if (tok_eq(data, le, cs, cl, "draw_image_subrect")) {
@@ -1310,8 +1317,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_floats(data, le, &j, f, 8)) return false;
         struct replay_image const im = blk->img[id];
-        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.premul,
-                               im.mips, 2, f[0], f[1], f[2], f[3],
+        cnvs_canvas_draw_block(cv, im.px, im.len, im.w, im.h, im.ct,
+                               im.premul, im.mips, 2, f[0], f[1], f[2], f[3],
                                f[4], f[5], f[6], f[7]);
     }
     else if (tok_eq(data, le, cs, cl, "put_image_data")) {
@@ -1319,6 +1326,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         long v[2];
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_ints(data, le, &j, INT_MAX, v, 2)) return false;
+        // put_image_data is straight unorm8 by contract; the recorder never
+        // points it at another flavour, so a file that does is malformed.
+        if (blk->img[id].ct != CANVAS_COLOR_UNORM8 || blk->img[id].premul) return false;
         canvas_put_image_data(cv, blk->img[id].px, blk->img[id].len,
                               blk->img[id].w, blk->img[id].h,
                               (int)v[0], (int)v[1]);
@@ -1340,6 +1350,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         size_t ts, tl;
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_token(data, le, &j, &ts, &tl)) return false;
+        // Patterns borrow straight unorm8; same malformed-file posture as
+        // put_image_data above.
+        if (blk->img[id].ct != CANVAS_COLOR_UNORM8 || blk->img[id].premul) return false;
         int rep = -1;
         for (int k = 0; k < (int)(sizeof cnvs_repeat_name / sizeof cnvs_repeat_name[0]); k++) {
             if (tok_eq(data, le, ts, tl, cnvs_repeat_name[k])) { rep = k; break; }

@@ -237,9 +237,10 @@ answers the transformed device footprint, not the nominal font size:
 
 `imageSmoothingQuality` — the drawImage flavour of the same ruler, one row per
 quality tier, and the reified image API end to end: the rocket is a
-`canvas_snapshot` of a scratch canvas (canvas-as-source — premultiplied, no
-readback) with its mips built once by `canvas_image_build_mips`; the test card
-is a `canvas_image` left deliberately mip-less (it only magnifies). The minify
+`canvas_snapshot` of a scratch canvas (canvas-as-source — the premultiplied
+f16 surface memcpy'd, bit-lossless) with its mips built once by
+`canvas_image_build_mips`; the test card is a `canvas_image` left deliberately
+mip-less (it only magnifies). The minify
 ramp draws the rocket in pure axis-aligned downscale (the geometric steps keep
 most factors away from clean powers of two): `low` (the spec default) is plain bilinear and shimmers apart
 as the minified taps undersample; `medium` samples a premultiplied mip chain
@@ -424,7 +425,7 @@ canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / clo
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / read_png
 canvas_draw_bitmap / draw_bitmap_scaled / draw_bitmap_subrect   // borrowed RGBA8
-canvas_image / canvas_snapshot / canvas_image_build_mips / canvas_image_width / canvas_image_height / canvas_image_free
+canvas_image_unorm8 / canvas_image_f16 / canvas_snapshot / canvas_image_build_mips / canvas_image_width / canvas_image_height / canvas_image_free
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // reified image
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline / set_direction
@@ -451,7 +452,7 @@ complete, honest gap inventory (missing + partial + what's next).
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial + conic, fills *and* strokes, multi-stop | ✅ per-pixel exact stop lerp, 8-wide (≤0.16/255 of exact, hard stops exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas_image`s — `canvas_snapshot` is canvas-as-source (premultiplied, no readback round trip) and `canvas_image_build_mips` caches the pyramid once, explicitly | ◑ RGBA8 only (DOM sources out of scope) |
+| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas_image`s in any of {unorm8, f16} × {straight, premultiplied} — `canvas_snapshot` is canvas-as-source (premultiplied f16, one memcpy, bit-lossless) and `canvas_image_build_mips` caches the pyramid once, explicitly | ◑ DOM sources out of scope |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end) | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering **every pixel-affecting op** (font/glyph/bitmap/shape blocks for text, numbered image/pimage blocks for bitmap/image/putImageData/pattern sources — with `image_mips` carrying an image's mip state — numbered path blocks for Path2D, plus op lines); replay reproduces the render with **no Core Text call** — all 35 gallery scenes replay byte-for-byte on a machine **without the fonts** (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |

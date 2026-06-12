@@ -1979,7 +1979,8 @@ static void imagescale(void) {
             cardpx[o + 3] = 255;
         }
     }
-    struct canvas_image *__single card = canvas_image(cardpx, CARD, CARD);
+    struct canvas_image *__single card =
+        canvas_image_unorm8(cardpx, CARD, CARD, CANVAS_ALPHA_UNPREMUL);
     if (!card) {
         canvas_image_free(rocket);
         canvas_free(c);
