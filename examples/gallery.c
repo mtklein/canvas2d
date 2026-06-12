@@ -1924,13 +1924,13 @@ static void emojiscale(void) {
 // part.  At 7x, low/medium's bilinear turns the dots into a soft bead
 // lattice while high's 4x4 Catmull-Rom keeps them round and contrasty.
 static void imagescale(void) {
-    struct canvas *__single c = canvas(700, 330);
+    struct canvas *__single c = canvas(700, 520);
     if (!c) {
         return;
     }
     record_scene(c, "gallery/imagescale.canvas");
     canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 330.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 520.0f);
 
     enum { SRC = 160 };
     int const slen = SRC * SRC * 4;
@@ -1971,6 +1971,18 @@ static void imagescale(void) {
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+
+    // Both sources at 1:1 for reference -- an integer-placed unscaled
+    // drawImage is an exact passthrough at any quality tier.  The card's
+    // reference sits centred atop its magnification column, so each column
+    // reads source-then-tiers straight down.
+    canvas_draw_image(c, src, SRC, SRC, 20.0f, 14.0f);
+    canvas_draw_image(c, card, CARD, CARD, 593.0f, 166.0f);
+    canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "the rocket source, 1:1 (160px)", 20.0f, 192.0f);
+    canvas_fill_text(c, "the test card, 1:1 (10px)", 528.0f, 192.0f);
+
     static enum canvas_image_smoothing_quality const tier[3] = {
         CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
     };
@@ -1980,7 +1992,7 @@ static void imagescale(void) {
         "high: + 4x4 Catmull-Rom magnification",
     };
     for (int row = 0; row < 3; row++) {
-        float const top = 26.0f + 100.0f * (float)row;
+        float const top = 214.0f + 100.0f * (float)row;
         canvas_set_image_smoothing_quality(c, tier[row]);
         float x = 88.0f;
         int const n = 7;
