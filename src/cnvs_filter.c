@@ -119,15 +119,18 @@ cnvs_filter cnvs_filter_blur(int radius) {
     return f;
 }
 
-// drop-shadow() carries its offset, blur radius, and colour; identity matrix
-// for the same inert-if-mishandled property as blur().
-cnvs_filter cnvs_filter_drop_shadow(int dx, int dy, int radius,
+// drop-shadow() carries its offset (whole px + 1/256th fractions), blur
+// radius, and colour; identity matrix for the same inert-if-mishandled
+// property as blur().
+cnvs_filter cnvs_filter_drop_shadow(int dx, int kx, int dy, int ky, int radius,
                                     float r, float g, float b, float a) {
     cnvs_filter f = scale_offset(1.0f, 0.0f);
     f.blur = radius;
     f.shadow = true;
     f.dx = dx;
+    f.kx = kx;
     f.dy = dy;
+    f.ky = ky;
     f.color[0] = r;
     f.color[1] = g;
     f.color[2] = b;

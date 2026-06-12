@@ -140,6 +140,61 @@ void blur_box_v(uint8_t *__counted_by(w * h) dst,
     }
 }
 
+// --- subpixel shift passes ----------------------------------------------------
+//
+// A 2-tap lerp between each sample and its left (up) neighbour: max products
+// 255*256 need 32-bit lanes, so these ride the box passes' load8_widen ->
+// int8 idiom, eight pixels per step.  The first column (row) has no
+// neighbour inside the mask and lerps against transparent zero.
+
+void blur_shift_h(uint8_t *__counted_by(w * h) dst,
+                  uint8_t const *__counted_by(w * h) src, int w, int h, int k) {
+    if (w <= 0 || h <= 0 || k < 0 || k > 255) {
+        return;
+    }
+    int const j = 256 - k;
+    for (int y = 0; y < h; y++) {
+        int const base = y * w;
+        dst[base] = (uint8_t)((src[base] * j + 128) >> 8);  // in[-1] is transparent
+        int x = 1;
+        for (; x + 8 <= w; x += 8) {
+            int8 const cur  = load8_widen(src + base + x);
+            int8 const left = load8_widen(src + base + x - 1);
+            uchar8 const q =
+                __builtin_convertvector((cur * j + left * k + 128) >> 8, uchar8);
+            memcpy(dst + base + x, &q, sizeof q);
+        }
+        for (; x < w; x++) {
+            dst[base + x] = (uint8_t)(
+                (src[base + x] * j + src[base + x - 1] * k + 128) >> 8);
+        }
+    }
+}
+
+void blur_shift_v(uint8_t *__counted_by(w * h) dst,
+                  uint8_t const *__counted_by(w * h) src, int w, int h, int k) {
+    if (w <= 0 || h <= 0 || k < 0 || k > 255) {
+        return;
+    }
+    int const j = 256 - k;
+    for (int y = 0; y < h; y++) {
+        int const base = y * w, up = base - w;  // y = 0 lerps against transparent
+        int x = 0;
+        for (; x + 8 <= w; x += 8) {
+            int8 const cur   = load8_widen(src + base + x);
+            int8 const above = y > 0 ? load8_widen(src + up + x)
+                                     : (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+            uchar8 const q =
+                __builtin_convertvector((cur * j + above * k + 128) >> 8, uchar8);
+            memcpy(dst + base + x, &q, sizeof q);
+        }
+        for (; x < w; x++) {
+            int const above = y > 0 ? src[up + x] : 0;
+            dst[base + x] = (uint8_t)((src[base + x] * j + above * k + 128) >> 8);
+        }
+    }
+}
+
 // --- RGBA16F (premultiplied tile) passes -------------------------------------
 //
 // One pixel's four channels already form a vector lane group, so the natural

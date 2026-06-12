@@ -24,6 +24,18 @@ void blur_box_h(uint8_t *__counted_by(w * h) dst,
 void blur_box_v(uint8_t *__counted_by(w * h) dst,
                 uint8_t const *__counted_by(w * h) src, int w, int h, int r);
 
+// Shift the mask right (down) by k/256 of a pixel, k in [0, 256): translation
+// in its convolution form, out[x] = (in[x]*(256-k) + in[x-1]*k + 128) >> 8 --
+// the fractional partner of a whole-pixel stamp, so a subpixel shadow offset
+// is an integer placement plus one of these per axis.  Exact integer
+// arithmetic like the u8 box passes (k = 0 is an exact copy); content
+// entering from outside the mask is transparent (zero), not edge-clamped --
+// a shifted shadow slides in from nothing.  dst and src must not alias.
+void blur_shift_h(uint8_t *__counted_by(w * h) dst,
+                  uint8_t const *__counted_by(w * h) src, int w, int h, int k);
+void blur_shift_v(uint8_t *__counted_by(w * h) dst,
+                  uint8_t const *__counted_by(w * h) src, int w, int h, int k);
+
 // The RGBA16F variants, for a premultiplied colour tile (filter blur()): the
 // same running-sum structure over all four channels at once, but out-of-tile
 // samples are transparent black (zeros) rather than edge-clamped -- a filtered

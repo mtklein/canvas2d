@@ -186,7 +186,10 @@ points within a thick ring's stroke band hit):
 
 Shadows — a sharp drop shadow, a soft blurred shadow, and a text shadow; each is
 the op's alpha blurred by the in-tree separable box blur (≈ Gaussian), tinted,
-offset, and composited under the shape — all in checked C:
+offset, and composited under the shape — all in checked C. The bottom row steps
+one sharp shadow across quarter-pixel offsets: subpixel placement lands on a
+1/256th-px grid (a 2-tap lerp), so the edge ramps instead of snapping a whole
+column at a time:
 
 ![shadows](gallery/shadows.png)
 

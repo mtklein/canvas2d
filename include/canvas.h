@@ -137,9 +137,9 @@ void canvas_set_shadow_offset_y(struct canvas *__single cv, float offset);
 // the entry's output is shadow-plus-drawing as one image, which any later
 // entries in the list then filter (so a colour function after a drop_shadow
 // recolours the shadow too).  blur is a Gaussian stdDev like blur(); dx/dy
-// are device pixels, rounded to whole pixels like shadowOffset{X,Y} (the spec
-// offsets in user space; this deviation matches our shadow machinery, whose
-// offsets the CTM never touches).  The painted region grows by the shadow's
+// are device pixels, subpixel fractions honoured on a 1/256th-px grid like
+// shadowOffset{X,Y} (per spec, filter coordinates and shadow offsets alike
+// ignore the CTM).  The painted region grows by the shadow's
 // offset and blur spread.  Colour channels clamp to [0,1] as for
 // set_fill_rgba; a non-finite dx/dy/blur or a negative blur is ignored (the
 // call appends nothing), and so is a fully transparent colour (its shadow

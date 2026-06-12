@@ -155,9 +155,10 @@ Internals (not API features) considered and deferred:
   coverage, global alpha, and any filters all shape it — a transparent sprite
   shadows its alpha shape, not its quad) is blurred (a CPU box-blur, three
   passes ≈ Gaussian, [blur.c](../src/blur.c)), tinted, offset, and composited
-  under the shape, all in checked C. Two deviations remain: the blur
-  approximates the spec's Gaussian, and the offset is rounded to whole device
-  pixels.
+  under the shape, all in checked C. Offsets honour subpixel fractions on a
+  1/256th-px grid (one 2-tap lerp pass per axis after the blur — translation
+  in its convolution form). One deviation remains: the blur approximates the
+  spec's Gaussian with three box passes.
 - **`filter`** is functionally complete — the eight colour functions
   (`brightness`, `contrast`, `grayscale`, `hue-rotate`, `invert`, `opacity`,
   `saturate`, `sepia`), `blur()`, and `drop-shadow()` (both three box passes ≈
@@ -168,8 +169,8 @@ Internals (not API features) considered and deferred:
   nothing for `-fbounds-safety` to say, the same call as `Path2D`'s SVG
   path-data strings above. (The spec's other `filter` form, `url()` into an
   SVG filter element, has nothing to reference headless — the out-of-scope
-  list.) `drop-shadow()`'s offsets also round to whole device pixels, the
-  shadowOffset deviation above.
+  list.) `drop-shadow()`'s offsets ride the same 1/256th-px subpixel grid as
+  `shadowOffset{X,Y}` (a bilinear read of the source alpha).
 
 ## Missing entirely
 

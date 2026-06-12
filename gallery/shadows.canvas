@@ -1,5 +1,5 @@
 set_fill_rgba 0.930000007 0.939999998 0.959999979 1
-fill_rect 0 0 400 130
+fill_rect 0 0 400 185
 set_shadow_color_rgba 0 0 0 0.449999988
 set_shadow_blur 0
 set_shadow_offset_x 7
@@ -33,3 +33,21 @@ glyph 1 90 1000 10 11 622.999939 472 m 365 92 q 418 130 477 207 q 537 283 537 30
 shaping 34 0 6 1 6 shadow
 run 1 0 0 6 86 12.8179998 0 75 14.9940004 1 68 14.6199999 2 71 16.8640003 3 82 13.2600002 4 90 21.5219994 5
 fill_text 250 78 shadow
+set_shadow_color_rgba 0 0 0 0.550000012
+set_shadow_blur 0
+set_fill_rgba 0.449999988 0.400000006 0.850000024 1
+set_shadow_offset_x 6
+set_shadow_offset_y 6
+fill_rect 36 138 24 24
+set_shadow_offset_x 6.25
+set_shadow_offset_y 6.25
+fill_rect 100 138 24 24
+set_shadow_offset_x 6.5
+set_shadow_offset_y 6.5
+fill_rect 164 138 24 24
+set_shadow_offset_x 6.75
+set_shadow_offset_y 6.75
+fill_rect 228 138 24 24
+set_shadow_offset_x 7
+set_shadow_offset_y 7
+fill_rect 292 138 24 24

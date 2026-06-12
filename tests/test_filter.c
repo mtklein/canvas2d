@@ -407,6 +407,32 @@ static void drop_shadow_hard_offset(void) {
     free(px);
 }
 
+// Subpixel offset: drop-shadow(4.5, 4, 0, red) reads the source bilinearly,
+// so the shadow's leading and trailing columns land at half strength where a
+// whole-pixel snap would put 0 or 255.
+static void drop_shadow_subpixel_offset(void) {
+    enum { N = 32 };
+    int const len = N * N * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    struct canvas *__single cv = canvas(N, N);
+    CHECK(px != NULL && cv != NULL);
+    if (px && cv) {
+        canvas_add_filter_drop_shadow(cv, 4.5f, 4.0f, 0.0f,
+                                      1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+        canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow x [12.5,20.5)
+        canvas_read_rgba(cv, px, len);
+        CHECK(px_near(pixel_at(px, len, N, 12, 18), 255, 0, 0, 128, 1));  // leading half
+        CHECK(px_near(pixel_at(px, len, N, 18, 18), 255, 0, 0, 255, 1));  // interior
+        CHECK(px_near(pixel_at(px, len, N, 20, 18), 255, 0, 0, 128, 1));  // trailing half
+        CHECK(px_near(pixel_at(px, len, N, 21, 18), 0, 0, 0, 0, 1));      // past it
+    }
+    if (cv) {
+        canvas_free(cv);
+    }
+    free(px);
+}
+
 // A translucent fill through drop-shadow(5, 3, 2, translucent tint) must match
 // the brute-force reference: blur skirt softness (the blur() machinery), the
 // tint scaling both shadow rgb and alpha, the shadow alpha proportional to the
@@ -908,6 +934,7 @@ int main(void) {
     // visibility, the tile margin, coexistence with the canvas shadow, and the
     // ignored/clamped parameters.
     drop_shadow_hard_offset();
+    drop_shadow_subpixel_offset();
     drop_shadow_matches_reference();
     drop_shadow_tint_translucent();
     drop_shadow_translucent_source();

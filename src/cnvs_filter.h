@@ -33,7 +33,8 @@ typedef struct {
     float ka;        // alpha scale: 1 for everything but opacity()
     int blur;        // box radius of blur() / drop-shadow(); 0 = no blurring
     bool shadow;     // marks a drop-shadow() entry: dx/dy/color apply
-    int dx, dy;      // drop-shadow offset, whole device pixels
+    int dx, dy;      // drop-shadow offset, whole-device-pixel floor
+    int kx, ky;      // ...and its 1/256th-px fraction numerators, [0, 256)
     float color[4];  // drop-shadow colour, unpremultiplied RGBA in [0,1]
 } cnvs_filter;
 
@@ -55,11 +56,13 @@ cnvs_filter cnvs_filter_sepia(float amount);
 // identity -- see the struct comment.
 cnvs_filter cnvs_filter_blur(int radius);
 
-// A drop-shadow() entry: shadow offset (dx, dy) in whole device pixels, blur
-// box radius `radius` (>= 0 -- a sharp shadow is valid, unlike blur()), and
-// the shadow colour, unpremultiplied and already clamped to [0,1] by the
-// canvas API.  Matrix part identity, like blur().
-cnvs_filter cnvs_filter_drop_shadow(int dx, int dy, int radius,
+// A drop-shadow() entry: shadow offset split per axis into a whole-device-
+// pixel floor and a [0, 256) fraction numerator on the 1/256th-px grid (the
+// canvas API's shadow_offset_split, shared with shadowOffset{X,Y}), blur box
+// radius `radius` (>= 0 -- a sharp shadow is valid, unlike blur()), and the
+// shadow colour, unpremultiplied and already clamped to [0,1] by the canvas
+// API.  Matrix part identity, like blur().
+cnvs_filter cnvs_filter_drop_shadow(int dx, int kx, int dy, int ky, int radius,
                                     float r, float g, float b, float a);
 
 // Apply `count` *colour* filter functions, in list order, to the n

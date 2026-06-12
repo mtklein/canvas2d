@@ -163,7 +163,7 @@ struct canvas {
 static cnvs_vec2 xf(struct canvas *__single cv, float x, float y);
 static bool ensure_tile(struct canvas *__single cv, int npix);
 static int sigma_box_radius(float sigma);
-static int shadow_offset(float v);
+static void shadow_offset_split(float v, int *__single whole, int *__single k256);
 static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
@@ -761,11 +761,14 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float d
                         (float[]){ dx, dy, blur, cnvs_clamp01(r), cnvs_clamp01(g),
                                    cnvs_clamp01(b), cnvs_clamp01(a) }, 7);
     }
-    // The offsets round to whole device pixels (shadow_offset, as for
+    // The offsets split onto the 1/256th-px grid (shadow_offset_split, as for
     // shadowOffset{X,Y}); blur IS the Gaussian's stdDev, like blur() -- but
     // unlike blur(), radius 0 is a real entry (a sharp shadow, not identity).
+    int dxw, dxk, dyw, dyk;
+    shadow_offset_split(dx, &dxw, &dxk);
+    shadow_offset_split(dy, &dyw, &dyk);
     filter_append(cv, cnvs_filter_drop_shadow(
-                          shadow_offset(dx), shadow_offset(dy),
+                          dxw, dxk, dyw, dyk,
                           sigma_box_radius(blur), cnvs_clamp01(r), cnvs_clamp01(g),
                           cnvs_clamp01(b), cnvs_clamp01(a)));
 }
@@ -930,8 +933,9 @@ static int filter_margin(struct canvas const *__single cv) {
         cnvs_filter const f = cv->cur.filters[i];
         m += 3 * f.blur;
         if (f.shadow) {
-            int const ax = f.dx < 0 ? -f.dx : f.dx;
-            int const ay = f.dy < 0 ? -f.dy : f.dy;
+            // A fractional offset spills one pixel past its floor.
+            int const ax = (f.dx < 0 ? -f.dx : f.dx) + (f.kx ? 1 : 0);
+            int const ay = (f.dy < 0 ? -f.dy : f.dy) + (f.ky ? 1 : 0);
             m += ax > ay ? ax : ay;
         }
         if (m > CANVAS_DIM_MAX) {
@@ -952,9 +956,11 @@ static int filter_margin(struct canvas const *__single cv) {
 // shadow pixel is just the premultiplied tint scaled by the source alpha.
 // The offset is folded into the build (read the alpha at (x-dx, y-dy),
 // out-of-tile reads transparent) -- the paint site already widened the bbox
-// by filter_margin, so the shifted, blurred shadow has tile to land on.  If
-// the scratch can't grow the entry is skipped (the op paints shadowless),
-// like the other best-effort OOM paths.
+// by filter_margin, so the shifted, blurred shadow has tile to land on.  A
+// fractional offset reads bilinearly: the four taps around the source point,
+// weighted by the 1/256th fractions (kx == ky == 0 keeps the exact one-tap
+// gather, the common integer path).  If the scratch can't grow the entry is
+// skipped (the op paints shadowless), like the other best-effort OOM paths.
 static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, int h) {
     int const npix = w * h;
     if (!ensure_blur_tmp(cv, 2 * npix)) {
@@ -962,19 +968,49 @@ static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, 
     }
     cnvs_premul const tint = cnvs_premultiply(
         cnvs_unpremul_of(f.color[0], f.color[1], f.color[2], f.color[3]));
-    for (int y = 0; y < h; y++) {
-        int const sy = y - f.dy;
-        for (int x = 0; x < w; x++) {
-            int const sx = x - f.dx;
-            float a = sx >= 0 && sx < w && sy >= 0 && sy < h
-                          ? (float)cv->tile[sy * w + sx].a
-                          : 0.0f;
-            cv->blur_tmp[y * w + x] = (cnvs_premul){
-                .r = (_Float16)((float)tint.r * a),
-                .g = (_Float16)((float)tint.g * a),
-                .b = (_Float16)((float)tint.b * a),
-                .a = (_Float16)((float)tint.a * a),
-            };
+    if (f.kx || f.ky) {
+        // Bilinear gather: the source point x - (dx + kx/256) sits between
+        // columns xa = x-dx-1 (weight tx) and xb = x-dx (weight 1-tx), rows
+        // likewise.  Out-of-tile taps are transparent.
+        float const tx = (float)f.kx * (1.0f / 256.0f);
+        float const ty = (float)f.ky * (1.0f / 256.0f);
+        for (int y = 0; y < h; y++) {
+            int const yb = y - f.dy, ya = yb - 1;
+            float const wya = ty, wyb = 1.0f - ty;
+            for (int x = 0; x < w; x++) {
+                int const xb = x - f.dx, xa = xb - 1;
+                float a = 0.0f;
+                if (ya >= 0 && ya < h) {
+                    if (xa >= 0 && xa < w) { a += tx * wya * (float)cv->tile[ya * w + xa].a; }
+                    if (xb >= 0 && xb < w) { a += (1.0f - tx) * wya * (float)cv->tile[ya * w + xb].a; }
+                }
+                if (yb >= 0 && yb < h) {
+                    if (xa >= 0 && xa < w) { a += tx * wyb * (float)cv->tile[yb * w + xa].a; }
+                    if (xb >= 0 && xb < w) { a += (1.0f - tx) * wyb * (float)cv->tile[yb * w + xb].a; }
+                }
+                cv->blur_tmp[y * w + x] = (cnvs_premul){
+                    .r = (_Float16)((float)tint.r * a),
+                    .g = (_Float16)((float)tint.g * a),
+                    .b = (_Float16)((float)tint.b * a),
+                    .a = (_Float16)((float)tint.a * a),
+                };
+            }
+        }
+    } else {
+        for (int y = 0; y < h; y++) {
+            int const sy = y - f.dy;
+            for (int x = 0; x < w; x++) {
+                int const sx = x - f.dx;
+                float a = sx >= 0 && sx < w && sy >= 0 && sy < h
+                              ? (float)cv->tile[sy * w + sx].a
+                              : 0.0f;
+                cv->blur_tmp[y * w + x] = (cnvs_premul){
+                    .r = (_Float16)((float)tint.r * a),
+                    .g = (_Float16)((float)tint.g * a),
+                    .b = (_Float16)((float)tint.b * a),
+                    .a = (_Float16)((float)tint.a * a),
+                };
+            }
         }
     }
     if (f.blur > 0) {  // three box passes ~ a Gaussian, between the two halves
@@ -1822,12 +1858,20 @@ static int shadow_radius(float blur) {
     return sigma_box_radius(blur * 0.5f);
 }
 
-// Round a shadow offset to an integer device pixel, clamped to a sane range (a
-// larger offset just pushes the shadow off-canvas).
-static int shadow_offset(float v) {
+// Split a shadow offset into its whole-pixel floor and the [0, 256) numerator
+// of its 1/256th-pixel remainder -- the subpixel grid the 2-tap shift passes
+// lerp on (blur_shift_h/v); finer than 1/256 px is invisible.  Clamped to a
+// sane range first (a larger offset just pushes the shadow off-canvas).  The
+// fraction is always shifted rightward/downward of the floor, so a negative
+// offset splits the same way: -2.5 is whole -3 plus 128/256.
+static void shadow_offset_split(float v, int *__single whole, int *__single k256) {
     float const m = (float)(2 * CANVAS_DIM_MAX);
     v = v > m ? m : (v < -m ? -m : v);
-    return cnvs_f2i(roundf(v));
+    int const t = cnvs_f2i(floorf(v * 256.0f + 0.5f));  // round to the 1/256 grid
+    int q = t / 256, r = t - q * 256;
+    if (r < 0) { q -= 1; r += 256; }  // floor division: remainder in [0, 256)
+    *whole = q;
+    *k256 = r;
 }
 
 // Cast the current op's shadow from its source alpha over bbox b: build a
@@ -1847,12 +1891,14 @@ static void emit_shadow(struct canvas *__single cv, cbbox b,
         return;
     }
     int const radius = shadow_radius(cv->cur.shadow_blur);
-    int const offx = shadow_offset(cv->cur.shadow_offset_x);
-    int const offy = shadow_offset(cv->cur.shadow_offset_y);
+    int offx, kx, offy, ky;
+    shadow_offset_split(cv->cur.shadow_offset_x, &offx, &kx);
+    shadow_offset_split(cv->cur.shadow_offset_y, &offy, &ky);
     // Three box passes each spread the blur by the radius, so the falloff
     // reaches ~0 only at 3x the radius beyond the shape -- the mask region must
     // include that whole spread or the soft edge gets clipped to a rectangle.
-    int const margin = 3 * radius;
+    // A fractional offset spills one more pixel rightward/downward.
+    int const margin = 3 * radius + (kx || ky ? 1 : 0);
     int sx0 = b.x       + offx - margin, sy0 = b.y       + offy - margin;
     int sx1 = b.x + b.w + offx + margin, sy1 = b.y + b.h + offy + margin;
     if (sx0 < 0)          { sx0 = 0; }
@@ -1896,6 +1942,14 @@ static void emit_shadow(struct canvas *__single cv, cbbox b,
             blur_box_h(cv->shadow_dst, cv->shadow_src, sw, sh, radius);
             blur_box_v(cv->shadow_src, cv->shadow_dst, sw, sh, radius);
         }
+    }
+    if (kx || ky) {  // the offsets' subpixel fractions: one 2-tap lerp per
+                     // axis (blur_shift_h/v), commuting with the box passes
+                     // above, so the whole-pixel stamp plus these IS the
+                     // fractional translate.  A zero fraction passes through
+                     // as an exact copy, keeping the src/dst ping-pong even.
+        blur_shift_h(cv->shadow_dst, cv->shadow_src, sw, sh, kx);
+        blur_shift_v(cv->shadow_src, cv->shadow_dst, sw, sh, ky);
     }
     // Composite the shadow colour through the blurred mask: one splat, the
     // mask as the blend's coverage plane -- blend_region's fold arm scales

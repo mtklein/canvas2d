@@ -122,6 +122,20 @@ int main(void) {
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% shadow
 
+    // Subpixel offsets: a half-pixel offset splits the sharp shadow's edge
+    // columns 50/50 instead of snapping to the grid.  Offset x 12.5 on the
+    // rect [8,24) lands the shadow on x [20.5, 36.5): its first and last
+    // columns carry half alpha, the interior full strength.
+    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_shadow_offset_x(cv, 12.5f);
+    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas_read_rgba(cv, px, len);
+    CHECK(px_near(pixel_at(px, len, W, 20, 30), 0, 0, 255, 128, 2));  // leading half
+    CHECK(px_near(pixel_at(px, len, W, 28, 30), 0, 0, 255, 255, 2));  // interior
+    CHECK(px_near(pixel_at(px, len, W, 36, 30), 0, 0, 255, 128, 2));  // trailing half
+    CHECK(px_near(pixel_at(px, len, W, 37, 30), 0, 0, 0, 0, 2));      // past it
+
     canvas_free(cv);
     free(px);
     return TEST_REPORT();

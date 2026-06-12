@@ -1737,15 +1737,18 @@ static void blend(void) {
 
 // Shadows: a sharp drop shadow, a soft blurred shadow, and a text shadow.  Each
 // is the op's alpha blurred (the in-tree box blur), tinted, offset, and
-// composited under the shape -- all in checked C.
+// composited under the shape -- all in checked C.  The bottom row steps one
+// sharp shadow across quarter-pixel offsets: subpixel placement lands on a
+// 1/256th-px grid (a 2-tap lerp), so the edge ramps instead of snapping a
+// whole column at a time.
 static void shadows(void) {
-    struct canvas *__single c = canvas(400, 130);
+    struct canvas *__single c = canvas(400, 185);
     if (!c) {
         return;
     }
     record_scene(c, "gallery/shadows.canvas");
     canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.96f, 1.0f);  // light ground
-    canvas_fill_rect(c, 0.0f, 0.0f, 400.0f, 130.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 400.0f, 185.0f);
 
     // Sharp offset drop shadow under a rounded rectangle.
     canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.45f);
@@ -1775,6 +1778,20 @@ static void shadows(void) {
     canvas_set_fill_rgba(c, 0.15f, 0.55f, 0.35f, 1.0f);
     canvas_set_font_size(c, 34.0f);
     canvas_fill_text(c, "shadow", 250.0f, 78.0f);
+
+    // Subpixel offsets: the same sharp shadow at offsets 6.0 / 6.25 / 6.5 /
+    // 6.75 / 7.0 (both axes).  The leading edges ramp smoothly across the
+    // quarter-pixel steps -- whole-pixel snapping would make the first four
+    // identical and the last jump a full column.
+    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.55f);
+    canvas_set_shadow_blur(c, 0.0f);
+    canvas_set_fill_rgba(c, 0.45f, 0.40f, 0.85f, 1.0f);
+    for (int i = 0; i < 5; i++) {
+        float const off = 6.0f + 0.25f * (float)i;
+        canvas_set_shadow_offset_x(c, off);
+        canvas_set_shadow_offset_y(c, off);
+        canvas_fill_rect(c, 36.0f + 64.0f * (float)i, 138.0f, 24.0f, 24.0f);
+    }
 
     save(c, "gallery/shadows.png");
 }
