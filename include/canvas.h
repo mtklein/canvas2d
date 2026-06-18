@@ -263,8 +263,12 @@ void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
 // the caller must keep it alive while it remains the fill paint (including across
 // save/restore) -- and the pattern is pinned in device space at the current
 // transform, like the gradients.  Sampling honours image smoothing (bilinear vs
-// nearest).  Ignored if the dimensions are non-positive or overflow.
-void canvas_set_fill_pattern(struct canvas *__single cv,
+// nearest).  `space` tags how to interpret the source's colours --
+// interpretation metadata only: the sampler honouring it is deferred (see the
+// LINEAR-WORKING-SPACE deferral in canvas.c's draw_image_quad), so today the
+// tag is plumbed but unread.  Ignored if the dimensions are non-positive or
+// overflow.
+void canvas_set_fill_pattern(struct canvas *__single cv, enum canvas_color_space space,
                              uint8_t const *__counted_by(w * h * 4) src,
                              int w, int h, enum canvas_pattern_repeat repeat);
 
@@ -390,8 +394,9 @@ void canvas_add_stroke_color_stop(struct canvas *__single cv,
 // Interpolation space for the current stroke gradient (the fill twin above).
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
                                               enum canvas_color_space interp);
-// Image pattern stroke paint, mirroring canvas_set_fill_pattern.
-void canvas_set_stroke_pattern(struct canvas *__single cv,
+// Image pattern stroke paint, mirroring canvas_set_fill_pattern (the same
+// deferred-sampler `space` tag).
+void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_space space,
                                uint8_t const *__counted_by(w * h * 4) src,
                                int w, int h, enum canvas_pattern_repeat repeat);
 void canvas_set_line_width(struct canvas *__single cv, float width);
@@ -436,15 +441,18 @@ void canvas_set_image_smoothing_quality(struct canvas *__single cv,
 // first, the caller's buffer for the duration of the call only.  Because a
 // borrowed buffer has no identity to cache derived data against, a minifying
 // draw at medium/high quality rebuilds its mip chain per call -- reified
-// images below pay that cost once, explicitly.
-void canvas_draw_bitmap(struct canvas *__single cv,
+// images below pay that cost once, explicitly.  `space` tags how to interpret
+// the buffer's colours -- interpretation metadata only: the sampler honouring
+// it is deferred (see the LINEAR-WORKING-SPACE deferral in canvas.c's
+// draw_image_quad), so today the tag is plumbed but unread.
+void canvas_draw_bitmap(struct canvas *__single cv, enum canvas_color_space space,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy);
-void canvas_draw_bitmap_scaled(struct canvas *__single cv,
+void canvas_draw_bitmap_scaled(struct canvas *__single cv, enum canvas_color_space space,
                               uint8_t const *__counted_by(sw * sh * 4) src,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh);
-void canvas_draw_bitmap_subrect(struct canvas *__single cv,
+void canvas_draw_bitmap_subrect(struct canvas *__single cv, enum canvas_color_space space,
                                uint8_t const *__counted_by(sw * sh * 4) src,
                                int sw, int sh, float sx, float sy,
                                float sww, float shh, float dx, float dy,
@@ -459,13 +467,18 @@ struct canvas_image;
 // Construct an image, one typed constructor per colour type, each taking its
 // alpha type -- the four formats are peers, none favoured.  Pixels are RGBA,
 // top row first, copied in (lossless: a 1:1 draw of an unorm8 unpremul image
-// is byte-identical to drawing the bitmap directly).  NULL on bad dimensions
-// or allocation failure; free with canvas_image_free (which, like free(),
-// accepts NULL).
+// is byte-identical to drawing the bitmap directly).  `space` tags how to
+// interpret the pixels' colours -- interpretation metadata only: the sampler
+// honouring it is deferred (see the LINEAR-WORKING-SPACE deferral in
+// canvas.c's draw_image_quad), so today the tag is stored but unread.  NULL
+// on bad dimensions or allocation failure; free with canvas_image_free
+// (which, like free(), accepts NULL).
 struct canvas_image *__single canvas_image_unorm8(
+    enum canvas_color_space space,
     uint8_t const *__counted_by(w * h * 4) px, int w, int h,
     enum canvas_alpha_type at);
 struct canvas_image *__single canvas_image_f16(
+    enum canvas_color_space space,
     _Float16 const *__counted_by(w * h * 4) px, int w, int h,
     enum canvas_alpha_type at);
 
@@ -473,7 +486,9 @@ struct canvas_image *__single canvas_image_f16(
 // surface is premultiplied f16 and so is the snapshot: a straight memcpy,
 // bit-lossless, no quantize and no unpremultiply anywhere between surface
 // and sample.  A copy: drawing on the canvas afterwards does not change the
-// snapshot.  NULL on OOM.
+// snapshot.  The snapshot's colour space is the canvas's working space (the
+// honest tag: the snapped pixels ARE in the working space -- CANVAS_CS_SRGB
+// for an sRGB canvas, CANVAS_CS_LINEAR_SRGB for a linear one).  NULL on OOM.
 struct canvas_image *__single canvas_snapshot(struct canvas *__single cv);
 
 // Build the image's mip pyramid -- the one-time cost that minifying draws at
@@ -674,14 +689,19 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 //
 // Image-block lines carry the RGBA8 sources the image ops need, the capture
 // machinery reused wholesale:
-//     image <id> <unorm8|f16> <unpremul|premul> <w> <h> <zlen> <nlines>
+//     image <id> <unorm8|f16> <unpremul|premul> <w> <h> <zlen> <nlines> [<space>]
 //     bits <base64...>                            (exactly nlines of these)
 // declares file-local numbered image <id>, its colour and alpha types named
 // on the line like every other enum in the format -- the four combinations
 // are peers, none the unmarked default (a recorded canvas_snapshot is
 // `f16 premul`, bit-lossless in the file too) -- w x h x 4 channels,
 // deflated and base64-chunked exactly like a capture, content-deduplicated
-// by the recorder so one buffer used many ways costs one block.  An optional
+// by the recorder so one buffer used many ways costs one block.  The trailing
+// <space> (srgb|linear|oklab) is the source's colour-space tag -- OPTIONAL,
+// emitted only when non-sRGB; absence means sRGB, so every legacy image block
+// stays byte-identical.  (It is interpretation metadata: the sampler honouring
+// it is deferred, so it round-trips but does not yet change a replayed image's
+// pixels.)  An optional
 //     image_mips <id>
 // line marks the block's draws as carrying mip-chain semantics: the bitmap
 // entry points (per-draw chain rebuild) emit it as soon as their block is

@@ -578,7 +578,7 @@ static void pattern(void) {
         // Anchor the tile grid to the panel corner via the CTM, then fill.
         canvas_save(c);
         canvas_translate(c, ox, oy);
-        canvas_set_fill_pattern(c, tile, 32, 32, modes[i]);
+        canvas_set_fill_pattern(c, CANVAS_CS_SRGB, tile, 32, 32, modes[i]);
         canvas_fill_rect(c, 0.0f, 0.0f, 96.0f, 96.0f);
         canvas_restore(c);
 
@@ -593,7 +593,7 @@ static void pattern(void) {
     }
 
     // The pattern is a fill paint like any other, so glyph coverage samples it too.
-    canvas_set_fill_pattern(c, tile, 32, 32, CANVAS_REPEAT);
+    canvas_set_fill_pattern(c, CANVAS_CS_SRGB, tile, 32, 32, CANVAS_REPEAT);
     canvas_set_font_size(c, 52.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "canvas2d", 237.0f, 196.0f);
@@ -641,12 +641,12 @@ static void smoothing(void) {
 
     // Source at 4x (nearest) so the 16x16 grid is legible.
     canvas_set_image_smoothing_enabled(c, false);
-    canvas_draw_bitmap_scaled(c, src, 16, 16, 24.0f, 62.0f, 64.0f, 64.0f);
+    canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, src, 16, 16, 24.0f, 62.0f, 64.0f, 64.0f);
     // Big nearest-neighbour upscale (blocky).
-    canvas_draw_bitmap_scaled(c, src, 16, 16, 120.0f, 24.0f, 140.0f, 140.0f);
+    canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, src, 16, 16, 120.0f, 24.0f, 140.0f, 140.0f);
     // Big bilinear upscale (smooth).
     canvas_set_image_smoothing_enabled(c, true);
-    canvas_draw_bitmap_scaled(c, src, 16, 16, 276.0f, 24.0f, 140.0f, 140.0f);
+    canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, src, 16, 16, 276.0f, 24.0f, 140.0f, 140.0f);
 
     canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
@@ -1291,7 +1291,7 @@ static void subrect(void) {
     canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 196.0f);
 
     // Left: the whole atlas at 1.5x, with a grid showing the tile cells.
-    canvas_draw_bitmap_scaled(c, atlas, AW, AH, 20.0f, 30.0f, 240.0f, 120.0f);
+    canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, atlas, AW, AH, 20.0f, 30.0f, 240.0f, 120.0f);
     canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.20f, 0.22f, 0.28f, 0.9f);
     canvas_set_line_width(c, 1.0f);
     for (int i = 1; i < 4; i++) {
@@ -1312,7 +1312,7 @@ static void subrect(void) {
         int k = pick[m], tx = k % 4, ty = k / 4;
         float const dx = dx0 + (float)(m % 2) * (ts + gap);
         float const dy = dy0 + (float)(m / 2) * (ts + gap);
-        canvas_draw_bitmap_subrect(c, atlas, AW, AH, (float)(tx * 40),
+        canvas_draw_bitmap_subrect(c, CANVAS_CS_SRGB, atlas, AW, AH, (float)(tx * 40),
                                   (float)(ty * 40), 40.0f, 40.0f, dx, dy, ts, ts);
     }
 
@@ -1624,12 +1624,12 @@ static void drawimage(void) {
         }
     }
 
-    canvas_draw_bitmap(c, img, 16, 16, 20.0f, 20.0f);                       // 1:1
-    canvas_draw_bitmap_scaled(c, img, 16, 16, 50.0f, 20.0f, 80.0f, 80.0f);  // bilinear
+    canvas_draw_bitmap(c, CANVAS_CS_SRGB, img, 16, 16, 20.0f, 20.0f);                       // 1:1
+    canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, img, 16, 16, 50.0f, 20.0f, 80.0f, 80.0f);  // bilinear
     canvas_save(c);
     canvas_translate(c, 235.0f, 60.0f);
     canvas_rotate(c, 0.5f);
-    canvas_draw_bitmap_scaled(c, img, 16, 16, -40.0f, -40.0f, 80.0f, 80.0f);  // rotated
+    canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, img, 16, 16, -40.0f, -40.0f, 80.0f, 80.0f);  // rotated
     canvas_restore(c);
 
     save(c, "gallery/drawimage.png");
@@ -1980,7 +1980,7 @@ static void imagescale(void) {
         }
     }
     struct canvas_image *__single card =
-        canvas_image_unorm8(cardpx, CARD, CARD, CANVAS_ALPHA_UNPREMUL);
+        canvas_image_unorm8(CANVAS_CS_SRGB, cardpx, CARD, CARD, CANVAS_ALPHA_UNPREMUL);
     if (!card) {
         canvas_image_free(rocket);
         canvas_free(c);

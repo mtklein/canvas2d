@@ -136,17 +136,17 @@ static void draw_program(struct canvas *__single cv) {
     }
     canvas_set_image_smoothing_enabled(cv, false);
     canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-    canvas_draw_bitmap(cv, img, 4, 3, 2.0f, 2.0f);
+    canvas_draw_bitmap(cv, CANVAS_CS_SRGB, img, 4, 3, 2.0f, 2.0f);
     canvas_set_image_smoothing_enabled(cv, true);
-    canvas_draw_bitmap_scaled(cv, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
-    canvas_draw_bitmap_subrect(cv, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
+    canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
                               18.0f, 2.0f, 6.0f, 6.0f);
     canvas_put_image_data(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 4, 3, 26, 2);
     canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 4, 3, 32, 2,
                                 1, 1, 2, 2);
-    canvas_set_fill_pattern(cv, img, 4, 3, CANVAS_REPEAT);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, img, 4, 3, CANVAS_REPEAT);
     canvas_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
-    canvas_set_stroke_pattern(cv, img, 4, 3, CANVAS_REPEAT_X);
+    canvas_set_stroke_pattern(cv, CANVAS_CS_SRGB, img, 4, 3, CANVAS_REPEAT_X);
     canvas_stroke_rect(cv, 16.0f, 24.0f, 10.0f, 6.0f);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.6f, 0.4f, 1.0f);
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);

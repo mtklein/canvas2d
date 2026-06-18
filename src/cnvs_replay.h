@@ -36,16 +36,18 @@ bool cnvs_canvas_set_working_space(struct canvas *__single cv,
                                    enum canvas_color_space space);
 
 // Draw one replayed image block (implemented in canvas.c, the replay-side
-// twin of the draw trios): ct/at are the block's format as named on its
-// line, `mips` whether the block's draws carry mip-chain semantics (an
-// `image_mips` line) -- the chain rebuilds per draw here, byte-identical to
-// a live cached chain.  `form` is the op spelling this draw replays (0 =
-// draw_image, 1 = draw_image_scaled, 2 = draw_image_subrect), so replaying
-// onto a recording canvas re-records the file byte-for-byte (the round-trip
-// test's idempotence).
+// twin of the draw trios): ct/at/cs are the block's format as named on its
+// line (cs the colour-space tag -- interpretation metadata; the sampler
+// honouring it is deferred), `mips` whether the block's draws carry mip-chain
+// semantics (an `image_mips` line) -- the chain rebuilds per draw here,
+// byte-identical to a live cached chain.  `form` is the op spelling this draw
+// replays (0 = draw_image, 1 = draw_image_scaled, 2 = draw_image_subrect), so
+// replaying onto a recording canvas re-records the file byte-for-byte (the
+// round-trip test's idempotence, the cs tag carried through).
 void cnvs_canvas_draw_block(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) px, int slen,
                             int w, int h, enum canvas_color_type ct,
-                            enum canvas_alpha_type at, bool mips, int form,
+                            enum canvas_alpha_type at, enum canvas_color_space cs,
+                            bool mips, int form,
                             float sx, float sy, float sww, float shh,
                             float dx, float dy, float dw, float dh);

@@ -708,19 +708,23 @@ void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
     cv->cur.fill_grad.interp = interp;
 }
 
-void canvas_set_fill_pattern(struct canvas *__single cv,
+void canvas_set_fill_pattern(struct canvas *__single cv, enum canvas_color_space space,
                              uint8_t const *__counted_by(w * h * 4) src,
                              int w, int h, enum canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
         return;  // invalid dimensions: leave the fill paint unchanged
     }
     if (cv->rec) {
-        // The pattern pixels ride a content-deduped image block; when the
-        // block can't be carried (caps/OOM) the op line is skipped with it.
+        // The pattern pixels ride a content-deduped image block (its colour
+        // space included); when the block can't be carried (caps/OOM) the op
+        // line is skipped with it.
         int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      space);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_fill_pattern", id, repeat); }
     }
+    // The space tag is interpretation metadata only -- the sampler honouring
+    // it is deferred (see draw_image_quad), so it does not reach pattern_set.
     pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
     cv->cur.fill_kind = CNVS_PAINT_PATTERN;
 }
@@ -760,7 +764,7 @@ void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
     cv->cur.stroke_grad.interp = interp;
 }
 
-void canvas_set_stroke_pattern(struct canvas *__single cv,
+void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_space space,
                                uint8_t const *__counted_by(w * h * 4) src,
                                int w, int h, enum canvas_pattern_repeat repeat) {
     if (!rgba8_dims_ok(w, h)) {
@@ -768,9 +772,12 @@ void canvas_set_stroke_pattern(struct canvas *__single cv,
     }
     if (cv->rec) {
         int const id = cnvs_rec_image(cv->rec, src, w * h * 4, w, h,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      space);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_stroke_pattern", id, repeat); }
     }
+    // Interpretation metadata only -- the deferred-sampler tag stays out of
+    // pattern_set (the fill twin's note).
     pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
     cv->cur.stroke_kind = CNVS_PAINT_PATTERN;
 }
@@ -3078,7 +3085,10 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
     // the glyph ink, its top edge `gh - margin + y0` glyph-px above the baseline.
     float const dest_x = pen_x + x0 - (float)margin;
     float const dest_y = baseline_y - ((float)gh - (float)margin + y0);
-    canvas_draw_bitmap_subrect(cv, buf, gw, gh, 0.0f, 0.0f, (float)gw, (float)gh,
+    // The decoded glyph capture is sRGB RGBA8 -- tag it so (interpretation
+    // metadata; the sampler honouring it is deferred).
+    canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, buf, gw, gh, 0.0f, 0.0f,
+                              (float)gw, (float)gh,
                               dest_x, dest_y, (float)gw, (float)gh);
     free(buf);
 }
@@ -3666,6 +3676,8 @@ struct canvas_image {
     enum canvas_color_type ct;  // unorm8 or f16 channels...
     enum canvas_alpha_type at;  // ...straight or premultiplied -- all four
                                 // format combinations are peers
+    enum canvas_color_space cs; // interpretation metadata; the sampler honouring
+                                // it is deferred (see draw_image_quad)
     uint8_t *__counted_by(len) px;  // raw bytes, w * h * px_bpp(ct)
     int len;
     // The explicit mip chain (canvas_image_build_mips): fill_mips' layout in
@@ -3680,7 +3692,8 @@ struct canvas_image {
 // of the given format.  NULL on bad dims or OOM.
 static struct canvas_image *__single image_make(
         uint8_t const *__counted_by(len) px, int len, int w, int h,
-        enum canvas_color_type ct, enum canvas_alpha_type at) {
+        enum canvas_color_type ct, enum canvas_alpha_type at,
+        enum canvas_color_space cs) {
     if (!rgba8_dims_ok(w, h) || len != w * h * px_bpp(ct)) {
         return NULL;
     }
@@ -3699,21 +3712,24 @@ static struct canvas_image *__single image_make(
     img->h = h;
     img->ct = ct;
     img->at = at;
+    img->cs = cs;
     img->len = len;
     img->px = copy;
     return img;
 }
 
 struct canvas_image *__single canvas_image_unorm8(
+        enum canvas_color_space space,
         uint8_t const *__counted_by(w * h * 4) px, int w, int h,
         enum canvas_alpha_type at) {
     if (!rgba8_dims_ok(w, h)) {
         return NULL;
     }
-    return image_make(px, w * h * 4, w, h, CANVAS_COLOR_UNORM8, at);
+    return image_make(px, w * h * 4, w, h, CANVAS_COLOR_UNORM8, at, space);
 }
 
 struct canvas_image *__single canvas_image_f16(
+        enum canvas_color_space space,
         _Float16 const *__counted_by(w * h * 4) px, int w, int h,
         enum canvas_alpha_type at) {
     if (!rgba8_dims_ok(w, h)) {
@@ -3721,7 +3737,7 @@ struct canvas_image *__single canvas_image_f16(
     }
     int const len = w * h * 4 * (int)sizeof(_Float16);
     uint8_t const *bytes = (uint8_t const *)px;
-    return image_make(bytes, len, w, h, CANVAS_COLOR_F16, at);
+    return image_make(bytes, len, w, h, CANVAS_COLOR_F16, at, space);
 }
 
 struct canvas_image *__single canvas_snapshot(struct canvas *__single cv) {
@@ -3730,10 +3746,12 @@ struct canvas_image *__single canvas_snapshot(struct canvas *__single cv) {
         return NULL;
     }
     // The surface is premultiplied f16 and so is the snapshot: one memcpy,
-    // bit-lossless -- THE fast path, no quantize, no unpremultiply.
+    // bit-lossless -- THE fast path, no quantize, no unpremultiply.  The
+    // snapshot's space IS the canvas's working space -- the honest tag for
+    // pixels lifted straight off the surface.
     uint8_t const *bytes = (uint8_t const *)cv->target;
     return image_make(bytes, w * h * 8, w, h,
-                      CANVAS_COLOR_F16, CANVAS_ALPHA_PREMUL);
+                      CANVAS_COLOR_F16, CANVAS_ALPHA_PREMUL, cv->space);
 }
 
 bool canvas_image_build_mips(struct canvas_image *__single img) {
@@ -4018,7 +4036,7 @@ static void draw_image_quad(struct canvas *__single cv,
     blend_tile(cv, b, fold);
 }
 
-void canvas_draw_bitmap_subrect(struct canvas *__single cv,
+void canvas_draw_bitmap_subrect(struct canvas *__single cv, enum canvas_color_space space,
                                uint8_t const *__counted_by(sw * sh * 4) src,
                                int sw, int sh, float sx, float sy,
                                float sww, float shh, float dx, float dy,
@@ -4027,11 +4045,13 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
         return;
     }
     if (cv->rec) {
-        // The source's dims ride the image block; the op line carries the two
-        // user-space rects.  Suspended when draw_image/draw_image_scaled is
-        // the op the caller actually issued (they record as themselves).
+        // The source's dims and colour space ride the image block; the op
+        // line carries the two user-space rects.  Suspended when
+        // draw_image/draw_image_scaled is the op the caller actually issued
+        // (they record as themselves).
         int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      space);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_subrect", id,
@@ -4039,6 +4059,8 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
                                   8);
         }
     }
+    // `space` is interpretation metadata only -- the sampler honouring it is
+    // deferred (see draw_image_quad), so it does not change the sampling math.
     draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
                     dx, dy, dw, dh, false, CANVAS_COLOR_UNORM8, true, true,
                     NULL,
@@ -4046,7 +4068,7 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
 
-void canvas_draw_bitmap(struct canvas *__single cv,
+void canvas_draw_bitmap(struct canvas *__single cv, enum canvas_color_space space,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy) {
     // Record `draw_image` as itself, then swallow the subrect form it
@@ -4054,7 +4076,8 @@ void canvas_draw_bitmap(struct canvas *__single cv,
     // predicate the delegate applies before painting).
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
         int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      space);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image", id,
@@ -4062,18 +4085,19 @@ void canvas_draw_bitmap(struct canvas *__single cv,
         }
     }
     cnvs_rec_enter(cv->rec);
-    canvas_draw_bitmap_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
+    canvas_draw_bitmap_subrect(cv, space, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
                               dx, dy, (float)sw, (float)sh);
     cnvs_rec_leave(cv->rec);
 }
 
-void canvas_draw_bitmap_scaled(struct canvas *__single cv,
+void canvas_draw_bitmap_scaled(struct canvas *__single cv, enum canvas_color_space space,
                               uint8_t const *__counted_by(sw * sh * 4) src,
                               int sw, int sh, float dx, float dy,
                               float dw, float dh) {
     if (cv->rec && rgba8_dims_ok(sw, sh)) {
         int const id = cnvs_rec_image(cv->rec, src, sw * sh * 4, sw, sh,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      space);
         if (id >= 0) {
             cnvs_rec_image_mips(cv->rec, id);  // bitmap draws: chain on demand
             cnvs_rec_image_floats(cv->rec, "draw_image_scaled", id,
@@ -4081,7 +4105,7 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
         }
     }
     cnvs_rec_enter(cv->rec);
-    canvas_draw_bitmap_subrect(cv, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
+    canvas_draw_bitmap_subrect(cv, space, src, sw, sh, 0.0f, 0.0f, (float)sw, (float)sh,
                               dx, dy, dw, dh);
     cnvs_rec_leave(cv->rec);
 }
@@ -4095,7 +4119,7 @@ void canvas_draw_bitmap_scaled(struct canvas *__single cv,
 static int rec_image_obj(struct canvas *__single cv,
                          struct canvas_image const *__single img) {
     int const id = cnvs_rec_image(cv->rec, img->px, img->len, img->w, img->h,
-                                  img->ct, img->at);
+                                  img->ct, img->at, img->cs);
     if (id >= 0 && img->nlevels > 0) {
         cnvs_rec_image_mips(cv->rec, id);
     }
@@ -4163,15 +4187,18 @@ void canvas_draw_image_scaled(struct canvas *__single cv,
 void cnvs_canvas_draw_block(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) px, int slen,
                             int w, int h, enum canvas_color_type ct,
-                            enum canvas_alpha_type at, bool mips, int form,
+                            enum canvas_alpha_type at, enum canvas_color_space cs,
+                            bool mips, int form,
                             float sx, float sy, float sww, float shh,
                             float dx, float dy, float dw, float dh) {
     if (!rgba8_dims_ok(w, h) || slen < w * h * px_bpp(ct)) {
         return;
     }
     if (cv->rec) {
+        // The colour-space tag carries through to the re-recorded block, so a
+        // replay-onto-recording round trip is byte-idempotent.
         int const id = cnvs_rec_image(cv->rec, px, w * h * px_bpp(ct), w, h,
-                                      ct, at);
+                                      ct, at, cs);
         if (id >= 0) {
             if (mips) {
                 cnvs_rec_image_mips(cv->rec, id);
@@ -4573,13 +4600,15 @@ void canvas_put_image_data(struct canvas *__single cv,
     }
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
-        // placement rides the op line.  Recording stays UNTAGGED for now: the
-        // bytes ride as-is and replay re-applies them as CANVAS_CS_SRGB, so an
-        // sRGB-input program records byte-identically (the optional space token
-        // is a later chunk; a non-sRGB input is not yet round-trippable through
-        // the recorded format).
+        // placement rides the op line.  put_image_data is pixel I/O, not a
+        // tagged image source: it records its block as CANVAS_CS_SRGB and
+        // replay re-applies the bytes as sRGB, so an sRGB-input program records
+        // byte-identically (a non-sRGB put_image_data input is not yet
+        // round-trippable -- the source-surface tag this chunk adds is for the
+        // image/pattern/bitmap entry points, not put_image_data).
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      CANVAS_CS_SRGB);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data", id,
                                 (int[]){ dx, dy }, 2);
@@ -4600,8 +4629,11 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (cv->rec) {
         // The raw dirty args ride the op line; replay re-normalises them
         // through this very function, so the recorded form stays the call.
+        // CANVAS_CS_SRGB like put_image_data above (pixel I/O, not a tagged
+        // source).
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
-                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
+                                      CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
+                                      CANVAS_CS_SRGB);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data_dirty", id,
                                 (int[]){ dx, dy, dirty_x, dirty_y,

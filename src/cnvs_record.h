@@ -83,16 +83,20 @@ enum {
 // types ride the line by name -- the four formats are peers, none the
 // unmarked default -- deflated (cnvs_zlib) and
 // base64-chunked into `bits` lines exactly like an emoji capture, returning
-// its file-local id.  Deduplicated by CONTENT + the premul flag within the
-// recording (the recorder keeps its own copy of each emitted image; the
-// caller's buffer is borrowed and may be freed or mutated between ops), so a
-// pattern plus several draw_image of one buffer cost one block.  Returns -1,
-// emitting nothing, when the image cannot be carried: dimensions outside the
-// format's caps, the id space exhausted, or an allocation failure -- the
-// caller skips its op line too.
+// its file-local id.  `cs` is the source's colour-space tag (interpretation
+// metadata; the sampler honouring it is deferred): it rides the line as an
+// OPTIONAL trailing token, emitted ONLY when non-sRGB (absence == sRGB), so
+// every existing sRGB image block stays byte-identical.  Deduplicated by
+// CONTENT + the format (ct, at, cs) within the recording (the recorder keeps
+// its own copy of each emitted image; the caller's buffer is borrowed and may
+// be freed or mutated between ops), so a pattern plus several draw_image of
+// one buffer cost one block.  Returns -1, emitting nothing, when the image
+// cannot be carried: dimensions outside the format's caps, the id space
+// exhausted, or an allocation failure -- the caller skips its op line too.
 int cnvs_rec_image(struct cnvs_recorder *__single r,
                    uint8_t const *__counted_by(len) px, int len, int w, int h,
-                   enum canvas_color_type ct, enum canvas_alpha_type at);
+                   enum canvas_color_type ct, enum canvas_alpha_type at,
+                   enum canvas_color_space cs);
 
 // `image_mips <id>`: from this point the block's draws have mip-chain
 // semantics -- a bitmap entry point (which rebuilds a chain per minifying

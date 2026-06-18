@@ -128,7 +128,7 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
             pat[i + 3] = 255;
         }
     }
-    canvas_set_fill_pattern(cv, pat, PW, PH, CANVAS_REPEAT);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, pat, PW, PH, CANVAS_REPEAT);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
 
     // A Path2D star spanning several tiles, filled even-odd then stroked.
