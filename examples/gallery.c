@@ -2550,6 +2550,88 @@ static void oklab(void) {
     save(c, "gallery/oklab.png");
 }
 
+// The per-COLOUR space-tag demonstrator: the same canvas_set_fill_rgba call
+// means different colours under different tags.  This is the first gallery
+// program to carry per-colour `space` tokens.  Three rows on a plain sRGB
+// canvas:
+//   sRGB    -- six numeric RGB triples tagged CANVAS_CS_SRGB: stored verbatim,
+//              the gamma-encoded bytes (the legacy reading of these numbers).
+//   linear  -- the SAME six triples tagged CANVAS_CS_LINEAR_SRGB: now read as
+//              light, so each is encoded linear->sRGB on the way to the sRGB
+//              surface and lands visibly brighter (0.5 -> ~0.74, not 0.5) --
+//              the gamma gap made literal, swatch beside swatch.
+//   Oklab   -- eight swatches at a FIXED Oklab lightness with the hue swept
+//              around the a,b circle, tagged CANVAS_CS_OKLAB: a perceptual
+//              specification, so the ring reads as one even brightness across
+//              every hue (what equal L means), each converted Oklab->linear->
+//              sRGB on store.
+static void colorspaces(void) {
+    int const w = 520, h = 232;
+    struct canvas *__single c = canvas(w, h);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/colorspaces.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)w, (float)h);
+
+    // Six numeric RGB triples, drawn once tagged sRGB and once tagged linear --
+    // the identical numbers, two readings.
+    float const sw[6][3] = {
+        { 0.25f, 0.25f, 0.25f },  // dark grey
+        { 0.50f, 0.50f, 0.50f },  // mid grey
+        { 0.75f, 0.20f, 0.20f },  // red
+        { 0.20f, 0.65f, 0.30f },  // green
+        { 0.25f, 0.40f, 0.85f },  // blue
+        { 0.85f, 0.70f, 0.20f },  // gold
+    };
+    float const sx0 = 184.0f, sw_w = 48.0f, sw_gap = 4.0f;
+    float const srgb_y = 36.0f, lin_y = 96.0f, ok_y = 156.0f, sw_h = 44.0f;
+
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+
+    // Row label + sRGB-tagged swatches: the bytes are these numbers.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "CANVAS_CS_SRGB", 18.0f, srgb_y + sw_h * 0.5f + 5.0f);
+    for (int i = 0; i < 6; i++) {
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, sw[i][0], sw[i][1], sw[i][2], 1.0f);
+        canvas_fill_rect(c, sx0 + (float)i * (sw_w + sw_gap), srgb_y, sw_w, sw_h);
+    }
+
+    // The SAME numbers tagged linear: encoded to sRGB on store -> brighter.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "CANVAS_CS_LINEAR_SRGB", 18.0f, lin_y + sw_h * 0.5f + 5.0f);
+    for (int i = 0; i < 6; i++) {
+        canvas_set_fill_rgba(c, CANVAS_CS_LINEAR_SRGB, sw[i][0], sw[i][1], sw[i][2], 1.0f);
+        canvas_fill_rect(c, sx0 + (float)i * (sw_w + sw_gap), lin_y, sw_w, sw_h);
+    }
+
+    // Oklab: fixed lightness, swept hue -- a perceptual hue ring.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "CANVAS_CS_OKLAB", 18.0f, ok_y + sw_h * 0.5f + 5.0f);
+    int const nok = 8;
+    float const L = 0.72f, C = 0.13f;  // fixed lightness, fixed chroma, hue swept
+    float const ok_w = (6.0f * sw_w + 5.0f * sw_gap - (float)(nok - 1) * sw_gap)
+                       / (float)nok;
+    for (int i = 0; i < nok; i++) {
+        float const hue = TAU * (float)i / (float)nok;
+        canvas_set_fill_rgba(c, CANVAS_CS_OKLAB, L, C * cosf(hue), C * sinf(hue), 1.0f);
+        canvas_fill_rect(c, sx0 + (float)i * (ok_w + sw_gap), ok_y, ok_w, sw_h);
+    }
+
+    // A caption: the same numbers, three meanings.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.68f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, "rows 1 & 2: identical numbers, sRGB vs linear tag", 18.0f, 216.0f);
+
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    save(c, "gallery/colorspaces.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -2588,6 +2670,7 @@ static void render_all(void) {
     filters();
     linearlight();
     oklab();
+    colorspaces();
 }
 
 int main(void) {

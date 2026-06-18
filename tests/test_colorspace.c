@@ -172,7 +172,10 @@ static void linear_image_data_round_trip(void) {
 
 // Linear source-over of two translucent colours matches a DOUBLE linear
 // reference (the proof the blend really happens in light), and differs from the
-// sRGB result.  src 60%-alpha over a 100%-alpha backdrop, one channel.
+// sRGB result.  The inputs SPEAK LINEAR: backdrop and source are linear values
+// tagged CANVAS_CS_LINEAR_SRGB, so they reach the surface verbatim -- no entry
+// transfer to model, the oracle folds them as-is.  src 60%-alpha over a
+// 100%-alpha backdrop, one channel.
 static void linear_source_over_oracle(void) {
     int const w = 8, h = 8, len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
@@ -180,28 +183,29 @@ static void linear_source_over_oracle(void) {
     if (!px) {
         return;
     }
-    float const bd = 0.8f, sd = 0.2f, sa = 0.6f;  // backdrop, source (sRGB), alpha
+    float const bl_f = 0.8f, sl_f = 0.2f, sa = 0.6f;  // backdrop, source (LINEAR), alpha
 
-    // Double linear reference: decode, premultiply, source-over in light, read
-    // back (unpremultiply, encode), quantize.
-    double const bl = (double)cnvs_srgb_to_linear(bd);
-    double const sl = (double)cnvs_srgb_to_linear(sd);
+    // Double linear reference: the tagged-linear values are already in light, so
+    // just premultiply, source-over, read back (unpremultiply, encode), quantize.
+    double const bl = (double)bl_f;
+    double const sl = (double)sl_f;
     double const co = sl * (double)sa + bl * (1.0 - (double)sa);  // premul rgb, da=1
     double const ao = (double)sa + 1.0 * (1.0 - (double)sa);      // = 1
     double const un = co / ao;
     int const want_lin = (int)((double)cnvs_linear_to_srgb((float)un) * 255.0 + 0.5);
 
-    // Double sRGB reference: the same fold, but entirely in gamma space.
-    double const co_s = (double)sd * (double)sa + (double)bd * (1.0 - (double)sa);
+    // Double sRGB reference: the SAME numbers taken as gamma-encoded sRGB and
+    // folded entirely in gamma space -- what an sRGB canvas would produce.
+    double const co_s = (double)sl_f * (double)sa + (double)bl_f * (1.0 - (double)sa);
     int const want_srgb = (int)(co_s * 255.0 + 0.5);
     CHECK(abs(want_lin - want_srgb) > 8);  // the spaces genuinely diverge here
 
     struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, bd, bd, bd, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, bl_f, bl_f, bl_f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, sd, sd, sd, sa);
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, sl_f, sl_f, sl_f, sa);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         int const got = (int)pixel_at(px, len, w, w / 2, h / 2).r;

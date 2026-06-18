@@ -227,7 +227,7 @@ def main():
     # catches -- so a forgotten update fails loudly either way.  One name per
     # gallery scene, sorted.
     gallery_scenes = [
-        "affine", "batch", "blend", "clip", "conic", "dashes", "dirtyrect",
+        "affine", "batch", "blend", "clip", "colorspaces", "conic", "dashes", "dirtyrect",
         "drawimage", "emoji", "emojiscale", "filters", "gradients", "hittest",
         "imagedata", "imagescale", "joins", "linearlight", "miterdash", "oklab",
         "path2d", "paths", "pattern",
