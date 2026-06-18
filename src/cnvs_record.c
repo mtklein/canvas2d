@@ -339,7 +339,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // recording stays well-formed and the glyph degrades to a blank advance on
     // replay, the cache's usual best-effort posture.  The derived mip pyramid
     // is deliberately NOT serialized: the capture alone is canonical, and
-    // replay re-derives the levels in checked C at no format cost.
+    // replay re-derives the levels at no format cost.
     for (int ri = 0; ri < s->nruns; ri++) {
         struct cnvs_glyph_run const *__single run = &s->run[ri];
         int const fid = run_fid(c, run);

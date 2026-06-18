@@ -1,8 +1,8 @@
-// DEFLATE (RFC 1951) in a zlib wrapper (RFC 1950), memory to memory, in checked
-// C.  Deflate is greedy LZ77 over the 32K window via hash chains, emitted as a
+// DEFLATE (RFC 1951) in a zlib wrapper (RFC 1950), memory to memory.  Deflate
+// is greedy LZ77 over the 32K window via hash chains, emitted as a
 // single fixed-Huffman block -- universally decodable, no dynamic tree
-// construction on the emit side.  Inflate is the full decoder and the project's
-// premier untrusted-parser probe: every structure a hostile stream controls
+// construction on the emit side.  Inflate is the full decoder: every structure
+// a hostile stream controls
 // (Huffman code lengths, repeat counts, match distances, stored-block sizes) is
 // validated arithmetically before it can drive an index, so malformed input
 // returns -1 cleanly -- -fbounds-safety is the net underneath, not the error
@@ -690,7 +690,7 @@ static void fixed_tables(struct huffman *lit, struct huffman *dist) {
     (void)huff_build(dist, lens, zlib_ndist);
 }
 
-// The code-length-code dance (RFC 1951 3.2.7): read the 19 CL code lengths in
+// The code-length-code step (RFC 1951 3.2.7): read the 19 CL code lengths in
 // the fixed permutation order, build the CL code (which must be complete),
 // then decode the literal/length + distance code lengths through it, with
 // 16/17/18 run-length expansion validated against the combined total.

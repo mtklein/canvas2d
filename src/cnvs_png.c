@@ -8,8 +8,8 @@
 // 16-lane vector ops with one bounds check per block.  The first row's
 // implicit prior row is all zeros (PNG spec), so Up degenerates to None there;
 // we still emit filter byte 2 uniformly so every row decodes through the same
-// kernel.  We only decode our own files, so the classic adaptive five-filter
-// chooser buys nothing worth its per-row trial encodes.
+// kernel.  Only our own files are decoded, so the adaptive five-filter
+// chooser (which costs a per-row trial encode) is not used.
 
 #include "cnvs_png.h"
 
