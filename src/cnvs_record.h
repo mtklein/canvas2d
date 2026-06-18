@@ -53,6 +53,13 @@ void cnvs_rec_text_max(struct cnvs_recorder *__single r, char const *__null_term
 // accepts exactly them, so the two cannot drift.  Defined in cnvs_record.c.
 extern char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1];
 extern char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1];
+extern char const *const cnvs_working_space_name[CANVAS_WS_LINEAR + 1];
+
+// `working_space <name>` -- emitted at record start ONLY for a non-sRGB working
+// space, so every existing (sRGB) .canvas file stays byte-identical (absence
+// means sRGB).  Written before any drawing op; the replay parser applies it to
+// the fresh canvas before the first colour interns.  A no-op on NULL/suspend or
+// for CANVAS_WS_SRGB.
 
 // File-local numbered-object id spaces, shared with the replay parser: the
 // recorder never emits an id at or past the cap, and the parser rejects one.
@@ -158,6 +165,8 @@ void cnvs_rec_smoothing_quality(struct cnvs_recorder *__single r,
 void cnvs_rec_line_join(struct cnvs_recorder *__single r, enum canvas_line_join join);
 void cnvs_rec_line_cap(struct cnvs_recorder *__single r, enum canvas_line_cap cap);
 void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_op op);
+void cnvs_rec_working_space(struct cnvs_recorder *__single r,
+                           enum canvas_working_space space);
 void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_align align);
 void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
                             enum canvas_text_baseline baseline);

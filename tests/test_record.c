@@ -270,5 +270,60 @@ int main(void) {
         }
     }
 
+    // 4. The working-space line: the same program on a LINEAR canvas records a
+    // leading `working_space linear` line (an sRGB program records none, proven
+    // above where p1 carries no such line), replays to a linear canvas with
+    // pixel identity, and round-trips byte-for-byte through replay-while-
+    // recording -- including across the program's own reset/resize, which leave
+    // the immutable space untouched.
+    char const *__null_terminated lp1 = "build/test_record_lin_a.canvas";
+    char const *__null_terminated lp2 = "build/test_record_lin_b.canvas";
+    uint8_t lin_px[NPX];
+    {
+        struct canvas *__single cv = canvas_in_space(W, H, CANVAS_WS_LINEAR);
+        CHECK(cv != NULL);
+        CHECK(canvas_record_to(cv, lp1));
+        draw_program(cv);
+        canvas_read_rgba(cv, lin_px, (int)sizeof lin_px);
+        canvas_free(cv);
+    }
+    {
+        // The leading line is present and names linear, and the linear render
+        // differs from the sRGB render of the identical program (p1's pixels).
+        char buf[64];
+        int const nb = slurp(lp1, buf, (int)sizeof buf);
+        CHECK(nb >= 21);
+        CHECK(memcmp(buf, "working_space linear\n", 21) == 0);
+        CHECK(memcmp(recorded_px, lin_px, sizeof recorded_px) != 0);
+    }
+    {
+        // Pixel identity: a fresh sRGB canvas, replay flips it to linear via the
+        // leading line, and the bitmap matches the recorded linear render.
+        struct canvas *__single cv = canvas(W, H);
+        CHECK(cv != NULL);
+        CHECK(canvas_replay_from(cv, lp1));
+        uint8_t replayed[NPX];
+        canvas_read_rgba(cv, replayed, (int)sizeof replayed);
+        CHECK(memcmp(lin_px, replayed, sizeof lin_px) == 0);
+        canvas_free(cv);
+    }
+    {
+        // Byte idempotence: replay lp1 while recording lp2; lp1 == lp2.
+        struct canvas *__single cv = canvas(W, H);
+        CHECK(cv != NULL);
+        CHECK(canvas_record_to(cv, lp2));
+        CHECK(canvas_replay_from(cv, lp1));
+        canvas_free(cv);
+
+        char a[1 << 14];
+        char b[1 << 14];
+        int const na = slurp(lp1, a, (int)sizeof a);
+        int const nb = slurp(lp2, b, (int)sizeof b);
+        CHECK(na > 0 && na < (int)sizeof a && na == nb);
+        if (na == nb && na > 0) {
+            CHECK(memcmp(a, b, (size_t)na) == 0);
+        }
+    }
+
     return TEST_REPORT();
 }

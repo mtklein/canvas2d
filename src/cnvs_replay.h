@@ -26,6 +26,15 @@ bool cnvs_replay_text(struct canvas *__single cv, char const *__counted_by(len) 
 bool cnvs_canvas_own_image(struct canvas *__single cv,
                            uint8_t *__counted_by(len) px, int len);
 
+// Reconfigure the canvas's immutable working space (canvas.h) from a replayed
+// `working_space` line (implemented in canvas.c).  The space is normally fixed
+// at construction; replay is the one caller allowed to set it, and only on the
+// leading line of a program, when the canvas is still all-zero transparent --
+// identical in either space, so this is exactly choosing the space at creation.
+// Returns true (the value the parser propagates); never fails.
+bool cnvs_canvas_set_working_space(struct canvas *__single cv,
+                                   enum canvas_working_space space);
+
 // Draw one replayed image block (implemented in canvas.c, the replay-side
 // twin of the draw trios): ct/at are the block's format as named on its
 // line, `mips` whether the block's draws carry mip-chain semantics (an

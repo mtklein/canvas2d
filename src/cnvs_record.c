@@ -48,10 +48,14 @@ char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1] = {
 char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
     "repeat", "repeat-x", "repeat-y", "no-repeat",
 };
+char const *const cnvs_working_space_name[CANVAS_WS_LINEAR + 1] = {
+    "srgb", "linear",
+};
 
 struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
+    bool wrote_ws;  // a `working_space` line has been emitted for this file
     struct rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
     int nimg;
     struct rec_path path[CNVS_REC_PATHS_MAX];   // [0, npath) are its path blocks
@@ -720,4 +724,22 @@ void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_
     fputs("set_global_composite_operation ", r->f);
     fputs(cnvs_composite_name[i], r->f);
     fputc('\n', r->f);
+}
+
+void cnvs_rec_working_space(struct cnvs_recorder *__single r,
+                           enum canvas_working_space space) {
+    // sRGB records NOTHING: absence is sRGB, so every pre-existing .canvas file
+    // stays byte-identical (the determinism gate's 35 scenes are all sRGB).  An
+    // out-of-range value is treated as sRGB (emit nothing) for the same reason.
+    // Idempotent: at most ONE working_space line per file -- record_to emits it
+    // for a linear canvas at the top, and replay re-applies it when it parses
+    // the leading line; the flag keeps those from stacking two lines (which the
+    // strict parser, requiring the line to lead, would then reject on re-replay).
+    if (!r || r->suspend != 0 || space != CANVAS_WS_LINEAR || r->wrote_ws) {
+        return;
+    }
+    fputs("working_space ", r->f);
+    fputs(cnvs_working_space_name[CANVAS_WS_LINEAR], r->f);
+    fputc('\n', r->f);
+    r->wrote_ws = true;
 }

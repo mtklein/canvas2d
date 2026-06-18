@@ -2,6 +2,7 @@
 
 #include "blur.h"
 #include "cnvs_blend.h"
+#include "cnvs_color.h"
 #include "cnvs_cover.h"
 #include "cnvs_filter.h"
 #include "cnvs_geom.h"
@@ -116,6 +117,12 @@ struct canvas_state {
 struct canvas {
     int width;
     int height;
+    // The working colour space (canvas.h): CANVAS_WS_SRGB is the legacy bypass
+    // (no transfer ever runs, byte-identical to before this field existed);
+    // CANVAS_WS_LINEAR composites in extended linear sRGB.  Chosen at creation,
+    // immutable -- it is NOT in struct canvas_state, so save/restore never touch
+    // it, and reset/resize leave it as the constructor set it.
+    enum canvas_working_space space;
     cnvs_premul *__counted_by(target_len) target;  // premultiplied; all-zero == transparent
     int target_len;                                // == width * height
     struct canvas_state cur;
@@ -237,9 +244,17 @@ static void state_defaults(struct canvas_state *s) {
 }
 
 struct canvas *__single canvas(int width, int height) {
+    return canvas_in_space(width, height, CANVAS_WS_SRGB);
+}
+
+struct canvas *__single canvas_in_space(int width, int height,
+                                        enum canvas_working_space space) {
     if (width <= 0 || height <= 0 ||
         width > CANVAS_DIM_MAX || height > CANVAS_DIM_MAX) {
         return NULL;
+    }
+    if (space != CANVAS_WS_SRGB && space != CANVAS_WS_LINEAR) {
+        return NULL;  // an out-of-range space is a caller error, not a default
     }
     int const n = width * height;
     cnvs_premul *__counted_by_or_null(n) target = calloc((size_t)n, sizeof *target);
@@ -253,6 +268,7 @@ struct canvas *__single canvas(int width, int height) {
     }
     cv->width = width;
     cv->height = height;
+    cv->space = space;  // immutable; reset/resize never touch it
     cv->target_len = n;
     cv->target = target;  // count before pointer
     state_defaults(&cv->cur);
@@ -305,6 +321,21 @@ void canvas_free(struct canvas *__single cv) {
     free(cv);
 }
 
+bool cnvs_canvas_set_working_space(struct canvas *__single cv,
+                                   enum canvas_working_space space) {
+    // The replay seam for a leading `working_space` line: the canvas is fresh
+    // and transparent (the parser only reaches here as the first command), so
+    // re-stamping the immutable space is creation-time, not a mid-stream flip.
+    if (space == CANVAS_WS_SRGB || space == CANVAS_WS_LINEAR) {
+        cv->space = space;
+        // Replaying a linear program onto a recording canvas re-emits the line,
+        // so the round trip stays byte-idempotent (the no-op-for-sRGB emitter
+        // keeps sRGB programs from gaining a line they never had).
+        cnvs_rec_working_space(cv->rec, space);
+    }
+    return true;  // an out-of-range value leaves sRGB; the parser already
+}                 // validated the name, so this only guards a direct caller
+
 bool cnvs_canvas_own_image(struct canvas *__single cv,
                            uint8_t *__counted_by(len) px, int len) {
     struct cnvs_owned_image *__single node = calloc(1, sizeof *node);
@@ -324,6 +355,11 @@ bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated 
     // A new file holds no blocks yet: forget what any prior recording emitted,
     // so warm cache entries serialize afresh into this one.
     cnvs_text_cache_unmark(&cv->text_cache);
+    // The working space rides the very first line, before any draw -- but only
+    // when it is non-sRGB, so every sRGB program stays byte-identical (the
+    // emitter is a no-op for CANVAS_WS_SRGB).  Replay applies it to the fresh
+    // canvas before the first colour interns.
+    cnvs_rec_working_space(cv->rec, cv->space);
     return cv->rec != NULL;
 }
 
@@ -498,9 +534,31 @@ canvas_matrix canvas_get_transform(struct canvas *__single cv) {
                             .d = m.d, .e = m.e, .f = m.f };
 }
 
+// Intern one untagged (encoded sRGB) colour into the canvas's working space --
+// the single entry-side transfer gate every colour the API takes flows through
+// (fill/stroke/shadow/drop-shadow colours and gradient stops; image and pattern
+// pixels intern at their own seams).  On an sRGB canvas this is a literal bypass
+// of the legacy code: clamp01 each channel exactly as before, no transfer.  On a
+// linear canvas the RGB channels decode sRGB->linear (cnvs_srgb_to_linear, the
+// odd extension, total over R) with NO [0,1] clamp -- an extended (out-of-gamut)
+// input must propagate, and the clamp would crush it -- while alpha still clamps
+// to [0,1] (alpha is a coverage coordinate, never a colour, and the premultiply
+// and readback both assume it in range).  The recorder logs the RAW input floats
+// upstream of this, so a recorded program is space-agnostic at the colour lines;
+// replay re-interns through the same gate on its own canvas.
+static cnvs_unpremul intern_color(struct canvas *__single cv,
+                                  float r, float g, float b, float a) {
+    if (cv->space == CANVAS_WS_LINEAR) {
+        return cnvs_unpremul_of(cnvs_srgb_to_linear(r), cnvs_srgb_to_linear(g),
+                                cnvs_srgb_to_linear(b), cnvs_clamp01(a));
+    }
+    return cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g),
+                            cnvs_clamp01(b), cnvs_clamp01(a));
+}
+
 void canvas_set_fill_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.fill = cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a));
+    cv->cur.fill = intern_color(cv, r, g, b, a);
     cv->cur.fill_kind = CNVS_PAINT_SOLID;
 }
 
@@ -593,7 +651,7 @@ void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
                                 float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.fill_grad, cnvs_clamp01(offset),
-                           cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a)));
+                           intern_color(cv, r, g, b, a));
 }
 
 void canvas_set_fill_pattern(struct canvas *__single cv,
@@ -638,7 +696,7 @@ void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, cnvs_clamp01(offset),
-                           cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a)));
+                           intern_color(cv, r, g, b, a));
 }
 
 void canvas_set_stroke_pattern(struct canvas *__single cv,
@@ -673,8 +731,7 @@ void canvas_set_global_composite_operation(struct canvas *__single cv,
 void canvas_set_shadow_color_rgba(struct canvas *__single cv,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.shadow_color =
-        cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a));
+    cv->cur.shadow_color = intern_color(cv, r, g, b, a);
 }
 
 void canvas_set_shadow_blur(struct canvas *__single cv, float blur) {
@@ -782,10 +839,15 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float d
     int dxw, dxk, dyw, dyk;
     shadow_offset_split(dx, &dxw, &dxk);
     shadow_offset_split(dy, &dyw, &dyk);
+    // The shadow tint composites into the tile in the working space, so it
+    // interns through the same gate as every other untagged colour: bypass on
+    // sRGB (the clamped values land identically), decode sRGB->linear on a
+    // linear canvas.  The recorder above logged the raw input.
+    cnvs_unpremul const tint = intern_color(cv, r, g, b, a);
     filter_append(cv, cnvs_filter_drop_shadow(
                           dxw, dxk, dyw, dyk,
-                          sigma_box_radius(blur), cnvs_clamp01(r), cnvs_clamp01(g),
-                          cnvs_clamp01(b), cnvs_clamp01(a)));
+                          sigma_box_radius(blur), (float)tint.r, (float)tint.g,
+                          (float)tint.b, (float)tint.a));
 }
 
 void canvas_add_filter_grayscale(struct canvas *__single cv, float amount) {
@@ -1214,13 +1276,72 @@ static half8 blend_term8(enum canvas_composite_op mode,
     }
 }
 
+// --- the linear working-space seam -------------------------------------------
+//
+// On a LINEAR canvas (cv->space == CANVAS_WS_LINEAR) the target holds extended
+// linear sRGB.  Two families of blend mode:
+//
+//   * range-preserving (the over/Porter-Duff family, multiply, screen,
+//     difference, exclusion) -- the blend expression is a valid operation in
+//     any space, so it runs DIRECTLY on the linear premul slabs, finished with
+//     the no-upper-clamp variant (cnvs_px8_clamp_premul_lin) so extended
+//     colours survive to the output boundary;
+//   * spec-defined-in-encoded-[0,1] (lighter, overlay, darken, lighten,
+//     color-dodge, color-burn, hard-light, soft-light, and the non-separable
+//     hue/saturation/color/luminosity) -- clip_color / the HSL math / the
+//     dodge-burn-soft-light divides all need an encoded [0,1] precondition, so
+//     these run through an encode->sRGB / blend / decode->linear wrapper.
+//
+// linear_direct() splits the two.  An sRGB canvas never reaches any of this --
+// every linear-only branch is gated on cv->space upstream.
+static bool linear_direct(enum canvas_composite_op mode) {
+    switch ((int)mode) {
+        case CANVAS_OP_SOURCE_OVER:      case CANVAS_OP_SOURCE_IN:
+        case CANVAS_OP_SOURCE_OUT:       case CANVAS_OP_SOURCE_ATOP:
+        case CANVAS_OP_DESTINATION_OVER: case CANVAS_OP_DESTINATION_IN:
+        case CANVAS_OP_DESTINATION_OUT:  case CANVAS_OP_DESTINATION_ATOP:
+        case CANVAS_OP_XOR:              case CANVAS_OP_COPY:
+        case CANVAS_OP_MULTIPLY:         case CANVAS_OP_SCREEN:
+        case CANVAS_OP_DIFFERENCE:       case CANVAS_OP_EXCLUSION:
+            return true;
+        default:  // lighter, overlay, darken, lighten, dodge/burn, hard/soft
+            return false;  // light, and the non-separable HSL quartet
+    }
+}
+
+// Per-lane sRGB transfer over a premultiplied slab.  The transfer is nonlinear,
+// so it must act on STRAIGHT (unpremultiplied) colour: unpremultiply (guarded;
+// a == 0 stays all-zero), transfer each RGB lane through the f32 scalar kernel
+// (cnvs_color.c -- precision-sensitive pow runs in f32, narrowing once), then
+// repremultiply.  Alpha rides through untouched -- it is never a colour.  Scalar
+// per lane (libm has no half8 pow; the deferral note in cnvs_color.c applies):
+// these wrap only the spec-in-sRGB blend modes, which are not the profiled hot
+// path -- the over-family fast path never enters here.
+typedef float (*chan_xfer)(float);
+static cnvs_px8 px8_transfer(cnvs_px8 p, chan_xfer xf_chan) {
+    cnvs_px8 o = p;
+    for (int i = 0; i < 8; i++) {
+        float const a = (float)p.a[i];
+        if (a > 0.0f) {
+            float const inv = 1.0f / a;
+            o.r[i] = (_Float16)(xf_chan((float)p.r[i] * inv) * a);
+            o.g[i] = (_Float16)(xf_chan((float)p.g[i] * inv) * a);
+            o.b[i] = (_Float16)(xf_chan((float)p.b[i] * inv) * a);
+        }
+    }
+    return o;
+}
+
 // Source-over for one planar slab: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
-// the same fold over every channel plane, alpha included.
-static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d) {
+// the same fold over every channel plane, alpha included.  `lin` picks the
+// linear no-upper-clamp finish; an sRGB canvas keeps the legacy [0,ao] clamp,
+// byte for byte.  Source-over is range-preserving, so on a linear canvas the
+// fold runs directly on the linear slabs -- no encode wrapper.
+static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d, bool lin) {
     half8 const fb = (half8)(_Float16)1.0f - s.a;
     cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
                     s.b + fb * d.b, s.a + fb * d.a };
-    return cnvs_px8_clamp_premul(co);
+    return lin ? cnvs_px8_clamp_premul_lin(co) : cnvs_px8_clamp_premul(co);
 }
 
 // Eight pixels' unpremultiplied colour as three channel planes.
@@ -1294,14 +1415,35 @@ static rgb8 blend_nonsep8(enum canvas_composite_op mode, rgb8 cb, rgb8 cs) {
 // alpha plane of Fa*s + Fb*d is Fa*sa + Fb*da = ao, and in the blend arm the
 // alpha plane of s*(1-da) + d*(1-sa) + T is sa + da*(1-sa) = ao because T's
 // alpha plane is pinned to sa*da.
-static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
+//
+// `lin` is the canvas's linear working space.  When false the kernel is exactly
+// today's code, byte for byte (the sRGB bypass).  When true: a range-preserving
+// mode runs the same math, finished with the no-upper-clamp; a spec-in-sRGB mode
+// is wrapped -- encode the linear s and d to sRGB, blend in sRGB (a recursive
+// lin == false call, so clip_color / HSL / the dodge-burn divides run in the
+// encoded space they are defined in), then decode the result back to linear.
+// For in-gamut colour the encode lands operands in [0,1], the precondition the
+// HSL/divide math wants.  An EXTENDED (out-of-[0,1]) operand -- an out-of-gamut
+// fill colour, or a destination the no-upper-clamp linear-direct path pushed
+// past 1 -- encodes to sRGB > 1 and feeds these modes values outside their
+// defined domain, exactly as 'lighter' accumulation can on an sRGB canvas
+// today; the final clamp bounds the stored pixel either way.  Wrapping in the
+// encoded space is the spec's own frame for these modes; a fully gamut-correct
+// extended treatment would be its own design.
+static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode,
+                       bool lin) {
+    if (lin && !linear_direct(mode)) {
+        cnvs_px8 const se = px8_transfer(s, cnvs_linear_to_srgb);
+        cnvs_px8 const de = px8_transfer(d, cnvs_linear_to_srgb);
+        return px8_transfer(blend8(se, de, mode, false), cnvs_srgb_to_linear);
+    }
     if (mode == CANVAS_OP_SOURCE_OVER) {
         // Delegate to the fast path's kernel: the Porter-Duff arm below would
         // spell source-over as fa*s + fb*d with fa = 1, and the contraction
         // shape differs -- fa*s rounds fb*d's product separately where
         // src_over8's s + fb*d fuses it -- so the explicit kernel keeps every
         // source-over bit-identical no matter which loop reached it.
-        return src_over8(s, d);
+        return src_over8(s, d, lin);
     }
     half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
     half8 sa = s.a, da = d.a;
@@ -1353,7 +1495,12 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
         co.b = s.b * (one - da) + d.b * (one - sa) + t.b;
         co.a = sa  * (one - da) + da  * (one - sa) + t.a;
     }
-    return cnvs_px8_clamp_premul(co);  // additive 'lighter' can exceed 1
+    // The linear-direct modes here are multiply/screen/difference/exclusion and
+    // the Porter-Duff family (copy, the in/out/atop set, xor) -- range-preserving,
+    // so the no-upper clamp lets an extended linear colour survive to the output.
+    // additive 'lighter' is NOT linear-direct (it took the encode wrapper above).
+    return lin ? cnvs_px8_clamp_premul_lin(co)
+               : cnvs_px8_clamp_premul(co);  // additive 'lighter' can exceed 1
 }
 
 // The coverage lerp: out = blend*cov + dst*(1-cov) per plane.  Two products,
@@ -1361,11 +1508,14 @@ static cnvs_px8 blend8(cnvs_px8 s, cnvs_px8 d, enum canvas_composite_op mode) {
 // cov == 0 returns dst bit-exactly (full coverage must not perturb the blend;
 // zero coverage must not perturb the destination).  The clamp restores the
 // premultiplied invariant against the one-ULP drift of cov + (1-cov) in f16.
-static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 cov) {
+static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 cov, bool lin) {
     half8 const icov = (half8)(_Float16)1.0f - cov;
     cnvs_px8 o = { co.r * cov + d.r * icov, co.g * cov + d.g * icov,
                    co.b * cov + d.b * icov, co.a * cov + d.a * icov };
-    return cnvs_px8_clamp_premul(o);
+    // Coverage is a geometric fraction (antialiasing), so the lerp between two
+    // working-space premul colours is range-preserving: the linear no-upper
+    // clamp on a linear canvas, the legacy [0,ao] clamp on an sRGB one.
+    return lin ? cnvs_px8_clamp_premul_lin(o) : cnvs_px8_clamp_premul(o);
 }
 
 // The generic modes, shared by the tile and solid-colour entry points: the
@@ -1385,6 +1535,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
     (void)clip_len;
     bool const folds = coverage_folds(mode);
     bool const atten = cov || clip;  // any coverage to apply?
+    bool const lin = cv->space == CANVAS_WS_LINEAR;  // false -> legacy bypass
     _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
     half8 const one = (half8)(_Float16)1.0f;
     for (int row = 0; row < h; row++) {
@@ -1396,7 +1547,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
             cnvs_px8 d = cnvs_px8_load(cv->target + di);
             cnvs_px8 o;
             if (!atten) {
-                o = blend8(s, d, mode);
+                o = blend8(s, d, mode, lin);
             } else if (folds) {
                 // Attenuate the source by each factor in turn, exactly as the
                 // fast path does (combining the factors first re-rounds).
@@ -1406,7 +1557,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                 if (clip) {
                     s = cnvs_px8_scale(s, half8_from_u8(clip + di) * inv255);
                 }
-                o = blend8(s, d, mode);
+                o = blend8(s, d, mode, lin);
             } else {
                 half8 cv8 = one;  // 1*x is exact: a lone factor passes through
                 if (cov) {
@@ -1415,7 +1566,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                 if (clip) {
                     cv8 = cv8 * (half8_from_u8(clip + di) * inv255);
                 }
-                o = cov_lerp8(d, blend8(s, d, mode), cv8);
+                o = cov_lerp8(d, blend8(s, d, mode, lin), cv8, lin);
             }
             cnvs_px8_store(cv->target + di, o);
         }
@@ -1427,7 +1578,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
             cnvs_px8 const d = cnvs_px8_load_k(cv->target + di, n);
             cnvs_px8 o;
             if (!atten) {
-                o = blend8(s, d, mode);
+                o = blend8(s, d, mode, lin);
             } else if (folds) {
                 if (cov) {
                     s = cnvs_px8_scale(s, half8_from_u8_k(cov + ti, n) * inv255);
@@ -1435,7 +1586,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                 if (clip) {
                     s = cnvs_px8_scale(s, half8_from_u8_k(clip + di, n) * inv255);
                 }
-                o = blend8(s, d, mode);
+                o = blend8(s, d, mode, lin);
             } else {
                 half8 cv8 = one;
                 if (cov) {
@@ -1444,7 +1595,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
                 if (clip) {
                     cv8 = cv8 * (half8_from_u8_k(clip + di, n) * inv255);
                 }
-                o = cov_lerp8(d, blend8(s, d, mode), cv8);
+                o = cov_lerp8(d, blend8(s, d, mode, lin), cv8, lin);
             }
             cnvs_px8_store_k(cv->target + di, n, o);
         }
@@ -1468,7 +1619,10 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
     if (mode == CANVAS_OP_SOURCE_OVER) {
         // The fast path.  Source-over folds: op coverage (normally already
         // folded by the shade stage, so cov is NULL here) and clip
-        // attenuation both scale the premultiplied source, in f16.
+        // attenuation both scale the premultiplied source, in f16.  Source-over
+        // is range-preserving, so `lin` only swaps src_over8's final clamp; an
+        // sRGB canvas (lin == false) runs the identical legacy code.
+        bool const lin = cv->space == CANVAS_WS_LINEAR;
         _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
             int col = 0;
@@ -1483,7 +1637,7 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
                     s = cnvs_px8_scale(s, half8_from_u8(clip + di) * inv255);
                 }
                 cnvs_px8 d = cnvs_px8_load(cv->target + di);
-                cnvs_px8_store(cv->target + di, src_over8(s, d));
+                cnvs_px8_store(cv->target + di, src_over8(s, d, lin));
             }
             if (col < w) {
                 int const k = w - col;
@@ -1497,7 +1651,7 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
                     s = cnvs_px8_scale(s, half8_from_u8_k(clip + di, k) * inv255);
                 }
                 cnvs_px8 const d = cnvs_px8_load_k(cv->target + di, k);
-                cnvs_px8_store_k(cv->target + di, k, src_over8(s, d));
+                cnvs_px8_store_k(cv->target + di, k, src_over8(s, d, lin));
             }
         }
         return;
@@ -2422,7 +2576,7 @@ void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
 
 void canvas_set_stroke_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.stroke = cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g), cnvs_clamp01(b), cnvs_clamp01(a));
+    cv->cur.stroke = intern_color(cv, r, g, b, a);
     cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
 
@@ -3588,6 +3742,17 @@ void canvas_set_image_smoothing_quality(struct canvas *__single cv,
 // are a caller-picked trilinear level pair + blend (the emoji captures' cached
 // pyramid, where `src` is `hi`'s own bytes); zero views + 0 for the public
 // path, which picks its own pair from the source's derived chain below.
+//
+// LINEAR-WORKING-SPACE DEFERRAL: image/bitmap source pixels are untagged
+// encoded sRGB, so on a CANVAS_WS_LINEAR canvas they ought to decode
+// sRGB->linear before sampling -- AND the mip box-halving and the bilinear/
+// cubic taps ought to average in linear, not sRGB, to be correct.  That is a
+// pyramid-and-sampler-wide change (every sample_src* and the mip builder), out
+// of this phase's scope; the entry decode lands here when the image pipeline is
+// taken up.  Today an image drawn onto a linear canvas samples its bytes as if
+// they were already linear -- visibly wrong only for translucent overlaps of
+// imagery, untouched on an sRGB canvas (the gallery's linear demonstrator uses
+// putImageData, which DOES decode, for its sRGB half).
 static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
@@ -3994,11 +4159,49 @@ static cnvs_px8 unpremul_to_unorm8(cnvs_px8 p) {
                        u.b * k255 + bias, u.a * k255 + bias };
 }
 
+// The LINEAR canvas readback: the same un-premultiply and 8-bit quantize, but
+// with a linear->sRGB encode (cnvs_linear_to_srgb) inserted between the divide
+// and the clamp -- the one and only clamp in the linear pipeline lives in this
+// exit, and the transfer must run BEFORE it so an extended linear value collapses
+// to its encoded byte rather than being crushed to 1.0 first.  Scalar per lane:
+// the encode is a precision-sensitive f32 pow (cnvs_color.c's deferral note),
+// with no half8 spelling in libm; the readback hot path is the sRGB-canvas
+// SIMD function above, never this.  Alpha takes no transfer (coverage, not
+// colour).  An out-of-[0,1] alpha still clamps, like the planar path.
+static cnvs_px8 unpremul_encode_to_unorm8(cnvs_px8 p) {
+    cnvs_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
+                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    for (int i = 0; i < 8; i++) {
+        float const a = (float)p.a[i];
+        float r = 0.0f, g = 0.0f, b = 0.0f, ca = 0.0f;
+        if (a > 0.0f) {  // a transparent lane stays all-zero (the planar mask's twin)
+            float const inv = 1.0f / a;
+            r  = cnvs_clamp01(cnvs_linear_to_srgb((float)p.r[i] * inv));
+            g  = cnvs_clamp01(cnvs_linear_to_srgb((float)p.g[i] * inv));
+            b  = cnvs_clamp01(cnvs_linear_to_srgb((float)p.b[i] * inv));
+            ca = cnvs_clamp01(a);
+        }
+        o.r[i] = (_Float16)(r  * 255.0f + 0.5f);
+        o.g[i] = (_Float16)(g  * 255.0f + 0.5f);
+        o.b[i] = (_Float16)(b  * 255.0f + 0.5f);
+        o.a[i] = (_Float16)(ca * 255.0f + 0.5f);
+    }
+    return o;
+}
+
+// Per-canvas readback: the sRGB SIMD bypass, or the linear scalar encode.
+static cnvs_px8 read_unorm8(struct canvas *__single cv, cnvs_px8 p) {
+    return cv->space == CANVAS_WS_LINEAR ? unpremul_encode_to_unorm8(p)
+                                         : unpremul_to_unorm8(p);
+}
+
 // Read the canvas back as unpremultiplied RGBA8, straight off the
 // premultiplied target: the un-premultiply and 8-bit quantize happen here,
 // eight pixels per step over channel planes with st4 re-interleaving at the
-// RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same slab gathered.
-// write_png and get_image_data read back through this same entry point.
+// RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same slab gathered.  An
+// sRGB canvas is the SIMD bypass (byte-identical); a linear canvas encodes
+// linear->sRGB at this exit (read_unorm8).  write_png and get_image_data read
+// back through this same entry point.
 void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
@@ -4007,12 +4210,12 @@ void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out
     int i = 0;
     for (; i + 8 <= n; i += 8) {
         cnvs_px8_store_rgba8(out + i * 4,
-                             unpremul_to_unorm8(cnvs_px8_load(cv->target + i)));
+                             read_unorm8(cv, cnvs_px8_load(cv->target + i)));
     }
     if (i < n) {
         int const k = n - i;
         cnvs_px8_store_rgba8_k(out + i * 4, k,
-                               unpremul_to_unorm8(cnvs_px8_load_k(cv->target + i, k)));
+                               read_unorm8(cv, cnvs_px8_load_k(cv->target + i, k)));
     }
 }
 
@@ -4067,6 +4270,20 @@ canvas_create_image_data(int sw, int sh, int *__single len) {
     return buf;
 }
 
+// Decode the RGB planes of a [0,1]-normalized straight slab sRGB->linear, in
+// place, leaving alpha alone -- the linear canvas's putImageData entry transfer.
+// Scalar per lane (the f32 decode, cnvs_color.c's deferral note); incoming
+// putImageData bytes are in [0,1] so the decode stays in [0,1], no extended
+// values to carry.  Reached only on cv->space == CANVAS_WS_LINEAR.
+static cnvs_px8 px8_decode_rgb(cnvs_px8 p) {
+    for (int i = 0; i < 8; i++) {
+        p.r[i] = (_Float16)cnvs_srgb_to_linear((float)p.r[i]);
+        p.g[i] = (_Float16)cnvs_srgb_to_linear((float)p.g[i]);
+        p.b[i] = (_Float16)cnvs_srgb_to_linear((float)p.b[i]);
+    }
+    return p;
+}
+
 // Copy the sub-rectangle [sx, sx+sw) x [sy, sy+sh) of the w-wide RGBA8 source onto
 // the canvas with the ImageData origin at (dx, dy): source pixel (col, row) lands
 // at (dx+col, dy+row).  Overwrites (no blending) and ignores the clip, clipped to
@@ -4095,6 +4312,7 @@ static void put_image_sub(struct canvas *__single cv,
     // and the planar premultiply writes finished tile pixels through st4.
     int const col0 = (int)(cx0 - dx);
     int const row0 = (int)(cy0 - dy);
+    bool const lin = cv->space == CANVAS_WS_LINEAR;  // decode incoming sRGB->linear
     _Float16 const k255 = (_Float16)255.0f;
     for (int py = 0; py < rh; py++) {
         int px = 0;
@@ -4102,6 +4320,7 @@ static void put_image_sub(struct canvas *__single cv,
             int si = ((row0 + py) * w + (col0 + px)) * 4;
             cnvs_px8 p = cnvs_px8_load_rgba8(data + si);
             p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
+            if (lin) { p = px8_decode_rgb(p); }
             cnvs_px8_store(cv->tile + py * rw + px, cnvs_px8_premultiply(p));
         }
         if (px < rw) {
@@ -4109,6 +4328,7 @@ static void put_image_sub(struct canvas *__single cv,
             int const si = ((row0 + py) * w + (col0 + px)) * 4;
             cnvs_px8 p = cnvs_px8_load_rgba8_k(data + si, k);
             p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
+            if (lin) { p = px8_decode_rgb(p); }
             cnvs_px8_store_k(cv->tile + py * rw + px, k, cnvs_px8_premultiply(p));
         }
     }
