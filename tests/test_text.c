@@ -51,7 +51,7 @@ int main(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hello", 10.0f, 55.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     long ink = ink_count(px, len, n, 128);
     CHECK(ink > 200);
 
@@ -63,7 +63,7 @@ int main(void) {
     canvas_fill_text(cv, "Hello", inf, 55.0f);
     canvas_fill_text(cv, "Hello", 10.0f, -inf);
     canvas_stroke_text(cv, "Hello", NAN, 55.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(ink_count(px, len, n, 128) == ink);  // exactly the ink already there
 
     // UTF-8: a Chinese string (3-byte code points) maps to glyphs, measures wider
@@ -73,7 +73,7 @@ int main(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "\xe4\xbd\xa0\xe5\xa5\xbd\xe4\xb8\x96\xe7\x95\x8c", 10.0f, 55.0f);  // 你好世界
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(ink_count(px, len, n, 128) > 200);
 
     // Empty string draws nothing.
@@ -81,7 +81,7 @@ int main(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "", 10.0f, 55.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(ink_count(px, len, n, 128) == 0);
 
     // Clip excludes the text region -> nothing drawn.
@@ -94,7 +94,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hello", 40.0f, 55.0f);
     canvas_restore(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(ink_count(px, len, n, 128) == 0);
 
     // global alpha applies: black text at 0.5 over white never reaches full black.
@@ -103,7 +103,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_global_alpha(cv, 0.5f);
     canvas_fill_text(cv, "Hello", 10.0f, 55.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(ink_count(px, len, n, 64) == 0);   // no near-black pixels
     CHECK(ink_count(px, len, n, 200) > 200);  // but plenty of mid-grey ink
     canvas_set_global_alpha(cv, 1.0f);
@@ -114,7 +114,7 @@ int main(void) {
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f);
     canvas_stroke_text(cv, "Hi", 10.0f, 55.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(ink_count(px, len, n, 128) > 50);
 
     canvas_free(cv);

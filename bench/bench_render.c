@@ -100,13 +100,13 @@ int main(void) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
             if (read_each) {
-                canvas_read_rgba(cv, px, len);  // readback: in-place unpremultiply
+                canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);  // readback: in-place unpremultiply
                 sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
             }
         }
     }
     if (!read_each) {
-        canvas_read_rgba(cv, px, len);  // a single readback at the end
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);  // a single readback at the end
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
     double const secs = bench_now_s() - t0;

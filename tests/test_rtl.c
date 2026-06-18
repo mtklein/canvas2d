@@ -37,7 +37,7 @@ static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated 
     canvas_set_direction(cv, dir);
     canvas_set_text_align(cv, align);
     canvas_fill_text(cv, text, (float)W * 0.5f, 40.0f);
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     canvas_free(cv);
 }
 
@@ -95,7 +95,7 @@ static void check_state(void) {
         canvas_set_font_size(cv, 24.0f);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
-        canvas_read_rgba(cv, a, LEN);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, a, LEN);
         canvas_free(cv);
     }
     render(b, t, CANVAS_DIRECTION_LTR, CANVAS_ALIGN_START);
@@ -118,7 +118,7 @@ static void check_state(void) {
         canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
         canvas_restore(cv);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
-        canvas_read_rgba(cv, a, LEN);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, a, LEN);
 
         // reset: back to the ltr default.
         canvas_reset(cv);
@@ -128,7 +128,7 @@ static void check_state(void) {
         canvas_set_font_size(cv, 24.0f);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
-        canvas_read_rgba(cv, b, LEN);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, b, LEN);
         canvas_free(cv);
     }
     static uint8_t r[LEN];
@@ -156,7 +156,7 @@ static void check_replay(void) {
             "set_direction rtl\n"
             "set_text_align start\n"
             "fill_text 80 40 abc\n"));
-        canvas_read_rgba(cv, a, LEN);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, a, LEN);
         canvas_free(cv);
     }
     render(b, "abc", CANVAS_DIRECTION_RTL, CANVAS_ALIGN_START);
@@ -179,7 +179,7 @@ static void check_replay(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     uint8_t px[LEN];
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     CHECK(px[0] == 255);
     canvas_free(cv);
 }
@@ -202,7 +202,7 @@ static void check_record(void) {
         canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, "abc", (float)W * 0.5f, 40.0f);
-        canvas_read_rgba(cv, a, LEN);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, a, LEN);
         canvas_free(cv);
     }
     {
@@ -212,7 +212,7 @@ static void check_record(void) {
             return;
         }
         CHECK(canvas_replay_from(cv, path));
-        canvas_read_rgba(cv, b, LEN);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, b, LEN);
         canvas_free(cv);
     }
     CHECK(memcmp(a, b, LEN) == 0);
@@ -261,7 +261,7 @@ static void check_draw_measure(void) {
     canvas_fill_text(cv, heb, x, 40.0f);
 
     static uint8_t px[LEN];
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     int xmin = 0, xmax = 0;
     CHECK(ink_x(px, &xmin, &xmax) > 0);
     CHECK((float)xmax <= x + 2.0f);      // nothing right of the anchor
@@ -273,7 +273,7 @@ static void check_draw_measure(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text_max(cv, heb, x, 40.0f, w * 0.5f);
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     CHECK(ink_x(px, &xmin, &xmax) > 0);
     CHECK((float)xmax <= x + 2.0f);
     CHECK((float)xmin >= x - w * 0.5f - 2.0f);

@@ -38,7 +38,7 @@ int main(void) {
     canvas_reset_transform(cv);
     setup_conic(cv, 0.0f, 16.0f, 16.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(dom_red(pixel_at(px, len, W, 28, 16)));    // right
     CHECK(dom_green(pixel_at(px, len, W, 16, 28)));  // down
     CHECK(dom_blue(pixel_at(px, len, W, 4, 16)));    // left
@@ -53,7 +53,7 @@ int main(void) {
     setup_conic(cv, 0.0f, 0.0f, 0.0f);   // centre -> device (16,16), angle += pi/2
     canvas_reset_transform(cv);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(dom_red(pixel_at(px, len, W, 16, 28)));    // red moved to "down"
     CHECK(dom_white(pixel_at(px, len, W, 28, 16)));  // "right" is now white
 

@@ -22,7 +22,7 @@ static void round_trip(struct canvas *__single cv, int w, int h,
     if (!px) {
         return;
     }
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(canvas_write_png(cv, path));
 
     int lw = 0, lh = 0, llen = 0;

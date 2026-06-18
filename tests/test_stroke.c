@@ -27,7 +27,7 @@ int main(void) {
     canvas_move_to(cv, 8.0f, 32.0f);
     canvas_line_to(cv, 56.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
 
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 0, 255, 1));  // centre
     CHECK(px_near(pixel_at(px, len, w, 32, 30), 255, 0, 0, 255, 1));  // within half-width
@@ -44,7 +44,7 @@ int main(void) {
     canvas_move_to(cv, 0.0f, 32.0f);
     canvas_line_to(cv, 64.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 5, 32), 0, 0, 255, 255, 1));   // on  [0,10)
     CHECK(px_near(pixel_at(px, len, w, 15, 32), 0, 0, 0, 0, 1));      // off [10,20)
     CHECK(px_near(pixel_at(px, len, w, 25, 32), 0, 0, 255, 255, 1));  // on  [20,30)
@@ -61,7 +61,7 @@ int main(void) {
     canvas_move_to(cv, 20.0f, 32.0f);
     canvas_line_to(cv, 40.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 30, 32), 255, 0, 0, 255, 1));  // on the line
     CHECK(px_near(pixel_at(px, len, w, 43, 32), 0, 0, 0, 0, 1));      // past butt end
 
@@ -71,7 +71,7 @@ int main(void) {
     canvas_move_to(cv, 20.0f, 32.0f);
     canvas_line_to(cv, 40.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 43, 32), 255, 0, 0, 255, 1));  // square extends
 
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -80,7 +80,7 @@ int main(void) {
     canvas_move_to(cv, 20.0f, 32.0f);
     canvas_line_to(cv, 40.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 42, 32), 255, 0, 0, 255, 1));  // round extends
 
     canvas_free(cv);

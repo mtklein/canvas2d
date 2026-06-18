@@ -34,11 +34,11 @@ int main(void) {
     // that clears `out`, so the buffer is left untouched.
     uint8_t buf[256];
     memset(buf, 0xAB, sizeof buf);
-    canvas_get_image_data(cv, 0, 0, OVF, OVF, buf, (int)sizeof buf);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, OVF, OVF, buf, (int)sizeof buf);
     CHECK(buf[0] == 0xAB && buf[255] == 0xAB);
 
     // A genuinely-too-small buffer for a sane region is still rejected.
-    canvas_get_image_data(cv, 0, 0, 8, 8, buf, 4);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 8, 8, buf, 4);
     CHECK(buf[0] == 0xAB);
 
     // put_image_data with overflowing source dims must return without tripping
@@ -48,7 +48,7 @@ int main(void) {
     // draw_image shares that guard but its buffer count *is* sw*sh*4, so a lying
     // buffer would trip the call-boundary check first; it is covered transitively.
     uint8_t src[4] = { 1, 2, 3, 4 };
-    canvas_put_image_data(cv, src, (int)sizeof src, OVF, OVF, 0, 0);
+    canvas_put_image_data(cv, CANVAS_CS_SRGB, src, (int)sizeof src, OVF, OVF, 0, 0);
     CHECK(cv != NULL);
 
     canvas_free(cv);

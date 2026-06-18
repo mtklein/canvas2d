@@ -29,14 +29,14 @@ static void flat_exact(void) {
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
         canvas_draw_bitmap_scaled(cv, src, N, N, 4.0f, 4.0f, 8.0f, 8.0f);  // 4x minify
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 37, 90, 200, 255, 0));
 
         canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
         canvas_draw_bitmap_subrect(cv, src, N, N, 8.0f, 8.0f, 8.0f, 8.0f,
                                   0.0f, 0.0f, 32.0f, 32.0f);  // 4x magnify, cubic
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 16, 16), 37, 90, 200, 255, 1));
         canvas_free(cv);
     }
@@ -65,13 +65,13 @@ static void stripes_average(void) {
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
         canvas_draw_bitmap_scaled(cv, src, N, N, 0.0f, 0.0f, 4.0f, 4.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 1, 1), 128, 128, 128, 255, 1));
 
         canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
         canvas_set_image_smoothing_enabled(cv, false);
         canvas_draw_bitmap_scaled(cv, src, N, N, 0.0f, 0.0f, 4.0f, 4.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         struct rgba const p = pixel_at(px, len, N, 1, 1);
         CHECK(p.r == 0 || p.r == 255);  // one pole, not the average
         canvas_free(cv);
@@ -102,13 +102,13 @@ static void catmullrom_phase(void) {
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
         canvas_draw_bitmap_scaled(cv, src, 4, 4, 0.5f, 0.5f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 143, 143, 143, 255, 1));
 
         canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
         canvas_draw_bitmap_scaled(cv, src, 4, 4, 0.5f, 0.5f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 128, 128, 128, 255, 1));
         canvas_free(cv);
     }
@@ -134,14 +134,14 @@ static void no_transparent_bleed(void) {
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
         canvas_draw_bitmap_scaled(cv, src, 2, 2, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(pixel_at(px, len, N, 8, 8).r <= 1);   // premultiplied taps: no ghost red
         CHECK(pixel_at(px, len, N, 8, 8).b >= 200);
 
         canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_LOW);
         canvas_draw_bitmap_scaled(cv, src, 2, 2, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(pixel_at(px, len, N, 8, 8).r > 50);   // straight-alpha bilinear bleeds
         canvas_free(cv);
     }

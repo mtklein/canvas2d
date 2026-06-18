@@ -145,7 +145,7 @@ static void check_scene(scene_pair s) {
     uint8_t *__counted_by_or_null(n) got = malloc((size_t)n);
     CHECK(got != NULL);
     if (got) {
-        canvas_read_rgba(cv, got, n);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, got, n);
         int const cmp = memcmp(want, got, (size_t)n);
         CHECK(cmp == 0);
         if (cmp != 0) {

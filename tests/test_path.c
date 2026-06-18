@@ -29,7 +29,7 @@ int main(void) {
     canvas_line_to(cv, 32.0f, 56.0f);
     canvas_close_path(cv);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 24), 255, 0, 0, 255, 1));  // interior
     CHECK(px_near(pixel_at(px, len, w, 4, 52), 0, 0, 0, 0, 1));       // outside
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -39,7 +39,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_arc(cv, 32.0f, 32.0f, 20.0f, 0.0f, 2.0f * (float)M_PI, false);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 1));  // centre
     CHECK(px_near(pixel_at(px, len, w, 32, 16), 0, 255, 0, 255, 1));  // inside (r=16)
     CHECK(px_near(pixel_at(px, len, w, 60, 60), 0, 0, 0, 0, 1));      // far corner
@@ -50,7 +50,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 10.0f, 10.0f, 20.0f, 20.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 20, 20), 0, 0, 255, 255, 1));  // interior
     CHECK(px_near(pixel_at(px, len, w, 50, 50), 0, 0, 0, 0, 1));      // outside
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -65,7 +65,7 @@ int main(void) {
     canvas_line_to(cv, 40.0f, 40.0f);
     canvas_close_path(cv);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 0, 0, 1));        // hole
     CHECK(px_near(pixel_at(px, len, w, 12, 32), 255, 255, 0, 255, 1));  // ring
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -86,12 +86,12 @@ int main(void) {
     canvas_close_path(cv);
 
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 255, 255, 1));  // nonzero: centre
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
 
     canvas_fill(cv, CANVAS_EVENODD);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 0, 0, 1));        // even-odd: hole
     CHECK(px_near(pixel_at(px, len, w, 32, 10), 255, 0, 255, 255, 1));  // arm still filled
 
@@ -101,7 +101,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_round_rect(cv, 8.0f, 8.0f, 48.0f, 48.0f, 12.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 1));  // interior
     CHECK(px_near(pixel_at(px, len, w, 10, 10), 0, 0, 0, 0, 1));      // rounded corner
 
@@ -111,7 +111,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_ellipse(cv, 32.0f, 32.0f, 24.0f, 12.0f, 0.0f, 0.0f, 2.0f * (float)M_PI, false);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 52, 32), 0, 0, 255, 255, 1));  // inside long axis
     CHECK(px_near(pixel_at(px, len, w, 32, 46), 0, 0, 0, 0, 1));      // past short axis
 
@@ -125,7 +125,7 @@ int main(void) {
     canvas_arc_to(cv, 48.0f, 40.0f, 48.0f, 8.0f, 16.0f);
     canvas_line_to(cv, 48.0f, 8.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 20, 40), 255, 0, 0, 255, 1));  // bottom segment
     CHECK(px_near(pixel_at(px, len, w, 48, 16), 255, 0, 0, 255, 1));  // right segment
     CHECK(px_near(pixel_at(px, len, w, 43, 35), 255, 0, 0, 255, 1));  // fillet arc

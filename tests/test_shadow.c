@@ -28,7 +28,7 @@ int main(void) {
     canvas_set_shadow_offset_y(cv, 12.0f);
     canvas_set_shadow_blur(cv, 0.0f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // shape only
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 22, 22), 255, 0, 0, 255, 2));  // shape over shadow
@@ -41,7 +41,7 @@ int main(void) {
     canvas_set_shadow_offset_y(cv, 0.0f);
     canvas_set_shadow_blur(cv, 16.0f);
     canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);  // shape [16,32)
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 24, 24), 255, 0, 0, 255, 2));  // shape on top
     struct rgba leak = pixel_at(px, len, W, 36, 24);                   // 4px past the edge
     CHECK(leak.a > 20);          // blurred shadow leaked out
@@ -58,7 +58,7 @@ int main(void) {
     canvas_set_shadow_offset_y(cv, 12.0f);
     canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.0f);  // transparent
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 0, 0, 2));      // no shadow
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // shape still there
 
@@ -66,7 +66,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.5f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% blue
 
     // Strokes cast shadows too.
@@ -80,7 +80,7 @@ int main(void) {
     canvas_move_to(cv, 8.0f, 24.0f);
     canvas_line_to(cv, 24.0f, 24.0f);  // stroke x[8,24], y[20,28]
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 32, 24), 0, 255, 0, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 12, 24), 255, 0, 0, 255, 2));  // stroke only
 
@@ -93,7 +93,7 @@ int main(void) {
     canvas_set_shadow_offset_x(cv, 12.0f);
     canvas_set_shadow_offset_y(cv, 12.0f);
     canvas_draw_bitmap_scaled(cv, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // image only
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 45, 45), 0, 0, 0, 0, 2));      // neither
@@ -108,7 +108,7 @@ int main(void) {
     canvas_set_image_smoothing_enabled(cv, false);
     canvas_draw_bitmap_scaled(cv, sprite, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_set_image_smoothing_enabled(cv, true);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // opaque half
     CHECK(px_near(pixel_at(px, len, W, 20, 12), 0, 0, 0, 0, 2));      // transparent half
     CHECK(px_near(pixel_at(px, len, W, 22, 30), 0, 0, 255, 255, 2));  // its shadow
@@ -119,7 +119,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 0.5f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% shadow
 
     // Subpixel offsets: a half-pixel offset splits the sharp shadow's edge
@@ -130,7 +130,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_shadow_offset_x(cv, 12.5f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 20, 30), 0, 0, 255, 128, 2));  // leading half
     CHECK(px_near(pixel_at(px, len, W, 28, 30), 0, 0, 255, 255, 2));  // interior
     CHECK(px_near(pixel_at(px, len, W, 36, 30), 0, 0, 255, 128, 2));  // trailing half

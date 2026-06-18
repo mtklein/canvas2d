@@ -55,8 +55,8 @@ static void scene_stroke(struct canvas *__single cv) {
 
 static void scene_image(struct canvas *__single cv) {
     uint8_t buf[16 * 16 * 4];
-    canvas_get_image_data(cv, 0, 0, 16, 16, buf, (int)sizeof buf);
-    canvas_put_image_data(cv, buf, (int)sizeof buf, 16, 16, 4, 4);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 16, 16, buf, (int)sizeof buf);
+    canvas_put_image_data(cv, CANVAS_CS_SRGB, buf, (int)sizeof buf, 16, 16, 4, 4);
     uint8_t src[8 * 8 * 4];
     for (int i = 0; i < (int)sizeof src; i++) {
         src[i] = (uint8_t)(i * 7);
@@ -226,7 +226,7 @@ int main(void) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
         uint8_t px[4];
-        canvas_get_image_data(cv, W / 2, H / 2, 1, 1, px, 4);
+        canvas_get_image_data(cv, CANVAS_CS_SRGB, W / 2, H / 2, 1, 1, px, 4);
         CHECK(px[0] > 250 && px[1] < 5 && px[2] < 5 && px[3] == 255);
         canvas_free(cv);
     }

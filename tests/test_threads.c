@@ -244,7 +244,7 @@ static bool render_tile(int scene, int tile, uint8_t *__counted_by(len) out, int
     uint8_t *__counted_by(tlen) px = malloc((size_t)tlen);
     bool const ok = px != NULL;
     if (ok) {
-        canvas_read_rgba(cv, px, tlen);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, tlen);
         for (int row = 0; row < TILE; row++) {
             memcpy(out + ((ty + row) * SCENE_W + tx) * 4,
                    px + row * TILE * 4, TILE * 4);

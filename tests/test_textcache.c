@@ -52,8 +52,8 @@ static void check_transparent(void) {
     CHECK(c->glyph_hits > 0);
 
     uint8_t a[LEN], b[LEN];
-    canvas_get_image_data(cold, 0, 0, W, H, a, LEN);
-    canvas_get_image_data(warm, 0, 0, W, H, b, LEN);
+    canvas_get_image_data(cold, CANVAS_CS_SRGB, 0, 0, W, H, a, LEN);
+    canvas_get_image_data(warm, CANVAS_CS_SRGB, 0, 0, W, H, b, LEN);
     CHECK(memcmp(a, b, LEN) == 0);
 
     canvas_free(cold);
@@ -152,8 +152,8 @@ static void check_eviction(void) {
     canvas_set_fill_rgba(fresh, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.7f, 1.0f);
     canvas_fill_text(fresh, "s0", 4.0f, 30.0f);
     uint8_t a[LEN], b[LEN];
-    canvas_get_image_data(churn, 0, 0, W, H, a, LEN);
-    canvas_get_image_data(fresh, 0, 0, W, H, b, LEN);
+    canvas_get_image_data(churn, CANVAS_CS_SRGB, 0, 0, W, H, a, LEN);
+    canvas_get_image_data(fresh, CANVAS_CS_SRGB, 0, 0, W, H, b, LEN);
     CHECK(memcmp(a, b, LEN) == 0);
 
     canvas_free(churn);
@@ -234,8 +234,8 @@ static void check_reset(void) {
     canvas_set_font_size(fresh, 18.0f);
     canvas_fill_text(fresh, "Reset", 4.0f, 30.0f);
     uint8_t a[LEN], b[LEN];
-    canvas_get_image_data(cv, 0, 0, W, H, a, LEN);
-    canvas_get_image_data(fresh, 0, 0, W, H, b, LEN);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, W, H, a, LEN);
+    canvas_get_image_data(fresh, CANVAS_CS_SRGB, 0, 0, W, H, b, LEN);
     CHECK(memcmp(a, b, LEN) == 0);
 
     canvas_free(cv);

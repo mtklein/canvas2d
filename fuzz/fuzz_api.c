@@ -66,7 +66,7 @@ static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, in
     int const len = w * h * 4;                       // w,h <= 64 -> fits int
     uint8_t *__counted_by(len) out = malloc(len > 0 ? (size_t)len : 1);
     if (out) {
-        canvas_get_image_data(cv, x, y, w, h, out, len);
+        canvas_get_image_data(cv, CANVAS_CS_SRGB, x, y, w, h, out, len);
     }
     free(out);
 }
@@ -80,7 +80,7 @@ static void do_image_put(struct canvas *__single cv, struct cursor *c) {
         for (int i = 0; i < len; i++) {
             data[i] = rd_u8(c);
         }
-        canvas_put_image_data(cv, data, len, w, h, dx, dy);
+        canvas_put_image_data(cv, CANVAS_CS_SRGB, data, len, w, h, dx, dy);
     }
     free(data);
 }

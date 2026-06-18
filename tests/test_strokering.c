@@ -30,7 +30,7 @@ int main(void) {
     canvas_arc(cv, cx, cy, r, 0.0f, 2.0f * (float)M_PI, false);
     canvas_close_path(cv);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
 
     // A point on the ring centreline at several angles, including the seam at
     // theta=0; all should be fully covered (the notch left the seam partial).

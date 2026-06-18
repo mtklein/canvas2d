@@ -36,13 +36,13 @@ int main(void) {
     canvas_path2d_rect(rp, 10.0f, 10.0f, 12.0f, 12.0f);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_path(cv, rp, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(red(px, len, 16, 16));   // inside the Path2D rect
     CHECK(clear(px, len, 2, 2));   // current path was NOT filled by fill_path
     // Filling the current path now proves it survived intact.
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 1, 1), 0, 0, 255, 255, 2));
     canvas_path2d_free(rp);
 
@@ -56,7 +56,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_path(cv, tp, CANVAS_NONZERO);
     canvas_restore(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(red(px, len, 14, 14));   // inside the translated rect
     CHECK(clear(px, len, 2, 2));   // origin untouched
     canvas_path2d_free(tp);
@@ -69,11 +69,11 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_path(cv, np, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(red(px, len, 20, 20));   // centre filled
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_fill_path(cv, np, CANVAS_EVENODD);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(clear(px, len, 20, 20));  // centre hollow
     CHECK(red(px, len, 8, 20));     // ring still filled
     canvas_path2d_free(np);
@@ -84,7 +84,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_path(cv, ap, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(red(px, len, 20, 20));   // centre of the disc
     CHECK(clear(px, len, 4, 4));   // corner outside the disc
     canvas_path2d_free(ap);
@@ -97,7 +97,7 @@ int main(void) {
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 6.0f);
     canvas_stroke_path(cv, lp);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(red(px, len, 20, 20));   // on the stroked line
     CHECK(clear(px, len, 20, 32)); // off the line
 
@@ -120,7 +120,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_path(cv, a, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(red(px, len, 7, 7));     // first rect
     CHECK(red(px, len, 27, 27));   // appended rect
     canvas_path2d_free(a);

@@ -158,7 +158,7 @@ static void check_round_trip(void) {
         }
         CHECK(canvas_record_to(cv, path));
         draw_text_scene(cv);
-        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
         canvas_set_font_size(cv, 17.5f);
         w17 = canvas_measure_text(cv, "Waffle 隸書");
         m17 = canvas_measure_text_full(cv, "Waffle 隸書");
@@ -191,7 +191,7 @@ static void check_round_trip(void) {
         CHECK(c->glyph_hits > 0);
 
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
 
         // Measurement replays from the serialized ink bounds + vmetrics: the
@@ -514,7 +514,7 @@ static void check_strict(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 64.0f, 48.0f);
     uint8_t px[64 * 48 * 4];
-    canvas_get_image_data(cv, 0, 0, 64, 48, px, (int)sizeof px);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 64, 48, px, (int)sizeof px);
     CHECK(px[0] == 255);
 
     canvas_free(cv);
@@ -668,7 +668,7 @@ static void check_new_ops(void) {
         canvas_set_font_size(cv, 22.0f);
         canvas_fill_text_max(cv, "Condense me to fit", 4.0f, 88.0f, 60.0f);
         canvas_fill_text_max(cv, "free", 70.0f, 88.0f, -1.0f);
-        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
         canvas_free(cv);  // flush + close
     }
 
@@ -686,7 +686,7 @@ static void check_new_ops(void) {
         CHECK(c->glyph_hits > 0);
 
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
         canvas_free(cv);
     }
@@ -737,7 +737,7 @@ static void check_shadow_ops(void) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.2f, 0.6f, 1.0f);
         canvas_set_font_size(cv, 28.0f);
         canvas_fill_text(cv, "shadow", 6.0f, 50.0f);
-        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
         canvas_free(cv);
     }
     {
@@ -751,7 +751,7 @@ static void check_shadow_ops(void) {
         CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
         canvas_free(cv);
     }
@@ -800,7 +800,7 @@ static void check_direction_blocks(void) {
         canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         canvas_fill_text(cv, mixed, 4.0f, 70.0f);   // same bytes, other paragraph
         w_rtl = canvas_measure_text(cv, mixed);
-        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
         canvas_free(cv);
     }
     CHECK(w_ltr > 0.0f && w_rtl > 0.0f);  // draw-measure agreement holds per
@@ -830,7 +830,7 @@ static void check_direction_blocks(void) {
         CHECK(c->shaping_hits > 0);
 
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
 
         // Measurement after replay reads the same per-direction lines.  (The

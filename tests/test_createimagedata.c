@@ -31,12 +31,12 @@ int main(void) {
             img[i * 4 + 0] = 255;
             img[i * 4 + 3] = 255;
         }
-        canvas_put_image_data(cv, img, len, 4, 3, 0, 0);
+        canvas_put_image_data(cv, CANVAS_CS_SRGB, img, len, 4, 3, 0, 0);
         int const clen = 8 * 8 * 4;
         uint8_t *__counted_by(clen) px = malloc((size_t)clen);
         CHECK(px != NULL);
         if (px) {
-            canvas_read_rgba(cv, px, clen);
+            canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
             CHECK(px_near(pixel_at(px, clen, 8, 0, 0), 255, 0, 0, 255, 1));
             CHECK(px_near(pixel_at(px, clen, 8, 3, 2), 255, 0, 0, 255, 1));
             CHECK(px_near(pixel_at(px, clen, 8, 4, 0), 0, 0, 0, 0, 1));  // untouched

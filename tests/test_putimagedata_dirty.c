@@ -53,8 +53,8 @@ int main(void) {
     // Dirty rect = the red block (2,2,4,4), image origin at (4,4): only the red
     // block is written, at canvas [6,10)x[6,10).  The blue surround is NOT copied.
     canvas_clear_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_put_image_data_dirty(cv, src, slen, 8, 8, 4, 4, 2, 2, 4, 4);
-    canvas_read_rgba(cv, px, clen);
+    canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, src, slen, 8, 8, 4, 4, 2, 2, 4, 4);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     CHECK(is_red(px, clen, 6, 6));     // top-left of the copied block
     CHECK(is_red(px, clen, 9, 9));     // bottom-right of the copied block
     CHECK(is_clear(px, clen, 5, 5));   // just outside the dirty dest rect
@@ -62,16 +62,16 @@ int main(void) {
 
     // Regression: the plain (no dirty rect) overload still copies everything.
     canvas_clear_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_put_image_data(cv, src, slen, 8, 8, 0, 0);
-    canvas_read_rgba(cv, px, clen);
+    canvas_put_image_data(cv, CANVAS_CS_SRGB, src, slen, 8, 8, 0, 0);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     CHECK(is_blue(px, clen, 0, 0));    // blue surround
     CHECK(is_red(px, clen, 4, 4));     // red block
     CHECK(is_blue(px, clen, 7, 7));
 
     // A dirty rect larger than the source clamps to the source bounds.
     canvas_clear_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_put_image_data_dirty(cv, src, slen, 8, 8, 0, 0, 2, 2, 100, 100);
-    canvas_read_rgba(cv, px, clen);
+    canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, src, slen, 8, 8, 0, 0, 2, 2, 100, 100);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     CHECK(is_red(px, clen, 3, 3));     // source col/row 3: red
     CHECK(is_blue(px, clen, 7, 7));    // source col/row 7: blue (still inside)
     CHECK(is_clear(px, clen, 1, 1));   // col/row 1: left of dirtyX=2, not copied
@@ -79,8 +79,8 @@ int main(void) {
     // Negative dirty width normalises to the same red block (anchored at x=6,
     // width -4 -> x=2, width 4).
     canvas_clear_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_put_image_data_dirty(cv, src, slen, 8, 8, 0, 0, 6, 2, -4, 4);
-    canvas_read_rgba(cv, px, clen);
+    canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, src, slen, 8, 8, 0, 0, 6, 2, -4, 4);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     CHECK(is_red(px, clen, 3, 3));
     CHECK(is_clear(px, clen, 1, 1));
 
@@ -88,8 +88,8 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_put_image_data_dirty(cv, src, slen, 8, 8, 0, 0, 0, 0, 0, 4);
-    canvas_read_rgba(cv, px, clen);
+    canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, src, slen, 8, 8, 0, 0, 0, 0, 0, 4);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     CHECK(px_near(pixel_at(px, clen, 16, 4, 4), 0, 255, 0, 255, 1));  // still green
 
     canvas_free(cv);

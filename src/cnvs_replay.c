@@ -1393,7 +1393,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         // points it at another flavour, so a file that does is malformed.
         if (blk->img[id].ct != CANVAS_COLOR_UNORM8 ||
             blk->img[id].at != CANVAS_ALPHA_UNPREMUL) return false;
-        canvas_put_image_data(cv, blk->img[id].px, blk->img[id].len,
+        // Recorded put_image_data is untagged sRGB (the space token is a later
+        // chunk), so replay re-applies it as CANVAS_CS_SRGB -- byte-identical.
+        canvas_put_image_data(cv, CANVAS_CS_SRGB, blk->img[id].px, blk->img[id].len,
                               blk->img[id].w, blk->img[id].h,
                               (int)v[0], (int)v[1]);
     }
@@ -1402,7 +1404,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         long v[6];
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_ints(data, le, &j, INT_MAX, v, 6)) return false;
-        canvas_put_image_data_dirty(cv, blk->img[id].px, blk->img[id].len,
+        canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB,
+                                    blk->img[id].px, blk->img[id].len,
                                     blk->img[id].w, blk->img[id].h,
                                     (int)v[0], (int)v[1], (int)v[2], (int)v[3],
                                     (int)v[4], (int)v[5]);
