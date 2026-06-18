@@ -6,7 +6,7 @@ surface against what is implemented, splitting **partial** (implemented but
 narrower than spec) from **missing entirely**, plus the items out of scope for a
 headless C library. (Last swept against the living spec: June 2026 — the sweep
 that caught `lang`, `colorType`/`pixelFormat`, and `scrollPathIntoView`'s
-removal.)
+removal; updated when colour management landed.)
 
 The project is a vehicle for learning `-fbounds-safety`, not for spec
 completeness, so the selection is biased: features whose hot path is
@@ -118,20 +118,34 @@ Internals (not API features) considered and deferred:
 - **`Path2D`** has no SVG path-data string constructor (string parsing); the
   constructible object, `add_path`, the builders, and the
   fill/stroke/clip/isPointIn* overloads are all supported.
-- **`fillStyle`/`strokeStyle`** are solid colour (float RGBA, not CSS color
-  strings), linear/radial/conic gradients, and image patterns — and the
-  gradients/patterns are state setters (the pattern image is borrowed), not
-  reusable first-class objects, so `CanvasPattern.setTransform` has no
-  analogue: a pattern is pinned to the CTM in effect when it is set.
-- **`getImageData`** is fixed RGBA8; none of `ImageDataSettings` —
-  `colorSpace`, or the recent `pixelFormat` (`rgba-unorm8` | `rgba-float16`,
-  the `Float16Array`-backed `ImageData` flavour).
+- **`fillStyle`/`strokeStyle`** are float RGBA in an explicit colour space
+  (sRGB / extended-linear-sRGB / Oklab — not CSS color strings),
+  linear/radial/conic gradients, and image patterns. Gradients and patterns
+  are state setters (the pattern image is borrowed), not reusable first-class
+  objects, so `CanvasPattern.setTransform` has no analogue: a pattern is pinned
+  to the CTM in effect when it is set.
+- **Colour management** — the canvas has a working colour space, `sRGB`
+  (default, gamma-encoded) or `extended-linear-sRGB`, fixed at creation
+  (`canvas_in_space`); compositing runs in that space, so linear-light blending
+  is available. Every colour the API takes or returns names its space ({sRGB,
+  extended-linear-sRGB, Oklab}); untagged input is sRGB (the legacy spelling)
+  and the tagged forms convert at the boundary. Gradients interpolate in a
+  chosen space (sRGB / linear / Oklab) and alpha mode (unpremultiplied /
+  premultiplied), set independently. Conversions are the sRGB transfer and a
+  linear-sRGB↔Oklab pair ([cnvs_color.c](../src/cnvs_color.c)). Two deliberate
+  limits: **sRGB primaries only** (no Display-P3 / Rec.2020 — a single linear
+  hub covers the current effects; parameterized primaries deferred), and image
+  **sampling on a non-sRGB canvas is not yet linear-correct** (the per-image
+  colour-space tag is carried and serialized, but the sampler does not decode
+  to linear before averaging).
+- **`getImageData`** returns RGBA8 in a chosen colour space (sRGB /
+  extended-linear-sRGB / Oklab); no `pixelFormat` (`rgba-float16`, the
+  `Float16Array`-backed `ImageData`).
 - **`drawImage`** sources borrowed RGBA8 bitmaps (`canvas_draw_bitmap*`) and
-  reified images (`canvas_draw_image*`) over the full 2×2 format space
-  ({unorm8, f16} × {straight, premultiplied}, four peers — and the whole
-  planned space).  `canvas_snapshot` is **canvas-as-source**, THE fast path:
-  the surface is premultiplied f16 and so is the snapshot, one memcpy,
-  bit-lossless end to end.
+  reified images (`canvas_draw_image*`); image storage is {unorm8, f16} ×
+  {unpremultiplied, premultiplied}, each carrying a colour-space tag.
+  `canvas_snapshot` is canvas-as-source: the surface is premultiplied f16 and
+  so is the snapshot, one memcpy.
   `imageSmoothingQuality` is live — `low` samples bilinearly
   (nearest-neighbour when smoothing is disabled), `medium`/`high` antialias
   minification through a premultiplied mip chain with trilinear filtering
@@ -140,8 +154,9 @@ Internals (not API features) considered and deferred:
   against, so its chain rebuilds per minifying draw; a mip-less image
   deliberately falls back to bilinear), and `high` magnifies through a 4×4
   Catmull-Rom (premultiplied taps, the BC-spline pair one swappable line in
-  canvas.c).  What keeps the row here: sources are RGBA8 only, and the DOM
-  source kinds are out of scope below.
+  canvas.c).  Sources are RGBA8 only and DOM source kinds are out of scope
+  below; image sampling on a non-sRGB canvas is not yet linear-correct (the
+  colour-management row above).
 - **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
   every canvas memoizes boundary results — shaped lines by (size, text), and
   canonical glyph data by (font name, glyph id): outline curves + ink bounds, or
@@ -157,7 +172,7 @@ Internals (not API features) considered and deferred:
   ride `path` blocks, and the scalar ops — conic gradients, `roundRect` radii,
   smoothing, the filter list, reset/resize — are plain op lines; pure queries
   move no pixels and stay out), and the cross-machine claim is *gated* over the
-  whole gallery: all 34 scenes commit a self-contained `.canvas` program next
+  whole gallery: every scene commits a self-contained `.canvas` program next
   to their PNG, and `test_replay_gallery` replays each one and proves it
   reproduces the committed PNG byte-for-byte with zero shape/glyph boundary
   misses — so on the fontless CI runner (no Libian TC; it's download-on-demand,
@@ -193,8 +208,7 @@ Internals (not API features) considered and deferred:
 
 ## Out of scope for a headless renderer
 
-Listed for completeness; these have no meaning without a document/host, so we don't
-intend to implement them:
+Listed for completeness; most have no meaning without a document/host:
 
 - `drawFocusIfNeeded` — accessibility / DOM focus. (Its old sibling
   `scrollPathIntoView` has since been removed from the spec entirely.)
@@ -206,17 +220,15 @@ intend to implement them:
   - `willReadFrequently` hints the backing store be kept CPU-side so
     `getImageData` doesn't stall on a GPU readback — a CPU-only renderer
     satisfies it by construction.
-  - `colorSpace` would be inert metadata: with no CSS color strings and no
-    tagged image sources, there is no conversion boundary for it to act on —
-    the typed API's floats mean whatever the caller says they mean. It would
-    acquire meaning only alongside the string/tagged features deliberately
-    skipped above (CSS colors, a general image decoder, tagged PNG output).
-  - `colorType` (`unorm8` | `float16`, a recent spec addition) is pinned by
-    design: storage is `_Float16` that round-trips every 8-bit edge exactly
-    and is clamped to the premultiplied range like `unorm8`
-    ([decisions/float16-color-type.md](decisions/float16-color-type.md),
-    [decisions/color-axis.md](decisions/color-axis.md)) — in effect a
-    higher-precision `unorm8`, neither switchable nor extended-range.
+  - `colorSpace` is implemented — the canvas working space (`canvas_in_space`)
+    plus the tagged colour API (the colour-management row above). Only the
+    spec's string-keyed `PredefinedColorSpace` spelling and wide-gamut
+    primaries (`display-p3`) are unimplemented.
+  - `colorType` (`unorm8` | `float16` output bitmap): the surface is `_Float16`
+    and an extended-linear working space carries extended range, but readback
+    and `getImageData` produce `unorm8` — a `float16` output buffer is not
+    offered ([decisions/float16-color-type.md](decisions/float16-color-type.md),
+    [decisions/color-axis.md](decisions/color-axis.md)).
   - Context loss is GPU-process death; a CPU renderer has nothing to lose
     (`canvas_is_context_lost` honestly returns false).
 - Non-buffer `drawImage` sources tied to the DOM (`HTMLVideoElement`, `VideoFrame`,
