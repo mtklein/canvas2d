@@ -146,6 +146,30 @@ void cnvs_rec_floats_bool(struct cnvs_recorder *__single r, char const *__null_t
     fputc('\n', r->f);
 }
 
+// A colour op line -- the n channel/offset floats, then an OPTIONAL trailing
+// colour-space token, emitted ONLY when the space is non-sRGB (and nameable).
+// sRGB records exactly as cnvs_rec_floats would (no token), so every existing
+// .canvas byte stays identical; absence on replay is the sRGB default.  The
+// token rides the line by name through the shared colour-space table, the lone
+// optional field after the floats -- the same emit-when-non-default posture the
+// image block's colour-space tag uses (cnvs_rec_image).
+void cnvs_rec_floats_cs(struct cnvs_recorder *__single r, char const *__null_terminated name,
+                        float const *__counted_by(n) v, int n,
+                        enum canvas_color_space space) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    fputs(name, r->f);
+    put_floats(r->f, v, n);
+    unsigned const i = (unsigned)space;
+    if (space != CANVAS_CS_SRGB &&
+        i < sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
+        fputc(' ', r->f);
+        fputs(canvas_color_space_name[i], r->f);
+    }
+    fputc('\n', r->f);
+}
+
 void cnvs_rec_text(struct cnvs_recorder *__single r, char const *__null_terminated name,
                    float x, float y, char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0) {

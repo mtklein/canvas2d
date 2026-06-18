@@ -659,6 +659,20 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 // implies the same.  Blank lines and lines whose first non-space character
 // is `#` are ignored.
 //
+// Colour ops -- set_fill_rgba, set_stroke_rgba, set_shadow_color_rgba,
+// add_fill_color_stop, add_stroke_color_stop, add_filter_drop_shadow -- carry
+// an OPTIONAL trailing colour-space token (srgb|linear|oklab) after their
+// floats, the space the (r,g,b[,a]) are given in (see canvas_color_space).  It
+// is emitted ONLY when the space is non-sRGB; absence means sRGB, so an sRGB
+// colour records exactly as it always has and every existing .canvas stays
+// byte-identical:
+//     set_fill_rgba 0.8 0.2 0.2 1            # sRGB (no token)
+//     set_fill_rgba 0.8 0.2 0.2 1 oklab      # tagged
+// put_image_data / put_image_data_dirty carry their input's space the same
+// emit-when-non-sRGB way, but on the image BLOCK's optional <space> tag (see
+// below), not the op line, since their pixels ride a block.  An unknown
+// trailing token is rejected (strict parsing, below).
+//
 // Text-block lines make a recorded program self-contained (no fonts needed to
 // replay): the recorder writes, ahead of each text op that first needs them,
 //     font <id> <ascent> <descent> <name...>
@@ -742,7 +756,8 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 //     stroke_path <id>
 //     clip_path <id> <nonzero|evenodd>
 //
-// Parsing is strict: an unknown command, a bad argument, an over-long line, or
+// Parsing is strict: an unknown command, a bad argument, an unknown trailing
+// colour-space token on a colour op or image block, an over-long line, or
 // a malformed block (an undeclared font id, a bad verb token, a cluster index
 // past the text length, a non-finite number where the recorder writes finite
 // ones, a bitmap whose bits lines are miscounted, mis-padded, or decode to

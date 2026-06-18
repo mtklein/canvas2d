@@ -592,7 +592,7 @@ static cnvs_unpremul intern_color(struct canvas *__single cv,
 
 void canvas_set_fill_rgba(struct canvas *__single cv, enum canvas_color_space space,
                           float r, float g, float b, float a) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4); }
+    if (cv->rec) { cnvs_rec_floats_cs(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4, space); }
     cv->cur.fill = intern_color(cv, space, r, g, b, a);
     cv->cur.fill_kind = CNVS_PAINT_SOLID;
 }
@@ -697,7 +697,7 @@ void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angl
 void canvas_add_fill_color_stop(struct canvas *__single cv,
                                 enum canvas_color_space space, float offset,
                                 float r, float g, float b, float a) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5); }
+    if (cv->rec) { cnvs_rec_floats_cs(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5, space); }
     cnvs_gradient_add_stop(&cv->cur.fill_grad, cnvs_clamp01(offset),
                            intern_color(cv, space, r, g, b, a));
 }
@@ -753,7 +753,7 @@ void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_an
 void canvas_add_stroke_color_stop(struct canvas *__single cv,
                                   enum canvas_color_space space, float offset,
                                   float r, float g, float b, float a) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5); }
+    if (cv->rec) { cnvs_rec_floats_cs(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5, space); }
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, cnvs_clamp01(offset),
                            intern_color(cv, space, r, g, b, a));
 }
@@ -799,7 +799,7 @@ void canvas_set_global_composite_operation(struct canvas *__single cv,
 void canvas_set_shadow_color_rgba(struct canvas *__single cv,
                                   enum canvas_color_space space,
                                   float r, float g, float b, float a) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4); }
+    if (cv->rec) { cnvs_rec_floats_cs(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4, space); }
     cv->cur.shadow_color = intern_color(cv, space, r, g, b, a);
 }
 
@@ -900,9 +900,9 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv,
         // dx/dy/blur are guarded finite and ride raw; the colour rides
         // clamped (identity for in-range values, and a NaN channel would
         // otherwise print as unreparseable "nan").
-        cnvs_rec_floats(cv->rec, "add_filter_drop_shadow",
-                        (float[]){ dx, dy, blur, cnvs_clamp01(r), cnvs_clamp01(g),
-                                   cnvs_clamp01(b), cnvs_clamp01(a) }, 7);
+        cnvs_rec_floats_cs(cv->rec, "add_filter_drop_shadow",
+                           (float[]){ dx, dy, blur, cnvs_clamp01(r), cnvs_clamp01(g),
+                                      cnvs_clamp01(b), cnvs_clamp01(a) }, 7, space);
     }
     // The offsets split onto the 1/256th-px grid (shadow_offset_split, as for
     // shadowOffset{X,Y}); blur IS the Gaussian's stdDev, like blur() -- but
@@ -2647,7 +2647,7 @@ void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
 
 void canvas_set_stroke_rgba(struct canvas *__single cv, enum canvas_color_space space,
                             float r, float g, float b, float a) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4); }
+    if (cv->rec) { cnvs_rec_floats_cs(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4, space); }
     cv->cur.stroke = intern_color(cv, space, r, g, b, a);
     cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
@@ -4600,15 +4600,14 @@ void canvas_put_image_data(struct canvas *__single cv,
     }
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
-        // placement rides the op line.  put_image_data is pixel I/O, not a
-        // tagged image source: it records its block as CANVAS_CS_SRGB and
-        // replay re-applies the bytes as sRGB, so an sRGB-input program records
-        // byte-identically (a non-sRGB put_image_data input is not yet
-        // round-trippable -- the source-surface tag this chunk adds is for the
-        // image/pattern/bitmap entry points, not put_image_data).
+        // placement rides the op line.  The input's colour space rides the
+        // BLOCK's optional colour-space tag (cnvs_rec_image): emitted only when
+        // non-sRGB, so an sRGB put_image_data records byte-identically, while a
+        // non-sRGB one now round-trips through the tag (replay reads it back off
+        // the block).
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
                                       CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
-                                      CANVAS_CS_SRGB);
+                                      space);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data", id,
                                 (int[]){ dx, dy }, 2);
@@ -4629,11 +4628,11 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (cv->rec) {
         // The raw dirty args ride the op line; replay re-normalises them
         // through this very function, so the recorded form stays the call.
-        // CANVAS_CS_SRGB like put_image_data above (pixel I/O, not a tagged
-        // source).
+        // The input's colour space rides the block's optional tag, as for
+        // put_image_data above: emit-when-non-sRGB, byte-identical otherwise.
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
                                       CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
-                                      CANVAS_CS_SRGB);
+                                      space);
         if (id >= 0) {
             cnvs_rec_image_ints(cv->rec, "put_image_data_dirty", id,
                                 (int[]){ dx, dy, dirty_x, dirty_y,

@@ -250,6 +250,35 @@ static bool at_eol(char const *__counted_by(le) data, size_t le, size_t j) {
     return j >= le || data[j] == '#';
 }
 
+// A colour op line's OPTIONAL trailing colour-space token, read after its
+// floats: absent (end of line) -> CANVAS_CS_SRGB, the sRGB default, so a legacy
+// untagged colour line parses byte-identically; present -> one of the three
+// colour-space names (the same emit-when-non-sRGB token cnvs_rec_floats_cs
+// writes).  Strict: any other trailing token (or anything after the token) is
+// malformed and stops replay, matching the format's posture for every other
+// trailing enum.  *jp is advanced past the token (or left at end of line).
+static bool read_opt_cs(char const *__counted_by(le) data, size_t le,
+                        size_t *__single jp, enum canvas_color_space *__single out) {
+    *out = CANVAS_CS_SRGB;
+    if (at_eol(data, le, *jp)) {
+        return true;  // no token: the sRGB default
+    }
+    size_t ts, tl;
+    if (!read_token(data, le, jp, &ts, &tl)) {
+        return false;
+    }
+    if      (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
+        *out = CANVAS_CS_SRGB;
+    } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_LINEAR_SRGB])) {
+        *out = CANVAS_CS_LINEAR_SRGB;
+    } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_OKLAB])) {
+        *out = CANVAS_CS_OKLAB;
+    } else {
+        return false;  // an unknown trailing token: malformed
+    }
+    return at_eol(data, le, *jp);  // nothing may follow the token
+}
+
 static bool read_bool(char const *__counted_by(le) data, size_t le,
                       size_t *__single jp, bool *__single out) {
     size_t ts, tlen;
@@ -1189,9 +1218,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "clear_rect"))                 { if (!read_floats(data, le, &j, f, 4)) return false; canvas_clear_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "fill_rect"))                  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_fill_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "stroke_rect"))                { if (!read_floats(data, le, &j, f, 4)) return false; canvas_stroke_rect(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))              { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_stroke_rgba"))            { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba"))      { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))              { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_fill_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_rgba"))            { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_stroke_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
+    else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba"))      { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_shadow_color_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
     else if (tok_eq(data, le, cs, cl, "quadratic_curve_to"))         { if (!read_floats(data, le, &j, f, 4)) return false; canvas_quadratic_curve_to(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_fill_linear_gradient"))   { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_linear_gradient(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_linear_gradient")) { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_linear_gradient(cv, f[0], f[1], f[2], f[3]); }
@@ -1199,8 +1228,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     // --- 5 float ---
     else if (tok_eq(data, le, cs, cl, "round_rect"))            { if (!read_floats(data, le, &j, f, 5)) return false; canvas_round_rect(cv, f[0], f[1], f[2], f[3], f[4]); }
     else if (tok_eq(data, le, cs, cl, "arc_to"))                { if (!read_floats(data, le, &j, f, 5)) return false; canvas_arc_to(cv, f[0], f[1], f[2], f[3], f[4]); }
-    else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))   { if (!read_floats(data, le, &j, f, 5)) return false; canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, f[0], f[1], f[2], f[3], f[4]); }
-    else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")) { if (!read_floats(data, le, &j, f, 5)) return false; canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, f[0], f[1], f[2], f[3], f[4]); }
+    else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))   { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_add_fill_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
+    else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")) { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_add_stroke_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
 
     // --- 6 float ---
     else if (tok_eq(data, le, cs, cl, "transform"))                  { if (!read_floats(data, le, &j, f, 6)) return false; canvas_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
@@ -1211,8 +1240,10 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
 
     // --- 7 float ---
     else if (tok_eq(data, le, cs, cl, "add_filter_drop_shadow")) {
-        if (!read_floats(data, le, &j, f, 7)) return false;
-        canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, f[0], f[1], f[2], f[3], f[4], f[5], f[6]);
+        enum canvas_color_space sp;
+        if (!read_floats(data, le, &j, f, 7) || !read_opt_cs(data, le, &j, &sp)) return false;
+        canvas_add_filter_drop_shadow(cv, sp, f[0], f[1], f[2], f[3], f[4], f[5], f[6]);
+        return true;
     }
 
     // --- 12 float ---
@@ -1417,9 +1448,11 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         // points it at another flavour, so a file that does is malformed.
         if (blk->img[id].ct != CANVAS_COLOR_UNORM8 ||
             blk->img[id].at != CANVAS_ALPHA_UNPREMUL) return false;
-        // Recorded put_image_data is untagged sRGB (the space token is a later
-        // chunk), so replay re-applies it as CANVAS_CS_SRGB -- byte-identical.
-        canvas_put_image_data(cv, CANVAS_CS_SRGB, blk->img[id].px, blk->img[id].len,
+        // The input's colour space rode the block's optional colour-space tag
+        // (absent == sRGB), so replay re-applies whatever the block declared --
+        // an untagged sRGB put_image_data stays byte-identical, a tagged one
+        // round-trips.
+        canvas_put_image_data(cv, blk->img[id].cs, blk->img[id].px, blk->img[id].len,
                               blk->img[id].w, blk->img[id].h,
                               (int)v[0], (int)v[1]);
     }
@@ -1428,7 +1461,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         long v[6];
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_ints(data, le, &j, INT_MAX, v, 6)) return false;
-        canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB,
+        // The input's colour space rode the block's optional tag (absent ==
+        // sRGB), as for put_image_data above.
+        canvas_put_image_data_dirty(cv, blk->img[id].cs,
                                     blk->img[id].px, blk->img[id].len,
                                     blk->img[id].w, blk->img[id].h,
                                     (int)v[0], (int)v[1], (int)v[2], (int)v[3],
