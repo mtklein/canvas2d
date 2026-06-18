@@ -149,6 +149,46 @@ static void scene_filter(struct canvas *__single cv) {
     canvas_set_filter_none(cv);
 }
 
+// Recording (canvas_record_to): the write-side recorder's own allocation sites
+// -- the recorder struct (calloc in cnvs_recorder_begin), each image block's
+// pixel copy and its deflate scratch (cnvs_rec_image), a Path2D block's command
+// copy (cnvs_rec_path), and the text blocks' deflate buffer (cnvs_rec_text_blocks)
+// -- under fault injection.  A failed recorder calloc leaves recording off (the
+// draws proceed un-recorded); a failed per-op recorder allocation degrades that
+// op's block (the recorder's best-effort posture), never a crash or leak.  The
+// canvas frees at the end of the sweep, which flushes and closes the recorder
+// (its OOM-cleanup arm).  A fixed build/ path, truncated each run.
+static void scene_record(struct canvas *__single cv) {
+    if (!canvas_record_to(cv, "build/test_oom_rec.canvas")) {
+        return;  // the recorder's own calloc failed: drawing goes un-recorded
+    }
+    // An image draw -> one `image` block (pixel copy + deflate scratch).
+    uint8_t src[8 * 8 * 4];
+    for (int i = 0; i < (int)sizeof src; i++) {
+        src[i] = (uint8_t)(i * 7);
+    }
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 8, 8, 2.0f, 2.0f, 16.0f, 16.0f);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 8, 8, CANVAS_REPEAT);
+    canvas_fill_rect(cv, 0.0f, 0.0f, 8.0f, 8.0f);
+
+    // A Path2D -> one `path` block (the command copy).
+    struct canvas_path2d *__single p = canvas_path2d();
+    if (p) {
+        canvas_path2d_move_to(p, 2.0f, 2.0f);
+        canvas_path2d_line_to(p, 28.0f, 6.0f);
+        canvas_path2d_quadratic_curve_to(p, 30.0f, 16.0f, 20.0f, 28.0f);
+        canvas_path2d_close_path(p);
+        canvas_fill_path(cv, p, CANVAS_NONZERO);
+        canvas_path2d_free(p);
+    }
+
+    // Text -> font/glyph/shaping (and, for the emoji, a bitmap capture) blocks,
+    // whose deflate buffer is its own recorder allocation.
+    canvas_set_font_size(cv, 12.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_fill_text(cv, "Ag", 2.0f, 20.0f);
+}
+
 // isPointInPath flattens the current path to test containment.
 static void scene_pointinpath(struct canvas *__single cv) {
     canvas_begin_path(cv);
@@ -206,6 +246,7 @@ int main(void) {
     sweep(scene_savestack);
     sweep(scene_pointinpath);
     sweep(scene_png);
+    sweep(scene_record);
 
     // canvas must itself fail to NULL under a single allocation failure
     // (rather than return a half-built canvas), for every alloc it makes.

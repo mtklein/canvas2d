@@ -193,6 +193,75 @@ int main(void) {
                       "bits eJz7z8DwHwAE/wH/\n"
                       "set_fill_pattern 0 sideways\n")); // bad repeat mode
 
+    // Gradient-interpolation lines: both knobs read by name (all three colour
+    // spaces are valid interp spaces; alpha is premul/unpremul).  A valid line
+    // of each, then every malformed-token rejection.
+    CHECK(REPLAY(cv, "set_fill_gradient_interpolation srgb premul\n"));
+    CHECK(REPLAY(cv, "set_fill_gradient_interpolation linear unpremul\n"));
+    CHECK(REPLAY(cv, "set_fill_gradient_interpolation oklab premul\n"));
+    CHECK(REPLAY(cv, "set_stroke_gradient_interpolation oklab unpremul\n"));
+    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation gamma premul\n"));    // bad space
+    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation srgb sideways\n"));   // bad alpha
+    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation srgb\n"));            // missing alpha
+    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation srgb premul extra\n")); // trailing junk
+    CHECK(!REPLAY(cv, "set_stroke_gradient_interpolation gamma premul\n"));  // bad space
+    CHECK(!REPLAY(cv, "set_stroke_gradient_interpolation oklab nope\n"));    // bad alpha
+
+    // working_space: a valid leading line, then every rejection.  It must lead
+    // the file (reconfiguring the immutable space before the first op), name one
+    // of the two COMPOSITING spaces (oklab is not a working space, only an
+    // interpolation one), and carry exactly that one token.
+    {
+        struct canvas *__single ws = canvas(8, 8);
+        CHECK(ws != NULL);
+        CHECK(REPLAY(ws, "working_space linear\n"
+                         "fill_rect 0 0 8 8\n"));
+        canvas_free(ws);
+    }
+    CHECK(!REPLAY(cv, "fill_rect 0 0 1 1\n"
+                      "working_space linear\n"));   // not leading
+    CHECK(!REPLAY(cv, "working_space\n"));           // missing name
+    CHECK(!REPLAY(cv, "working_space linear junk\n"));  // junk after name
+    CHECK(!REPLAY(cv, "working_space gamma\n"));      // unknown name
+    CHECK(!REPLAY(cv, "working_space oklab\n"));      // oklab is not a working space
+
+    // An image block's optional trailing colour-space token: a valid tagged
+    // block (linear), then an unknown-name rejection.
+    CHECK(REPLAY(cv, "image 1 unorm8 unpremul 1 1 12 1 linear\n"
+                     "bits eJz7z8DwHwAE/wH/\n"
+                     "draw_image 1 0 0\n"));
+    CHECK(!REPLAY(cv, "image 2 unorm8 unpremul 1 1 12 1 gamma\n"
+                      "bits eJz7z8DwHwAE/wH/\n"));    // unknown trailing cs
+    CHECK(!REPLAY(cv, "image 2 unorm8 unpremul 1 1 12 1 linear extra\n"
+                      "bits eJz7z8DwHwAE/wH/\n"));    // junk after the cs token
+
+    // image_mips references a declared id; an undeclared one is rejected.
+    CHECK(REPLAY(cv, "image 3 unorm8 unpremul 1 1 12 1\n"
+                     "bits eJz7z8DwHwAE/wH/\n"
+                     "image_mips 3\n"
+                     "draw_image_scaled 3 0 0 8 8\n"));
+    CHECK(!REPLAY(cv, "image_mips 9\n"));             // undeclared id
+    CHECK(!REPLAY(cv, "image 4 unorm8 unpremul 1 1 12 1\n"
+                      "bits eJz7z8DwHwAE/wH/\n"
+                      "image_mips 4 5\n"));           // trailing junk
+
+    // The single-float add_filter_* ops (only add_filter_drop_shadow had
+    // negatives): a non-numeric amount and a missing amount are rejected for
+    // each.
+    CHECK(!REPLAY(cv, "add_filter_blur abc\n"));
+    CHECK(!REPLAY(cv, "add_filter_blur\n"));
+    CHECK(!REPLAY(cv, "add_filter_brightness abc\n"));
+    CHECK(!REPLAY(cv, "add_filter_brightness\n"));
+    CHECK(!REPLAY(cv, "add_filter_contrast x\n"));
+    CHECK(!REPLAY(cv, "add_filter_grayscale\n"));
+    CHECK(!REPLAY(cv, "add_filter_hue_rotate q\n"));
+    CHECK(!REPLAY(cv, "add_filter_invert\n"));
+    CHECK(!REPLAY(cv, "add_filter_opacity zz\n"));
+    CHECK(!REPLAY(cv, "add_filter_saturate\n"));
+    CHECK(!REPLAY(cv, "add_filter_sepia nope\n"));
+    CHECK(!REPLAY(cv, "add_filter_blur 1 2\n"));      // too many args
+    CHECK(!REPLAY(cv, "add_filter_drop_shadow 1 2 3 4 5 6 7 gamma\n")); // bad trailing cs
+
     // Empty / comment-only / whitespace programs are valid no-ops.
     CHECK(REPLAY(cv, ""));
     CHECK(REPLAY(cv, "# just a comment\n   \n\t\n"));

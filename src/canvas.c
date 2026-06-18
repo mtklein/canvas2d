@@ -705,9 +705,32 @@ void canvas_add_fill_color_stop(struct canvas *__single cv,
                            intern_color(cv, space, r, g, b, a));
 }
 
+// All three colour spaces are valid interpolation spaces, both alpha modes
+// valid; an out-of-range enum is ignored (leaving the gradient's interp state
+// untouched), the validated posture set_image_smoothing_quality uses.  The
+// exhaustive switches set the ok flag only on a recognized value -- a hostile
+// out-of-range cast matches no case and stays false (no default, so
+// -Wswitch-enum still guards the lists).
+static bool gradient_interp_ok(enum canvas_color_space space,
+                               enum canvas_alpha_type alpha) {
+    bool space_ok = false;
+    switch (space) {
+        case CANVAS_CS_SRGB:
+        case CANVAS_CS_LINEAR_SRGB:
+        case CANVAS_CS_OKLAB: space_ok = true; break;
+    }
+    bool alpha_ok = false;
+    switch (alpha) {
+        case CANVAS_ALPHA_UNPREMUL:
+        case CANVAS_ALPHA_PREMUL: alpha_ok = true; break;
+    }
+    return space_ok && alpha_ok;
+}
+
 void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
                                             enum canvas_color_space space,
                                             enum canvas_alpha_type alpha) {
+    if (!gradient_interp_ok(space, alpha)) { return; }
     if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_fill_gradient_interpolation", space, alpha); }
     cv->cur.fill_grad.interp = space;
     cv->cur.fill_grad.interp_alpha = alpha;
@@ -766,6 +789,7 @@ void canvas_add_stroke_color_stop(struct canvas *__single cv,
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
                                               enum canvas_color_space space,
                                               enum canvas_alpha_type alpha) {
+    if (!gradient_interp_ok(space, alpha)) { return; }  // the fill twin's guard
     if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_stroke_gradient_interpolation", space, alpha); }
     cv->cur.stroke_grad.interp = space;
     cv->cur.stroke_grad.interp_alpha = alpha;
