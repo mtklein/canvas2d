@@ -132,8 +132,8 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 //     entries (each run's retained CTFontRef stays alive with them); call
 //     sites borrow.  Fixed CNVS_SHAPING_CACHE_N slots, evicted
 //     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
-//     repeated labels hot, and a 64-entry linear scan is cheaper than any
-//     structure clever enough to beat it.
+//     repeated labels hot, and a 64-entry linear scan is cheaper than a
+//     more complex structure here.
 //   - glyph data, keyed by (font name, glyph id) -> the glyph's canonical
 //     form: font-unit verbs/points + units_per_em from cnvs_glyph_curves for
 //     an outline glyph, or the fixed-size premultiplied capture from one

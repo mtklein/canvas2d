@@ -1,7 +1,7 @@
 #pragma once
 
 // zlib streams (RFC 1950) carrying DEFLATE (RFC 1951), memory to memory, from
-// scratch -- no zlib dependency.  The deflate side is honest but simple (greedy
+// scratch -- no zlib dependency.  The deflate side is simple (greedy
 // LZ77 into fixed-Huffman blocks); the inflate side is the full decoder (stored
 // + fixed + dynamic-Huffman blocks, 32K window, overlapping copies) and is
 // strict: a stream either decodes completely and verifies, or returns -1.

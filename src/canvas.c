@@ -2846,8 +2846,8 @@ void canvas_stroke_rect(struct canvas *__single cv, float x, float y, float w, f
     struct cnvs_path rp;
     cnvs_path_init(&rp);
     if (w == 0.0f && h == 0.0f) {
-        // Spec: a single-point subpath.  Our stroker emits nothing for a
-        // zero-length subpath (no caps on a bare point) -- the lone deviation.
+        // Spec: a single-point subpath.  The stroker emits nothing for a
+        // zero-length subpath (no caps on a bare point) -- a deviation here.
         cnvs_path_move_to(&rp, xf(cv, x, y));
     } else if (w == 0.0f || h == 0.0f) {
         // A degenerate rect is a hairline: an open two-point subpath, so caps
@@ -3753,8 +3753,8 @@ struct canvas_image *__single canvas_snapshot(struct canvas *__single cv) {
         return NULL;
     }
     // The surface is premultiplied f16 and so is the snapshot: one memcpy,
-    // bit-lossless -- THE fast path, no quantize, no unpremultiply.  The
-    // snapshot's space IS the canvas's working space -- the honest tag for
+    // bit-lossless, no quantize, no unpremultiply.  The
+    // snapshot's space IS the canvas's working space -- the tag for
     // pixels lifted straight off the surface.
     uint8_t const *bytes = (uint8_t const *)cv->target;
     return image_make(bytes, w * h * 8, w, h,

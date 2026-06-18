@@ -11,9 +11,9 @@
 // (powf / cbrtf) behind a data-dependent branch, with no portable vector
 // spelling -- libm has no half8 pow or cbrt, and a branch-to-select rewrite
 // would carry both arms of the transfer through the slow path for no measured
-// win (these conversions are not on a profiled hot loop today; the planar
+// benefit (these conversions are not on a profiled hot loop today; the planar
 // pipeline in cnvs_planar.h is the place to add a slab variant if one ever
-// is).  Scalar correctness and totality are the deliverable here.
+// is).  Scalar correctness and totality are what these kernels provide.
 
 // The standard sRGB piecewise thresholds and constants.
 #define SRGB_DECODE_KNEE 0.04045f

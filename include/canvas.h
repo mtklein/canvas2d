@@ -42,9 +42,9 @@ enum canvas_pattern_repeat {
 
 // Image pixel formats, two orthogonal axes (the Skia colorType/alphaType
 // split): how a channel is stored, and whether colour rides premultiplied by
-// alpha.  The canvas surface itself stays deliberately locked premultiplied
-// f16; images parameterize over this 2x2 -- which is the whole planned
-// space, with no third axis or format until a real need shows up.
+// alpha.  The canvas surface itself stays locked premultiplied
+// f16; images parameterize over this 2x2, with no third axis or format
+// until a real need shows up.
 enum canvas_color_type { CANVAS_COLOR_UNORM8, CANVAS_COLOR_F16 };
 enum canvas_alpha_type { CANVAS_ALPHA_UNPREMUL, CANVAS_ALPHA_PREMUL };
 
@@ -490,12 +490,12 @@ struct canvas_image *__single canvas_image_f16(
     _Float16 const *__counted_by(w * h * 4) px, int w, int h,
     enum canvas_alpha_type at);
 
-// Snapshot a canvas as an image -- canvas-as-source, THE fast path.  The
+// Snapshot a canvas as an image (canvas-as-source).  The
 // surface is premultiplied f16 and so is the snapshot: a straight memcpy,
 // bit-lossless, no quantize and no unpremultiply anywhere between surface
 // and sample.  A copy: drawing on the canvas afterwards does not change the
 // snapshot.  The snapshot's colour space is the canvas's working space (the
-// honest tag: the snapped pixels ARE in the working space -- CANVAS_CS_SRGB
+// snapped pixels ARE in the working space -- CANVAS_CS_SRGB
 // for an sRGB canvas, CANVAS_CS_LINEAR_SRGB for a linear one).  NULL on OOM.
 struct canvas_image *__single canvas_snapshot(struct canvas *__single cv);
 

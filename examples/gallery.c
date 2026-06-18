@@ -1737,7 +1737,7 @@ static void blend(void) {
 
 // Shadows: a sharp drop shadow, a soft blurred shadow, and a text shadow.  Each
 // is the op's alpha blurred (the in-tree box blur), tinted, offset, and
-// composited under the shape -- all in checked C.  The bottom row steps one
+// composited under the shape.  The bottom row steps one
 // sharp shadow across quarter-pixel offsets: subpixel placement lands on a
 // 1/256th-px grid (a 2-tap lerp), so the edge ramps instead of snapping a
 // whole column at a time.
@@ -2730,7 +2730,7 @@ static void render_all(void) {
 int main(void) {
     int const reps = gallery_reps();
     // GALLERY_NO_SAVE suppresses ALL writes: a profiling run (profile_scene.sh)
-    // gets sampled then killed, and the renderer is now fast enough to finish
+    // gets sampled then killed, and the renderer can finish
     // its reps and reach the file-writing one before the kill lands -- which
     // once caught a committed .canvas mid-write, truncated.  Under the knob the
     // process can be killed (or finish) at any moment without touching the

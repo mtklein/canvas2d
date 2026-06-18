@@ -178,7 +178,7 @@ bool cnvs_stroke_polyline(cnvs_vec2 const *__counted_by(n) pts, int n, bool clos
     // full-circle arc that returns to its start, where sinf(2*pi) leaves a sub-
     // pixel gap -- would stroke a microscopic closing segment.  That segment is
     // too short to skip (it clears seg_dir's degeneracy cutoff) yet too short to
-    // stroke cleanly, so it splits the seam into two bad joins and bites a notch
+    // stroke cleanly, so it splits the seam into two joins and cuts a notch
     // out of the outline.  Drop such trailing duplicates (within 0.01 px -- far
     // below any real vertex spacing, well above the float noise even at the max
     // canvas size) so the real closing chord is stroked instead.  `m` is the
