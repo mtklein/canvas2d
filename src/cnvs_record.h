@@ -53,14 +53,16 @@ void cnvs_rec_text_max(struct cnvs_recorder *__single r, char const *__null_term
 // accepts exactly them, so the two cannot drift.  Defined in cnvs_record.c.
 extern char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1];
 extern char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1];
-extern char const *const cnvs_working_space_name[CANVAS_WS_LINEAR + 1];
-extern char const *const cnvs_gradient_interp_name[CNVS_INTERP_OKLAB + 1];
+// One table for every colour-space token (working_space + gradient interp),
+// indexed by enum value: "srgb", "linear", "oklab".  The tokens are the
+// on-disk contract; both record and replay name through this table.
+extern char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1];
 
 // `working_space <name>` -- emitted at record start ONLY for a non-sRGB working
 // space, so every existing (sRGB) .canvas file stays byte-identical (absence
 // means sRGB).  Written before any drawing op; the replay parser applies it to
 // the fresh canvas before the first colour interns.  A no-op on NULL/suspend or
-// for CANVAS_WS_SRGB.
+// for CANVAS_CS_SRGB.
 
 // File-local numbered-object id spaces, shared with the replay parser: the
 // recorder never emits an id at or past the cap, and the parser rejects one.
@@ -167,7 +169,7 @@ void cnvs_rec_line_join(struct cnvs_recorder *__single r, enum canvas_line_join 
 void cnvs_rec_line_cap(struct cnvs_recorder *__single r, enum canvas_line_cap cap);
 void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_op op);
 void cnvs_rec_working_space(struct cnvs_recorder *__single r,
-                           enum canvas_working_space space);
+                           enum canvas_color_space space);
 void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_align align);
 void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
                             enum canvas_text_baseline baseline);
@@ -179,4 +181,4 @@ void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction 
 // replay is the sRGB default, keeping every legacy program byte-identical.
 void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
                              char const *__null_terminated name,
-                             enum cnvs_gradient_interp interp);
+                             enum canvas_color_space interp);

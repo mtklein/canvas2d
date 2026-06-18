@@ -117,12 +117,12 @@ struct canvas_state {
 struct canvas {
     int width;
     int height;
-    // The working colour space (canvas.h): CANVAS_WS_SRGB is the legacy bypass
+    // The working colour space (canvas.h): CANVAS_CS_SRGB is the legacy bypass
     // (no transfer ever runs, byte-identical to before this field existed);
-    // CANVAS_WS_LINEAR composites in extended linear sRGB.  Chosen at creation,
-    // immutable -- it is NOT in struct canvas_state, so save/restore never touch
-    // it, and reset/resize leave it as the constructor set it.
-    enum canvas_working_space space;
+    // CANVAS_CS_LINEAR_SRGB composites in extended linear sRGB.  Chosen at
+    // creation, immutable -- it is NOT in struct canvas_state, so save/restore
+    // never touch it, and reset/resize leave it as the constructor set it.
+    enum canvas_color_space space;
     cnvs_premul *__counted_by(target_len) target;  // premultiplied; all-zero == transparent
     int target_len;                                // == width * height
     struct canvas_state cur;
@@ -244,17 +244,19 @@ static void state_defaults(struct canvas_state *s) {
 }
 
 struct canvas *__single canvas(int width, int height) {
-    return canvas_in_space(width, height, CANVAS_WS_SRGB);
+    return canvas_in_space(width, height, CANVAS_CS_SRGB);
 }
 
 struct canvas *__single canvas_in_space(int width, int height,
-                                        enum canvas_working_space space) {
+                                        enum canvas_color_space space) {
     if (width <= 0 || height <= 0 ||
         width > CANVAS_DIM_MAX || height > CANVAS_DIM_MAX) {
         return NULL;
     }
-    if (space != CANVAS_WS_SRGB && space != CANVAS_WS_LINEAR) {
-        return NULL;  // an out-of-range space is a caller error, not a default
+    if (space != CANVAS_CS_SRGB && space != CANVAS_CS_LINEAR_SRGB) {
+        return NULL;  // only the compositing spaces are valid here; an
+                      // out-of-range value (or CANVAS_CS_OKLAB, not a
+                      // compositing space) is a caller error, not a default
     }
     int const n = width * height;
     cnvs_premul *__counted_by_or_null(n) target = calloc((size_t)n, sizeof *target);
@@ -322,11 +324,11 @@ void canvas_free(struct canvas *__single cv) {
 }
 
 bool cnvs_canvas_set_working_space(struct canvas *__single cv,
-                                   enum canvas_working_space space) {
+                                   enum canvas_color_space space) {
     // The replay seam for a leading `working_space` line: the canvas is fresh
     // and transparent (the parser only reaches here as the first command), so
     // re-stamping the immutable space is creation-time, not a mid-stream flip.
-    if (space == CANVAS_WS_SRGB || space == CANVAS_WS_LINEAR) {
+    if (space == CANVAS_CS_SRGB || space == CANVAS_CS_LINEAR_SRGB) {
         cv->space = space;
         // Replaying a linear program onto a recording canvas re-emits the line,
         // so the round trip stays byte-idempotent (the no-op-for-sRGB emitter
@@ -357,7 +359,7 @@ bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated 
     cnvs_text_cache_unmark(&cv->text_cache);
     // The working space rides the very first line, before any draw -- but only
     // when it is non-sRGB, so every sRGB program stays byte-identical (the
-    // emitter is a no-op for CANVAS_WS_SRGB).  Replay applies it to the fresh
+    // emitter is a no-op for CANVAS_CS_SRGB).  Replay applies it to the fresh
     // canvas before the first colour interns.
     cnvs_rec_working_space(cv->rec, cv->space);
     return cv->rec != NULL;
@@ -548,7 +550,7 @@ canvas_matrix canvas_get_transform(struct canvas *__single cv) {
 // replay re-interns through the same gate on its own canvas.
 static cnvs_unpremul intern_color(struct canvas *__single cv,
                                   float r, float g, float b, float a) {
-    if (cv->space == CANVAS_WS_LINEAR) {
+    if (cv->space == CANVAS_CS_LINEAR_SRGB) {
         return cnvs_unpremul_of(cnvs_srgb_to_linear(r), cnvs_srgb_to_linear(g),
                                 cnvs_srgb_to_linear(b), cnvs_clamp01(a));
     }
@@ -585,7 +587,7 @@ static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr
     gr->r1 = 0.0f;
     gr->angle = 0.0f;
     gr->stop_count = 0;
-    gr->interp = CNVS_INTERP_SRGB;
+    gr->interp = CANVAS_CS_SRGB;
     gr->space = cv->space;
 }
 
@@ -599,7 +601,7 @@ static void grad_set_radial(struct canvas *__single cv, struct cnvs_gradient *gr
     gr->r1 = r1 * s;
     gr->angle = 0.0f;
     gr->stop_count = 0;
-    gr->interp = CNVS_INTERP_SRGB;
+    gr->interp = CANVAS_CS_SRGB;
     gr->space = cv->space;
 }
 
@@ -619,7 +621,7 @@ static void grad_set_conic(struct canvas *__single cv, struct cnvs_gradient *gr,
     gr->r1 = 0.0f;
     gr->angle = start_angle + ctm_rotation(cv->cur.ctm);
     gr->stop_count = 0;
-    gr->interp = CNVS_INTERP_SRGB;
+    gr->interp = CANVAS_CS_SRGB;
     gr->space = cv->space;
 }
 
@@ -667,7 +669,7 @@ void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
 }
 
 void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
-                                            enum cnvs_gradient_interp interp) {
+                                            enum canvas_color_space interp) {
     if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_fill_gradient_interpolation", interp); }
     cv->cur.fill_grad.interp = interp;
 }
@@ -718,7 +720,7 @@ void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
 }
 
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
-                                              enum cnvs_gradient_interp interp) {
+                                              enum canvas_color_space interp) {
     if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_stroke_gradient_interpolation", interp); }
     cv->cur.stroke_grad.interp = interp;
 }
@@ -1302,7 +1304,7 @@ static half8 blend_term8(enum canvas_composite_op mode,
 
 // --- the linear working-space seam -------------------------------------------
 //
-// On a LINEAR canvas (cv->space == CANVAS_WS_LINEAR) the target holds extended
+// On a LINEAR canvas (cv->space == CANVAS_CS_LINEAR_SRGB) the target holds extended
 // linear sRGB.  Two families of blend mode:
 //
 //   * range-preserving (the over/Porter-Duff family, multiply, screen,
@@ -1559,7 +1561,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
     (void)clip_len;
     bool const folds = coverage_folds(mode);
     bool const atten = cov || clip;  // any coverage to apply?
-    bool const lin = cv->space == CANVAS_WS_LINEAR;  // false -> legacy bypass
+    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;  // false -> legacy bypass
     _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
     half8 const one = (half8)(_Float16)1.0f;
     for (int row = 0; row < h; row++) {
@@ -1646,7 +1648,7 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
         // attenuation both scale the premultiplied source, in f16.  Source-over
         // is range-preserving, so `lin` only swaps src_over8's final clamp; an
         // sRGB canvas (lin == false) runs the identical legacy code.
-        bool const lin = cv->space == CANVAS_WS_LINEAR;
+        bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
         _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
             int col = 0;
@@ -3768,7 +3770,7 @@ void canvas_set_image_smoothing_quality(struct canvas *__single cv,
 // path, which picks its own pair from the source's derived chain below.
 //
 // LINEAR-WORKING-SPACE DEFERRAL: image/bitmap source pixels are untagged
-// encoded sRGB, so on a CANVAS_WS_LINEAR canvas they ought to decode
+// encoded sRGB, so on a CANVAS_CS_LINEAR_SRGB canvas they ought to decode
 // sRGB->linear before sampling -- AND the mip box-halving and the bilinear/
 // cubic taps ought to average in linear, not sRGB, to be correct.  That is a
 // pyramid-and-sampler-wide change (every sample_src* and the mip builder), out
@@ -4215,7 +4217,7 @@ static cnvs_px8 unpremul_encode_to_unorm8(cnvs_px8 p) {
 
 // Per-canvas readback: the sRGB SIMD bypass, or the linear scalar encode.
 static cnvs_px8 read_unorm8(struct canvas *__single cv, cnvs_px8 p) {
-    return cv->space == CANVAS_WS_LINEAR ? unpremul_encode_to_unorm8(p)
+    return cv->space == CANVAS_CS_LINEAR_SRGB ? unpremul_encode_to_unorm8(p)
                                          : unpremul_to_unorm8(p);
 }
 
@@ -4298,7 +4300,7 @@ canvas_create_image_data(int sw, int sh, int *__single len) {
 // place, leaving alpha alone -- the linear canvas's putImageData entry transfer.
 // Scalar per lane (the f32 decode, cnvs_color.c's deferral note); incoming
 // putImageData bytes are in [0,1] so the decode stays in [0,1], no extended
-// values to carry.  Reached only on cv->space == CANVAS_WS_LINEAR.
+// values to carry.  Reached only on cv->space == CANVAS_CS_LINEAR_SRGB.
 static cnvs_px8 px8_decode_rgb(cnvs_px8 p) {
     for (int i = 0; i < 8; i++) {
         p.r[i] = (_Float16)cnvs_srgb_to_linear((float)p.r[i]);
@@ -4336,7 +4338,7 @@ static void put_image_sub(struct canvas *__single cv,
     // and the planar premultiply writes finished tile pixels through st4.
     int const col0 = (int)(cx0 - dx);
     int const row0 = (int)(cy0 - dy);
-    bool const lin = cv->space == CANVAS_WS_LINEAR;  // decode incoming sRGB->linear
+    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;  // decode incoming sRGB->linear
     _Float16 const k255 = (_Float16)255.0f;
     for (int py = 0; py < rh; py++) {
         int px = 0;

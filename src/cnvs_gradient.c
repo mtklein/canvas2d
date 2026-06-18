@@ -27,8 +27,8 @@ void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremu
 // (total over R, so an extended stop survives).  Alpha is never a colour and
 // passes through untouched.  f32 throughout -- this is the cbrt-precision math
 // docs/decisions/color-axis.md reserves f32 for.
-static cnvs_rgb stop_to_linear(cnvs_unpremul c, enum canvas_working_space space) {
-    if (space == CANVAS_WS_LINEAR) {
+static cnvs_rgb stop_to_linear(cnvs_unpremul c, enum canvas_color_space space) {
+    if (space == CANVAS_CS_LINEAR_SRGB) {
         return (cnvs_rgb){ .r = (float)c.r, .g = (float)c.g, .b = (float)c.b };
     }
     return cnvs_rgb_srgb_to_linear(
@@ -37,8 +37,8 @@ static cnvs_rgb stop_to_linear(cnvs_unpremul c, enum canvas_working_space space)
 
 // The inverse: linear sRGB back to the gradient's working space, narrowed to the
 // _Float16 the shade/blend path expects, with `a` carried alongside.
-static cnvs_unpremul linear_to_stop(cnvs_rgb lin, float a, enum canvas_working_space space) {
-    cnvs_rgb const out = space == CANVAS_WS_LINEAR ? lin : cnvs_rgb_linear_to_srgb(lin);
+static cnvs_unpremul linear_to_stop(cnvs_rgb lin, float a, enum canvas_color_space space) {
+    cnvs_rgb const out = space == CANVAS_CS_LINEAR_SRGB ? lin : cnvs_rgb_linear_to_srgb(lin);
     return cnvs_unpremul_of(out.r, out.g, out.b, a);
 }
 
@@ -58,7 +58,7 @@ static cnvs_unpremul linear_to_stop(cnvs_rgb lin, float a, enum canvas_working_s
 // don't-care, so the divide is guarded (the eventual premultiply zeroes it
 // anyway).
 static cnvs_unpremul oklab_lerp(cnvs_unpremul lo, cnvs_unpremul hi, float lerp_t,
-                                enum canvas_working_space space) {
+                                enum canvas_color_space space) {
     cnvs_oklab const llab = cnvs_linear_srgb_to_oklab(stop_to_linear(lo, space));
     cnvs_oklab const hlab = cnvs_linear_srgb_to_oklab(stop_to_linear(hi, space));
 
@@ -102,7 +102,7 @@ cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
             // takes lo).
             float const span = hi.offset - lo.offset;
             float const lerp_t = span > 0.0f ? (t - lo.offset) / span : 0.0f;
-            if (gr->interp == CNVS_INTERP_OKLAB) {
+            if (gr->interp == CANVAS_CS_OKLAB) {
                 return oklab_lerp(lo.color, hi.color, lerp_t, gr->space);
             }
             half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
@@ -320,7 +320,7 @@ static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
 void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
                              float const *__counted_by(n) t, int n,
                              cnvs_unpremul *__counted_by(n) out) {
-    if (gr->interp == CNVS_INTERP_OKLAB) {
+    if (gr->interp == CANVAS_CS_OKLAB) {
         for (int k = 0; k < n; k++) {
             out[k] = t[k] >= 0.0f ? cnvs_gradient_color_at(gr, t[k])
                                   : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);

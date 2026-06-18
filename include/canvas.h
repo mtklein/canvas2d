@@ -63,52 +63,67 @@ enum canvas_composite_op {
     CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
 };
 
-// The canvas's WORKING COLOUR SPACE: the space untagged (encoded sRGB) colours
-// are converted INTO for compositing.  Chosen at creation and immutable -- it
-// lives on the canvas, not the save/restore drawing state, and reset/resize
-// leave it alone.  Two spaces, same sRGB primaries (no primaries axis):
-//   CANVAS_WS_SRGB    -- encoded sRGB; today's behaviour, byte for byte.  NO
-//                        transfer ever runs: entry, compositing, and exit are a
-//                        literal bypass of the legacy path.
-//   CANVAS_WS_LINEAR  -- extended linear sRGB; translucent overlaps composite
-//                        in linear light (they stay bright rather than going
-//                        muddy).  Untagged colours decode sRGB->linear on the
-//                        way in and encode linear->sRGB on the way out; the
-//                        only clamp is the output quantize, so extended
-//                        (out-of-[0,1]) values propagate through compositing.
+// The colour spaces this API names.  ONE enum spanning every role; each
+// surface that takes a space accepts only the valid SUBSET for that role and
+// rejects the rest (see canvas_in_space and the gradient interpolation setters).
+//   CANVAS_CS_SRGB        -- encoded sRGB.
+//   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB (same primaries, linear
+//                            transfer).
+//   CANVAS_CS_OKLAB       -- Oklab; a perceptual interpolation space, not a
+//                            compositing space.
+//
+// The canvas's WORKING COLOUR SPACE (canvas_in_space): the space untagged
+// (encoded sRGB) colours are converted INTO for compositing.  Chosen at
+// creation and immutable -- it lives on the canvas, not the save/restore
+// drawing state, and reset/resize leave it alone.  Only the two sRGB-primaried
+// spaces are valid here (Oklab is not a compositing space):
+//   CANVAS_CS_SRGB        -- encoded sRGB; today's behaviour, byte for byte.
+//                            NO transfer ever runs: entry, compositing, and
+//                            exit are a literal bypass of the legacy path.
+//   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB; translucent overlaps
+//                            composite in linear light (they stay bright rather
+//                            than going muddy).  Untagged colours decode
+//                            sRGB->linear on the way in and encode
+//                            linear->sRGB on the way out; the only clamp is the
+//                            output quantize, so extended (out-of-[0,1]) values
+//                            propagate through compositing.
 // Untagged colours are canonically ENCODED sRGB at every public boundary, in
 // both spaces -- input (set_fill_rgba and siblings, gradient stops, shadow and
 // drop-shadow colours, putImageData/bitmap/image pixels) and output (read_rgba,
 // write_png, get_image_data).  The space changes only what they convert into
 // internally, never how they are spelled at the boundary.
-enum canvas_working_space { CANVAS_WS_SRGB, CANVAS_WS_LINEAR };
-
+//
 // A gradient's INTERPOLATION SPACE: the colour space its stop colours blend in
-// between stops.  Per gradient (not per canvas): it rides the fill/stroke
-// gradient, so save/restore brackets it like any drawing state, and a fresh
-// canvas_set_*_gradient resets it to the sRGB default.  The geometry of the
-// gradient (which stop pair, how far between) is identical either way; only the
-// colour lerp differs.
-//   CNVS_INTERP_SRGB  -- component-wise lerp of the stop colours as stored,
-//                        today's behaviour byte for byte.  The default, so an
-//                        untouched gradient -- and every legacy program with no
-//                        interpolation line -- is unchanged.
-//   CNVS_INTERP_OKLAB -- lerp in PREMULTIPLIED Oklab (L,a,b each scaled by that
-//                        stop's alpha, alpha lerped on its own, unpremultiplied
-//                        before converting out) for a perceptually even ramp:
-//                        the midpoint stays bright instead of going muddy/dark,
-//                        and a transparent stop bleeds no colour into the ramp
-//                        (transparent-red -> opaque-blue is pure blue at the
-//                        midpoint).  Oklab is interpolation-only; the result
-//                        re-enters the working-space compositing path unchanged.
-enum cnvs_gradient_interp { CNVS_INTERP_SRGB, CNVS_INTERP_OKLAB };
+// between stops (the gradient interpolation setters).  Per gradient (not per
+// canvas): it rides the fill/stroke gradient, so save/restore brackets it like
+// any drawing state, and a fresh canvas_set_*_gradient resets it to the sRGB
+// default.  The geometry of the gradient (which stop pair, how far between) is
+// identical either way; only the colour lerp differs.  The valid subset here is
+// sRGB and Oklab:
+//   CANVAS_CS_SRGB        -- component-wise lerp of the stop colours as stored,
+//                            today's behaviour byte for byte.  The default, so
+//                            an untouched gradient -- and every legacy program
+//                            with no interpolation line -- is unchanged.
+//   CANVAS_CS_OKLAB       -- lerp in PREMULTIPLIED Oklab (L,a,b each scaled by
+//                            that stop's alpha, alpha lerped on its own,
+//                            unpremultiplied before converting out) for a
+//                            perceptually even ramp: the midpoint stays bright
+//                            instead of going muddy/dark, and a transparent
+//                            stop bleeds no colour into the ramp
+//                            (transparent-red -> opaque-blue is pure blue at
+//                            the midpoint).  Oklab is interpolation-only; the
+//                            result re-enters the working-space compositing
+//                            path unchanged.
+enum canvas_color_space {
+    CANVAS_CS_SRGB, CANVAS_CS_LINEAR_SRGB, CANVAS_CS_OKLAB,
+};
 
 // The constructor: NULL on failure; the canvas starts transparent black.
 // canvas_free accepts NULL, like free() itself.  canvas(w,h) is the sRGB
 // working space (today's behaviour); canvas_in_space picks the space explicitly.
 struct canvas *__single canvas(int width, int height);
 struct canvas *__single canvas_in_space(int width, int height,
-                                        enum canvas_working_space space);
+                                        enum canvas_color_space space);
 void canvas_free(struct canvas *__single cv);
 
 // Whether the rendering context has been lost (matching isContextLost).  This
@@ -226,11 +241,11 @@ void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angl
 void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
                                 float r, float g, float b, float a);
 // Choose the interpolation space for the current fill gradient (default
-// CNVS_INTERP_SRGB).  Applies to whichever gradient is the fill paint now; a
+// CANVAS_CS_SRGB).  Applies to whichever gradient is the fill paint now; a
 // later canvas_set_fill_*_gradient resets it to the sRGB default, so set it
 // after creating the gradient and before (or after) its stops.
 void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
-                                            enum cnvs_gradient_interp interp);
+                                            enum canvas_color_space interp);
 // Image pattern fill paint (createPattern): the tightly packed RGBA8 source
 // (w*h, top row first) tiles the plane per `repeat`.  The source is *borrowed* --
 // the caller must keep it alive while it remains the fill paint (including across
@@ -360,7 +375,7 @@ void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
                                   float r, float g, float b, float a);
 // Interpolation space for the current stroke gradient (the fill twin above).
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
-                                              enum cnvs_gradient_interp interp);
+                                              enum canvas_color_space interp);
 // Image pattern stroke paint, mirroring canvas_set_fill_pattern.
 void canvas_set_stroke_pattern(struct canvas *__single cv,
                                uint8_t const *__counted_by(w * h * 4) src,

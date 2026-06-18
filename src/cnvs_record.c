@@ -48,11 +48,13 @@ char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1] = {
 char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
     "repeat", "repeat-x", "repeat-y", "no-repeat",
 };
-char const *const cnvs_working_space_name[CANVAS_WS_LINEAR + 1] = {
-    "srgb", "linear",
-};
-char const *const cnvs_gradient_interp_name[CNVS_INTERP_OKLAB + 1] = {
-    "srgb", "oklab",
+// One table for every colour-space token in the format -- the working_space
+// line and both gradient-interpolation lines draw their names here, indexed by
+// enum value.  The spellings are the on-disk contract: existing .canvas files
+// carry exactly these tokens (working_space `linear`, interpolation `srgb` /
+// `oklab`), so they must not change.
+char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1] = {
+    "srgb", "linear", "oklab",
 };
 
 struct cnvs_recorder {
@@ -730,7 +732,7 @@ void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_
 }
 
 void cnvs_rec_working_space(struct cnvs_recorder *__single r,
-                           enum canvas_working_space space) {
+                           enum canvas_color_space space) {
     // sRGB records NOTHING: absence is sRGB, so every pre-existing .canvas file
     // stays byte-identical (the determinism gate's 35 scenes are all sRGB).  An
     // out-of-range value is treated as sRGB (emit nothing) for the same reason.
@@ -738,29 +740,29 @@ void cnvs_rec_working_space(struct cnvs_recorder *__single r,
     // for a linear canvas at the top, and replay re-applies it when it parses
     // the leading line; the flag keeps those from stacking two lines (which the
     // strict parser, requiring the line to lead, would then reject on re-replay).
-    if (!r || r->suspend != 0 || space != CANVAS_WS_LINEAR || r->wrote_ws) {
+    if (!r || r->suspend != 0 || space != CANVAS_CS_LINEAR_SRGB || r->wrote_ws) {
         return;
     }
     fputs("working_space ", r->f);
-    fputs(cnvs_working_space_name[CANVAS_WS_LINEAR], r->f);
+    fputs(canvas_color_space_name[CANVAS_CS_LINEAR_SRGB], r->f);
     fputc('\n', r->f);
     r->wrote_ws = true;
 }
 
 void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
                              char const *__null_terminated name,
-                             enum cnvs_gradient_interp interp) {
+                             enum canvas_color_space interp) {
     if (!r || r->suspend != 0) {
         return;
     }
     unsigned const i = (unsigned)interp;
-    if (i >= sizeof cnvs_gradient_interp_name / sizeof cnvs_gradient_interp_name[0]) {
+    if (i >= sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
         return;  // out of range; the caller's setter still stored it, but an
                  // unnameable value cannot round-trip -- skip the line rather
                  // than write a token the strict parser would reject.
     }
     fputs(name, r->f);
     fputc(' ', r->f);
-    fputs(cnvs_gradient_interp_name[i], r->f);
+    fputs(canvas_color_space_name[i], r->f);
     fputc('\n', r->f);
 }

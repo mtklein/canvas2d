@@ -71,7 +71,7 @@ static void space_default_and_persistence(void) {
         canvas_free(def);
     }
     // canvas_in_space(.., SRGB) is the same.
-    struct canvas *__single s = canvas_in_space(w, h, CANVAS_WS_SRGB);
+    struct canvas *__single s = canvas_in_space(w, h, CANVAS_CS_SRGB);
     CHECK(s != NULL);
     if (s) {
         CHECK(abs(space_probe(s, w, h, px, len) - srgb_red) <= 2);
@@ -80,7 +80,7 @@ static void space_default_and_persistence(void) {
 
     // A linear canvas behaves linearly -- and stays linear across reset/resize,
     // because the space is not part of the drawing state.
-    struct canvas *__single lin = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+    struct canvas *__single lin = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(lin != NULL);
     if (lin) {
         CHECK(abs(space_probe(lin, w, h, px, len) - lin_red) <= 2);
@@ -109,7 +109,7 @@ static void linear_color_round_trip(void) {
     if (!px) {
         return;
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         float const c = 188.0f / 255.0f;
@@ -140,7 +140,7 @@ static void linear_image_data_round_trip(void) {
         free(b);
         return;
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, 0.85f, 0.35f, 0.55f, 0.7f);
@@ -150,7 +150,7 @@ static void linear_image_data_round_trip(void) {
         canvas_get_image_data(cv, 0, 0, w, h, a, len);
 
         // Round the read-back bytes back onto a fresh linear canvas, read again.
-        struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+        struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
         CHECK(cv2 != NULL);
         if (cv2) {
             canvas_put_image_data(cv2, a, len, w, h, 0, 0);
@@ -195,7 +195,7 @@ static void linear_source_over_oracle(void) {
     int const want_srgb = (int)(co_s * 255.0 + 0.5);
     CHECK(abs(want_lin - want_srgb) > 8);  // the spaces genuinely diverge here
 
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, bd, bd, bd, 1.0f);
@@ -227,7 +227,7 @@ static void linear_multiply_differs(void) {
     int srgb_red = -1, lin_red = -1;
     for (int pass = 0; pass < 2; pass++) {
         struct canvas *__single cv = canvas_in_space(
-            w, h, pass == 0 ? CANVAS_WS_SRGB : CANVAS_WS_LINEAR);
+            w, h, pass == 0 ? CANVAS_CS_SRGB : CANVAS_CS_LINEAR_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
