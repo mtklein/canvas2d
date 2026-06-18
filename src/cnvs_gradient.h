@@ -5,7 +5,7 @@
 // save/restore.  Fills and strokes sample it per pixel on the CPU into the tile the
 // blend stage composites.
 
-#include "canvas.h"     // enum canvas_color_space
+#include "canvas.h"     // enum canvas_color_space, enum canvas_alpha_type
 #include "cnvs_math.h"
 
 #include <ptrcheck.h>
@@ -28,15 +28,27 @@ struct cnvs_gradient {
     float angle;   // conic: start angle (radians), device space; unused otherwise
     cnvs_stop stops[CNVS_STOPS_MAX];
     int stop_count;
-    // Oklab interpolation needs to take the stored stop colours (which live in
-    // the canvas WORKING space) to linear and back at eval time.  The space is
-    // stamped onto the gradient when it is created -- it is immutable on the
-    // canvas, so reading cv->space once at set time is exactly as correct as
-    // threading the canvas into every eval call, and keeps the colour kernels
-    // (cnvs_gradient_color_at/_row) dependent only on the gradient, not the
-    // canvas.  Zero (CANVAS_CS_SRGB) for designated-initializer gradients.
-    enum canvas_color_space interp;  // sRGB or Oklab; the gradient lerp space
-    enum canvas_color_space space;   // the canvas working space (sRGB or linear)
+    // Interpolation is TWO orthogonal knobs (a 2D grid, not a single mode):
+    //   interp -- the SPACE the colour coords lerp in: sRGB, linear sRGB, or
+    //             Oklab.  All three are valid.
+    //   interp_alpha -- whether the colour coords are premultiplied by alpha
+    //             before the lerp (PREMUL: a transparent stop contributes no
+    //             colour) or lerped directly (UNPREMUL).  Alpha itself always
+    //             lerps linearly, on its own.
+    // The DEFAULT (CANVAS_CS_SRGB + CANVAS_ALPHA_UNPREMUL, the zero values for
+    // a designated-initializer gradient) reproduces the legacy straight stored-
+    // value lerp byte-for-byte on an sRGB working canvas.
+    //
+    // The non-default combinations take the stored stop colours (which live in
+    // the canvas WORKING space) to the interpolation space and back at eval
+    // time.  `space` is the canvas working space, stamped on at create time --
+    // it is immutable on the canvas, so reading cv->space once at set time is
+    // exactly as correct as threading the canvas into every eval call, and
+    // keeps the colour kernels (cnvs_gradient_color_at/_row) dependent only on
+    // the gradient, not the canvas.
+    enum canvas_color_space interp;       // the gradient lerp SPACE
+    enum canvas_alpha_type  interp_alpha; // premultiply colour coords before lerp?
+    enum canvas_color_space space;        // the canvas working space (sRGB or linear)
 };
 
 // Insert a stop in offset order (offset clamped to [0,1]); a no-op once full.

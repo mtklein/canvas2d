@@ -1328,19 +1328,26 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
              tok_eq(data, le, cs, cl, "set_stroke_gradient_interpolation")) {
         bool const fill = data[cs + 4] == 'f';  // "set_[f]ill" vs "set_[s]troke"
         size_t ts, tl;
+        // SPACE token: any of the three colour spaces is a valid interp space.
         if (!read_token(data, le, &j, &ts, &tl)) return false;
-        // The interpolation subset is sRGB and Oklab; `linear` (a working space,
-        // not an implemented interp space) is not a valid token here.
-        enum canvas_color_space interp;
+        enum canvas_color_space space;
         if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
-            interp = CANVAS_CS_SRGB;
+            space = CANVAS_CS_SRGB;
+        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_LINEAR_SRGB])) {
+            space = CANVAS_CS_LINEAR_SRGB;
         } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_OKLAB])) {
-            interp = CANVAS_CS_OKLAB;
+            space = CANVAS_CS_OKLAB;
         } else {
             return false;
         }
-        if (fill) canvas_set_fill_gradient_interpolation(cv, interp);
-        else      canvas_set_stroke_gradient_interpolation(cv, interp);
+        // ALPHA token: premultiply the colour coords before the lerp, or not.
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        enum canvas_alpha_type alpha;
+        if (tok_eq(data, le, ts, tl, "unpremul"))    alpha = CANVAS_ALPHA_UNPREMUL;
+        else if (tok_eq(data, le, ts, tl, "premul")) alpha = CANVAS_ALPHA_PREMUL;
+        else return false;
+        if (fill) canvas_set_fill_gradient_interpolation(cv, space, alpha);
+        else      canvas_set_stroke_gradient_interpolation(cv, space, alpha);
     }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;

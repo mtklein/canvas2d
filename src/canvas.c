@@ -606,11 +606,11 @@ static float ctm_scale(cnvs_mat m) {
 // Initialise a gradient struct in device space (the CTM is baked in now); the
 // caller sets the matching paint kind to GRADIENT.
 // Every grad_set_* stamps the canvas's (immutable) working space onto the
-// gradient so its Oklab path can take stops working<->linear at eval time, and
-// resets the interpolation space to the sRGB default -- a freshly set gradient
-// interpolates in sRGB until canvas_set_*_gradient_interpolation says otherwise,
-// matching the Canvas object's per-gradient default and keeping legacy
-// behaviour byte-identical.
+// gradient so its non-default interp path can take stops working<->linear at
+// eval time, and resets BOTH interpolation knobs to the default (sRGB space +
+// unpremul alpha) -- a freshly set gradient interpolates the legacy way until
+// canvas_set_*_gradient_interpolation says otherwise, matching the Canvas
+// object's per-gradient default and keeping legacy behaviour byte-identical.
 static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr,
                             float x0, float y0, float x1, float y1) {
     gr->kind = CNVS_GRAD_LINEAR;
@@ -621,6 +621,7 @@ static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr
     gr->angle = 0.0f;
     gr->stop_count = 0;
     gr->interp = CANVAS_CS_SRGB;
+    gr->interp_alpha = CANVAS_ALPHA_UNPREMUL;
     gr->space = cv->space;
 }
 
@@ -635,6 +636,7 @@ static void grad_set_radial(struct canvas *__single cv, struct cnvs_gradient *gr
     gr->angle = 0.0f;
     gr->stop_count = 0;
     gr->interp = CANVAS_CS_SRGB;
+    gr->interp_alpha = CANVAS_ALPHA_UNPREMUL;
     gr->space = cv->space;
 }
 
@@ -655,6 +657,7 @@ static void grad_set_conic(struct canvas *__single cv, struct cnvs_gradient *gr,
     gr->angle = start_angle + ctm_rotation(cv->cur.ctm);
     gr->stop_count = 0;
     gr->interp = CANVAS_CS_SRGB;
+    gr->interp_alpha = CANVAS_ALPHA_UNPREMUL;
     gr->space = cv->space;
 }
 
@@ -703,9 +706,11 @@ void canvas_add_fill_color_stop(struct canvas *__single cv,
 }
 
 void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
-                                            enum canvas_color_space interp) {
-    if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_fill_gradient_interpolation", interp); }
-    cv->cur.fill_grad.interp = interp;
+                                            enum canvas_color_space space,
+                                            enum canvas_alpha_type alpha) {
+    if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_fill_gradient_interpolation", space, alpha); }
+    cv->cur.fill_grad.interp = space;
+    cv->cur.fill_grad.interp_alpha = alpha;
 }
 
 void canvas_set_fill_pattern(struct canvas *__single cv, enum canvas_color_space space,
@@ -759,9 +764,11 @@ void canvas_add_stroke_color_stop(struct canvas *__single cv,
 }
 
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
-                                              enum canvas_color_space interp) {
-    if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_stroke_gradient_interpolation", interp); }
-    cv->cur.stroke_grad.interp = interp;
+                                              enum canvas_color_space space,
+                                              enum canvas_alpha_type alpha) {
+    if (cv->rec) { cnvs_rec_gradient_interp(cv->rec, "set_stroke_gradient_interpolation", space, alpha); }
+    cv->cur.stroke_grad.interp = space;
+    cv->cur.stroke_grad.interp_alpha = alpha;
 }
 
 void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_space space,

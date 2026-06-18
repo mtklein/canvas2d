@@ -236,13 +236,15 @@ more saturated than the gamma-space ones:
 
 ![linearlight](gallery/linearlight.png)
 
-`createLinearGradient` interpolation space — the same stops interpolated in
-sRGB (top of each pair) and Oklab (bottom). Left, a rainbow ramp: Oklab spreads
-the hues more evenly and avoids the dark midpoint sRGB passes through. Right, a
-colour fading to transparent over a checkerboard: sRGB interpolation bleeds a
-tint from the transparent end; Oklab's premultiplied interpolation does not:
+`createLinearGradient` interpolation — two independent controls. Top, the
+interpolation space: the same opaque red→green→blue ramp in sRGB (dark
+midpoints), linear sRGB (brighter), and Oklab (perceptually even); at full
+alpha this isolates the space. Bottom, alpha premultiplication, the space fixed
+at sRGB: a blue→transparent-red fade over a checkerboard, unpremultiplied (the
+transparent end bleeds a tint into the ramp) vs premultiplied (the colour fades
+in alpha only):
 
-![oklab](gallery/oklab.png)
+![gradinterp](gallery/gradinterp.png)
 
 Explicit colour spaces — each colour the API takes names its space. Row 1 tags
 six numeric RGBA triples sRGB; row 2 tags the same numbers
