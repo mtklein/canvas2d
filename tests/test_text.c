@@ -47,9 +47,9 @@ int main(void) {
     CHECK(canvas_measure_text(cv, "Hello") > adv);
 
     // White ground, black fill_text -> a healthy patch of ink.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hello", 10.0f, 55.0f);
     canvas_read_rgba(cv, px, len);
     long ink = ink_count(px, len, n, 128);
@@ -69,38 +69,38 @@ int main(void) {
     // UTF-8: a Chinese string (3-byte code points) maps to glyphs, measures wider
     // than empty, and renders ink -- Libian TC carries both scripts.
     CHECK(canvas_measure_text(cv, "\xe4\xbd\xa0\xe5\xa5\xbd") > 1.0f);  // 你好
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "\xe4\xbd\xa0\xe5\xa5\xbd\xe4\xb8\x96\xe7\x95\x8c", 10.0f, 55.0f);  // 你好世界
     canvas_read_rgba(cv, px, len);
     CHECK(ink_count(px, len, n, 128) > 200);
 
     // Empty string draws nothing.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "", 10.0f, 55.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(ink_count(px, len, n, 128) == 0);
 
     // Clip excludes the text region -> nothing drawn.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_save(cv);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, 4.0f, 4.0f);  // tiny corner, far from the text
     canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hello", 40.0f, 55.0f);
     canvas_restore(cv);
     canvas_read_rgba(cv, px, len);
     CHECK(ink_count(px, len, n, 128) == 0);
 
     // global alpha applies: black text at 0.5 over white never reaches full black.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_global_alpha(cv, 0.5f);
     canvas_fill_text(cv, "Hello", 10.0f, 55.0f);
     canvas_read_rgba(cv, px, len);
@@ -109,9 +109,9 @@ int main(void) {
     canvas_set_global_alpha(cv, 1.0f);
 
     // stroke_text also produces ink.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f);
     canvas_stroke_text(cv, "Hi", 10.0f, 55.0f);
     canvas_read_rgba(cv, px, len);

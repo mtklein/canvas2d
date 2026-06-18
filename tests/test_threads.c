@@ -57,9 +57,9 @@ enum {
 static void scene_gradients(struct canvas *__single cv) {
     // Linear wash over the whole scene.
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
-    canvas_add_fill_color_stop(cv, 0.0f, 0.10f, 0.05f, 0.30f, 1.0f);
-    canvas_add_fill_color_stop(cv, 0.5f, 0.05f, 0.25f, 0.45f, 1.0f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.30f, 0.10f, 0.20f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.10f, 0.05f, 0.30f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.05f, 0.25f, 0.45f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.30f, 0.10f, 0.20f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
 
     // A grid of radial blobs, straddling tile seams on purpose.
@@ -68,8 +68,8 @@ static void scene_gradients(struct canvas *__single cv) {
         float const cy = 128.0f + 256.0f * (float)(i / 4);
         canvas_set_fill_radial_gradient(cv, cx - 20.0f, cy - 20.0f, 8.0f,
                                         cx, cy, 110.0f);
-        canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.9f, 0.4f, 1.0f);
-        canvas_add_fill_color_stop(cv, 1.0f, 0.8f, 0.2f, 0.4f, 0.0f);
+        canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.9f, 0.4f, 1.0f);
+        canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.8f, 0.2f, 0.4f, 0.0f);
         canvas_begin_path(cv);
         canvas_arc(cv, cx, cy, 110.0f, 0.0f, 6.2831853f, false);
         canvas_fill(cv, CANVAS_NONZERO);
@@ -77,32 +77,32 @@ static void scene_gradients(struct canvas *__single cv) {
 
     // A conic-gradient pinwheel centred on a four-tile corner.
     canvas_set_fill_conic_gradient(cv, 0.5f, 512.0f, 256.0f);
-    canvas_add_fill_color_stop(cv, 0.0f, 0.2f, 0.8f, 0.9f, 0.9f);
-    canvas_add_fill_color_stop(cv, 0.5f, 0.9f, 0.3f, 0.8f, 0.9f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.2f, 0.8f, 0.9f, 0.9f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.2f, 0.8f, 0.9f, 0.9f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.9f, 0.3f, 0.8f, 0.9f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.2f, 0.8f, 0.9f, 0.9f);
     canvas_begin_path(cv);
     canvas_arc(cv, 512.0f, 256.0f, 150.0f, 0.0f, 6.2831853f, false);
     canvas_fill(cv, CANVAS_NONZERO);
 
     // Shadowed rounded rects.
-    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 0.0f, 0.8f);
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.8f);
     canvas_set_shadow_blur(cv, 12.0f);
     canvas_set_shadow_offset_x(cv, 8.0f);
     canvas_set_shadow_offset_y(cv, 10.0f);
-    canvas_set_fill_rgba(cv, 0.95f, 0.85f, 0.30f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.85f, 0.30f, 1.0f);
     canvas_begin_path(cv);
     canvas_round_rect(cv, 180.0f, 430.0f, 300.0f, 200.0f, 28.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 0.30f, 0.85f, 0.55f, 0.9f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.30f, 0.85f, 0.55f, 0.9f);
     canvas_begin_path(cv);
     canvas_round_rect(cv, 620.0f, 80.0f, 260.0f, 170.0f, 40.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 0.0f, 0.0f);  // shadows off
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);  // shadows off
 
     // A dashed gradient stroke weaving across every tile column.
     canvas_set_stroke_linear_gradient(cv, 0.0f, 600.0f, (float)SCENE_W, 700.0f);
-    canvas_add_stroke_color_stop(cv, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_add_stroke_color_stop(cv, 1.0f, 1.0f, 0.4f, 0.1f, 1.0f);
+    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.4f, 0.1f, 1.0f);
     canvas_set_line_width(cv, 14.0f);
     canvas_set_line_cap(cv, CANVAS_CAP_ROUND);
     float const dash[2] = { 36.0f, 22.0f };
@@ -146,9 +146,9 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
             }
         }
         canvas_path2d_close_path(star);
-        canvas_set_fill_rgba(cv, 0.15f, 0.2f, 0.6f, 0.85f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.15f, 0.2f, 0.6f, 0.85f);
         canvas_fill_path(cv, star, CANVAS_EVENODD);
-        canvas_set_stroke_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
         canvas_set_line_width(cv, 6.0f);
         canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
         canvas_stroke_path(cv, star);
@@ -161,7 +161,7 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
         canvas_path2d_arc(ring, 260.0f, 200.0f, 150.0f, 0.0f, 6.2831853f, false);
         canvas_save(cv);
         canvas_clip_path(cv, ring, CANVAS_NONZERO);
-        canvas_set_stroke_rgba(cv, 1.0f, 0.85f, 0.2f, 1.0f);
+        canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.85f, 0.2f, 1.0f);
         canvas_set_line_width(cv, 10.0f);
         for (int i = 0; i < 6; i++) {
             canvas_begin_path(cv);
@@ -175,9 +175,9 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
 }
 
 static void scene_text(struct canvas *__single cv) {
-    canvas_set_fill_rgba(cv, 0.98f, 0.96f, 0.92f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.98f, 0.96f, 0.92f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
-    canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.15f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.15f, 1.0f);
 
     // Latin + Chinese rows at several sizes: concurrent shaping on distinct
     // canvases, same strings, so the per-canvas shape caches fill in parallel.
@@ -206,7 +206,7 @@ static void scene_text(struct canvas *__single cv) {
     canvas_fill_text(cv, "\xF0\x9F\xA6\x8A", 500.0f, 530.0f);                  // 🦊
 
     // Stroked text, centre-aligned across a vertical seam.
-    canvas_set_stroke_rgba(cv, 0.6f, 0.1f, 0.3f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.6f, 0.1f, 0.3f, 1.0f);
     canvas_set_line_width(cv, 1.5f);
     canvas_set_font_size(cv, 48.0f);
     canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);

@@ -37,7 +37,7 @@ static void draw_program(struct canvas *__single cv) {
 
     // An opaque source-over fill up front, so the bitmap is non-trivial before
     // any later clip or blend mode narrows things.
-    canvas_set_fill_rgba(cv, 0.5f, 0.25f, 0.75f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.25f, 0.75f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
     // Transforms.
@@ -56,22 +56,22 @@ static void draw_program(struct canvas *__single cv) {
 
     // Fill gradients (linear + radial) with stops.
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_fill_radial_gradient(cv, 8.0f, 8.0f, 0.0f, 8.0f, 8.0f, 16.0f);
-    canvas_add_fill_color_stop(cv, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_fill_conic_gradient(cv, 0.5f, 16.0f, 12.0f);
-    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.5f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.5f, 1.0f, 1.0f);
 
     // Stroke paints (solid, then both gradient forms) + line styles.
-    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_stroke_linear_gradient(cv, 0.0f, 0.0f, 32.0f, 0.0f);
-    canvas_add_stroke_color_stop(cv, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_set_stroke_radial_gradient(cv, 4.0f, 4.0f, 1.0f, 4.0f, 4.0f, 8.0f);
-    canvas_add_stroke_color_stop(cv, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f);
+    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f);
     canvas_set_stroke_conic_gradient(cv, 0.25f, 16.0f, 12.0f);
-    canvas_add_stroke_color_stop(cv, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f);
+    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f);
     canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
     canvas_set_line_cap(cv, CANVAS_CAP_SQUARE);
@@ -109,8 +109,8 @@ static void draw_program(struct canvas *__single cv) {
     canvas_add_filter_saturate(cv, 2.0f);
     canvas_add_filter_sepia(cv, 0.5f);
     canvas_add_filter_blur(cv, 1.5f);
-    canvas_add_filter_drop_shadow(cv, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
-    canvas_set_fill_rgba(cv, 0.9f, 0.6f, 0.2f, 0.8f);
+    canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.6f, 0.2f, 0.8f);
     canvas_fill_rect(cv, 36.0f, 14.0f, 8.0f, 8.0f);
     canvas_set_filter_none(cv);
 
@@ -118,7 +118,7 @@ static void draw_program(struct canvas *__single cv) {
     // The text ops also emit their font/glyph/shape blocks (see canvas.h), so
     // this pins the blocks' spellings against the parser too.
     canvas_set_font_size(cv, 12.0f);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text(cv, "Hi 隸", 4.0f, 20.0f);
     canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
     canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
@@ -148,8 +148,8 @@ static void draw_program(struct canvas *__single cv) {
     canvas_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
     canvas_set_stroke_pattern(cv, img, 4, 3, CANVAS_REPEAT_X);
     canvas_stroke_rect(cv, 16.0f, 24.0f, 10.0f, 6.0f);
-    canvas_set_fill_rgba(cv, 0.2f, 0.6f, 0.4f, 1.0f);
-    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.6f, 0.4f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
 
     // Path2D: every builder command in one path, drawn by all three ops --
     // twice each for fill/stroke, so the content dedupe pins ONE `path` block
@@ -178,7 +178,7 @@ static void draw_program(struct canvas *__single cv) {
         (void)canvas_is_point_in_stroke_path(cv, p2, 20.0f, 4.0f);
         canvas_save(cv);
         canvas_clip_path(cv, p2, CANVAS_NONZERO);
-        canvas_set_fill_rgba(cv, 0.9f, 0.4f, 0.1f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.4f, 0.1f, 1.0f);
         canvas_fill_rect(cv, 18.0f, 2.0f, 16.0f, 14.0f);
         canvas_restore(cv);
         canvas_path2d_free(p2);

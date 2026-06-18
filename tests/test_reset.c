@@ -29,7 +29,7 @@ int main(void) {
 
     // Dirty everything: paint the bitmap, move the transform, change paint and
     // alpha, set a dash, push a state, and clip to a tiny corner.
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_translate(cv, 5.0f, 5.0f);
     canvas_set_global_alpha(cv, 0.5f);
@@ -37,7 +37,7 @@ int main(void) {
     float const dash[2] = { 3.0f, 3.0f };
     canvas_set_line_dash(cv, dash, 2);
     canvas_save(cv);
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, 2.0f, 2.0f);
     canvas_clip(cv, CANVAS_NONZERO);

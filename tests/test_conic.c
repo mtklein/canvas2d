@@ -7,11 +7,11 @@
 // A conic at (cx,cy): red @0, green @0.25, blue @0.5, white @0.75, red @1.
 static void setup_conic(struct canvas *__single cv, float start, float cx, float cy) {
     canvas_set_fill_conic_gradient(cv, start, cx, cy);
-    canvas_add_fill_color_stop(cv, 0.00f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 0.25f, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 0.50f, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 0.75f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 1.00f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.00f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.25f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.50f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.75f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.00f, 1.0f, 0.0f, 0.0f, 1.0f);
 }
 
 static bool dom_red(struct rgba p)   { return p.r > 180 && p.g < 90 && p.b < 90; }

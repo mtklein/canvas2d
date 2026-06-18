@@ -24,7 +24,7 @@ int main(void) {
     }
 
     float const cx = 80.0f, cy = 80.0f, r = 46.0f, half_width = 7.5f;  // ring radius +/- half_width
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f * half_width);
     canvas_begin_path(cv);
     canvas_arc(cv, cx, cy, r, 0.0f, 2.0f * (float)M_PI, false);

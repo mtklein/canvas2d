@@ -86,7 +86,7 @@ int main(void) {
 
     // An empty dirty rect is a no-op: a pre-painted pixel survives untouched.
     canvas_clear_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
     canvas_put_image_data_dirty(cv, src, slen, 8, 8, 0, 0, 0, 0, 0, 4);
     canvas_read_rgba(cv, px, clen);

@@ -77,8 +77,8 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                 break;
             case S_GRADIENT:
                 canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, coord(&c), coord(&c));
-                canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-                canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+                canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+                canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
                 break;
             case S_RESET: canvas_reset_transform(cv); break;
             default: break;

@@ -407,12 +407,12 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
         free(px);
         return;
     }
-    canvas_set_fill_rgba(cv, DL[0], DL[1], DL[2], DL[3]);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, DL[0], DL[1], DL[2], DL[3]);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W / 2.0f, (float)H);
-    canvas_set_fill_rgba(cv, DR[0], DR[1], DR[2], DR[3]);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, DR[0], DR[1], DR[2], DR[3]);
     canvas_fill_rect(cv, (float)W / 2.0f, 0.0f, (float)W / 2.0f, (float)H);
     canvas_set_global_composite_operation(cv, (enum canvas_composite_op)mode);
-    canvas_set_fill_rgba(cv, sc[0], sc[1], sc[2], sc[3]);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, sc[0], sc[1], sc[2], sc[3]);
     canvas_begin_path(cv);
     canvas_move_to(cv, vx[0], vy[0]);
     for (int i = 1; i < n; i++) {

@@ -28,7 +28,7 @@ int main(void) {
     // Paint the 8x8 canvas, then grow to 16x16: the bitmap is reallocated and
     // cleared.  Pre-fill the readback buffer with a sentinel so an unchanged
     // (still-8x8) canvas would leave the far corner unwritten and fail the check.
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 8.0f, 8.0f);
     CHECK(canvas_resize(cv, 16, 16));
     memset(px, 0xAA, (size_t)cap);
@@ -37,7 +37,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, cap, 16, 15, 15), 0, 0, 0, 0, 0));   // and addressable
 
     // The enlarged canvas is drawable to its new far corner.
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 16.0f, 16.0f);
     canvas_read_rgba(cv, px, 16 * 16 * 4);
     CHECK(px_near(pixel_at(px, cap, 16, 15, 15), 0, 255, 0, 255, 1));
@@ -51,7 +51,7 @@ int main(void) {
 
     // Invalid dimensions fail and leave the canvas untouched.
     CHECK(canvas_resize(cv, 8, 8));
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 8.0f, 8.0f);
     CHECK(!canvas_resize(cv, 0, 5));
     CHECK(!canvas_resize(cv, -1, 3));

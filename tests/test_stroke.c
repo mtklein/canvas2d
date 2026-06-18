@@ -21,7 +21,7 @@ int main(void) {
     }
 
     // Horizontal red line of width 6 at y=32, from x=8 to x=56.
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 6.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 8.0f, 32.0f);
@@ -38,7 +38,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     float const dash[2] = { 10.0f, 10.0f };
     canvas_set_line_dash(cv, dash, 2);
-    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_line_width(cv, 6.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 0.0f, 32.0f);
@@ -53,7 +53,7 @@ int main(void) {
     // Line caps: butt stops at the endpoint; square/round extend by half-width.
     canvas_set_line_dash(cv, dash, 0);  // back to solid
     canvas_set_line_width(cv, 8.0f);
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
 
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_line_cap(cv, CANVAS_CAP_BUTT);

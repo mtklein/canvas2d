@@ -156,7 +156,15 @@ void canvas_reset_transform(struct canvas *__single cv);
 // translate/scale/rotate/transform and reset by set_transform/reset_transform.
 canvas_matrix canvas_get_transform(struct canvas *__single cv);
 
-void canvas_set_fill_rgba(struct canvas *__single cv, float r, float g, float b, float a);
+// Solid fill paint.  `space` names the colour space the (r,g,b) are given in
+// (the alpha is plain coverage, space-agnostic).  CANVAS_CS_SRGB -- encoded
+// sRGB, today's behaviour byte for byte -- is the common case; CANVAS_CS_LINEAR_SRGB
+// and CANVAS_CS_OKLAB let a caller speak linear or perceptual colour directly.
+// Whatever the space, the colour is converted into the canvas's working space on
+// the way in (see canvas_color_space); the boundary spelling is the only thing
+// the space changes, never the stored result's meaning.
+void canvas_set_fill_rgba(struct canvas *__single cv, enum canvas_color_space space,
+                          float r, float g, float b, float a);
 void canvas_set_global_alpha(struct canvas *__single cv, float alpha);
 // globalCompositeOperation: how subsequent fills/strokes/text/images combine with
 // what's already there (default source-over).  Applies to every painted op except
@@ -171,6 +179,7 @@ void canvas_set_global_composite_operation(struct canvas *__single cv,
 // transform (per spec).  Defaults: transparent shadow (off), 0 blur, 0 offset.
 // Negative/non-finite blur and non-finite offsets are ignored, as the spec says.
 void canvas_set_shadow_color_rgba(struct canvas *__single cv,
+                                  enum canvas_color_space space,
                                   float r, float g, float b, float a);
 void canvas_set_shadow_blur(struct canvas *__single cv, float blur);
 void canvas_set_shadow_offset_x(struct canvas *__single cv, float offset);
@@ -216,7 +225,9 @@ void canvas_set_filter_none(struct canvas *__single cv);
 void canvas_add_filter_blur(struct canvas *__single cv, float px);
 void canvas_add_filter_brightness(struct canvas *__single cv, float amount);
 void canvas_add_filter_contrast(struct canvas *__single cv, float amount);
-void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float dy,
+void canvas_add_filter_drop_shadow(struct canvas *__single cv,
+                                   enum canvas_color_space space,
+                                   float dx, float dy,
                                    float blur, float r, float g, float b,
                                    float a);
 void canvas_add_filter_grayscale(struct canvas *__single cv, float amount);
@@ -238,7 +249,8 @@ void canvas_set_fill_radial_gradient(struct canvas *__single cv, float x0, float
 // canvas_add_fill_color_stop, as for the linear/radial gradients.
 void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angle,
                                     float x, float y);
-void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
+void canvas_add_fill_color_stop(struct canvas *__single cv,
+                                enum canvas_color_space space, float offset,
                                 float r, float g, float b, float a);
 // Choose the interpolation space for the current fill gradient (default
 // CANVAS_CS_SRGB).  Applies to whichever gradient is the fill paint now; a
@@ -361,7 +373,8 @@ bool canvas_is_point_in_stroke_path(struct canvas *__single cv,
                                     struct canvas_path2d const *__single p,
                                     float x, float y);
 
-void canvas_set_stroke_rgba(struct canvas *__single cv, float r, float g, float b, float a);
+void canvas_set_stroke_rgba(struct canvas *__single cv, enum canvas_color_space space,
+                            float r, float g, float b, float a);
 // Gradient stroke paint, mirroring the fill gradient calls; stroke() uses it
 // until the next canvas_set_stroke_rgba.  (Coordinates are baked through the
 // transform now, as for fills.)
@@ -371,7 +384,8 @@ void canvas_set_stroke_radial_gradient(struct canvas *__single cv, float x0, flo
                                        float r0, float x1, float y1, float r1);
 void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_angle,
                                       float x, float y);
-void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
+void canvas_add_stroke_color_stop(struct canvas *__single cv,
+                                  enum canvas_color_space space, float offset,
                                   float r, float g, float b, float a);
 // Interpolation space for the current stroke gradient (the fill twin above).
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,

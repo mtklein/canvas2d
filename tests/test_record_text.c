@@ -49,22 +49,22 @@
 // design.  The emoji line proves the bitmap blocks earn their keep: replay
 // draws it from the serialized capture, fontless and boundary-free.
 static void draw_text_scene(struct canvas *__single cv) {
-    canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.9f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
-    canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.4f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
     canvas_set_font_size(cv, 17.5f);
     canvas_fill_text(cv, "Waffle 隸書", 4.0f, 24.0f);
 
     canvas_set_font_size(cv, 23.0f);
     canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
     canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
-    canvas_set_fill_rgba(cv, 0.5f, 0.15f, 0.1f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.15f, 0.1f, 1.0f);
     canvas_fill_text(cv, "Waffle 隸書", 64.0f, 48.0f);  // same bytes, other size
 
     canvas_set_text_align(cv, CANVAS_ALIGN_RIGHT);
     canvas_set_text_baseline(cv, CANVAS_BASELINE_TOP);
-    canvas_set_stroke_rgba(cv, 0.1f, 0.3f, 0.1f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.3f, 0.1f, 1.0f);
     canvas_set_line_width(cv, 1.0f);
     canvas_stroke_text(cv, "kerning", 120.0f, 64.0f);
 
@@ -511,7 +511,7 @@ static void check_strict(void) {
     #undef BM_FONT
 
     // Not corrupted: the canvas still draws.
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 64.0f, 48.0f);
     uint8_t px[64 * 48 * 4];
     canvas_get_image_data(cv, 0, 0, 64, 48, px, (int)sizeof px);
@@ -645,12 +645,12 @@ static void check_new_ops(void) {
             return;
         }
         CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.12f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.12f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
         // stroke_rect with a thick join, and a rotated-CTM quad (corners go
         // through the transform), and the degenerate hairline.
-        canvas_set_stroke_rgba(cv, 0.9f, 0.5f, 0.3f, 1.0f);
+        canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.5f, 0.3f, 1.0f);
         canvas_set_line_width(cv, 6.0f);
         canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
         canvas_stroke_rect(cv, 8.0f, 8.0f, 40.0f, 30.0f);
@@ -664,7 +664,7 @@ static void check_new_ops(void) {
 
         // fill_text_max: an overflowing phrase condensed to a finite width, and
         // an unconstrained one (max_width <= 0 imposes no limit).
-        canvas_set_fill_rgba(cv, 0.9f, 0.92f, 0.95f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.92f, 0.95f, 1.0f);
         canvas_set_font_size(cv, 22.0f);
         canvas_fill_text_max(cv, "Condense me to fit", 4.0f, 88.0f, 60.0f);
         canvas_fill_text_max(cv, "free", 70.0f, 88.0f, -1.0f);
@@ -728,13 +728,13 @@ static void check_shadow_ops(void) {
             return;
         }
         CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.95f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.95f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 0.0f, 0.55f);
+        canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.55f);
         canvas_set_shadow_blur(cv, 6.0f);
         canvas_set_shadow_offset_x(cv, 3.0f);
         canvas_set_shadow_offset_y(cv, 4.0f);
-        canvas_set_fill_rgba(cv, 0.1f, 0.2f, 0.6f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.2f, 0.6f, 1.0f);
         canvas_set_font_size(cv, 28.0f);
         canvas_fill_text(cv, "shadow", 6.0f, 50.0f);
         canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
@@ -791,9 +791,9 @@ static void check_direction_blocks(void) {
             return;
         }
         CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.9f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.4f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
         canvas_set_font_size(cv, 20.0f);
         canvas_fill_text(cv, mixed, 4.0f, 32.0f);
         w_ltr = canvas_measure_text(cv, mixed);

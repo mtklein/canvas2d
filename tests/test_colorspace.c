@@ -16,6 +16,7 @@
 
 #include "canvas.h"
 #include "cnvs_color.h"
+#include "cnvs_math.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
@@ -27,9 +28,9 @@
 static int space_probe(struct canvas *__single cv, int w, int h,
                        uint8_t *__counted_by(len) px, int len) {
     canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
-    canvas_set_fill_rgba(cv, 0.5f, 0.5f, 0.5f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.5f, 0.5f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 0.5f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.5f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     return (int)pixel_at(px, len, w, w / 2, h / 2).r;
@@ -113,7 +114,7 @@ static void linear_color_round_trip(void) {
     CHECK(cv != NULL);
     if (cv) {
         float const c = 188.0f / 255.0f;
-        canvas_set_fill_rgba(cv, c, c * 0.5f, c * 0.25f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, c, c * 0.5f, c * 0.25f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cv, px, len);
         struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
@@ -143,9 +144,9 @@ static void linear_image_data_round_trip(void) {
     struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_fill_rgba(cv, 0.85f, 0.35f, 0.55f, 0.7f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.85f, 0.35f, 0.55f, 0.7f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_set_fill_rgba(cv, 0.1f, 0.6f, 0.9f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.6f, 0.9f, 1.0f);
         canvas_fill_rect(cv, 4.0f, 4.0f, 8.0f, 8.0f);
         canvas_get_image_data(cv, 0, 0, w, h, a, len);
 
@@ -198,9 +199,9 @@ static void linear_source_over_oracle(void) {
     struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_fill_rgba(cv, bd, bd, bd, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, bd, bd, bd, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_set_fill_rgba(cv, sd, sd, sd, sa);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, sd, sd, sd, sa);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cv, px, len);
         int const got = (int)pixel_at(px, len, w, w / 2, h / 2).r;
@@ -233,10 +234,10 @@ static void linear_multiply_differs(void) {
             continue;
         }
         canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
-        canvas_set_fill_rgba(cv, 0.9f, 0.9f, 0.9f, 1.0f);  // opaque backdrop
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.9f, 0.9f, 1.0f);  // opaque backdrop
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_set_global_composite_operation(cv, CANVAS_OP_MULTIPLY);
-        canvas_set_fill_rgba(cv, 0.2f, 0.2f, 0.2f, 0.5f);  // translucent source
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.2f, 0.5f);  // translucent source
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cv, px, len);
         int const r = (int)pixel_at(px, len, w, w / 2, h / 2).r;
@@ -250,11 +251,102 @@ static void linear_multiply_differs(void) {
     free(px);
 }
 
+// The NEW tag branches on an sRGB working canvas.  A CANVAS_CS_LINEAR_SRGB fill
+// of a known LINEAR value encodes linear->sRGB then clamps: linear 0.5 reads
+// back as the sRGB-encoded byte (~188), NOT 128 (which is what an SRGB-tagged
+// 0.5 would store).  And a CANVAS_CS_OKLAB fill of a known (L,a,b) triple reads
+// back as that colour converted Oklab->linear->sRGB.  References come from the
+// same cnvs_color kernels the setter uses, so this is a behavioural check on the
+// intern_color wiring, not on the kernels' own numbers.
+static void srgb_canvas_tag_branches(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    CHECK(px != NULL);
+    if (!px) {
+        return;
+    }
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        // LINEAR_SRGB input on an sRGB canvas: encode linear->sRGB, clamp01.
+        float const lr = 0.5f, lg = 0.25f, lb = 0.75f;
+        int const want_r = (int)(cnvs_clamp01(cnvs_linear_to_srgb(lr)) * 255.0f + 0.5f);
+        int const want_g = (int)(cnvs_clamp01(cnvs_linear_to_srgb(lg)) * 255.0f + 0.5f);
+        int const want_b = (int)(cnvs_clamp01(cnvs_linear_to_srgb(lb)) * 255.0f + 0.5f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, lr, lg, lb, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        canvas_read_rgba(cv, px, len);
+        struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+        CHECK(abs((int)p.r - want_r) <= 2);  // ~188, the encoded byte
+        CHECK(abs((int)p.g - want_g) <= 2);
+        CHECK(abs((int)p.b - want_b) <= 2);
+        CHECK((int)p.r != 128);              // and emphatically NOT the raw 0.5
+        CHECK(p.a == 255);
+
+        // OKLAB input on an sRGB canvas: Oklab -> linear -> sRGB, clamp01.
+        cnvs_oklab const lab = { .L = 0.7f, .a = 0.1f, .b = 0.05f };
+        cnvs_rgb const enc = cnvs_rgb_linear_to_srgb(cnvs_oklab_to_linear_srgb(lab));
+        int const ok_r = (int)(cnvs_clamp01(enc.r) * 255.0f + 0.5f);  // ~219
+        int const ok_g = (int)(cnvs_clamp01(enc.g) * 255.0f + 0.5f);  // ~130
+        int const ok_b = (int)(cnvs_clamp01(enc.b) * 255.0f + 0.5f);  // ~121
+        canvas_set_fill_rgba(cv, CANVAS_CS_OKLAB, lab.L, lab.a, lab.b, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        canvas_read_rgba(cv, px, len);
+        struct rgba const q = pixel_at(px, len, w, w / 2, h / 2);
+        CHECK(abs((int)q.r - ok_r) <= 2);
+        CHECK(abs((int)q.g - ok_g) <= 2);
+        CHECK(abs((int)q.b - ok_b) <= 2);
+        CHECK(q.a == 255);
+        canvas_free(cv);
+    }
+    free(px);
+}
+
+// The NEW tag branches on a LINEAR working canvas.  A CANVAS_CS_LINEAR_SRGB fill
+// stores the linear value DIRECTLY (no transfer), so reading back -- which
+// encodes linear->sRGB -- yields the sRGB-encoded byte of that linear value.
+// The same numbers tagged CANVAS_CS_SRGB instead decode on entry, so the two
+// tags land on visibly different bytes: that gap is the proof the tag routes the
+// input, not the canvas.
+static void linear_canvas_tag_branches(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    CHECK(px != NULL);
+    if (!px) {
+        return;
+    }
+    float const v = 0.5f;
+    // LINEAR_SRGB tag: stored linear 0.5, read back as encode(0.5) ~ 188.
+    int const want_linear_tag = (int)(cnvs_linear_to_srgb(v) * 255.0f + 0.5f);
+    // SRGB tag (today's path): decode 0.5 -> linear, store, then encode on
+    // readback cancels -> ~128.  Byte-identical to the legacy intern_color.
+    int const want_srgb_tag = (int)(v * 255.0f + 0.5f);
+    CHECK(abs(want_linear_tag - want_srgb_tag) > 20);  // the tags diverge
+
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, v, v, v, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        canvas_read_rgba(cv, px, len);
+        CHECK(abs((int)pixel_at(px, len, w, w / 2, h / 2).r - want_linear_tag) <= 2);
+
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, v, v, v, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        canvas_read_rgba(cv, px, len);
+        CHECK(abs((int)pixel_at(px, len, w, w / 2, h / 2).r - want_srgb_tag) <= 2);
+        canvas_free(cv);
+    }
+    free(px);
+}
+
 int main(void) {
     space_default_and_persistence();
     linear_color_round_trip();
     linear_image_data_round_trip();
     linear_source_over_oracle();
     linear_multiply_differs();
+    srgb_canvas_tag_branches();
+    linear_canvas_tag_branches();
     return TEST_REPORT();
 }

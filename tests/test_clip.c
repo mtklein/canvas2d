@@ -26,7 +26,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 16.0f, 16.0f, 32.0f, 32.0f);
     canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 0, 255, 1));  // inside clip
@@ -35,7 +35,7 @@ int main(void) {
 
     // restore() lifts the clip: the whole canvas paints again.
     canvas_restore(cv);
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 8, 8), 0, 255, 0, 255, 1));    // now paintable
@@ -50,7 +50,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 24.0f, 0.0f, 40.0f, 64.0f);  // x in [24,64)
     canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 255, 255, 1));  // in both
@@ -64,7 +64,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_arc(cv, 32.0f, 32.0f, 16.0f, 0.0f, 2.0f * (float)M_PI, false);
     canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 0, 255, 1));  // disc centre
@@ -73,7 +73,7 @@ int main(void) {
 
     // After restoring out of every clip, painting is unmasked once more.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 4, 4), 255, 0, 255, 255, 1));    // corner paints

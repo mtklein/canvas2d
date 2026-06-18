@@ -23,7 +23,7 @@ int main(void) {
 
     // A red rectangle outline, width 4, from (16,16) to (48,48): the border is
     // painted (half-width 2 either side of each edge), the interior is not.
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 4.0f);
     canvas_stroke_rect(cv, 16.0f, 16.0f, 32.0f, 32.0f);
     canvas_read_rgba(cv, px, len);
@@ -39,7 +39,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_save(cv);
     canvas_translate(cv, 10.0f, 10.0f);
-    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_stroke_rect(cv, 0.0f, 0.0f, 20.0f, 20.0f);
     canvas_restore(cv);
     canvas_read_rgba(cv, px, len);
@@ -48,7 +48,7 @@ int main(void) {
 
     // A zero-height rect is a horizontal hairline (caps, not a closed box).
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_stroke_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 4.0f);
     canvas_stroke_rect(cv, 10.0f, 30.0f, 40.0f, 0.0f);
     canvas_read_rgba(cv, px, len);
@@ -61,9 +61,9 @@ int main(void) {
     canvas_set_line_width(cv, 4.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_stroke_rect(cv, 40.0f, 40.0f, 16.0f, 16.0f);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill(cv, CANVAS_NONZERO);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 16, 16), 0, 0, 255, 255, 1));  // path filled
@@ -72,7 +72,7 @@ int main(void) {
 
     // Non-finite arguments paint nothing.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_stroke_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_stroke_rect(cv, 0.0f, 0.0f, (float)INFINITY, 10.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 1));

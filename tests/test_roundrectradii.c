@@ -10,7 +10,7 @@ static void draw(struct canvas *__single cv, uint8_t *__counted_by(len) px, int 
                  float tl_x, float tl_y, float tr_x, float tr_y,
                  float br_x, float br_y, float bl_x, float bl_y) {
     canvas_clear_rect(cv, 0.0f, 0.0f, 40.0f, 40.0f);
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_round_rect_radii(cv, x, y, w, h, tl_x, tl_y, tr_x, tr_y,
                             br_x, br_y, bl_x, bl_y);

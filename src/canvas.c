@@ -539,28 +539,61 @@ canvas_matrix canvas_get_transform(struct canvas *__single cv) {
 // Intern one untagged (encoded sRGB) colour into the canvas's working space --
 // the single entry-side transfer gate every colour the API takes flows through
 // (fill/stroke/shadow/drop-shadow colours and gradient stops; image and pattern
-// pixels intern at their own seams).  On an sRGB canvas this is a literal bypass
-// of the legacy code: clamp01 each channel exactly as before, no transfer.  On a
-// linear canvas the RGB channels decode sRGB->linear (cnvs_srgb_to_linear, the
-// odd extension, total over R) with NO [0,1] clamp -- an extended (out-of-gamut)
-// input must propagate, and the clamp would crush it -- while alpha still clamps
-// to [0,1] (alpha is a coverage coordinate, never a colour, and the premultiply
-// and readback both assume it in range).  The recorder logs the RAW input floats
-// upstream of this, so a recorded program is space-agnostic at the colour lines;
-// replay re-interns through the same gate on its own canvas.
+// pixels intern at their own seams).  `space` names the space the INPUT (r,g,b)
+// are given in; the result lands in the canvas's WORKING space, in that space's
+// native encoding.  alpha is a coverage coordinate, never a colour, so it clamps
+// to [0,1] on every path (the premultiply and readback both assume it in range).
+//
+//   CANVAS_CS_SRGB -- the byte-identity path, exactly the legacy body.  On an
+//   sRGB canvas it is a literal bypass: clamp01 each channel, no transfer.  On a
+//   linear canvas the RGB decode sRGB->linear (cnvs_srgb_to_linear, the odd
+//   extension, total over R) with NO [0,1] clamp -- an extended (out-of-gamut)
+//   input must propagate, and the clamp would crush it.
+//
+//   CANVAS_CS_LINEAR_SRGB -- the (r,g,b) ARE linear sRGB.  To a linear canvas,
+//   stored as-is (no rgb clamp, extended values propagate).  To an sRGB canvas,
+//   encode linear->sRGB then clamp01 into the [0,1] encoded range.
+//
+//   CANVAS_CS_OKLAB -- the (r,g,b) are an Oklab (L,a,b) triple.  Convert to
+//   linear sRGB first (cnvs_oklab_to_linear_srgb), then the LINEAR_SRGB handling.
+//
+// The transfer / Oklab math runs in f32 (the cnvs_color kernels) and narrows
+// once at cnvs_unpremul_of.  The recorder logs the RAW input floats upstream of
+// this and emits no space token for CANVAS_CS_SRGB, so a legacy (SRGB) program
+// records byte-identically; replay re-interns through the same gate.
 static cnvs_unpremul intern_color(struct canvas *__single cv,
+                                  enum canvas_color_space space,
                                   float r, float g, float b, float a) {
-    if (cv->space == CANVAS_CS_LINEAR_SRGB) {
-        return cnvs_unpremul_of(cnvs_srgb_to_linear(r), cnvs_srgb_to_linear(g),
-                                cnvs_srgb_to_linear(b), cnvs_clamp01(a));
+    if (space == CANVAS_CS_SRGB) {
+        // The legacy body, unchanged -- this is the byte-identity path.
+        if (cv->space == CANVAS_CS_LINEAR_SRGB) {
+            return cnvs_unpremul_of(cnvs_srgb_to_linear(r), cnvs_srgb_to_linear(g),
+                                    cnvs_srgb_to_linear(b), cnvs_clamp01(a));
+        }
+        return cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g),
+                                cnvs_clamp01(b), cnvs_clamp01(a));
     }
-    return cnvs_unpremul_of(cnvs_clamp01(r), cnvs_clamp01(g),
-                            cnvs_clamp01(b), cnvs_clamp01(a));
+
+    // Reduce the input to linear sRGB (r,g,b) first; OKLAB is one convert away.
+    cnvs_rgb lin = { .r = r, .g = g, .b = b };
+    if (space == CANVAS_CS_OKLAB) {
+        lin = cnvs_oklab_to_linear_srgb((cnvs_oklab){ .L = r, .a = g, .b = b });
+    }
+    float const ca = cnvs_clamp01(a);
+    if (cv->space == CANVAS_CS_LINEAR_SRGB) {
+        // Linear working canvas: store the linear values directly, no rgb clamp.
+        return cnvs_unpremul_of(lin.r, lin.g, lin.b, ca);
+    }
+    // sRGB working canvas: encode linear->sRGB, then clamp into [0,1].
+    cnvs_rgb const enc = cnvs_rgb_linear_to_srgb(lin);
+    return cnvs_unpremul_of(cnvs_clamp01(enc.r), cnvs_clamp01(enc.g),
+                            cnvs_clamp01(enc.b), ca);
 }
 
-void canvas_set_fill_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
+void canvas_set_fill_rgba(struct canvas *__single cv, enum canvas_color_space space,
+                          float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.fill = intern_color(cv, r, g, b, a);
+    cv->cur.fill = intern_color(cv, space, r, g, b, a);
     cv->cur.fill_kind = CNVS_PAINT_SOLID;
 }
 
@@ -661,11 +694,12 @@ void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angl
     cv->cur.fill_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
+void canvas_add_fill_color_stop(struct canvas *__single cv,
+                                enum canvas_color_space space, float offset,
                                 float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_fill_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.fill_grad, cnvs_clamp01(offset),
-                           intern_color(cv, r, g, b, a));
+                           intern_color(cv, space, r, g, b, a));
 }
 
 void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
@@ -712,11 +746,12 @@ void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_an
     cv->cur.stroke_kind = CNVS_PAINT_GRADIENT;
 }
 
-void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
+void canvas_add_stroke_color_stop(struct canvas *__single cv,
+                                  enum canvas_color_space space, float offset,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "add_stroke_color_stop", (float[]){ offset, r, g, b, a }, 5); }
     cnvs_gradient_add_stop(&cv->cur.stroke_grad, cnvs_clamp01(offset),
-                           intern_color(cv, r, g, b, a));
+                           intern_color(cv, space, r, g, b, a));
 }
 
 void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
@@ -755,9 +790,10 @@ void canvas_set_global_composite_operation(struct canvas *__single cv,
 }
 
 void canvas_set_shadow_color_rgba(struct canvas *__single cv,
+                                  enum canvas_color_space space,
                                   float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_shadow_color_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.shadow_color = intern_color(cv, r, g, b, a);
+    cv->cur.shadow_color = intern_color(cv, space, r, g, b, a);
 }
 
 void canvas_set_shadow_blur(struct canvas *__single cv, float blur) {
@@ -842,7 +878,9 @@ void canvas_add_filter_contrast(struct canvas *__single cv, float amount) {
     }
 }
 
-void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float dy,
+void canvas_add_filter_drop_shadow(struct canvas *__single cv,
+                                   enum canvas_color_space space,
+                                   float dx, float dy,
                                    float blur, float r, float g, float b,
                                    float a) {
     if (!isfinite(dx) || !isfinite(dy) || !isfinite(blur) || blur < 0.0f) {
@@ -869,7 +907,7 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv, float dx, float d
     // interns through the same gate as every other untagged colour: bypass on
     // sRGB (the clamped values land identically), decode sRGB->linear on a
     // linear canvas.  The recorder above logged the raw input.
-    cnvs_unpremul const tint = intern_color(cv, r, g, b, a);
+    cnvs_unpremul const tint = intern_color(cv, space, r, g, b, a);
     filter_append(cv, cnvs_filter_drop_shadow(
                           dxw, dxk, dyw, dyk,
                           sigma_box_radius(blur), (float)tint.r, (float)tint.g,
@@ -2600,9 +2638,10 @@ void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
     cv->cur.clip_len = n;
 }
 
-void canvas_set_stroke_rgba(struct canvas *__single cv, float r, float g, float b, float a) {
+void canvas_set_stroke_rgba(struct canvas *__single cv, enum canvas_color_space space,
+                            float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_stroke_rgba", (float[]){ r, g, b, a }, 4); }
-    cv->cur.stroke = intern_color(cv, r, g, b, a);
+    cv->cur.stroke = intern_color(cv, space, r, g, b, a);
     cv->cur.stroke_kind = CNVS_PAINT_SOLID;
 }
 

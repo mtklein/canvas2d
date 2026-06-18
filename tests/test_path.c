@@ -22,7 +22,7 @@ int main(void) {
     }
 
     // Filled triangle (8,8)-(56,8)-(32,56).
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 8.0f, 8.0f);
     canvas_line_to(cv, 56.0f, 8.0f);
@@ -35,7 +35,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
 
     // Filled circle, centre (32,32) radius 20.
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_arc(cv, 32.0f, 32.0f, 20.0f, 0.0f, 2.0f * (float)M_PI, false);
     canvas_fill(cv, CANVAS_NONZERO);
@@ -46,7 +46,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
 
     // Filled rectangle via rect() path.
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 10.0f, 10.0f, 20.0f, 20.0f);
     canvas_fill(cv, CANVAS_NONZERO);
@@ -56,7 +56,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
 
     // Donut: outer rect plus a reversed inner rect -> nonzero cancels in the hole.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 8.0f, 8.0f, 48.0f, 48.0f);
     canvas_move_to(cv, 40.0f, 24.0f);
@@ -71,7 +71,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
 
     // Self-intersecting pentagram: nonzero fills the centre, even-odd empties it.
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);
     for (int i = 0; i < 5; i++) {
         float const a = -(float)M_PI * 0.5f + (float)i * (4.0f * (float)M_PI / 5.0f);
@@ -97,7 +97,7 @@ int main(void) {
 
     // Rounded rect: corners are clipped off by the radius.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_round_rect(cv, 8.0f, 8.0f, 48.0f, 48.0f, 12.0f);
     canvas_fill(cv, CANVAS_NONZERO);
@@ -107,7 +107,7 @@ int main(void) {
 
     // Wide ellipse: filled along the long axis, empty past the short one.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);
     canvas_ellipse(cv, 32.0f, 32.0f, 24.0f, 12.0f, 0.0f, 0.0f, 2.0f * (float)M_PI, false);
     canvas_fill(cv, CANVAS_NONZERO);
@@ -118,7 +118,7 @@ int main(void) {
     // arcTo fillets the corner at (48,40): the tangent segments and the arc are
     // stroked, but the sharp corner is cut away.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 4.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 8.0f, 40.0f);

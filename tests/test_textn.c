@@ -18,8 +18,8 @@
 
 static void setup(struct canvas *__single cv) {
     canvas_set_font_size(cv, 16.0f);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_stroke_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
 int main(void) {
