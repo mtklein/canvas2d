@@ -278,15 +278,20 @@ run on f16 tiles whose values are either encoded or linear:
 
 ![linearlight](gallery/linearlight.png)
 
-`createLinearGradient` interpolation space — the same stops interpolated in
-sRGB (top of each pair) versus Oklab (bottom). Left, a rainbow ramp: Oklab
-spreads the hues more evenly and skips the dark dip sRGB falls into through the
-middle. Right, a colour fading to transparent over a checkerboard: sRGB lets
-the transparent end bleed a muddy tint into the ramp, while Oklab's
-premultiplied interpolation keeps it clean — the stop fades in alpha, not
-toward grey:
+`createLinearGradient` interpolation — two orthogonal knobs, isolated one
+variable at a time. **Space** (top three rows): the *same* opaque
+red→green→blue ramp interpolated in sRGB, linear sRGB, and Oklab. With alpha
+fixed at 1 (where premultiplied and unpremultiplied are identical) this is a
+pure space comparison — sRGB dips dark and muddy through the midpoints, linear
+sRGB mixes brighter (light-correct), and Oklab sweeps the hues perceptually
+evenly. **Premultiplication** (bottom two rows): the space held fixed at sRGB, a
+blue stop fading to a *transparent red* stop over a checkerboard, unpremultiplied
+versus premultiplied. This is a pure premul comparison — unpremultiplied drags
+the (invisible) red of the transparent end into the ramp as a muddy tint, while
+premultiplied weights the colour by alpha first, so the vanishing red
+contributes nothing and the fade stays clean blue:
 
-![oklab](gallery/oklab.png)
+![gradinterp](gallery/gradinterp.png)
 
 Explicit colour spaces — every colour the API takes now names its space, and
 the tag changes the colour. Row 1 tags six numeric RGBA triples sRGB (stored as

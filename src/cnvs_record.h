@@ -186,11 +186,14 @@ void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_alig
 void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
                             enum canvas_text_baseline baseline);
 void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction dir);
-// `<name> <interp>` -- the fill/stroke gradient interpolation setters, `name`
-// being the op spelling (set_fill_gradient_interpolation /
-// set_stroke_gradient_interpolation) and the interp space written by name.
-// ALWAYS emitted (both spaces), so an Oklab gradient round-trips; absence on
-// replay is the sRGB default, keeping every legacy program byte-identical.
+// `<name> <space> <alpha>` -- the fill/stroke gradient interpolation setters,
+// `name` being the op spelling (set_fill_gradient_interpolation /
+// set_stroke_gradient_interpolation), `space` the interpolation colour space by
+// name (srgb/linear/oklab) and `alpha` the premultiply token (unpremul/premul).
+// Emitted ONLY when the interp is non-default (space != srgb OR alpha !=
+// unpremul): absence on replay is the default (srgb + unpremul), keeping every
+// legacy program byte-identical.
 void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
                              char const *__null_terminated name,
-                             enum canvas_color_space interp);
+                             enum canvas_color_space space,
+                             enum canvas_alpha_type alpha);

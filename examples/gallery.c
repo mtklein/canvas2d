@@ -2497,57 +2497,111 @@ static void linearlight(void) {
     save(out, "gallery/linearlight.png");
 }
 
-// The per-gradient interpolation-space demonstrator: the SAME stop sets painted
-// twice -- sRGB component lerp (top of each pair) vs premultiplied Oklab (bottom)
-// -- the canonical "sRGB midpoint goes muddy/dark, Oklab stays bright and
-// perceptually even" comparison.  Two ramps per mode: a red->green->blue rainbow
-// (the perceptual-evenness case) and a transparent-red->opaque-blue fade over a
-// pale checker ground (the premul-hygiene case -- sRGB straight-lerps an alpha-
-// weighted red into the midpoint and muddies it; Oklab's premultiplied lerp lets
-// no red bleed, so the midpoint reads as clean half-blue).  The committed program
-// carries the set_fill_gradient_interpolation lines; it replays on a plain sRGB
-// canvas (the default working space) and matches the PNG.
-static void oklab_ramp(struct canvas *__single c, float y, enum canvas_color_space interp) {
-    // Rainbow red -> green -> blue across the left half.
-    canvas_set_fill_linear_gradient(c, 16.0f, 0.0f, 150.0f, 0.0f);
-    canvas_set_fill_gradient_interpolation(c, interp);
-    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.90f, 0.10f, 0.10f, 1.0f);
-    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.10f, 0.80f, 0.20f, 1.0f);
-    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);
-    canvas_fill_rect(c, 16.0f, y, 134.0f, 40.0f);
+// The gradient-interpolation demonstrator: the two ORTHOGONAL interpolation
+// knobs -- colour SPACE and alpha PREMULTIPLICATION -- isolated one variable at
+// a time, so each comparison changes exactly one thing.
+//
+//   SPACE axis (top): the SAME opaque red->green->blue ramp interpolated in
+//   each of the three spaces (sRGB, linear sRGB, Oklab).  Alpha is 1 throughout,
+//   where premul == unpremul, so this is a PURE space comparison: sRGB's dark,
+//   muddy midpoints; linear sRGB's brighter (light-correct) mixing; Oklab's
+//   perceptually even hue sweep.
+//
+//   ALPHA axis (bottom): the space held FIXED at sRGB, a colour fading to
+//   transparent over a checkerboard, interpolated UNPREMUL then PREMUL.  This is
+//   a PURE premultiply comparison: unpremul drags the (otherwise invisible)
+//   colour of the transparent end into the ramp as a muddy tint; premul fades
+//   cleanly, the colour living only in the alpha.
+//
+// The committed program carries the non-default set_fill_gradient_interpolation
+// lines (the default sRGB+unpremul ramp records none); it replays on a plain
+// sRGB canvas (the default working space) and matches the PNG.
+static void gradinterp_space_ramp(struct canvas *__single c, float x, float y, float w,
+                                  float h, enum canvas_color_space space,
+                                  char const *__null_terminated label) {
+    canvas_set_fill_linear_gradient(c, x, 0.0f, x + w, 0.0f);
+    canvas_set_fill_gradient_interpolation(c, space, CANVAS_ALPHA_UNPREMUL);  // alpha=1: premul==unpremul
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.90f, 0.12f, 0.12f, 1.0f);  // red
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.12f, 0.80f, 0.22f, 1.0f);  // green
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.15f, 0.28f, 0.92f, 1.0f);  // blue
+    canvas_fill_rect(c, x, y, w, h);
 
-    // Transparent red -> opaque blue across the right half (premul hygiene).
-    canvas_set_fill_linear_gradient(c, 166.0f, 0.0f, 284.0f, 0.0f);
-    canvas_set_fill_gradient_interpolation(c, interp);
-    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.90f, 0.10f, 0.10f, 0.0f);  // transparent red
-    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);  // opaque blue
-    canvas_fill_rect(c, 166.0f, y, 118.0f, 40.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, label, x, y - 6.0f);
 }
 
-static void oklab(void) {
-    struct canvas *__single c = canvas(300, 120);
-    if (!c) {
-        return;
-    }
-    record_scene(c, "gallery/oklab.canvas");
-    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
-
-    // A pale checker behind the right (fade-to-transparent) ramp so the premul
-    // hygiene reads: where the gradient is transparent the checker shows through.
-    for (int gy = 0; gy < 120; gy += 12) {
-        for (int gx = 160; gx < 300; gx += 12) {
-            bool const lit = ((gx / 12) + (gy / 12)) % 2 == 0;
-            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lit ? 0.75f : 0.55f, lit ? 0.75f : 0.55f,
-                                 lit ? 0.78f : 0.58f, 1.0f);
-            canvas_fill_rect(c, (float)gx, (float)gy, 12.0f, 12.0f);
+static void gradinterp_alpha_ramp(struct canvas *__single c, float x, float y, float w,
+                                  float h, enum canvas_alpha_type alpha,
+                                  char const *__null_terminated label) {
+    // A pale checker UNDER the ramp so where the gradient is transparent the
+    // ground shows through -- the only way the premul difference reads.
+    for (float gy = y; gy < y + h; gy += 12.0f) {
+        for (float gx = x; gx < x + w; gx += 12.0f) {
+            bool const lit = (((int)((gx - x) / 12.0f)) + ((int)((gy - y) / 12.0f))) % 2 == 0;
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lit ? 0.78f : 0.56f, lit ? 0.78f : 0.56f,
+                                 lit ? 0.80f : 0.59f, 1.0f);
+            float const cw = gx + 12.0f > x + w ? x + w - gx : 12.0f;
+            float const ch = gy + 12.0f > y + h ? y + h - gy : 12.0f;
+            canvas_fill_rect(c, gx, gy, cw, ch);
         }
     }
 
-    oklab_ramp(c, 18.0f, CANVAS_CS_SRGB);   // top pair: sRGB component lerp
-    oklab_ramp(c, 62.0f, CANVAS_CS_OKLAB);  // bottom pair: premultiplied Oklab
+    // Opaque blue -> transparent RED, sRGB space, the chosen alpha mode.  The
+    // transparent end is invisible, but its colour still rides the coords: an
+    // UNPREMUL lerp drags that red into the mid-ramp as a muddy tint; a PREMUL
+    // lerp weights the colour by alpha first, so the vanishing red contributes
+    // nothing and the fade stays clean blue.
+    canvas_set_fill_linear_gradient(c, x, 0.0f, x + w, 0.0f);
+    canvas_set_fill_gradient_interpolation(c, CANVAS_CS_SRGB, alpha);  // space fixed
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.15f, 0.28f, 0.92f, 1.0f);  // opaque blue
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.92f, 0.16f, 0.16f, 0.0f);  // transparent red
+    canvas_fill_rect(c, x, y, w, h);
 
-    save(c, "gallery/oklab.png");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_fill_text(c, label, x, y - 6.0f);
+}
+
+static void gradinterp(void) {
+    int const w = 320, h = 344;
+    struct canvas *__single c = canvas(w, h);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/gradinterp.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)w, (float)h);
+
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+
+    float const rx = 16.0f, rw = 288.0f, rh = 36.0f, pitch = 50.0f;
+
+    // Section caption: SPACE axis.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "interpolation SPACE  (opaque red->green->blue)", rx, 20.0f);
+
+    // The same opaque ramp in each space, stacked (label above each).
+    float const sy = 44.0f;
+    gradinterp_space_ramp(c, rx, sy,             rw, rh, CANVAS_CS_SRGB,        "sRGB");
+    gradinterp_space_ramp(c, rx, sy + pitch,     rw, rh, CANVAS_CS_LINEAR_SRGB, "linear sRGB");
+    gradinterp_space_ramp(c, rx, sy + 2.0f * pitch, rw, rh, CANVAS_CS_OKLAB,    "Oklab");
+
+    // Section caption: ALPHA axis.
+    float const acap = sy + 3.0f * pitch + 8.0f;  // 202
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_font_size(c, 12.0f);
+    canvas_fill_text(c, "alpha PREMULTIPLICATION  (sRGB, blue -> transparent red)", rx, acap);
+
+    // The same fade in each alpha mode, over the checker (label above each).
+    float const ay = acap + 24.0f;  // 226
+    gradinterp_alpha_ramp(c, rx, ay,         rw, rh, CANVAS_ALPHA_UNPREMUL, "unpremul (red bleeds in)");
+    gradinterp_alpha_ramp(c, rx, ay + pitch, rw, rh, CANVAS_ALPHA_PREMUL,   "premul (clean fade)");
+
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+    save(c, "gallery/gradinterp.png");
 }
 
 // The per-COLOUR space-tag demonstrator: the same canvas_set_fill_rgba call
@@ -2669,7 +2723,7 @@ static void render_all(void) {
     selection();
     filters();
     linearlight();
-    oklab();
+    gradinterp();
     colorspaces();
 }
 
