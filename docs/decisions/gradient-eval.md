@@ -21,7 +21,7 @@ every stop offset and its f32 neighbours and every LUT cell boundary) against an
 double-precision piecewise-linear reference over the f16 stop colours; gallery pixels via a
 /tmp PNG decoder diffing each re-rendered scene against its committed bytes.
 
-**The premise being tested.**  Mike's hunch, verbatim: *"I'd like to run a comparison of our
+**The premise being tested.**  Mike's request, verbatim: *"I'd like to run a comparison of our
 LUT gradients against brute force iteration through the stops (vectorized across pixels of
 course).  I have a hunch that we can probably get a win/win there in both quality and
 performance."*  The shipping path quantizes: every fill ≥1024 px builds a 1024-entry colour
@@ -50,7 +50,7 @@ selects for the first/last/outside edge lanes, then a `vst4q_f16` store through 
 **bit-identical to `cnvs_gradient_color_at`, lane for lane** — verified at zero mismatches
 over every sweep below, including stop offsets, their ±1-ulp neighbours, coincident-offset
 ties, and the n%8 scalar tail — so the scalar scan stays the semantic reference and the row
-kernel is just that semantics, eight at a time.  No setup, no table, no threshold.
+kernel computes the same semantics eight at a time.  No setup, no table, no threshold.
 
 ## 2. Wall clock
 
@@ -67,11 +67,11 @@ Median ± σ in ms, paired (one hyperfine invocation per row, both binaries from
 
 **The flagship renders get faster; the gradient microbench gets slower.**  Both flagship
 deltas reproduce on re-pairing (0.978 / 0.973) and sit 3–6σ out; the controls pin the noise
-floor at ≤0.5 %.  The two results are not in tension — they sample opposite ends of §3's
+floor at ≤0.5 %.  The two results sample opposite ends of §3's
 curve.  `bench_gradient_fill` is the LUT's best case by construction: a many-stop gradient
-over one huge fill, where the 1024-evaluation build amortizes to nothing and the per-pixel
-race is an L1 load against a 2-iteration select chain.  The renders are the real mix —
-2-stop gradients over small-to-medium fills, where the build is pure overhead and the
+over one large fill, where the 1024-evaluation build amortizes to near zero and the per-pixel
+comparison is an L1 load against a 2-iteration select chain.  The renders are the mixed case —
+2-stop gradients over small-to-medium fills, where the build is overhead and the
 old sub-1024-px fills ran the stop scan scalar, per pixel.  Checked-vs-unsafe overhead on
 the new kernel: **1.01×** (`bench_gradient_fill`), 1.00× (`bench_gradient`) — one
 whole-vector bounds check per 8-pixel block, same as every planar kernel.
@@ -94,10 +94,10 @@ in-place lookup); `row` mirrors the new one (colour row buffer, then read back).
 *32 stops needs `CNVS_MAX_STOPS` raised; the shipping API caps at 16, so the in-API worst
 case is the 3.38 row.
 
-The shape is exactly the algorithm: the row kernel costs O(stops) per pixel (≈0.45 ns/px per
+The shape follows the algorithm: the row kernel costs O(stops) per pixel (≈0.45 ns/px per
 interior stop, flat across fill sizes), the LUT costs O(1) per pixel plus O(stops) per fill
 in the build (2.3 µs at 2 stops → 13.0 µs at 32, §5).  Typical gradients — 2–5 stops, the
-range everything in this tree actually uses — put the crossover at: row wins everywhere
+range everything in this tree uses — put the crossover at: row wins everywhere
 except a many-stop gradient covering one large area in a single fill.  At 32² fills (the
 old ramp threshold boundary) the build is half the LUT's total time and row wins 1.6–2.5×.
 
@@ -105,12 +105,12 @@ old ramp threshold boundary) the build is half the LUT's total time and row wins
 strategies were measured.  A *saturating-sum* kernel (every segment contributes
 `Δcolour · clamp01((t-o)/span)`; cheaper per stop, no selects) ties the chain at 2 stops and
 loses progressively — 6 % at 5 stops, 17 % at 32 — because its clamp + f32→f16 convert + four
-plane multiply-adds per segment outweigh the chain's bsl-cheap selects, and it surrenders
+plane multiply-adds per segment outweigh the chain's bsl selects, and it gives up
 bit-exactness (f16 accumulation across segments).  Lane-wise *binary search* was not built:
 without gathers, materializing each lane's stop pair still takes O(stops) value selects —
 the search masks are not the cost — so it cannot beat the linear chain.  Past ~8 stops on
-large fills the winning algorithm is simply a table, i.e. the LUT itself; there is no
-vectorized-search free lunch there.
+large fills the faster algorithm is a table, i.e. the LUT itself; there is no
+vectorized-search advantage there.
 
 ## 4. Quality
 
@@ -130,21 +130,21 @@ Max / mean channel error vs the double reference, in 1/255 units, ~11M samples p
 | edge/all-coincident | **255.00** | 0.000 | 0.00 | 0.000 |
 | edge/translucent-3stop | 0.33 | 0.067 | 0.14 | 0.026 |
 
-Two findings, one expected and one not.  Expected: on smooth gradients the LUT errs up to
+Two findings.  On smooth gradients the LUT errs up to
 0.46/255 (the documented ~0.4 quantization + ~0.2 f16 lerp) and brute force errs at most
-**0.156/255** — pure f16 lerp rounding, stop-count-independent, less than a third of the
-8-bit rounding step.  Not expected: **the README's "within 1/255" claim is false for the
+**0.156/255** — f16 lerp rounding, stop-count-independent, less than a third of the
+8-bit rounding step.  Second: **the README's "within 1/255" claim does not hold for the
 gradients that use coincident stops.**  A hard stop is a colour discontinuity; nearest-entry
 lookup moves it to the nearest 1/1023 grid line, so every pixel in the misattributed band
-gets the *other sector's colour* — 196/255 on the conic pie's real palette, 255/255
-constructible.  It also quietly exceeds 1/255 on merely steep gradients (0.99/255 at 16
+gets the *other sector's colour* — 196/255 on the conic pie's palette, 255/255
+constructible.  It also exceeds 1/255 on steep gradients (0.99/255 at 16
 stops).  Brute force is *exact* at hard stops (no lerp runs — the segment select is the
 discontinuity) and bit-identical to the scalar scan everywhere: **zero mismatches in every
 sweep**, which becomes the new tolerance-0 invariant in `test_gradient_solve` (replacing the
 ramp identity, whose subject is deleted), alongside a permanent ≤0.25/255
 brute-vs-double-reference bound (measured 0.156 + margin).
 
-**Does it move gallery pixels?  Yes — 10 of 33 scenes,** re-rendered both ways and diffed:
+**Gallery pixels moved: 10 of 33 scenes,** re-rendered both ways and diffed:
 
 | scene | px changed | % of px | max channel Δ | note |
 |---|---|---|---|---|
@@ -160,7 +160,7 @@ brute-vs-double-reference bound (measured 0.156 + margin).
 | text | 239 | 0.3 % | 1 | |
 
 Nine scenes move only by the sub-quantum 1/255 flips of de-quantized colour; `conic`'s
-thirteen large-delta pixels are the exactness *correcting* sector boundaries the LUT had
+thirteen large-delta pixels are the exact path correcting sector boundaries the LUT had
 displaced by up to half a ramp cell.  No `.canvas` program changes (no gradient scene embeds
 readback pixels).
 
@@ -179,21 +179,21 @@ parameter-row buffer.
 
 | Option | Flagship | Microbench | Quality | Setup/memory | Verdict |
 |---|---|---|---|---|---|
-| **(L) keep the LUT** | −0 % | fastest on big many-stop fills | ≤0.46/255 smooth, **broken (196/255) at hard stops** | 2.3–6.4 µs/fill + 8 KB/canvas | The quality bug is disqualifying for a default; its speed crown sits on a workload the tree doesn't have |
-| **(R) brute force** | **−1.8 / −2.7 %** | 1.24× slower (4-stop 384² radial) | **exact** (bit-equal to the scalar reference; ≤0.156/255 of double) | zero | **Recommended.**  Wins the product, fixes the artifact, deletes state |
-| (L+R) hybrid: keep both, threshold on stops×area | −1.8/−2.7 % where R runs | LUT speed where L runs | hard-stop bug *returns* wherever L runs; two semantics for one paint | both costs + a 2-D threshold | Worst of both: the only fills L would win (≥8 stops, large, smooth) don't occur in the tree; the bug is back the day one does |
+| **(L) keep the LUT** | −0 % | fastest on large many-stop fills | ≤0.46/255 smooth, **196/255 at hard stops** | 2.3–6.4 µs/fill + 8 KB/canvas | The hard-stop error rules it out as a default; its speed advantage is on a workload the tree doesn't have |
+| **(R) brute force** | **−1.8 / −2.7 %** | 1.24× slower (4-stop 384² radial) | **exact** (bit-equal to the scalar reference; ≤0.156/255 of double) | zero | **Recommended.**  Better on the flagship renders, removes the hard-stop artifact, deletes state |
+| (L+R) hybrid: keep both, threshold on stops×area | −1.8/−2.7 % where R runs | LUT speed where L runs | hard-stop error *returns* wherever L runs; two semantics for one paint | both costs + a 2-D threshold | The only fills L would win (≥8 stops, large, smooth) don't occur in the tree; the error returns the day one does |
 
 ## 7. Recommendation
 
 **Take (R): replace the ramp with the 8-wide brute-force stop search, re-baseline the ten
-moved scenes, and make the exactness the permanent test.**  Ranked reasons:
+moved scenes, and make the exactness the permanent test.**  Reasons:
 
-1. **The hunch is confirmed where it counts: it is a win/win on the product.**  Quality is
-   strictly better on every gradient measured — and not marginally: the LUT's hard-stop
+1. **It improves both quality and performance on the product.**  Quality is
+   better on every gradient measured: the LUT's hard-stop
    misattribution (196/255 on a committed scene's palette) is a visible-class artifact, not
    sub-quantum noise.  Performance is better on both flagship renders (−1.8 %/−2.7 %, 3–6σ,
    reproduced) and at worst flat on e2e and every control.
-2. **The regression lives only where real workloads don't.**  §3 maps it precisely: a
+2. **The regression is confined to workloads the tree doesn't run.**  §3 maps it: a
    many-stop gradient over one large fill.  The tree's gradients are 2-stop (renders, blend,
    text, strokes) or many-stop over small conic discs whose wall clock the scalar atan2
    solve dominates.  The in-API worst case (16 stops × one 384² fill) is 3.4× on the colour
@@ -202,25 +202,25 @@ moved scenes, and make the exactness the permanent test.**  Ranked reasons:
    per-fill build, no ≥1024-px special case, no "is the ramp fresh" coupling.  The colour
    path becomes one function with one semantics, bit-equal to the scalar evaluator the tests
    already pin.
-4. **The invariants get stronger, not looser.**  The ramp identity (tolerance 0 on a
+4. **The invariants get stronger.**  The ramp identity (tolerance 0 on a
    quantized table) is replaced by row≡scalar bit-equality (tolerance 0 on the *exact*
    evaluator) plus a measured ≤0.25/255 bound against a double reference — the README's
    quality row stops being a claim and becomes a gate.
 
-**The strongest argument against:** `bench_gradient_fill` — the dedicated benchmark of the
+**The argument against:** `bench_gradient_fill` — the dedicated benchmark of the
 exact path being changed — regresses 24 %, and §3 says the gap *grows* with stop count
 (3.4× at the API cap).  A canvas workload this tree doesn't have today (full-screen
 many-stop gradients: skybox fills, data-viz colour scales, animated multi-stop backgrounds)
-would feel it immediately, and the principled fix would be re-adding a table — i.e.
-re-litigating this memo.  The honest mitigation is that the crossover is *measured* (§3) and
-the artifact is *permanent*: if that workload arrives, the right move is a table-with-exact-
+would feel it immediately, and the fix would be re-adding a table — i.e.
+re-litigating this memo.  The mitigation is that the crossover is *measured* (§3) and
+the artifact is *permanent*: if that workload arrives, the move is a table-with-exact-
 hard-stops (per-segment LUT, or the lerp-not-nearest variant the old header comment priced)
 behind the same exact-semantics tests, not a return to nearest-entry quantization.
 
 **Fork for Mike:** (a) ratify (R) as landed — this memo's pick; (b) revert to (L) and accept
-the hard-stop artifact + per-fill build for the 24 % microbench win, re-documenting the
+the hard-stop artifact + per-fill build for the 24 % microbench gain, re-documenting the
 README's "within 1/255" as "within 1/255 except at coincident stops"; (c) greenlight the
-hybrid only if a real many-stop large-fill workload shows up with receipts.
+hybrid only if a many-stop large-fill workload shows up with receipts.
 
 ## 8. What would change my mind
 
@@ -228,9 +228,9 @@ hybrid only if a real many-stop large-fill workload shows up with receipts.
   large areas with ≥8-stop gradients per frame moves the microbench row from "synthetic
   corner" to "the product", and option (c)'s exact-table variant should be built and
   measured.
-- **The flagship wins evaporate on re-measurement.**  They are 2–3 % effects, 3–6σ here and
+- **The flagship gains disappear on re-measurement.**  They are 2–3 % effects, 3–6σ here and
   reproduced once; if a future toolchain or kernel change erases them, (R) still stands on
-  quality + deleted state, but the "win/win" framing weakens to "win/wash" and the memo
+  quality + deleted state, but the performance claim narrows to flat and the memo
   should say so.
 - **Output goes beyond 8 bits.**  The f16 lerp's 0.156/255 is invisible at 8-bit output;
   at 10/12-bit it is 0.6/2.5 LSB and the colour pipeline's compute type — not this

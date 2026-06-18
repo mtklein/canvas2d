@@ -18,15 +18,14 @@ gradients, CPU compositor) and the one unchecked boundary shim (the Core Text
 font shim). The `pixvm` experiment is **excluded** (under active development by
 another worktree).
 
-The project's thesis is *spatial memory safety for C via `-fbounds-safety`*. So
-the review question isn't "are there crashes" — it's **"where does that
-guarantee actually hold, and where does it end?"** That framing is also the
-answer to "where does a security researcher start": build the trust boundary and
-the threat model *first*, then aim tools at the seams.
+The project's thesis is *spatial memory safety for C via `-fbounds-safety`*. The
+review question is **"where does that guarantee hold, and where does it end?"**
+The approach: define the trust boundary and the threat model *first*, then aim
+tools at the seams.
 
 ---
 
-## 1. Where a security researcher starts: the threat model
+## 1. The threat model
 
 **Trust boundary.** The public API in [`include/canvas.h`](../../include/canvas.h)
 is the boundary. Everything a caller controls is untrusted input:
@@ -40,13 +39,13 @@ is the boundary. Everything a caller controls is untrusted input:
 | Dash pattern | `set_line_dash(ptr, count)` | `__counted_by(count)` |
 | Text + font name | `fill_text`, `measure_text`, `set_font` | UTF-8 across the Core Text shim |
 
-**What `-fbounds-safety` covers, and what it does NOT.** This is the crux. The
+**What `-fbounds-safety` covers, and what it does NOT.** The
 feature is *spatial only*. It converts an out-of-bounds `ptr[i]` into a
 `SIGTRAP`. It does **not** cover:
 
 1. **Integer overflow in the count/size expression itself.** `__counted_by(N)`
    checks `i < N` — but if `N` is a product of `int`s that overflowed, the check
-   uses the *wrong* `N`. This is the #1 way to defeat the guarantee, and it is
+   uses the *wrong* `N`. This is the primary way to defeat the guarantee, and it is
    present in this codebase (see Finding 1).
 2. **Temporal safety** — use-after-free, double-free. (ASan covers this in the
    debug build; nothing covers it in release.)
@@ -57,15 +56,15 @@ feature is *spatial only*. It converts an out-of-bounds `ptr[i]` into a
    original pass there was a second one, the Objective-C Metal compositor shim,
    built without the flag because it is C-only; that backend has since been
    deleted — see Finding 3.)
-4. **Logic errors that compute a self-consistent but wrong bound** (didn't find
-   one in the established code — the `(ptr,count)` discipline is good — but it's
+4. **Logic errors that compute a self-consistent but wrong bound** (none found
+   in the established code — the `(ptr,count)` discipline holds — but it is
    the class to keep watching).
 
-The good news, established by reading every allocation/access pair: the core is
-**disciplined about keeping each `(pointer, count)` consistent at allocation and
-access**, so even when an overflowed value is used as the bound, it's used
+Established by reading every allocation/access pair: the core keeps each
+`(pointer, count)` consistent at allocation and
+access, so even when an overflowed value is used as the bound, it is used
 *identically* at both ends, and the eventual access traps instead of corrupting.
-That is exactly why Finding 1 lands as "trap, not corruption" in release.
+That is why Finding 1 lands as "trap, not corruption" in release.
 
 ---
 
@@ -101,11 +100,11 @@ in `int` before any widening:
 - [`canvas.c:954`](../../src/canvas.c) `canvas_put_image_data`: `len < w * h * 4`
 
 `canvas_create` validates only `w > 0 && h > 0` — **no upper bound** — so these
-products overflow. The overflow turns the bounds guard `len < w*h*4` into a coin
-flip on the input:
+products overflow. The overflow makes the bounds guard `len < w*h*4` depend on
+the specific input:
 
 - `40000 × 40000`: `w*h*4` wraps to `+2105032704`, still `> len`, so the guard
-  *accidentally* rejects the call. Safe by luck.
+  rejects the call.
 - `23171 × 23171`: `w*h*4` wraps to `-2147386332`; `len < negative` is **false**,
   so the guard is **bypassed** and the code proceeds to blit with a too-small
   output buffer.
@@ -120,17 +119,17 @@ since retired in favor of the gated [`tests/test_dims.c`](../../tests/test_dims.
 | `release` (`-Os`, `-fbounds-safety`) | **`SIGTRAP`, exit 133** — OOB write converted to a deterministic trap; no corruption |
 | `debug` (`-fbounds-safety` + UBSan) | **fatal** at `canvas.c:937` — signed-overflow caught at the source |
 
-**Interpretation.** This is simultaneously (a) a genuine bug — the API's "`len`
+**Interpretation.** This is both (a) a bug — the API's "`len`
 must be `w*h*4`" contract cannot be enforced for large dimensions, and the debug
-build (CI, tests, any sanitizer-based fuzzing) aborts — and (b) a clean proof the
-raison d'être works: with the feature off it's an exploitable heap overflow; with
-it on, it's a safe abort.
+build (CI, tests, any sanitizer-based fuzzing) aborts — and (b) a demonstration of
+the feature: with it off it is an exploitable heap overflow; with
+it on, it is a controlled abort.
 
-**Fix (cheap, and the codebase already knows the pattern).** The PNG *encoder*
-already does the right thing — [`cnvs_png.c:122-128`](../../src/cnvs_png.c) clamps
+**Fix.** The PNG *encoder*
+already does this — [`cnvs_png.c:122-128`](../../src/cnvs_png.c) clamps
 `width,height ≤ 16384` and does its size math in `size_t`. Apply the same at the
-real root, `canvas_create`, and re-derive byte sizes in `size_t`/`int64_t` at the
-six sites above. One bound at creation closes the whole class.
+root, `canvas_create`, and re-derive byte sizes in `size_t`/`int64_t` at the
+six sites above. One bound at creation closes the class.
 
 ### Finding 2 — Unbounded doubling in `cnvs_grow_cap` (by inspection)
 
@@ -151,7 +150,7 @@ store is `__counted_by`-checked, so in release the consequence traps rather than
 corrupts; in debug UBSan makes it fatal. Worth a `size_t`/saturating-growth fix
 for the same reason as Finding 1: don't rely on "UB happens to trap downstream."
 
-### Finding 3 — The one unchecked shim is the real unguarded surface (audited, no bug found)
+### Finding 3 — The one unchecked shim is the unguarded surface (audited, no bug found)
 
 *(Rewritten 2026-06-10: the original pass found two TUs built without
 `-fbounds-safety` — the Objective-C Metal compositor shim and the Core Text font
@@ -167,12 +166,12 @@ net, so it carries the heaviest fuzzing.)*
 `-fbounds-safety` is off in exactly one place — [`cnvs_text_ct.c`](../../src/cnvs_text_ct.c)
 (`BOUNDARY_C` in [`configure.py`](../../configure.py)), the Core Text font shim,
 built without the flag because it binds the un-annotated CoreText/CoreGraphics
-headers. I read it closely:
+headers. Read closely:
 
 - **Core Text shim**: the checked side hands every string across this boundary as
   a counted `(bytes, len)` slice — never a NUL contract — and `str_from_bytes`
   passes exactly that to `CFStringCreateWithBytes`, which reads `len` bytes and
-  not one more (so the adversarial-UTF-8 worry is structural, not a hand decoder
+  not one more (so the adversarial-UTF-8 case is structural, not a hand decoder
   that could walk off the end). `CGPathElement.points` is indexed by element type
   per CG's contract (move/line = 1, quad = 2, cubic = 3) in
   [`cnvs_text_ct.c:129`](../../src/cnvs_text_ct.c) `emit` — correct, and
@@ -181,11 +180,10 @@ headers. I read it closely:
   and **fuzzed**: [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c) drives
   `measure/fill/stroke_text` with adversarial UTF-8 (truncated, lone-continuation,
   astral, mixed) under ASan, so the counted-slice property is exercised
-  empirically. This is the highest-value fuzzing target precisely because the TU
-  is unchecked — ASan is its only net.
+  empirically. This TU is unchecked, so ASan is its only net.
 
 It is small and correct today, but it is where a *future* edit has no compile-time
-net, so it deserves the heaviest fuzzing (Section 4).
+net, so it carries the heaviest fuzzing (Section 4).
 
 **Now guarded by:** [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c) (the dedicated Core
 Text shim fuzzer, ASan-only — the unchecked TU's sole automated net) plus the text
@@ -325,12 +323,12 @@ silently wrap in release.
 
 ### Non-findings (checked, clean)
 
-- **PNG encoder** ([`cnvs_png.c`](../../src/cnvs_png.c)) is the strongest example of
-  the thesis: every byte goes through a cursor (`put8 → buf[at]`) into a
+- **PNG encoder** ([`cnvs_png.c`](../../src/cnvs_png.c)): every byte goes through a
+  cursor (`put8 → buf[at]`) into a
   pre-sized `__counted_by(cap)` buffer, so *any* size-estimate error traps at the
   write instead of corrupting the heap; a too-large estimate fails the final
-  `w.at == total` check. I looked specifically for an alloc-size vs.
-  write-extent divergence and found none. Solid — and now **fuzzed**:
+  `w.at == total` check. Checked specifically for an alloc-size vs.
+  write-extent divergence; found none. Now **fuzzed**:
   [`fuzz/fuzz_png.c`](../../fuzz/fuzz_png.c) drives `cnvs_png_write` on fuzzed
   dimensions + pixels with `-fbounds-safety` off, so ASan alone must witness the
   cursor stays in bounds — 83k execs, **clean**.
@@ -370,7 +368,7 @@ silently wrap in release.
 
 ---
 
-## 3. Tooling — what you need, and the catch on this machine
+## 3. Tooling — what is needed, and the constraint on this machine
 
 | Tool | Status here | Use |
 |---|---|---|
@@ -380,11 +378,11 @@ silently wrap in release.
 | **libFuzzer** | ✅ **via Homebrew clang** (runtime bundled) | coverage-guided, **in-process, rootless** — the chosen engine |
 | **AFL++** | ⚠️ installed, but **rejected** | coverage needs `sudo afl-system-config` (SysV shm); root not used here |
 
-The resolution, after trying both engines: Apple clang lacks the libFuzzer
+After trying both engines: Apple clang lacks the libFuzzer
 runtime, and AFL++ on macOS needs root to raise the SysV shm limits — but
 **Homebrew clang ships libFuzzer**, which runs in-process with no shm/forkserver/
 sudo. Since `-fbounds-safety` is Apple-clang-only (Homebrew clang rejects it), the
-duties split, and that split is a feature, not a workaround (Section 4):
+duties split (Section 4):
 
 1. **Discovery** — Homebrew clang + libFuzzer + ASan + UBSan, CPU backend, no
    `-fbounds-safety` (annotations vanish via a stub `ptrcheck.h`). Coverage-guided,
@@ -394,9 +392,9 @@ duties split, and that split is a feature, not a workaround (Section 4):
 
 ---
 
-## 4. The differential method (the high-value idea for this project)
+## 4. The differential method
 
-Because the whole point is the feature, the most informative oracle is
+Because the subject is the feature itself, the most informative oracle is
 **differential across the existing variants**, run on one shared corpus:
 
 ```
@@ -405,10 +403,10 @@ Because the whole point is the feature, the most informative oracle is
         release (-fbs)  →  confirms OOB becomes a controlled trap (the thesis)
 ```
 
-A finding is *interesting* when the three disagree. Finding 1 is the template:
-ASan-overflow in `unsafe`, UBSan-fatal in `debug`, clean `SIGTRAP` in `release`.
-Cataloguing every such divergence is precisely "is the mechanism robust,
-and where do its guarantees stop."
+A finding is significant when the three disagree. Finding 1 is the template:
+ASan-overflow in `unsafe`, UBSan-fatal in `debug`, `SIGTRAP` in `release`.
+Cataloguing every such divergence maps where the mechanism holds
+and where its guarantees stop.
 
 ### Harnesses to write (priority order) — since built
 
@@ -419,7 +417,7 @@ The four harnesses the pass recommended now live in [`fuzz/`](../../fuzz/):
    `len/w/h`, gradients, dashes, text). Built as [`fuzz/fuzz_api.c`](../../fuzz/fuzz_api.c)
    (+ [`fuzz/fuzz_state.c`](../../fuzz/fuzz_state.c) over the shared
    [`fuzz/fuzz_ops.h`](../../fuzz/fuzz_ops.h) op stream). Highest coverage of the
-   trust boundary; it is what now re-finds Finding 4.
+   trust boundary; it re-finds Finding 4.
 2. **`cnvs_png_write` harness** — [`fuzz/fuzz_png.c`](../../fuzz/fuzz_png.c):
    dimensions + pixel buffer in, ASan witnesses the cursor never leaves `total`.
 3. **Core Text shim harness** — [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c):

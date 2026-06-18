@@ -1,11 +1,10 @@
-# Rasterization: the standing survey
+# Rasterization survey
 
-Status: **living document.** This is the map we return to whenever rasterization is
-the slow pole — algorithms, quality, parallelism, vectorizability. Unlike the
-decision memos in [decisions/](decisions/), nothing here is settled; entries get
-re-priced as the profile moves. Each option carries the experiment that would
-price it, in the house style: a paired bench, a byte-diff of the 33 gallery PNGs,
-and a memo.
+Status: **living document.** This surveys rasterization — algorithms, quality,
+parallelism, vectorizability — whenever it is the slow pole. Unlike the decision
+memos in [decisions/](decisions/), nothing here is settled; entries get re-priced
+as the profile moves. Each option carries the experiment that would price it: a
+paired bench, a byte-diff of the 33 gallery PNGs, and a memo.
 
 Last grounded: 2026-06-10, one `ninja profile-scene` pass (release gallery,
 `GALLERY_REPS=200`, 4 s `sample` window, Apple M4 Max) plus the measured numbers
@@ -56,20 +55,19 @@ Bucketed by pipeline stage:
 | filters/blur | 1.3 % |
 | **flattening** | absent from the top 15: **< 1 %** |
 
-The shade stage is still the biggest bucket at 40 %, **but it is no longer
-scalar, and its composition flipped**. The old pole — `paint_tile` +
-`cnvs_premultiply` at 41 % — collapsed to `paint_tile`'s 11 %:
-`cnvs_premultiply` and `cnvs_mat_apply` left the leaderboard entirely (their
-bulk callers now run the planar fold; in absolute terms, with the flagship
-−29 %, paint_tile-shaped work is roughly 4× cheaper). **The new pole:
-`draw_image_quad`'s per-lane sampling interior at 25 %** — the data-dependent
-taps (four gathers per bilinear pixel, index clamp/wrap, and the in-sample lerp
-arithmetic, all still scalar per lane inside `sample_src`) — followed by
-coverage at 22 %, composite at 17 %, and `canvas_clip`'s scalar intersect at
-10.6 %. The pie is flatter than it has ever been: no single fix buys 20 %
-anymore.
+The shade stage is the biggest bucket at 40 %, no longer scalar, and its
+composition changed. The old pole — `paint_tile` + `cnvs_premultiply` at 41 % —
+collapsed to `paint_tile`'s 11 %: `cnvs_premultiply` and `cnvs_mat_apply` left
+the leaderboard entirely (their bulk callers now run the planar fold; in
+absolute terms, with the flagship −29 %, paint_tile-shaped work is roughly 4×
+cheaper). The new pole is `draw_image_quad`'s per-lane sampling interior at 25 %
+— the data-dependent taps (four gathers per bilinear pixel, index clamp/wrap,
+and the in-sample lerp arithmetic, all still scalar per lane inside
+`sample_src`) — followed by coverage at 22 %, composite at 17 %, and
+`canvas_clip`'s scalar intersect at 10.6 %. The distribution is flat: no single
+fix buys 20 %.
 
-Caveats on these numbers, stated once:
+Caveats on these numbers:
 
 - `sample` gives proportions, not milliseconds. Absolute anchors come from
   hyperfine: `bench_render` 12.5 ms, `bench_render_large` 107 ms (1024², 10
@@ -91,13 +89,12 @@ Caveats on these numbers, stated once:
   whole planar fold, not a remnant of the old scalar loop. The scalar
   `cnvs_premultiply` still exists for true single-pixel callers (shadow/filter
   tint setup) and is invisible here.
-- **A correction to tribal knowledge:** `src/` spawns **zero threads**. Nothing
-  in the tree calls dispatch/pthreads — the blur included (it's plain
-  single-threaded loops). The `__workq_kernreturn` pile that `sample` filters out
-  is system frameworks' parked workers, not ours. The whole pipeline is one core,
-  full stop.
+- `src/` spawns **zero threads**. Nothing in the tree calls dispatch/pthreads —
+  the blur included (it is plain single-threaded loops). The `__workq_kernreturn`
+  pile that `sample` filters out is system frameworks' parked workers. The whole
+  pipeline is one core.
 
-## 2. The architecture today, stated honestly
+## 2. The architecture today
 
 One pipeline, per op, over the op's device-space bounding box
 ([canvas.c](../src/canvas.c)):
@@ -150,7 +147,7 @@ One pipeline, per op, over the op's device-space bounding box
    straight off the target.  Effective coverage (op plane × clip mask)
    applies per the §3.8 ruling: folded into src for the over-family,
    `lerp(dst, blend, cov)` after the full-strength blend for everything
-   else. This is the fast, finished part.
+   else.
 
 Strokes go through the same path: [cnvs_stroke.c](../src/cnvs_stroke.c) expands
 the polyline to triangles, `stroke_device_path` feeds each triangle's edges with
@@ -185,9 +182,8 @@ the same way, then intersect into a full-canvas u8 mask with a scalar
 - **Conflation *across* ops is spec behavior.** Each op resolves and composites
   independently, so two fills sharing a geometric edge each AA against what's
   underneath: 50 % + 50 %·50 % leaves a 75 % seam over the background. HTML
-  Canvas itself is defined op-at-a-time, browsers do the same, and our
-  scene-replay model depends on it — listed here so nobody "fixes" it without
-  noticing it's load-bearing.
+  Canvas itself is defined op-at-a-time, browsers do the same, and the
+  scene-replay model depends on it — listed here because it is depended on.
 - **The f16 pipeline does not erode the coverage claims.** Coverage is f32 until
   the u8 quantize; downstream, every 8-bit edge value round-trips f16 exactly and
   blends are off-by-one on ~5 % of translucent triples, max 1/255
@@ -268,9 +264,8 @@ emit for shadow/clip consumers), deleting 2 B/px of traffic and the /255 refold.
 directly, 57 % with `draw_image_quad`. Every prior planar conversion of a
 per-pixel f16 stage returned 3–4× on the kernel and double-digit flagship wins
 (color-axis layout addendum: −17.5 %/−24.8 %). If the shade stage gets the same
-kernel-level factor, the gallery compute pie loses on the order of 20–30 %.
-That's the expected-value champion and it's pure SIMD — no format change, no new
-invariants.
+kernel-level factor, the gallery compute pie loses on the order of 20–30 %. It
+is pure SIMD — no format change, no new invariants.
 
 **Costs.** Modest code (the vocabulary exists); the usual risk that per-lane
 arithmetic drifts from the scalar form. The discipline is established: bitwise
@@ -461,19 +456,18 @@ draws and stitches 256×256 tiles from worker threads — emulating the threaded
 user — keeps the library honest about thread safety (no hidden global mutable
 state; distinct canvases must be fully independent), and a TSAN build variant
 (separate from ASan/ISan/UBSan — they don't combine) makes that mechanical
-rather than aspirational. Thread-safety-as-tested is a user-facing property we
-want regardless of whether src/ ever threads. (Landed: `tests/test_threads.c`
+rather than aspirational. Thread-safety-as-tested is a user-facing property held
+regardless of whether src/ ever threads. (Landed: `tests/test_threads.c`
 is that harness — parallel tile-stitch byte-equals serial — and the `tsan`
 variant runs it under `-fsanitize=thread`, both on every bare `ninja`.)
 
-And the third panel (Mike, same conversation): the essential spot may be better
+A third refinement (Mike, same conversation): the essential spot may be better
 **dissolved by API design than served by internal threads**. The Canvas 2D spec
 only half-reifies coverage — `Path2D` is the geometry half, `clip()` re-derives
-the mask per canvas — and stops well short of "one thread makes a mask, many
-draw through it." But this project already augments the spec where it has
-better ideas (the typed filter API, the counted `_n` text entries,
-record/replay, `canvas_load_png`), and Mike is explicitly happy to keep doing
-so. A first-class immutable mask object — rasterize a path's coverage once,
+the mask per canvas — and stops short of "one thread makes a mask, many draw
+through it." The project already augments the spec elsewhere (the typed filter
+API, the counted `_n` text entries, record/replay, `canvas_load_png`). A
+first-class immutable mask object — rasterize a path's coverage once,
 then fill/stroke/image-draw *through* it from any canvas on any thread, the
 sharing safe precisely because the object is frozen after build — would export
 the library's coverage-reuse knowledge to the caller instead of hiding it
@@ -548,10 +542,10 @@ fork/join overhead eats the win below ~1.5× at 4 workers on
 
 - **The fold-order conflation (§2) has no oracle test.** Build the adversarial
   scenes — self-overlapping nonzero path with partial-coverage overlap pixels;
-  evenodd star whose crossings land mid-pixel — render against a 16×16
-  supersampled reference, and *decide whether we care*. Expectation: we ship the
-  same behavior as every winding-space rasterizer including Skia's analytic AA;
-  the doc-worthy outcome is a measured bound, not a fix.
+  evenodd star whose crossings land mid-pixel — and render against a 16×16
+  supersampled reference. The behavior is the same as every winding-space
+  rasterizer including Skia's analytic AA; the expected outcome is a measured
+  bound, not a fix.
 - **8-bit coverage is the coarsest quantizer in the pipeline** (1/510 vs f16's
   ~1/2048 near 1). A f16 coverage seam (which §3.1's fusion produces for free on
   the paint path) would lift it without a format change; whether any scene can
@@ -594,7 +588,7 @@ from our benches:
 
 ### 3.8 The unified draw pipeline (erasing the canvas/compositor line)
 
-Mike's model of a draw (2026-06-10), now that both sides of the old
+A model of a draw (Mike, 2026-06-10), now that both sides of the old
 canvas/compositor split are CPU:
 
 ```
@@ -661,7 +655,7 @@ Two things the model surfaces that a refactor must not blur past:
   cov==0 early-out is §3.4's empty-classification arriving through the front
   door.
 
-**Landed (2026-06-10, the seam-efficiency pass — Mike's step 2 of 3,
+**Landed (2026-06-10, the seam-efficiency pass — step 2 of 3,
 "efficient, not necessarily unified").** Four structural changes, each
 byte-still except the licensed re-fold:
 
@@ -674,22 +668,20 @@ byte-still except the licensed re-fold:
    bit-for-bit; blend8 now delegates source-over to src_over8 — the generic
    `fa*s + fb*d` arm contracts differently than `s + fb*d`, a 1-ULP trap no
    caller could previously reach).
-2. **The block predicates — landed flat, then REMOVED (Mike's razor).** The
-   model's `if (cov==0) return` as one u64 compare per 8-px block, a vector
-   test for transparent-black source blocks, the k = 1 short path — all
-   bit-exact, all priced ~flat on the committed mixes (the §1 histogram's
-   85 % full coverage explains why).  "Extra code complexity for no perf
-   win?" — removed; and the paired removal bench says the tests themselves
-   were a small tax: deleting them measured −1 %/−3 % flagship.  The design
-   and prices live here and in git history if sparse content ever arrives to
+2. **The block predicates — landed flat, then removed.** The model's
+   `if (cov==0) return` as one u64 compare per 8-px block, a vector test for
+   transparent-black source blocks, the k = 1 short path — all bit-exact, all
+   priced ~flat on the committed mixes (the §1 histogram's 85 % full coverage
+   explains why).  Removed for no perf win; the paired removal bench measured
+   −1 %/−3 % flagship, so the tests themselves were a small tax.  The design and
+   prices are recorded here and in git history if sparse content ever arrives to
    re-purchase them.
-3. **The re-fold — landed flat, then REMOVED (same razor).** Blends folding
-   coverage shade-side again per the homogeneity license priced
-   ~flat-to-−1 %; removal restores the one-sentence rule (the proven
-   over-family folds, everything else lerps — no theorem needed at the call
-   site) and blend.png's lerp pixels (≤ 1/255, lockstep).  The homogeneity
-   finding stays true and recorded above — a license nobody currently needs.
-4. **The row-granular handoff — tried, measured, DROPPED.** Unfiltered ops
+3. **The re-fold — landed flat, then removed.** Blends folding coverage
+   shade-side again per the homogeneity license priced ~flat-to-−1 %; removal
+   restores the one-sentence rule (the proven over-family folds, everything else
+   lerps) and blend.png's lerp pixels (≤ 1/255, lockstep).  The homogeneity
+   finding stays true and recorded above — a license not currently needed.
+4. **The row-granular handoff — tried, measured, dropped.** Unfiltered ops
    shading one reused tile row and compositing it cache-hot (the staged shape
    of the §3.8 race at row granularity) was implemented and priced: −3 % on
    `bench_render` (the gallery's many small ops pay a blend call per ROW
@@ -704,10 +696,10 @@ Measured (interleaved A/B medians, gallery + flagships): the splat bought
 −7.8 % `bench_render` / −6.8 % `bench_render_large` and is the pass's one
 survivor; the predicates and the re-fold priced flat and were removed
 (removal itself measured −1 %/−3 % — the flat paths were a small net tax);
-row-granular lost outright (above).  The economics, per Mike: buffer-based
-handoff's benefit is each stage ripping at its own full speed, its cost one
-memory round trip per handoff — so the seam wins came from deleting traffic
-(the splat), never from finer scheduling or speculative skips.  What remains for
+row-granular lost outright (above).  The economics: buffer-based handoff's
+benefit is each stage running at its own full speed, its cost one memory round
+trip per handoff — so the seam wins came from deleting traffic (the splat), not
+from finer scheduling or speculative skips.  What remains for
 the unification question (#27, step 3): the folding paths still write and
 re-read the whole-op tile (16 B/px round trip, DRAM-scale for large ops);
 the u8 coverage seam between resolve and shade (2 B/px + the /255 refold)
@@ -715,15 +707,15 @@ still stands; the lerp family still rides its plane.  Full fusion would move
 blocks through q0–q3 registers instead — and the row-granular loss says the
 win has to come from deleting the handoff, not rescheduling it.
 
-**Landed (2026-06-11, task #36): the compositor stopped existing.**  The
-object, its ABI (compositor.h), and compositor_cpu.c are gone; the kernels
-moved verbatim into canvas.c, dispatching on the public web-named
-`canvas_composite_op` (the COMPOSITOR_* mirror and the static_asserts that
-pinned it retired).  Two copies died with the machine line: the full-canvas
-clip copy (per clip change AND per restore — the kernels now take the
-canvas's own mask as a call parameter, so putImageData's ignore-the-clip is
-just passing NULL) and the readback staging copy (canvas_read_rgba
-un-premultiplies straight off the target the canvas now owns).  Byte-still at
+**Landed (2026-06-11, task #36): the compositor was removed.**  The object, its
+ABI (compositor.h), and compositor_cpu.c are gone; the kernels moved verbatim
+into canvas.c, dispatching on the public web-named `canvas_composite_op` (the
+COMPOSITOR_* mirror and the static_asserts that pinned it retired).  Two copies
+were removed with it: the full-canvas clip copy (per clip change AND per restore
+— the kernels now take the canvas's own mask as a call parameter, so
+putImageData's ignore-the-clip is just passing NULL) and the readback staging
+copy (canvas_read_rgba un-premultiplies straight off the target the canvas now
+owns).  Byte-still at
 every commit; the oracle tests retargeted to the internal seam
 ([cnvs_blend.h](../src/cnvs_blend.h)) with every bound intact.  Paired
 hyperfine (deleted-copy traffic, same kernels): `bench_render_large`
@@ -746,14 +738,14 @@ how-to-thread analysis stays parked there.)
 
 (§3.8's coverage-semantics ruling **landed 2026-06-10** — the fold-vs-lerp
 split is in the kernel, the oracle pins it, porterduff/blend re-baselined; the
-outcome is recorded in §3.8. Mike's sequencing for the rest: seam efficiency
-next, then the unification question.)
+outcome is recorded in §3.8. Sequencing for the rest: seam efficiency next, then
+the unification question.)
 
-(#1, seam efficiency, **landed 2026-06-10** — the splat, the block
-predicates, and the blend re-fold; row-granular tried and dropped; outcome and the
-honest remainder recorded in §3.8's landed note. The staged-row shape won by
-default at row granularity; the fused-register shape is #27's remaining
-question, now fighting for row-cache bandwidth rather than DRAM.)
+(#1, seam efficiency, **landed 2026-06-10** — the splat, the block predicates,
+and the blend re-fold; row-granular tried and dropped; outcome and the remainder
+recorded in §3.8's landed note. The staged-row shape won by default at row
+granularity; the fused-register shape is #27's remaining question, now fighting
+for row-cache bandwidth rather than DRAM.)
 
 1. **Vectorize the sampling interior of `draw_image_quad`** (the 25 %
    pole). The taps stay scalar — there is no NEON gather — but per block the
@@ -768,7 +760,7 @@ question, now fighting for row-cache bandwidth rather than DRAM.)
 2. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
    still a half-day). 8-wide integer `old * pc / 255` with the planar seams,
    bbox-limited. The /255 must stay exact (it's integer today; keep it
-   integer). No memo ceremony needed; the byte-gate is the whole gate.
+   integer). No memo needed; the byte-gate is the gate.
 3. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
    no threads). *Re-priced after #1 landed:* the solid-tile fast path now skips
    much cheaper shade work, so the 5–15 % guess shrinks; coverage (22 %) is the
@@ -784,7 +776,7 @@ becomes a flagship), full RLE coverage (§3.2 — re-price against the cheaper
 dense shade; a zero block now costs ~a dozen vector ops, so skipping buys
 mostly coverage/composite traffic, not shade compute).
 
-## Open questions (wanted to claim, couldn't ground)
+## Open questions (unmeasured)
 
 - **Bandwidth vs compute:** the 42 B/px floor and the ~10–15 %-of-frame traffic
   estimate are arithmetic, not measurement. A counters pass (Instruments,

@@ -33,13 +33,13 @@ The pass doesn't use the index's integer type range to elide the bound, so a
 data-dependent LUT keeps one per-element check. A range-analysis opportunity left on
 the table — but in practice it's cheap here (below).
 
-## `vtbl` gathers from registers, so there's no per-lane check
+## `vtbl` gathers from registers, so there is no per-lane check
 
 `vqtbl4q_u8` reads the table out of registers; there is no per-lane *memory* index to
 bound. Only the 16-wide block load/store stay checked (one `memcpy` bound each,
-amortized over 16 pixels). It's the same move that made the register pipeline free in
-[pixel-pipelines.md](pixel-pipelines.md): **put the indexed data in registers and the
-per-element checks vanish.**
+amortized over 16 pixels). The same move made the register pipeline free in
+[pixel-pipelines.md](pixel-pipelines.md): put the indexed data in registers and the
+per-element checks vanish.
 
 ## Cost
 
@@ -50,14 +50,14 @@ per-element checks vanish.**
 | scalar memory | 59 ms | 56 ms | **1.05×** | 1.0× |
 | NEON `vqtbl4q_u8` | 20 ms | 18 ms | **1.10×** | **~3× faster** |
 
-Two things worth noting:
+Two things to note:
 
-- The scalar per-element check costs only ~5%, not the dramatic tax its presence might
-  suggest. The LUT load is a dependent memory access (the address depends on `px[i]`),
-  so it's latency-bound, and the predictable check branch issues in that shadow — the
-  same "stalls hide the checks" effect the [vertical blur](stencil-blur.md) showed.
-- The big win is `vtbl`'s ~3× throughput (16 lanes per `tbl`), and it carries no
-  per-lane check on top. The remaining ~10% is the block `memcpy` bounds checks.
+- The scalar per-element check costs ~5%. The LUT load is a dependent memory
+  access (the address depends on `px[i]`), so it is latency-bound, and the
+  predictable check branch issues in that shadow — the same "stalls hide the
+  checks" effect the [vertical blur](stencil-blur.md) showed.
+- The `vtbl` form is ~3× throughput (16 lanes per `tbl`) and carries no per-lane
+  check. The remaining ~10% is the block `memcpy` bounds checks.
 
 ## Notes
 
@@ -74,11 +74,10 @@ Two things worth noting:
 ## Epilogue: the probe is retired
 
 The LUT module (`lut.c`/`lut.h`, the scalar `lut_apply_mem` and the `vqtbl4q_u8`
-`lut_apply_neon`, their test and two benches) was a self-contained probe, never wired
-into the renderer. Its two findings are banked: a `uint8_t` index into a 256-entry
-table still keeps a per-element check the pass won't fold (the range-folding probe
-builds on this), and the `vtbl` register-table gather sheds the per-lane check
-entirely — the same put-the-indexed-data-in-registers move that runs through the live
-kernels and the [pixel-pipelines](pixel-pipelines.md) study. The question answered, the
-code has been retired from the tree; the finding stands without it, and git history
-holds the modules.
+`lut_apply_neon`, their test and two benches) was a self-contained probe, never
+wired into the renderer. Its two findings: a `uint8_t` index into a 256-entry
+table keeps a per-element check the pass won't fold (the range-folding probe
+builds on this), and the `vtbl` register-table gather sheds the per-lane check —
+the same put-the-indexed-data-in-registers move used across the live kernels and
+the [pixel-pipelines](pixel-pipelines.md) study. The code has been retired from
+the tree; git history holds the modules.
