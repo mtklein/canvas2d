@@ -36,6 +36,14 @@ void cnvs_rec_floats(struct cnvs_recorder *__single r, char const *__null_termin
                      float const *__counted_by(n) v, int n);
 void cnvs_rec_floats_bool(struct cnvs_recorder *__single r, char const *__null_terminated name,
                           float const *__counted_by(n) v, int n, bool flag);
+// A colour op line (set_fill_rgba and its siblings, gradient stops, drop
+// shadow): the n floats, then an OPTIONAL trailing colour-space token, emitted
+// ONLY when `space` is non-sRGB -- absence == sRGB, so an sRGB colour records
+// exactly as cnvs_rec_floats would and every existing .canvas stays byte-
+// identical.  Mirrors the image block's optional colour-space tag.
+void cnvs_rec_floats_cs(struct cnvs_recorder *__single r, char const *__null_terminated name,
+                        float const *__counted_by(n) v, int n,
+                        enum canvas_color_space space);
 void cnvs_rec_text(struct cnvs_recorder *__single r, char const *__null_terminated name,
                    float x, float y, char const *__counted_by(len) text, int len);
 

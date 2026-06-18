@@ -10,6 +10,7 @@
 #include "test_util.h"
 
 #include "canvas.h"
+#include "cnvs_replay.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -204,6 +205,72 @@ static int slurp(char const *__null_terminated path, char *__counted_by(cap) buf
     return (int)got;
 }
 
+// Whether `hay[i, i+m)` equals the m bytes of `needle` (a counted-buffer
+// memcmp that stays in the indexable world, no __null_terminated seam).
+static bool eq_at(char const *__counted_by(n) hay, int n, int i,
+                  char const *__counted_by(m) needle, int m) {
+    if (i < 0 || i + m > n) {
+        return false;
+    }
+    for (int k = 0; k < m; k++) {
+        if (hay[i + k] != needle[k]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Whether `hay` (a slurped recording) contains `needle` (a "<line>\n" literal,
+// its trailing NUL excluded by sizeof-1) as a whole line -- anchored at start-
+// of-file or a newline.  Used to assert a specific op line was (or was NOT)
+// emitted.
+#define HAS_LINE(hay, n, lit) has_line_n((hay), (n), (lit), (int)sizeof(lit) - 1)
+static bool has_line_n(char const *__counted_by(n) hay, int n,
+                       char const *__counted_by(m) needle, int m) {
+    for (int i = 0; i + m <= n; i++) {
+        if ((i == 0 || hay[i - 1] == '\n') && eq_at(hay, n, i, needle, m)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether the recording contains NO occurrence of the bytes of `needle`
+// anywhere -- used to prove an sRGB recording names no colour space at all.
+#define HAS_NO_SUBSTR(hay, n, lit) has_no_substr_n((hay), (n), (lit), (int)sizeof(lit) - 1)
+static bool has_no_substr_n(char const *__counted_by(n) hay, int n,
+                            char const *__counted_by(m) needle, int m) {
+    for (int i = 0; i + m <= n; i++) {
+        if (eq_at(hay, n, i, needle, m)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Record one color program (each tagged-color op once, in `space`) to `path`,
+// then close.  Kept tiny and free of any other op so the file is easy to assert
+// against line by line.
+static void record_colors(char const *__null_terminated path,
+                          enum canvas_color_space space) {
+    struct canvas *__single cv = canvas(16, 16);
+    CHECK(cv != NULL);
+    CHECK(canvas_record_to(cv, path));
+    canvas_set_fill_rgba(cv, space, 0.25f, 0.5f, 0.75f, 1.0f);
+    canvas_set_stroke_rgba(cv, space, 0.125f, 0.25f, 0.375f, 0.5f);
+    canvas_set_shadow_color_rgba(cv, space, 0.5f, 0.5f, 0.5f, 0.25f);
+    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 16.0f);
+    canvas_add_fill_color_stop(cv, space, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 0.0f);
+    canvas_add_stroke_color_stop(cv, space, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_add_filter_drop_shadow(cv, space, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
+    // put_image_data: its colour space rides the BLOCK's optional tag.
+    uint8_t img[2 * 2 * 4];
+    for (int i = 0; i < (int)sizeof img; i++) { img[i] = (uint8_t)(i * 9); }
+    canvas_put_image_data(cv, space, img, (int)sizeof img, 2, 2, 1, 1);
+    canvas_free(cv);  // flush + close
+}
+
 int main(void) {
     // Fixed paths under build/ (the test_png convention); the recorded text is
     // deterministic and variant-independent.
@@ -324,6 +391,154 @@ int main(void) {
             CHECK(memcmp(a, b, (size_t)na) == 0);
         }
     }
+
+    // 5. The optional per-color space token.  Per color op, BOTH ways:
+    //   (a) untagged: an sRGB colour records with NO trailing token (byte-
+    //       identical to before this chunk) and replays back to sRGB; and
+    //   (b) tagged: a non-sRGB colour emits the token, round-trips, and is
+    //       byte-idempotent under record -> replay -> re-record.
+    char const *__null_terminated cp_srgb = "build/test_record_cs_srgb.canvas";
+    char const *__null_terminated cp_lin  = "build/test_record_cs_lin.canvas";
+    char const *__null_terminated cp_okl  = "build/test_record_cs_okl.canvas";
+    char const *__null_terminated cp_re   = "build/test_record_cs_re.canvas";
+
+    {
+        // (a) Untagged sRGB: every colour op line is exactly the floats, no
+        // trailing token -- the existing-format bytes, unchanged.  put_image_data
+        // carries its space on the image BLOCK, so an sRGB block emits no token
+        // either (the block line stays `... <zlen> <nlines>`).
+        record_colors(cp_srgb, CANVAS_CS_SRGB);
+        char buf[1 << 13];
+        int const n = slurp(cp_srgb, buf, (int)sizeof buf);
+        CHECK(n > 0 && n < (int)sizeof buf);
+        CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.25 0.5 0.75 1\n"));
+        CHECK(HAS_LINE(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5\n"));
+        CHECK(HAS_LINE(buf, n, "set_shadow_color_rgba 0.5 0.5 0.5 0.25\n"));
+        CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1\n"));
+        CHECK(HAS_LINE(buf, n, "add_stroke_color_stop 1 0 1 0 1\n"));
+        CHECK(HAS_LINE(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5\n"));
+        // No colour-op line carries a trailing space token: a tagged form of any
+        // of them must be absent.  (The bare names "srgb"/"linear"/"oklab" can't
+        // be probed directly here -- set_fill_linear_gradient legitimately spells
+        // "linear" -- so assert the absence of the actual tagged op lines.)
+        CHECK(HAS_NO_SUBSTR(buf, n, "set_fill_rgba 0.25 0.5 0.75 1 "));
+        CHECK(HAS_NO_SUBSTR(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5 "));
+        CHECK(HAS_NO_SUBSTR(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 "));
+        // And no line ends with a colour-space token (the put_image_data block
+        // line ends right after its <nlines> count; the op lines after their
+        // floats).
+        CHECK(HAS_NO_SUBSTR(buf, n, " srgb\n"));
+        CHECK(HAS_NO_SUBSTR(buf, n, " linear\n"));
+        CHECK(HAS_NO_SUBSTR(buf, n, " oklab\n"));
+        // It replays without error onto a fresh canvas.
+        struct canvas *__single cv = canvas(16, 16);
+        CHECK(cv != NULL);
+        CHECK(canvas_replay_from(cv, cp_srgb));
+        canvas_free(cv);
+    }
+
+    {
+        // (b) Tagged linear: every colour op line carries the ` linear` token,
+        // and the put_image_data image block carries it too.
+        record_colors(cp_lin, CANVAS_CS_LINEAR_SRGB);
+        char buf[1 << 13];
+        int const n = slurp(cp_lin, buf, (int)sizeof buf);
+        CHECK(n > 0 && n < (int)sizeof buf);
+        CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.25 0.5 0.75 1 linear\n"));
+        CHECK(HAS_LINE(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5 linear\n"));
+        CHECK(HAS_LINE(buf, n, "set_shadow_color_rgba 0.5 0.5 0.5 0.25 linear\n"));
+        CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1 linear\n"));
+        CHECK(HAS_LINE(buf, n, "add_stroke_color_stop 1 0 1 0 1 linear\n"));
+        CHECK(HAS_LINE(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 linear\n"));
+        // The put_image_data block names its space (the optional trailing block
+        // token), proving the tag round-trips through pixel I/O too.  The
+        // deflated byte count is content-dependent, so match the block prefix,
+        // walk to end of line, and assert it ends with the ` linear` tag.
+        {
+            char const pfx[] = "image 0 unorm8 unpremul 2 2 ";
+            char const tag[] = " linear";
+            int const pm = (int)sizeof pfx - 1, tm = (int)sizeof tag - 1;
+            bool found = false;
+            for (int i = 0; i + pm <= n; i++) {
+                if ((i == 0 || buf[i - 1] == '\n') && eq_at(buf, n, i, pfx, pm)) {
+                    int e = i;
+                    while (e < n && buf[e] != '\n') { e++; }
+                    found = eq_at(buf, n, e - tm, tag, tm);
+                    break;
+                }
+            }
+            CHECK(found);
+        }
+
+        // Byte idempotence: replay while recording reproduces the file exactly,
+        // so record and replay agree on the token's spelling and placement.
+        struct canvas *__single cv = canvas(16, 16);
+        CHECK(cv != NULL);
+        CHECK(canvas_record_to(cv, cp_re));
+        CHECK(canvas_replay_from(cv, cp_lin));
+        canvas_free(cv);
+        char buf2[1 << 13];
+        int const n2 = slurp(cp_re, buf2, (int)sizeof buf2);
+        CHECK(n2 == n);
+        if (n2 == n) {
+            CHECK(memcmp(buf, buf2, (size_t)n) == 0);
+        }
+    }
+
+    {
+        // (b') Tagged Oklab on the op-line colour ops (Oklab is a valid input
+        // space; put_image_data, which only carries the working-space-like block
+        // tag, is exercised by the linear case above).
+        struct canvas *__single cv = canvas(16, 16);
+        CHECK(cv != NULL);
+        CHECK(canvas_record_to(cv, cp_okl));
+        canvas_set_fill_rgba(cv, CANVAS_CS_OKLAB, 0.5f, 0.25f, 0.75f, 1.0f);
+        canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas_add_fill_color_stop(cv, CANVAS_CS_OKLAB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_free(cv);
+        char buf[1 << 13];
+        int const n = slurp(cp_okl, buf, (int)sizeof buf);
+        CHECK(n > 0 && n < (int)sizeof buf);
+        CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.5 0.25 0.75 1 oklab\n"));
+        CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1 oklab\n"));
+        // Round-trips byte-identically.
+        struct canvas *__single cv2 = canvas(16, 16);
+        CHECK(cv2 != NULL);
+        CHECK(canvas_record_to(cv2, cp_re));
+        CHECK(canvas_replay_from(cv2, cp_okl));
+        canvas_free(cv2);
+        char buf2[1 << 13];
+        int const n2 = slurp(cp_re, buf2, (int)sizeof buf2);
+        CHECK(n2 == n);
+        if (n2 == n) {
+            CHECK(memcmp(buf, buf2, (size_t)n) == 0);
+        }
+    }
+
+    // 6. Strict parsing: an unknown trailing colour-space token on a colour op
+    // line is rejected (replay returns false), like every other bad enum token.
+    // A well-formed leading subset already applied; the canvas stays valid.
+#define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
+    {
+        struct canvas *__single cv = canvas(16, 16);
+        CHECK(cv != NULL);
+        // The valid tokens parse.
+        CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1\n"));          // untagged sRGB
+        CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 linear\n"));   // tagged linear
+        CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 oklab\n"));    // tagged oklab
+        CHECK(REPLAY(cv, "add_stroke_color_stop 1 0 1 0 1 linear\n"));
+        CHECK(REPLAY(cv, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 oklab\n"));
+        // An unknown trailing token is malformed.
+        CHECK(!REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 rec709\n"));  // bad space name
+        CHECK(!REPLAY(cv, "set_stroke_rgba 0 0 0 1 sideways\n"));
+        CHECK(!REPLAY(cv, "set_shadow_color_rgba 0 0 0 1 LINEAR\n"));  // case-sensitive
+        CHECK(!REPLAY(cv, "add_fill_color_stop 0 1 0 0 1 bogus\n"));
+        CHECK(!REPLAY(cv, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 xyz\n"));
+        // A valid token followed by junk is malformed too.
+        CHECK(!REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 linear extra\n"));
+        canvas_free(cv);
+    }
+#undef REPLAY
 
     return TEST_REPORT();
 }
