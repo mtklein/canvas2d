@@ -344,6 +344,11 @@ struct replay_blocks {
     int pend_id;
     int pend_cmds;  // the block's declared command count
     int pend_left;  // command lines still expected
+    // The working_space line (if any) must lead the file -- it reconfigures the
+    // fresh canvas's immutable space before the first colour interns.  `started`
+    // latches on the first command line that does anything (a draw, a setter, a
+    // block), so a working_space arriving after that is rejected as malformed.
+    bool started;
 };
 
 // Free the cross-line state (the pending shape, if its run lines never
@@ -1052,6 +1057,36 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         // is not a command rejects there.
         return replay_path_cmd(blk, data, le, cs, cl, j);
     }
+
+    // --- working space (leads the file; reconfigures the fresh canvas) ---
+    // Only a non-sRGB program ever writes this line, and only as its first
+    // command -- it reconfigures the canvas's immutable working space before any
+    // colour interns.  Rejected if anything has been drawn yet (`started`), so a
+    // malformed file can't flip the space mid-stream; the canvas is still all-
+    // zero transparent here, identical in either space, so the reconfigure is
+    // exactly creation-time.  Absence means sRGB (the latched-on-first-op
+    // default), keeping every existing program byte-stable.
+    if (tok_eq(data, le, cs, cl, "working_space")) {
+        if (blk->started) {
+            return false;  // must lead the file
+        }
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl) || !at_eol(data, le, j)) {
+            return false;
+        }
+        int sp = -1;
+        for (int k = 0;
+             k < (int)(sizeof cnvs_working_space_name / sizeof cnvs_working_space_name[0]);
+             k++) {
+            if (tok_eq(data, le, ts, tl, cnvs_working_space_name[k])) { sp = k; break; }
+        }
+        if (sp < 0) {
+            return false;
+        }
+        blk->started = true;
+        return cnvs_canvas_set_working_space(cv, (enum canvas_working_space)sp);
+    }
+    blk->started = true;  // any other effective command locks the space in
 
     float f[8];
     bool b;

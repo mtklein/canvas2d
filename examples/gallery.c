@@ -2434,6 +2434,69 @@ static void filters(void) {
     save(c, "gallery/filters.png");
 }
 
+// Three translucent primaries overlapping over a mid grey -- the canonical
+// "same untagged sRGB colours, two working spaces" demonstrator.  In sRGB the
+// overlaps darken and go muddy (averaging happens in gamma space); in extended
+// linear sRGB the same translucent colours composite in light, so the overlaps
+// stay bright.  Drawn into the half rect at (ox, oy).
+static void linearlight_motif(struct canvas *__single c, float ox, float oy) {
+    canvas_set_fill_rgba(c, 0.5f, 0.5f, 0.5f, 1.0f);  // mid-grey ground
+    canvas_fill_rect(c, ox, oy, 150.0f, 150.0f);
+
+    float const r = 42.0f, cx = ox + 75.0f, cy = oy + 64.0f, off = 30.0f;
+    float const a = 0.5f;
+    struct { float r, g, b, dx, dy; } const disc[3] = {
+        { 0.95f, 0.15f, 0.15f,  0.0f,    -off },          // red, up
+        { 0.15f, 0.85f, 0.20f, -off * 0.87f, off * 0.5f },// green, lower-left
+        { 0.20f, 0.35f, 0.95f,  off * 0.87f, off * 0.5f },// blue, lower-right
+    };
+    for (int i = 0; i < 3; i++) {
+        canvas_set_fill_rgba(c, disc[i].r, disc[i].g, disc[i].b, a);
+        canvas_begin_path(c);
+        canvas_arc(c, cx + disc[i].dx, cy + disc[i].dy, r, 0.0f, TAU, false);
+        canvas_fill(c, CANVAS_NONZERO);
+    }
+}
+
+// The working-space demonstrator: ONE linear-working-space output canvas shows
+// the same untagged sRGB scene composited two ways, side by side.  The LEFT
+// half is rendered on a separate sRGB canvas (today's gamma-space compositing),
+// read back to sRGB bytes, and put_image_data'd onto the linear output -- which
+// decodes sRGB->linear on the way in, then re-encodes on readback, so the sRGB
+// result displays faithfully.  The RIGHT half draws the identical scene natively
+// on the linear canvas, so its translucent overlaps composite in light.  The
+// committed program is the FIRST to carry a `working_space linear` line (its
+// output canvas is linear); it replays onto a linear canvas and matches the PNG.
+static void linearlight(void) {
+    int const w = 316, h = 150;
+    struct canvas *__single out = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+    if (!out) {
+        return;
+    }
+    record_scene(out, "gallery/linearlight.canvas");
+
+    // The sRGB half, rendered off-canvas and copied in.  put_image_data on the
+    // linear canvas decodes the incoming sRGB bytes to linear; readback encodes
+    // back, so the sRGB-composited pixels survive the round trip exactly.
+    struct canvas *__single srgb = canvas(150, 150);
+    if (srgb) {
+        linearlight_motif(srgb, 0.0f, 0.0f);
+        int const blen = 150 * 150 * 4;
+        uint8_t *__counted_by(blen) block = malloc((size_t)blen);
+        if (block) {
+            canvas_get_image_data(srgb, 0, 0, 150, 150, block, blen);
+            canvas_put_image_data(out, block, blen, 150, 150, 0, 0);
+            free(block);
+        }
+        canvas_free(srgb);
+    }
+
+    // The linear half, drawn natively on the linear output.
+    linearlight_motif(out, 166.0f, 0.0f);
+
+    save(out, "gallery/linearlight.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -2470,6 +2533,7 @@ static void render_all(void) {
     rtl();
     selection();
     filters();
+    linearlight();
 }
 
 int main(void) {

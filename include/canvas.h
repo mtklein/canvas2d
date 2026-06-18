@@ -63,9 +63,32 @@ enum canvas_composite_op {
     CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
 };
 
+// The canvas's WORKING COLOUR SPACE: the space untagged (encoded sRGB) colours
+// are converted INTO for compositing.  Chosen at creation and immutable -- it
+// lives on the canvas, not the save/restore drawing state, and reset/resize
+// leave it alone.  Two spaces, same sRGB primaries (no primaries axis):
+//   CANVAS_WS_SRGB    -- encoded sRGB; today's behaviour, byte for byte.  NO
+//                        transfer ever runs: entry, compositing, and exit are a
+//                        literal bypass of the legacy path.
+//   CANVAS_WS_LINEAR  -- extended linear sRGB; translucent overlaps composite
+//                        in linear light (they stay bright rather than going
+//                        muddy).  Untagged colours decode sRGB->linear on the
+//                        way in and encode linear->sRGB on the way out; the
+//                        only clamp is the output quantize, so extended
+//                        (out-of-[0,1]) values propagate through compositing.
+// Untagged colours are canonically ENCODED sRGB at every public boundary, in
+// both spaces -- input (set_fill_rgba and siblings, gradient stops, shadow and
+// drop-shadow colours, putImageData/bitmap/image pixels) and output (read_rgba,
+// write_png, get_image_data).  The space changes only what they convert into
+// internally, never how they are spelled at the boundary.
+enum canvas_working_space { CANVAS_WS_SRGB, CANVAS_WS_LINEAR };
+
 // The constructor: NULL on failure; the canvas starts transparent black.
-// canvas_free accepts NULL, like free() itself.
+// canvas_free accepts NULL, like free() itself.  canvas(w,h) is the sRGB
+// working space (today's behaviour); canvas_in_space picks the space explicitly.
 struct canvas *__single canvas(int width, int height);
+struct canvas *__single canvas_in_space(int width, int height,
+                                        enum canvas_working_space space);
 void canvas_free(struct canvas *__single cv);
 
 // Whether the rendering context has been lost (matching isContextLost).  This

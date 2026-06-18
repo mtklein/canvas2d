@@ -121,6 +121,7 @@ static char const *__null_terminated const k_gallery[] = {
     "gallery/imagedata.png",
     "gallery/imagescale.png",
     "gallery/joins.png",
+    "gallery/linearlight.png",
     "gallery/miterdash.png",
     "gallery/path2d.png",
     "gallery/paths.png",
