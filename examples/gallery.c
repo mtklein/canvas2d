@@ -2497,6 +2497,59 @@ static void linearlight(void) {
     save(out, "gallery/linearlight.png");
 }
 
+// The per-gradient interpolation-space demonstrator: the SAME stop sets painted
+// twice -- sRGB component lerp (top of each pair) vs premultiplied Oklab (bottom)
+// -- the canonical "sRGB midpoint goes muddy/dark, Oklab stays bright and
+// perceptually even" comparison.  Two ramps per mode: a red->green->blue rainbow
+// (the perceptual-evenness case) and a transparent-red->opaque-blue fade over a
+// pale checker ground (the premul-hygiene case -- sRGB straight-lerps an alpha-
+// weighted red into the midpoint and muddies it; Oklab's premultiplied lerp lets
+// no red bleed, so the midpoint reads as clean half-blue).  The committed program
+// carries the set_fill_gradient_interpolation lines; it replays on a plain sRGB
+// canvas (the default working space) and matches the PNG.
+static void oklab_ramp(struct canvas *__single c, float y, enum cnvs_gradient_interp interp) {
+    // Rainbow red -> green -> blue across the left half.
+    canvas_set_fill_linear_gradient(c, 16.0f, 0.0f, 150.0f, 0.0f);
+    canvas_set_fill_gradient_interpolation(c, interp);
+    canvas_add_fill_color_stop(c, 0.0f, 0.90f, 0.10f, 0.10f, 1.0f);
+    canvas_add_fill_color_stop(c, 0.5f, 0.10f, 0.80f, 0.20f, 1.0f);
+    canvas_add_fill_color_stop(c, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);
+    canvas_fill_rect(c, 16.0f, y, 134.0f, 40.0f);
+
+    // Transparent red -> opaque blue across the right half (premul hygiene).
+    canvas_set_fill_linear_gradient(c, 166.0f, 0.0f, 284.0f, 0.0f);
+    canvas_set_fill_gradient_interpolation(c, interp);
+    canvas_add_fill_color_stop(c, 0.0f, 0.90f, 0.10f, 0.10f, 0.0f);  // transparent red
+    canvas_add_fill_color_stop(c, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);  // opaque blue
+    canvas_fill_rect(c, 166.0f, y, 118.0f, 40.0f);
+}
+
+static void oklab(void) {
+    struct canvas *__single c = canvas(300, 120);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/oklab.canvas");
+    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
+
+    // A pale checker behind the right (fade-to-transparent) ramp so the premul
+    // hygiene reads: where the gradient is transparent the checker shows through.
+    for (int gy = 0; gy < 120; gy += 12) {
+        for (int gx = 160; gx < 300; gx += 12) {
+            bool const lit = ((gx / 12) + (gy / 12)) % 2 == 0;
+            canvas_set_fill_rgba(c, lit ? 0.75f : 0.55f, lit ? 0.75f : 0.55f,
+                                 lit ? 0.78f : 0.58f, 1.0f);
+            canvas_fill_rect(c, (float)gx, (float)gy, 12.0f, 12.0f);
+        }
+    }
+
+    oklab_ramp(c, 18.0f, CNVS_INTERP_SRGB);   // top pair: sRGB component lerp
+    oklab_ramp(c, 62.0f, CNVS_INTERP_OKLAB);  // bottom pair: premultiplied Oklab
+
+    save(c, "gallery/oklab.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -2534,6 +2587,7 @@ static void render_all(void) {
     selection();
     filters();
     linearlight();
+    oklab();
 }
 
 int main(void) {

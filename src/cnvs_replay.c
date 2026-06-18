@@ -1267,6 +1267,18 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         else if (tok_eq(data, le, ts, tl, "rtl")) canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         else return false;
     }
+    else if (tok_eq(data, le, cs, cl, "set_fill_gradient_interpolation") ||
+             tok_eq(data, le, cs, cl, "set_stroke_gradient_interpolation")) {
+        bool const fill = data[cs + 4] == 'f';  // "set_[f]ill" vs "set_[s]troke"
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        enum cnvs_gradient_interp interp;
+        if (tok_eq(data, le, ts, tl, "srgb"))       interp = CNVS_INTERP_SRGB;
+        else if (tok_eq(data, le, ts, tl, "oklab")) interp = CNVS_INTERP_OKLAB;
+        else return false;
+        if (fill) canvas_set_fill_gradient_interpolation(cv, interp);
+        else      canvas_set_stroke_gradient_interpolation(cv, interp);
+    }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;
         if (!read_token(data, le, &j, &ts, &tl)) return false;

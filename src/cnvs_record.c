@@ -51,6 +51,9 @@ char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
 char const *const cnvs_working_space_name[CANVAS_WS_LINEAR + 1] = {
     "srgb", "linear",
 };
+char const *const cnvs_gradient_interp_name[CNVS_INTERP_OKLAB + 1] = {
+    "srgb", "oklab",
+};
 
 struct cnvs_recorder {
     FILE *__single f;
@@ -742,4 +745,22 @@ void cnvs_rec_working_space(struct cnvs_recorder *__single r,
     fputs(cnvs_working_space_name[CANVAS_WS_LINEAR], r->f);
     fputc('\n', r->f);
     r->wrote_ws = true;
+}
+
+void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
+                             char const *__null_terminated name,
+                             enum cnvs_gradient_interp interp) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    unsigned const i = (unsigned)interp;
+    if (i >= sizeof cnvs_gradient_interp_name / sizeof cnvs_gradient_interp_name[0]) {
+        return;  // out of range; the caller's setter still stored it, but an
+                 // unnameable value cannot round-trip -- skip the line rather
+                 // than write a token the strict parser would reject.
+    }
+    fputs(name, r->f);
+    fputc(' ', r->f);
+    fputs(cnvs_gradient_interp_name[i], r->f);
+    fputc('\n', r->f);
 }

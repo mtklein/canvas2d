@@ -1,4 +1,5 @@
 #include "cnvs_gradient.h"
+#include "cnvs_color.h"
 #include "cnvs_planar.h"
 
 #include <math.h>
@@ -18,6 +19,65 @@ void cnvs_gradient_add_stop(struct cnvs_gradient *gr, float offset, cnvs_unpremu
     }
     gr->stops[i] = (cnvs_stop){ .offset = o, .color = color };
     gr->stop_count += 1;
+}
+
+// Take one stored stop colour (in the gradient's WORKING space) to LINEAR sRGB.
+// On a linear canvas the channels already ARE linear (identity); on an sRGB
+// canvas they are encoded sRGB and decode through the odd-extension transfer
+// (total over R, so an extended stop survives).  Alpha is never a colour and
+// passes through untouched.  f32 throughout -- this is the cbrt-precision math
+// docs/decisions/color-axis.md reserves f32 for.
+static cnvs_rgb stop_to_linear(cnvs_unpremul c, enum canvas_working_space space) {
+    if (space == CANVAS_WS_LINEAR) {
+        return (cnvs_rgb){ .r = (float)c.r, .g = (float)c.g, .b = (float)c.b };
+    }
+    return cnvs_rgb_srgb_to_linear(
+        (cnvs_rgb){ .r = (float)c.r, .g = (float)c.g, .b = (float)c.b });
+}
+
+// The inverse: linear sRGB back to the gradient's working space, narrowed to the
+// _Float16 the shade/blend path expects, with `a` carried alongside.
+static cnvs_unpremul linear_to_stop(cnvs_rgb lin, float a, enum canvas_working_space space) {
+    cnvs_rgb const out = space == CANVAS_WS_LINEAR ? lin : cnvs_rgb_linear_to_srgb(lin);
+    return cnvs_unpremul_of(out.r, out.g, out.b, a);
+}
+
+// The colour lerp for ONE evaluated point on an Oklab gradient, lo/hi the
+// surrounding stop pair (working space) and lerp_t the geometry solve's already-
+// computed parameter in [0,1].  This is THE Oklab reference: the planar row
+// kernel calls it per lane, so scalar == planar is bit-identical by
+// construction (one function, not two parallel ones).  All arithmetic is f32,
+// narrowing once at linear_to_stop's handback.
+//
+// PREMULTIPLIED Oklab, component-wise: interpolate (L*a, a*a, b*a, a).  This is
+// interpolation hygiene -- a transparent stop must contribute no colour to the
+// ramp (transparent-red -> opaque-blue is pure blue at the midpoint, not muddy
+// purple) -- NOT light physics.  Alpha lerps on its own (never premultiplied by
+// itself); the L/a/b channels lerp premultiplied and unpremultiply by the
+// interpolated alpha before converting out.  alpha == 0 makes the colour a
+// don't-care, so the divide is guarded (the eventual premultiply zeroes it
+// anyway).
+static cnvs_unpremul oklab_lerp(cnvs_unpremul lo, cnvs_unpremul hi, float lerp_t,
+                                enum canvas_working_space space) {
+    cnvs_oklab const llab = cnvs_linear_srgb_to_oklab(stop_to_linear(lo, space));
+    cnvs_oklab const hlab = cnvs_linear_srgb_to_oklab(stop_to_linear(hi, space));
+
+    float const la = (float)lo.a, ha = (float)hi.a;
+
+    // Premultiplied Oklab endpoints (L,a,b each scaled by that stop's alpha).
+    float const lL = llab.L * la, la_ = llab.a * la, lb = llab.b * la;
+    float const hL = hlab.L * ha, ha_ = hlab.a * ha, hb = hlab.b * ha;
+
+    float const pL = lL + (hL - lL) * lerp_t;
+    float const pa = la_ + (ha_ - la_) * lerp_t;
+    float const pb = lb + (hb - lb) * lerp_t;
+    float const a  = la + (ha - la) * lerp_t;  // alpha interpolates linearly, unpremul
+
+    // Unpremultiply (a == 0 -> colour is don't-care; 0 keeps the divide finite).
+    float const inv = a > 0.0f ? 1.0f / a : 0.0f;
+    cnvs_oklab const lab = { .L = pL * inv, .a = pa * inv, .b = pb * inv };
+
+    return linear_to_stop(cnvs_oklab_to_linear_srgb(lab), a, space);
 }
 
 cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
@@ -42,6 +102,9 @@ cnvs_unpremul cnvs_gradient_color_at(struct cnvs_gradient const *gr, float t) {
             // takes lo).
             float const span = hi.offset - lo.offset;
             float const lerp_t = span > 0.0f ? (t - lo.offset) / span : 0.0f;
+            if (gr->interp == CNVS_INTERP_OKLAB) {
+                return oklab_lerp(lo.color, hi.color, lerp_t, gr->space);
+            }
             half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
             half4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
             half4 const c = lov + (hiv - lov) * (_Float16)lerp_t;
@@ -246,9 +309,24 @@ static void gradpx8_store(cnvs_unpremul *__counted_by(8) p, gradpx8 px) {
 // guard, narrowed once to _Float16 for the colour lerp).  Lane for lane
 // bit-identical to cnvs_gradient_color_at, the semantic reference; t < 0 --
 // the row solver's "outside" sentinel -- paints transparent black.
+//
+// Oklab interpolation takes the WHOLE row through the scalar evaluator (the same
+// path as the n % 8 tail).  The Oklab colour lerp is a per-lane cbrt/cube behind
+// the same data-dependent stop search, with no portable vector spelling (libm
+// has no half8 cbrt -- exactly cnvs_color.c's situation), and it is not on a
+// profiled hot path; routing it through cnvs_gradient_color_at makes planar ==
+// scalar bit-identical BY CONSTRUCTION (one evaluator, called per lane) and
+// leaves the sRGB planar kernel below textually unchanged and byte-stable.
 void cnvs_gradient_color_row(struct cnvs_gradient const *gr,
                              float const *__counted_by(n) t, int n,
                              cnvs_unpremul *__counted_by(n) out) {
+    if (gr->interp == CNVS_INTERP_OKLAB) {
+        for (int k = 0; k < n; k++) {
+            out[k] = t[k] >= 0.0f ? cnvs_gradient_color_at(gr, t[k])
+                                  : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        return;
+    }
     int const sc = gr->stop_count;
     int i = 0;
     if (sc > 0) {

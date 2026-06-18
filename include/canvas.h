@@ -83,6 +83,26 @@ enum canvas_composite_op {
 // internally, never how they are spelled at the boundary.
 enum canvas_working_space { CANVAS_WS_SRGB, CANVAS_WS_LINEAR };
 
+// A gradient's INTERPOLATION SPACE: the colour space its stop colours blend in
+// between stops.  Per gradient (not per canvas): it rides the fill/stroke
+// gradient, so save/restore brackets it like any drawing state, and a fresh
+// canvas_set_*_gradient resets it to the sRGB default.  The geometry of the
+// gradient (which stop pair, how far between) is identical either way; only the
+// colour lerp differs.
+//   CNVS_INTERP_SRGB  -- component-wise lerp of the stop colours as stored,
+//                        today's behaviour byte for byte.  The default, so an
+//                        untouched gradient -- and every legacy program with no
+//                        interpolation line -- is unchanged.
+//   CNVS_INTERP_OKLAB -- lerp in PREMULTIPLIED Oklab (L,a,b each scaled by that
+//                        stop's alpha, alpha lerped on its own, unpremultiplied
+//                        before converting out) for a perceptually even ramp:
+//                        the midpoint stays bright instead of going muddy/dark,
+//                        and a transparent stop bleeds no colour into the ramp
+//                        (transparent-red -> opaque-blue is pure blue at the
+//                        midpoint).  Oklab is interpolation-only; the result
+//                        re-enters the working-space compositing path unchanged.
+enum cnvs_gradient_interp { CNVS_INTERP_SRGB, CNVS_INTERP_OKLAB };
+
 // The constructor: NULL on failure; the canvas starts transparent black.
 // canvas_free accepts NULL, like free() itself.  canvas(w,h) is the sRGB
 // working space (today's behaviour); canvas_in_space picks the space explicitly.
@@ -205,6 +225,12 @@ void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angl
                                     float x, float y);
 void canvas_add_fill_color_stop(struct canvas *__single cv, float offset,
                                 float r, float g, float b, float a);
+// Choose the interpolation space for the current fill gradient (default
+// CNVS_INTERP_SRGB).  Applies to whichever gradient is the fill paint now; a
+// later canvas_set_fill_*_gradient resets it to the sRGB default, so set it
+// after creating the gradient and before (or after) its stops.
+void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
+                                            enum cnvs_gradient_interp interp);
 // Image pattern fill paint (createPattern): the tightly packed RGBA8 source
 // (w*h, top row first) tiles the plane per `repeat`.  The source is *borrowed* --
 // the caller must keep it alive while it remains the fill paint (including across
@@ -332,6 +358,9 @@ void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_an
                                       float x, float y);
 void canvas_add_stroke_color_stop(struct canvas *__single cv, float offset,
                                   float r, float g, float b, float a);
+// Interpolation space for the current stroke gradient (the fill twin above).
+void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
+                                              enum cnvs_gradient_interp interp);
 // Image pattern stroke paint, mirroring canvas_set_fill_pattern.
 void canvas_set_stroke_pattern(struct canvas *__single cv,
                                uint8_t const *__counted_by(w * h * 4) src,
