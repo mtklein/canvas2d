@@ -280,7 +280,7 @@ int main(void) {
     char const *__null_terminated lp2 = "build/test_record_lin_b.canvas";
     uint8_t lin_px[NPX];
     {
-        struct canvas *__single cv = canvas_in_space(W, H, CANVAS_WS_LINEAR);
+        struct canvas *__single cv = canvas_in_space(W, H, CANVAS_CS_LINEAR_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, lp1));
         draw_program(cv);

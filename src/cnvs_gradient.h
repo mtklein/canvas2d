@@ -5,7 +5,7 @@
 // save/restore.  Fills and strokes sample it per pixel on the CPU into the tile the
 // blend stage composites.
 
-#include "canvas.h"     // enum canvas_working_space, enum cnvs_gradient_interp
+#include "canvas.h"     // enum canvas_color_space
 #include "cnvs_math.h"
 
 #include <ptrcheck.h>
@@ -34,9 +34,9 @@ struct cnvs_gradient {
     // canvas, so reading cv->space once at set time is exactly as correct as
     // threading the canvas into every eval call, and keeps the colour kernels
     // (cnvs_gradient_color_at/_row) dependent only on the gradient, not the
-    // canvas.  Zero (CANVAS_WS_SRGB) for designated-initializer gradients.
-    enum cnvs_gradient_interp interp;
-    enum canvas_working_space space;
+    // canvas.  Zero (CANVAS_CS_SRGB) for designated-initializer gradients.
+    enum canvas_color_space interp;  // sRGB or Oklab; the gradient lerp space
+    enum canvas_color_space space;   // the canvas working space (sRGB or linear)
 };
 
 // Insert a stop in offset order (offset clamped to [0,1]); a no-op once full.

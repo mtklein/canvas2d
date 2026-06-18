@@ -2469,7 +2469,7 @@ static void linearlight_motif(struct canvas *__single c, float ox, float oy) {
 // output canvas is linear); it replays onto a linear canvas and matches the PNG.
 static void linearlight(void) {
     int const w = 316, h = 150;
-    struct canvas *__single out = canvas_in_space(w, h, CANVAS_WS_LINEAR);
+    struct canvas *__single out = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     if (!out) {
         return;
     }
@@ -2507,7 +2507,7 @@ static void linearlight(void) {
 // no red bleed, so the midpoint reads as clean half-blue).  The committed program
 // carries the set_fill_gradient_interpolation lines; it replays on a plain sRGB
 // canvas (the default working space) and matches the PNG.
-static void oklab_ramp(struct canvas *__single c, float y, enum cnvs_gradient_interp interp) {
+static void oklab_ramp(struct canvas *__single c, float y, enum canvas_color_space interp) {
     // Rainbow red -> green -> blue across the left half.
     canvas_set_fill_linear_gradient(c, 16.0f, 0.0f, 150.0f, 0.0f);
     canvas_set_fill_gradient_interpolation(c, interp);
@@ -2544,8 +2544,8 @@ static void oklab(void) {
         }
     }
 
-    oklab_ramp(c, 18.0f, CNVS_INTERP_SRGB);   // top pair: sRGB component lerp
-    oklab_ramp(c, 62.0f, CNVS_INTERP_OKLAB);  // bottom pair: premultiplied Oklab
+    oklab_ramp(c, 18.0f, CANVAS_CS_SRGB);   // top pair: sRGB component lerp
+    oklab_ramp(c, 62.0f, CANVAS_CS_OKLAB);  // bottom pair: premultiplied Oklab
 
     save(c, "gallery/oklab.png");
 }

@@ -1,7 +1,7 @@
 // Per-gradient Oklab interpolation (src/cnvs_gradient.c).  Four claims:
 //
 //   1. The sRGB default is byte-identical -- a gradient with interp ==
-//      CNVS_INTERP_SRGB (the default) evaluates exactly as before, at tolerance
+//      CANVAS_CS_SRGB (the default) evaluates exactly as before, at tolerance
 //      ZERO against the same gradient evaluated as plain component lerp.  (The
 //      existing test_gradient / test_gradient_solve identities already pin the
 //      sRGB branch; this re-pins it through the new field's presence.)
@@ -107,13 +107,13 @@ static bool dnear(double a, double b, double tol) { return fabs(a - b) <= tol; }
 // ---- Claim 1: the sRGB default is byte-identical.
 static void srgb_default_identical(void) {
     // Two structurally identical gradients: one left at the default interp
-    // (zero -> CNVS_INTERP_SRGB), one set to SRGB explicitly.  Both must equal
+    // (zero -> CANVAS_CS_SRGB), one set to SRGB explicitly.  Both must equal
     // a plain component lerp of the stops, bit for bit.
     struct cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
     cnvs_gradient_add_stop(&g, 0.00f, cnvs_unpremul_of(0.90f, 0.20f, 0.25f, 1.0f));
     cnvs_gradient_add_stop(&g, 0.50f, cnvs_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
     cnvs_gradient_add_stop(&g, 1.00f, cnvs_unpremul_of(0.15f, 0.25f, 0.90f, 0.4f));
-    CHECK(g.interp == CNVS_INTERP_SRGB);  // designated-init default is sRGB
+    CHECK(g.interp == CANVAS_CS_SRGB);  // designated-init default is sRGB
 
     for (int i = 0; i <= 64; i++) {
         float const t = (float)i / 64.0f;
@@ -143,7 +143,7 @@ static void srgb_default_identical(void) {
 
 // ---- Claim 2: an Oklab ramp matches the double reference.
 static void oklab_matches_reference(struct cnvs_gradient const *gr) {
-    bool const linear = gr->space == CANVAS_WS_LINEAR;
+    bool const linear = gr->space == CANVAS_CS_LINEAR_SRGB;
     for (int i = 0; i <= 200; i++) {
         float const t = (float)i / 200.0f;
         cnvs_unpremul const got = cnvs_gradient_color_at(gr, t);
@@ -208,7 +208,7 @@ int main(void) {
 
     // 2. Oklab black -> white (sRGB working space, the canvas default).
     struct cnvs_gradient bw = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f },
-                                .interp = CNVS_INTERP_OKLAB, .space = CANVAS_WS_SRGB };
+                                .interp = CANVAS_CS_OKLAB, .space = CANVAS_CS_SRGB };
     cnvs_gradient_add_stop(&bw, 0.0f, cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f));
     cnvs_gradient_add_stop(&bw, 1.0f, cnvs_unpremul_of(1.0f, 1.0f, 1.0f, 1.0f));
     oklab_matches_reference(&bw);
@@ -216,7 +216,7 @@ int main(void) {
 
     //    Oklab red -> green.
     struct cnvs_gradient rg = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f },
-                                .interp = CNVS_INTERP_OKLAB, .space = CANVAS_WS_SRGB };
+                                .interp = CANVAS_CS_OKLAB, .space = CANVAS_CS_SRGB };
     cnvs_gradient_add_stop(&rg, 0.0f, cnvs_unpremul_of(0.90f, 0.10f, 0.10f, 1.0f));
     cnvs_gradient_add_stop(&rg, 1.0f, cnvs_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
     oklab_matches_reference(&rg);
@@ -224,7 +224,7 @@ int main(void) {
 
     //    A multi-stop Oklab ramp on a LINEAR working space (identity transfer).
     struct cnvs_gradient lin = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f },
-                                 .interp = CNVS_INTERP_OKLAB, .space = CANVAS_WS_LINEAR };
+                                 .interp = CANVAS_CS_OKLAB, .space = CANVAS_CS_LINEAR_SRGB };
     cnvs_gradient_add_stop(&lin, 0.00f, cnvs_unpremul_of(0.90f, 0.10f, 0.10f, 1.0f));
     cnvs_gradient_add_stop(&lin, 0.50f, cnvs_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
     cnvs_gradient_add_stop(&lin, 1.00f, cnvs_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));
@@ -235,7 +235,7 @@ int main(void) {
     //    bleeds anywhere (a straight component lerp WOULD carry red into the
     //    midpoint); alpha rises linearly and the colour reads as blue.
     struct cnvs_gradient fade = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f },
-                                  .interp = CNVS_INTERP_OKLAB, .space = CANVAS_WS_SRGB };
+                                  .interp = CANVAS_CS_OKLAB, .space = CANVAS_CS_SRGB };
     cnvs_gradient_add_stop(&fade, 0.0f, cnvs_unpremul_of(0.90f, 0.10f, 0.10f, 0.0f));  // transparent red
     cnvs_gradient_add_stop(&fade, 1.0f, cnvs_unpremul_of(0.10f, 0.20f, 0.90f, 1.0f));  // opaque blue
     oklab_matches_reference(&fade);

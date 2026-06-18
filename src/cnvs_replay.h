@@ -33,7 +33,7 @@ bool cnvs_canvas_own_image(struct canvas *__single cv,
 // identical in either space, so this is exactly choosing the space at creation.
 // Returns true (the value the parser propagates); never fails.
 bool cnvs_canvas_set_working_space(struct canvas *__single cv,
-                                   enum canvas_working_space space);
+                                   enum canvas_color_space space);
 
 // Draw one replayed image block (implemented in canvas.c, the replay-side
 // twin of the draw trios): ct/at are the block's format as named on its

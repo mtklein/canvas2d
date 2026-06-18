@@ -1074,17 +1074,19 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (!read_token(data, le, &j, &ts, &tl) || !at_eol(data, le, j)) {
             return false;
         }
-        int sp = -1;
-        for (int k = 0;
-             k < (int)(sizeof cnvs_working_space_name / sizeof cnvs_working_space_name[0]);
-             k++) {
-            if (tok_eq(data, le, ts, tl, cnvs_working_space_name[k])) { sp = k; break; }
-        }
-        if (sp < 0) {
+        // Only the two compositing spaces are valid tokens here; Oklab shares
+        // the colour-space name table but is not a working space, so its token
+        // is rejected like any other unknown name (the strict-parser contract).
+        enum canvas_color_space sp;
+        if      (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
+            sp = CANVAS_CS_SRGB;
+        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_LINEAR_SRGB])) {
+            sp = CANVAS_CS_LINEAR_SRGB;
+        } else {
             return false;
         }
         blk->started = true;
-        return cnvs_canvas_set_working_space(cv, (enum canvas_working_space)sp);
+        return cnvs_canvas_set_working_space(cv, sp);
     }
     blk->started = true;  // any other effective command locks the space in
 
@@ -1272,10 +1274,16 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         bool const fill = data[cs + 4] == 'f';  // "set_[f]ill" vs "set_[s]troke"
         size_t ts, tl;
         if (!read_token(data, le, &j, &ts, &tl)) return false;
-        enum cnvs_gradient_interp interp;
-        if (tok_eq(data, le, ts, tl, "srgb"))       interp = CNVS_INTERP_SRGB;
-        else if (tok_eq(data, le, ts, tl, "oklab")) interp = CNVS_INTERP_OKLAB;
-        else return false;
+        // The interpolation subset is sRGB and Oklab; `linear` (a working space,
+        // not an implemented interp space) is not a valid token here.
+        enum canvas_color_space interp;
+        if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
+            interp = CANVAS_CS_SRGB;
+        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_OKLAB])) {
+            interp = CANVAS_CS_OKLAB;
+        } else {
+            return false;
+        }
         if (fill) canvas_set_fill_gradient_interpolation(cv, interp);
         else      canvas_set_stroke_gradient_interpolation(cv, interp);
     }

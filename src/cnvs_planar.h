@@ -209,7 +209,7 @@ static inline cnvs_px8 cnvs_px8_clamp_premul(cnvs_px8 co) {
 // plane below zero is not a wider gamut, it is a sign error, and the over-family
 // math never produces one from non-negative inputs.  A NEW helper rather than a
 // branch inside cnvs_px8_clamp_premul, so the sRGB path's exact [0,ao] rounding
-// is provably untouched (this is reached only on cv->space == CANVAS_WS_LINEAR).
+// is provably untouched (this is reached only on cv->space == CANVAS_CS_LINEAR_SRGB).
 static inline cnvs_px8 cnvs_px8_clamp_premul_lin(cnvs_px8 co) {
     half8 const zero = (half8)(_Float16)0.0f;
     co.a = __builtin_elementwise_max(zero,
