@@ -5,8 +5,7 @@
 A C23 implementation of a subset of the HTML Canvas 2D API. Geometry,
 antialiasing, compositing, gradients, text rasterization, blur, and a PNG codec
 run on the CPU; Core Text supplies glyph outlines. Built with ninja, compiled
-`-std=c23 -fbounds-safety -Werror -Weverything` (six warnings disabled, listed
-under Warning policy).
+under `-fbounds-safety`.
 
 Build and safety notes: [docs/bounds-safety.md](docs/bounds-safety.md).
 Performance studies: [docs/pixel-pipelines.md](docs/pixel-pipelines.md),
@@ -15,7 +14,7 @@ Performance studies: [docs/pixel-pipelines.md](docs/pixel-pipelines.md),
 
 ## Gallery
 
-Each image is rendered by the core and written by the in-tree PNG encoder
+Each image is written by the in-tree PNG encoder
 ([examples/gallery.c](examples/gallery.c)); regenerate with `ninja images`.
 
 Transforms, `save`/`restore`, global alpha, filled Béziers and arcs, strokes:
@@ -334,7 +333,7 @@ bare `ninja` in the checked variants and again under the `tsan` variant.
       ├── cnvs_replay   text canvas-program → draw calls (the read side)
       │
       ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
-      cnvs_text_ct.c  ── Core Text shaping + glyphs (C, no ARC); built without -fbounds-safety
+      cnvs_text_ct.c  ── Core Text shaping + glyphs; built without -fbounds-safety
 ```
 
 Everything above the `cnvs_text.h` ABI line compiles under `-fbounds-safety`.
@@ -406,7 +405,7 @@ canvas_measure_text / measure_text_full / fill_text / fill_text_max / stroke_tex
 canvas_free(cv);
 ```
 
-Coordinates are pixels, origin top-left, +y down — matching the web platform.
+Coordinates are pixels, origin top-left, +y down.
 
 ## Capabilities and limitations
 
@@ -436,20 +435,6 @@ partial, planned).
 | Shadows — `shadowColor`/`shadowBlur`/`shadowOffset{X,Y}`, under fills/strokes/text/images | ✅ box-blur (≈ Gaussian), cast from the op's source alpha post-filter, subpixel offsets |
 | `filter` — eight colour functions (brightness/contrast/grayscale/hue-rotate/invert/opacity/saturate/sepia) + `blur()` + `drop-shadow()` (3-pass box ≈ Gaussian), per painted op, in list order | ✅ typed API, no CSS string form |
 | Many independent fills in one frame | ✅ composited in order onto a shared target |
-
-## Warning policy
-
-Built with `-Weverything -Werror`; these are disabled, each with a one-line
-rationale in [configure.py](configure.py):
-
-- `-Wno-poison-system-directories` — env/cross-compile artifact, not our code
-- `-Wno-declaration-after-statement` — C23 declare-at-use style
-- `-Wno-padded` — struct padding is not a correctness signal
-- `-Wno-pre-c23-compat` — the project targets C23
-- `-Wno-implicit-void-ptr-cast` — C-only; the idiomatic `calloc` cast (does not
-  weaken `-fbounds-safety`, which still traps undersized allocs)
-- `-Wno-switch-default` — exhaustive enum switches with no default; `-Wswitch-enum`
-  (kept) enforces that every case is handled
 
 ## Benchmarking
 
@@ -498,8 +483,7 @@ detail: [docs/stencil-blur.md](docs/stencil-blur.md) (blur),
 
 ## Roadmap
 
-[docs/roadmap.md](docs/roadmap.md) is the gap inventory. Near-term picks are
-chosen for dense indexed-buffer hot paths that vectorize well;
+[docs/roadmap.md](docs/roadmap.md) is the gap inventory.
 `globalCompositeOperation`, the blend kernels, shadows, and `filter` are done.
 
 - `filter` — the eight colour functions as per-pixel matrix kernels over
