@@ -61,7 +61,7 @@ static void scene_image(struct canvas *__single cv) {
     for (int i = 0; i < (int)sizeof src; i++) {
         src[i] = (uint8_t)(i * 7);
     }
-    canvas_draw_bitmap_scaled(cv, src, 8, 8, 2.0f, 2.0f, 24.0f, 24.0f);
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 8, 8, 2.0f, 2.0f, 24.0f, 24.0f);
 }
 
 // Clipping: build a clip mask, then paint through it (exercises the canvas's
@@ -103,7 +103,7 @@ static void scene_pattern(struct canvas *__single cv) {
     for (int i = 0; i < (int)sizeof tile; i++) {
         tile[i] = (uint8_t)(i * 11);
     }
-    canvas_set_fill_pattern(cv, tile, 4, 4, CANVAS_REPEAT);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, tile, 4, 4, CANVAS_REPEAT);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 }
 

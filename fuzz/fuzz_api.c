@@ -93,7 +93,7 @@ static void do_image_draw(struct canvas *__single cv, struct cursor *c) {
         for (int i = 0; i < slen; i++) {
             src[i] = rd_u8(c);
         }
-        canvas_draw_bitmap_scaled(cv, src, sw, sh, rd_f32(c), rd_f32(c),
+        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, sw, sh, rd_f32(c), rd_f32(c),
                                  rd_f32(c), rd_f32(c));
     }
     free(src);

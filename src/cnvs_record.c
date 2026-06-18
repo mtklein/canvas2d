@@ -25,6 +25,8 @@ struct rec_image {
     int w, h;
     enum canvas_color_type ct;  // the block's colour type, written by name
     enum canvas_alpha_type at;  // ...and its alpha type, likewise
+    enum canvas_color_space cs; // ...and its colour-space tag (optional token,
+                                // emitted only when non-sRGB)
     bool mips_done;  // an `image_mips` line has been emitted for this id
 };
 
@@ -379,7 +381,8 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
 
 int cnvs_rec_image(struct cnvs_recorder *__single r,
                    uint8_t const *__counted_by(len) px, int len, int w, int h,
-                   enum canvas_color_type ct, enum canvas_alpha_type at) {
+                   enum canvas_color_type ct, enum canvas_alpha_type at,
+                   enum canvas_color_space cs) {
     if (!r || r->suspend != 0) {
         return -1;
     }
@@ -391,10 +394,10 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     // Content dedupe: a repeated buffer (a pattern reused per repeat mode, an
     // atlas drawn per subrect) references the block already in the file.  The
     // format is part of the identity: the same bytes mean different colours
-    // in a different format.
+    // in a different format -- the colour-space tag included.
     for (int i = 0; i < r->nimg; i++) {
         if (r->img[i].w == w && r->img[i].h == h && r->img[i].len == len &&
-            r->img[i].ct == ct && r->img[i].at == at &&
+            r->img[i].ct == ct && r->img[i].at == at && r->img[i].cs == cs &&
             memcmp(r->img[i].px, px, (size_t)len) == 0) {
             return i;
         }
@@ -426,11 +429,24 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     int const id = r->nimg;
     int const nlines = (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
     // The format axes ride the line by name, like every other enum in the
-    // format -- all four combinations are peers, none the unmarked default.
-    fprintf(r->f, "image %d %s %s %d %d %d %d\n", id,
+    // format -- all four ct/at combinations are peers, none the unmarked
+    // default.  The colour-space tag is the lone OPTIONAL token: emitted only
+    // when non-sRGB (and nameable), appended after the bits-line count so a
+    // legacy parser's positional read of the leading fields is undisturbed.
+    // Absence == sRGB, so every existing sRGB block stays byte-identical.
+    unsigned const csi = (unsigned)cs;
+    bool const emit_cs =
+        cs != CANVAS_CS_SRGB &&
+        csi < sizeof canvas_color_space_name / sizeof canvas_color_space_name[0];
+    fprintf(r->f, "image %d %s %s %d %d %d %d", id,
             ct == CANVAS_COLOR_F16 ? "f16" : "unorm8",
             at == CANVAS_ALPHA_PREMUL ? "premul" : "unpremul",
             w, h, zn, nlines);
+    if (emit_cs) {
+        fputc(' ', r->f);
+        fputs(canvas_color_space_name[csi], r->f);
+    }
+    fputc('\n', r->f);
     for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
         int const rem = zn - off;
         put_bits_line(r->f, z + off,
@@ -443,6 +459,7 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     r->img[id].h = h;
     r->img[id].ct = ct;
     r->img[id].at = at;
+    r->img[id].cs = cs;
     r->img[id].mips_done = false;
     r->nimg = id + 1;
     return id;

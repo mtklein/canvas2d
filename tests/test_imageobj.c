@@ -9,6 +9,8 @@
 #include "test_pixels.h"
 #include "test_util.h"
 
+#include <ptrcheck.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,7 +39,7 @@ static void image_matches_bitmap(void) {
     uint8_t pa[N * N * 4];
     uint8_t pb[N * N * 4];
     fill_src(src);
-    struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);
+    struct canvas_image *__single img = canvas_image_unorm8(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
     struct canvas *__single a = canvas(N, N);
     struct canvas *__single b = canvas(N, N);
     CHECK(img != NULL && a != NULL && b != NULL);
@@ -46,7 +48,7 @@ static void image_matches_bitmap(void) {
         CHECK(canvas_image_build_mips(img));
         CHECK(canvas_image_build_mips(img));  // idempotent
 
-        canvas_draw_bitmap(a, src, N, N, 0.0f, 0.0f);
+        canvas_draw_bitmap(a, CANVAS_CS_SRGB, src, N, N, 0.0f, 0.0f);
         canvas_draw_image(b, img, 0.0f, 0.0f);
         canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
         canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
@@ -56,7 +58,7 @@ static void image_matches_bitmap(void) {
         canvas_clear_rect(b, 0.0f, 0.0f, (float)N, (float)N);
         canvas_set_image_smoothing_quality(a, CANVAS_SMOOTHING_MEDIUM);
         canvas_set_image_smoothing_quality(b, CANVAS_SMOOTHING_MEDIUM);
-        canvas_draw_bitmap_scaled(a, src, N, N, 2.0f, 2.0f, 8.0f, 8.0f);
+        canvas_draw_bitmap_scaled(a, CANVAS_CS_SRGB, src, N, N, 2.0f, 2.0f, 8.0f, 8.0f);
         canvas_draw_image_scaled(b, img, 2.0f, 2.0f, 8.0f, 8.0f);
         canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
         canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
@@ -75,14 +77,14 @@ static void no_mips_falls_back_bilinear(void) {
     uint8_t pa[N * N * 4];
     uint8_t pb[N * N * 4];
     fill_src(src);
-    struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);
+    struct canvas_image *__single img = canvas_image_unorm8(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
     struct canvas *__single a = canvas(N, N);
     struct canvas *__single b = canvas(N, N);
     CHECK(img != NULL && a != NULL && b != NULL);
     if (img && a && b) {
         canvas_set_image_smoothing_quality(a, CANVAS_SMOOTHING_LOW);
         canvas_set_image_smoothing_quality(b, CANVAS_SMOOTHING_MEDIUM);
-        canvas_draw_bitmap_scaled(a, src, N, N, 2.0f, 2.0f, 8.0f, 8.0f);
+        canvas_draw_bitmap_scaled(a, CANVAS_CS_SRGB, src, N, N, 2.0f, 2.0f, 8.0f, 8.0f);
         canvas_draw_image_scaled(b, img, 2.0f, 2.0f, 8.0f, 8.0f);  // mip-less
         canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
         canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
@@ -146,7 +148,7 @@ static void record_replay_roundtrip(void) {
         canvas_set_fill_rgba(content, CANVAS_CS_SRGB, 0.2f, 0.7f, 0.4f, 0.8f);
         canvas_fill_rect(content, 4.0f, 4.0f, 24.0f, 24.0f);
         struct canvas_image *__single snap = canvas_snapshot(content);
-        struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);
+        struct canvas_image *__single img = canvas_image_unorm8(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
         CHECK(snap != NULL && img != NULL);
         if (snap && img) {
             CHECK(canvas_image_build_mips(snap));
@@ -186,7 +188,7 @@ static void f16_formats(void) {
         src[i * 4 + 3] = (_Float16)0.5f;
     }
     struct canvas_image *__single un =
-        canvas_image_f16(src, N, N, CANVAS_ALPHA_UNPREMUL);
+        canvas_image_f16(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
     struct canvas *__single cv = canvas(N, N);
     CHECK(un != NULL && cv != NULL);
     if (un && cv) {
@@ -201,7 +203,7 @@ static void f16_formats(void) {
         src[i * 4 + 0] = (_Float16)0.5f;
     }
     struct canvas_image *__single pm =
-        canvas_image_f16(src, N, N, CANVAS_ALPHA_PREMUL);
+        canvas_image_f16(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_PREMUL);
     CHECK(pm != NULL);
     if (pm && cv) {
         CHECK(canvas_image_build_mips(pm));
@@ -215,11 +217,142 @@ static void f16_formats(void) {
     if (cv) { canvas_free(cv); }
 }
 
+// Read up to cap bytes of `path` into buf; byte count, or -1 if it won't open.
+// (The recorded programs here are a few KB of deflated `bits`, well under cap.)
+static int slurp(char const *__null_terminated path, char *__counted_by(cap) buf,
+                 int cap) {
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        return -1;
+    }
+    size_t const got = fread(buf, 1, (size_t)cap, f);
+    (void)fclose(f);
+    return (int)got;
+}
+
+// Whether `needle` occurs anywhere in buf[0,len) -- index-walked so the
+// __counted_by buffer never crosses into __null_terminated pointer land.
+static bool contains(char const *__counted_by(len) buf, int len,
+                     char const *__null_terminated needle) {
+    for (int i = 0; i < len; i++) {
+        int k = 0;
+        char const *__null_terminated p = needle;
+        bool match = true;
+        while (*p != '\0') {
+            if (i + k >= len || buf[i + k] != *p) {
+                match = false;
+                break;
+            }
+            p++;
+            k++;
+        }
+        if (match) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The colour-space tag is interpretation metadata that the sampler does NOT
+// yet honour (the LINEAR-WORKING-SPACE deferral in canvas.c's
+// draw_image_quad), so there is no pixel effect to assert -- this test pins
+// the TAG'S PLUMBING AND SERIALIZATION only:
+//   1. A CANVAS_CS_LINEAR_SRGB-tagged image records with the optional `linear`
+//      token on its `image` block line, and the file replays cleanly (the
+//      parser accepts and threads the tag).
+//   2. A CANVAS_CS_SRGB image records WITHOUT any space token -- absence ==
+//      sRGB, so every existing sRGB program stays byte-identical.
+//   3. Record -> replay -> re-record of the linear-tagged image is
+//      byte-idempotent: the tag survives a full round trip intact.
+// When the sampler honours the tag (the deferred mip-pyramid-and-taps work),
+// add the pixel assertion here; today there is nothing to measure.
+static void colorspace_tag_serialization(void) {
+    char const *__null_terminated lin_path = "build/test_imageobj_lin.canvas";
+    char const *__null_terminated srgb_path = "build/test_imageobj_srgb.canvas";
+    enum { CAP = 1 << 16 };  // a one-image program is a few KB of deflated bits
+    static char lin_text[CAP], srgb_text[CAP];
+    uint8_t src[N * N * 4];
+    fill_src(src);
+
+    // (1) A linear-tagged image records the `linear` token; (2) an sRGB image
+    // records no token at all.  Both replay cleanly.
+    struct canvas *__single lin = canvas(N, N);
+    struct canvas *__single srgb = canvas(N, N);
+    CHECK(lin != NULL && srgb != NULL);
+    if (lin && srgb) {
+        struct canvas_image *__single img_lin =
+            canvas_image_unorm8(CANVAS_CS_LINEAR_SRGB, src, N, N,
+                                CANVAS_ALPHA_UNPREMUL);
+        struct canvas_image *__single img_srgb =
+            canvas_image_unorm8(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
+        CHECK(img_lin != NULL && img_srgb != NULL);
+        if (img_lin && img_srgb) {
+            CHECK(canvas_record_to(lin, lin_path));
+            canvas_draw_image(lin, img_lin, 0.0f, 0.0f);
+            canvas_free(lin);  // flush + close
+            lin = NULL;
+
+            CHECK(canvas_record_to(srgb, srgb_path));
+            canvas_draw_image(srgb, img_srgb, 0.0f, 0.0f);
+            canvas_free(srgb);  // flush + close
+            srgb = NULL;
+
+            int const ln = slurp(lin_path, lin_text, CAP);
+            int const sn = slurp(srgb_path, srgb_text, CAP);
+            CHECK(ln > 0 && ln < CAP && sn > 0 && sn < CAP);
+            if (ln > 0 && ln < CAP && sn > 0 && sn < CAP) {
+                // The linear file's image block names its space; the sRGB file
+                // carries no colour-space token anywhere (absence == sRGB).
+                // (The image block leads the file, so no `\n` prefix.)
+                CHECK(contains(lin_text, ln, "image 0 unorm8 unpremul"));
+                CHECK(contains(lin_text, ln, " linear\n"));
+                CHECK(contains(srgb_text, sn, "image 0 unorm8 unpremul"));
+                CHECK(!contains(srgb_text, sn, " linear\n"));
+                CHECK(!contains(srgb_text, sn, " oklab\n"));
+            }
+
+            // The linear file replays without error: the parser accepts the
+            // optional token and threads the tag onto the rebuilt block.
+            struct canvas *__single rb = canvas(N, N);
+            CHECK(rb != NULL);
+            if (rb) {
+                CHECK(canvas_replay_from(rb, lin_path));
+                canvas_free(rb);
+            }
+        }
+        canvas_image_free(img_lin);
+        canvas_image_free(img_srgb);
+    }
+    if (lin) { canvas_free(lin); }
+    if (srgb) { canvas_free(srgb); }
+
+    // (3) Replay the linear file onto a RECORDING canvas: the re-recorded file
+    // is byte-identical to the original, so the tag survived record -> replay
+    // -> re-record intact (the round-trip idempotence the format guarantees).
+    char const *__null_terminated re_path = "build/test_imageobj_lin_re.canvas";
+    static char re_text[CAP];
+    struct canvas *__single re = canvas(N, N);
+    CHECK(re != NULL);
+    if (re) {
+        CHECK(canvas_record_to(re, re_path));
+        CHECK(canvas_replay_from(re, lin_path));
+        canvas_free(re);  // flush + close
+
+        int const an = slurp(lin_path, lin_text, CAP);
+        int const bn = slurp(re_path, re_text, CAP);
+        CHECK(an > 0 && an == bn);  // same length...
+        if (an > 0 && an == bn) {
+            CHECK(memcmp(lin_text, re_text, (size_t)an) == 0);  // ...and bytes
+        }
+    }
+}
+
 int main(void) {
     image_matches_bitmap();
     no_mips_falls_back_bilinear();
     snapshot_roundtrip();
     record_replay_roundtrip();
     f16_formats();
+    colorspace_tag_serialization();
     return TEST_REPORT();
 }

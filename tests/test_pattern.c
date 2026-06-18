@@ -33,7 +33,7 @@ int main(void) {
     canvas_set_image_smoothing_enabled(cv, false);
 
     // REPEAT: the 2x2 image tiles across the whole canvas.
-    canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_REPEAT);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 2, 2, CANVAS_REPEAT);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 0, 0, 255, 0, 0, 255));     // red
@@ -45,7 +45,7 @@ int main(void) {
 
     // NO_REPEAT: only the 2x2 footprint at the origin is painted.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_NO_REPEAT);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 2, 2, CANVAS_NO_REPEAT);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 0, 0, 255, 0, 0, 255));     // inside
@@ -55,7 +55,7 @@ int main(void) {
 
     // REPEAT_X: tiles along x, transparent outside [0,h) in y.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_REPEAT_X);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 2, 2, CANVAS_REPEAT_X);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 5, 0, 0, 255, 0, 255));     // x wraps: column 5 -> green
@@ -66,7 +66,7 @@ int main(void) {
     // pattern's column 1 (green) instead of column 0 (red).
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_translate(cv, 1.0f, 0.0f);
-    canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_REPEAT);
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 2, 2, CANVAS_REPEAT);
     canvas_reset_transform(cv);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
@@ -75,7 +75,7 @@ int main(void) {
     // A pattern paints strokes too.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_reset_transform(cv);
-    canvas_set_stroke_pattern(cv, src, 2, 2, CANVAS_REPEAT);
+    canvas_set_stroke_pattern(cv, CANVAS_CS_SRGB, src, 2, 2, CANVAS_REPEAT);
     canvas_set_line_width(cv, 4.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 0.0f, 4.0f);
@@ -88,7 +88,7 @@ int main(void) {
     // Invalid dimensions are ignored, leaving the (solid) fill paint in place.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_set_fill_pattern(cv, src, 0, 2, CANVAS_REPEAT);  // w = 0: rejected
+    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 0, 2, CANVAS_REPEAT);  // w = 0: rejected
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 4, 4, 0, 255, 0, 255));  // still solid green

@@ -29,7 +29,7 @@ int main(void) {
 
     // 1:1 draw at (1,1) reproduces the source texels exactly (bilinear is
     // identity at integer scale and aligned pixel centres).
-    canvas_draw_bitmap(cv, src, 2, 2, 1.0f, 1.0f);
+    canvas_draw_bitmap(cv, CANVAS_CS_SRGB, src, 2, 2, 1.0f, 1.0f);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 1, 1), 255, 0, 0, 255, 2));      // red
     CHECK(px_near(pixel_at(px, len, w, 2, 1), 0, 255, 0, 255, 2));      // green
@@ -40,7 +40,7 @@ int main(void) {
     // Scale 2x2 -> 8x8.  Corners clamp to the source corners; a top-edge midpoint
     // is a horizontal red<->green bilinear blend.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_draw_bitmap_scaled(cv, src, 2, 2, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 2, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 255, 0, 0, 255, 4));      // red corner
     CHECK(px_near(pixel_at(px, len, w, 7, 0), 0, 255, 0, 255, 4));      // green corner
@@ -51,7 +51,7 @@ int main(void) {
 
     // Source subrect: right column only (green/yellow) -> centre has no red/blue.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_draw_bitmap_subrect(cv, src, 2, 2, 1.0f, 0.0f, 1.0f, 2.0f,
+    canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, src, 2, 2, 1.0f, 0.0f, 1.0f, 2.0f,
                               0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba mid = pixel_at(px, len, w, 4, 4);
@@ -66,7 +66,7 @@ int main(void) {
         0, 0, 255, 255,  0, 0, 255, 255,
     };
     canvas_set_global_alpha(cv, 0.5f);
-    canvas_draw_bitmap_scaled(cv, blue, 2, 2, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, blue, 2, 2, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 4, 4), 128, 0, 128, 255, 4));    // half blue over red
 
@@ -76,7 +76,7 @@ int main(void) {
     // sanitized debug run of this case is the regression).  Just must not
     // trap -- the draw itself samples a clamped edge texel.
     canvas_set_global_alpha(cv, 1.0f);
-    canvas_draw_bitmap_subrect(cv, src, 2, 2, 0.0f, 0.0f, 1.0f, 1e30f,
+    canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, src, 2, 2, 0.0f, 0.0f, 1.0f, 1e30f,
                               0.0f, 3.0f, 3.0f, 1.0f);
 
     canvas_free(cv);

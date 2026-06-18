@@ -25,7 +25,7 @@ int main(void) {
     // midline -- no blended pixels.  Source x maps as fsx = dest_x / 20, so the
     // split is at dest x = 20.
     canvas_set_image_smoothing_enabled(cv, false);
-    canvas_draw_bitmap_scaled(cv, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     CHECK(px_near(pixel_at(px, clen, W, 19, 20), 255, 0, 0, 255, 1));  // left of split
     CHECK(px_near(pixel_at(px, clen, W, 20, 20), 0, 0, 255, 255, 1));  // right of split
@@ -36,7 +36,7 @@ int main(void) {
     // straddling the split carry both red and blue (a purple), not a pure colour.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_image_smoothing_enabled(cv, true);
-    canvas_draw_bitmap_scaled(cv, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
     struct rgba a = pixel_at(px, clen, W, 19, 20);
     struct rgba b = pixel_at(px, clen, W, 20, 20);
