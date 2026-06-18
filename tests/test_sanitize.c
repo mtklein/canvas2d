@@ -41,7 +41,7 @@ int main(void) {
         canvas_line_to(cv, 20.0f, 20.0f);
         canvas_stroke(cv);                                 // stroke segment-count cast
 
-        canvas_set_fill_rgba(cv, v, v, v, v);              // colour clamp -> [0,1]
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, v, v, v, v);              // colour clamp -> [0,1]
         canvas_set_global_alpha(cv, v);
     }
 
@@ -61,7 +61,7 @@ int main(void) {
     // float->uint8 quantization in read-back stays in range.
     canvas_set_global_alpha(cv, 1.0f);
     canvas_set_line_width(cv, 1.0f);
-    canvas_set_fill_rgba(cv, 0.5f, 0.5f, 0.5f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.5f, 0.5f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 64.0f, 64.0f);
 
     uint8_t px[64 * 64 * 4];

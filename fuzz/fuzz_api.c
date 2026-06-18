@@ -144,9 +144,9 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_CLEAR_RECT: canvas_clear_rect(cv, rd_f32(&c), rd_f32(&c),
                                                   rd_f32(&c), rd_f32(&c)); break;
 
-            case OP_SET_FILL_RGBA:   canvas_set_fill_rgba(cv, rd_f32(&c), rd_f32(&c),
+            case OP_SET_FILL_RGBA:   canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, rd_f32(&c), rd_f32(&c),
                                                           rd_f32(&c), rd_f32(&c)); break;
-            case OP_SET_STROKE_RGBA: canvas_set_stroke_rgba(cv, rd_f32(&c), rd_f32(&c),
+            case OP_SET_STROKE_RGBA: canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, rd_f32(&c), rd_f32(&c),
                                                             rd_f32(&c), rd_f32(&c)); break;
             case OP_SET_GLOBAL_ALPHA: canvas_set_global_alpha(cv, rd_f32(&c)); break;
             case OP_SET_LINE_WIDTH:  canvas_set_line_width(cv, rd_f32(&c)); break;
@@ -177,14 +177,14 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                                           rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_FILL_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
-                canvas_add_fill_color_stop(cv, rd_f32(&c), stops[0], stops[1],
+                canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, rd_f32(&c), stops[0], stops[1],
                                            stops[2], stops[3]);
                 break;
             case OP_STROKE_LINEAR_GRAD: canvas_set_stroke_linear_gradient(cv, rd_f32(&c),
                                             rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_STROKE_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
-                canvas_add_stroke_color_stop(cv, rd_f32(&c), stops[0], stops[1],
+                canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, rd_f32(&c), stops[0], stops[1],
                                              stops[2], stops[3]);
                 break;
 

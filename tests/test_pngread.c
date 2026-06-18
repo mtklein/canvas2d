@@ -42,7 +42,7 @@ static void scene_solid(void) {
     if (!cv) {
         return;
     }
-    canvas_set_fill_rgba(cv, 0.8f, 0.3f, 0.1f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.8f, 0.3f, 0.1f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     round_trip(cv, w, h, "build/test_pngread_solid.png");
     canvas_free(cv);
@@ -56,8 +56,8 @@ static void scene_gradient(void) {
         return;
     }
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_add_fill_color_stop(cv, 0.0f, 0.1f, 0.2f, 0.9f, 1.0f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.9f, 0.8f, 0.1f, 0.5f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.1f, 0.2f, 0.9f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.9f, 0.8f, 0.1f, 0.5f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     round_trip(cv, w, h, "build/test_pngread_gradient.png");
     canvas_free(cv);
@@ -70,9 +70,9 @@ static void scene_text(void) {
     if (!cv) {
         return;
     }
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.1f, 0.1f, 0.4f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
     canvas_set_font_size(cv, 28.0f);
     canvas_fill_text(cv, "PNG \xE5\xBE\x80\xE8\xBF\x94", 8.0f, 40.0f);  // "PNG 往返"
     round_trip(cv, w, h, "build/test_pngread_text.png");
@@ -86,7 +86,7 @@ static void scene_emoji(void) {
     if (!cv) {
         return;
     }
-    canvas_set_fill_rgba(cv, 0.95f, 0.95f, 0.9f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 64.0f);  // rainbow U+1F308

@@ -30,9 +30,9 @@ static void render(uint8_t *__counted_by(LEN) px, char const *__null_terminated 
     if (!cv) {
         return;
     }
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_font_size(cv, 24.0f);
     canvas_set_direction(cv, dir);
     canvas_set_text_align(cv, align);
@@ -89,9 +89,9 @@ static void check_state(void) {
         if (!cv) {
             return;
         }
-        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_font_size(cv, 24.0f);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
@@ -108,9 +108,9 @@ static void check_state(void) {
         if (!cv) {
             return;
         }
-        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_font_size(cv, 24.0f);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
@@ -122,9 +122,9 @@ static void check_state(void) {
 
         // reset: back to the ltr default.
         canvas_reset(cv);
-        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_font_size(cv, 24.0f);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
         canvas_fill_text(cv, t, (float)W * 0.5f, 40.0f);
@@ -176,7 +176,7 @@ static void check_replay(void) {
     CHECK(!REPLAY(cv, "set_direction RTL\n"));      // exact spelling only
 
     // Not corrupted: the canvas still draws.
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     uint8_t px[LEN];
     canvas_read_rgba(cv, px, LEN);
@@ -195,9 +195,9 @@ static void check_record(void) {
             return;
         }
         CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_font_size(cv, 24.0f);
         canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         canvas_set_text_align(cv, CANVAS_ALIGN_START);
@@ -254,9 +254,9 @@ static void check_draw_measure(void) {
     float const w = canvas_measure_text(cv, heb);
     CHECK(w > 0.0f);
 
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_text_align(cv, CANVAS_ALIGN_START);
     canvas_fill_text(cv, heb, x, 40.0f);
 
@@ -269,9 +269,9 @@ static void check_draw_measure(void) {
 
     // maxWidth under rtl: condensing anchors at the same (right) edge, so the
     // ink stays right-pinned and shrinks into half the measured width.
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_text_max(cv, heb, x, 40.0f, w * 0.5f);
     canvas_read_rgba(cv, px, LEN);
     CHECK(ink_x(px, &xmin, &xmax) > 0);

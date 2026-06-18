@@ -21,9 +21,9 @@ enum { W = 96, H = 48, LEN = W * H * 4 };
 // color-emoji fallback run.
 static void draw_scene(struct canvas *__single cv) {
     canvas_set_font_size(cv, 18.0f);
-    canvas_set_fill_rgba(cv, 0.10f, 0.20f, 0.30f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.10f, 0.20f, 0.30f, 1.0f);
     canvas_fill_text(cv, "Waffle fan", 4.0f, 22.0f);
-    canvas_set_fill_rgba(cv, 0.80f, 0.30f, 0.20f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.80f, 0.30f, 0.20f, 1.0f);
     canvas_fill_text(cv, "A\xF0\x9F\x98\x80g", 4.0f, 44.0f);  // A 😀 g
 }
 
@@ -146,10 +146,10 @@ static void check_eviction(void) {
                                 16.0f, false, last, (int)sizeof last);
     CHECK(c->shaping_hits == hits + 1);  // the newest entry survived
 
-    canvas_set_fill_rgba(churn, 0.2f, 0.2f, 0.7f, 1.0f);
+    canvas_set_fill_rgba(churn, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.7f, 1.0f);
     canvas_fill_text(churn, "s0", 4.0f, 30.0f);
     canvas_set_font_size(fresh, 16.0f);
-    canvas_set_fill_rgba(fresh, 0.2f, 0.2f, 0.7f, 1.0f);
+    canvas_set_fill_rgba(fresh, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.7f, 1.0f);
     canvas_fill_text(fresh, "s0", 4.0f, 30.0f);
     uint8_t a[LEN], b[LEN];
     canvas_get_image_data(churn, 0, 0, W, H, a, LEN);

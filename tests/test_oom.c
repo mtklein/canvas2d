@@ -24,7 +24,7 @@ static void scene_fill(struct canvas *__single cv) {
     canvas_line_to(cv, 28.0f, 6.0f);
     canvas_line_to(cv, 16.0f, 28.0f);
     canvas_close_path(cv);
-    canvas_set_fill_rgba(cv, 0.8f, 0.3f, 0.2f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.8f, 0.3f, 0.2f, 1.0f);
     canvas_fill(cv, CANVAS_NONZERO);
 }
 
@@ -32,14 +32,14 @@ static void scene_curve(struct canvas *__single cv) {
     canvas_begin_path(cv);
     canvas_move_to(cv, 2.0f, 16.0f);
     canvas_bezier_curve_to(cv, 10.0f, 0.0f, 22.0f, 32.0f, 30.0f, 16.0f);
-    canvas_set_fill_rgba(cv, 0.3f, 0.7f, 0.4f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.3f, 0.7f, 0.4f, 1.0f);
     canvas_fill(cv, CANVAS_NONZERO);
 }
 
 static void scene_gradient(struct canvas *__single cv) {
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 }
 
@@ -49,7 +49,7 @@ static void scene_stroke(struct canvas *__single cv) {
     canvas_line_to(cv, 30.0f, 8.0f);
     canvas_line_to(cv, 10.0f, 30.0f);
     canvas_set_line_width(cv, 3.0f);
-    canvas_set_stroke_rgba(cv, 0.2f, 0.6f, 0.9f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.6f, 0.9f, 1.0f);
     canvas_stroke(cv);
 }
 
@@ -71,7 +71,7 @@ static void scene_clip(struct canvas *__single cv) {
     canvas_begin_path(cv);
     canvas_arc(cv, 16.0f, 16.0f, 12.0f, 0.0f, 6.2831853f, false);
     canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 0.9f, 0.6f, 0.2f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.6f, 0.2f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_restore(cv);
 }
@@ -88,7 +88,7 @@ static void scene_clip(struct canvas *__single cv) {
 // the coarsest level that did build, worst case the capture itself.
 static void scene_text(struct canvas *__single cv) {
     canvas_set_font_size(cv, 14.0f);
-    canvas_set_fill_rgba(cv, 0.9f, 0.9f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.9f, 0.95f, 1.0f);
     canvas_fill_text(cv, "Ag", 2.0f, 20.0f);
     canvas_fill_text(cv, "Ag", 2.0f, 20.0f);     // warm: shape + glyph hits
     (void)canvas_measure_text(cv, "Ag");         // measure-then-draw shares the line
@@ -113,7 +113,7 @@ static void scene_dash(struct canvas *__single cv) {
     float const dash[4] = { 5.0f, 3.0f, 2.0f, 3.0f };
     canvas_set_line_dash(cv, dash, 4);
     canvas_set_line_width(cv, 2.0f);
-    canvas_set_stroke_rgba(cv, 0.8f, 0.8f, 0.3f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.8f, 0.8f, 0.3f, 1.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 2.0f, 16.0f);
     canvas_line_to(cv, 30.0f, 16.0f);
@@ -142,8 +142,8 @@ static void scene_filter(struct canvas *__single cv) {
     canvas_save(cv);
     canvas_add_filter_invert(cv, 0.5f);
     canvas_add_filter_blur(cv, 2.0f);
-    canvas_add_filter_drop_shadow(cv, 2.0f, 2.0f, 1.0f, 0.1f, 0.2f, 0.3f, 0.8f);
-    canvas_set_fill_rgba(cv, 0.9f, 0.4f, 0.2f, 0.8f);
+    canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 2.0f, 2.0f, 1.0f, 0.1f, 0.2f, 0.3f, 0.8f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.4f, 0.2f, 0.8f);
     canvas_fill_rect(cv, 4.0f, 4.0f, 24.0f, 24.0f);
     canvas_restore(cv);
     canvas_set_filter_none(cv);
@@ -160,7 +160,7 @@ static void scene_pointinpath(struct canvas *__single cv) {
 // PNG encode: exercises cnvs_png's raw/zlib buffer allocations (two of the sites
 // fixed alongside this harness).  Output is discarded.
 static void scene_png(struct canvas *__single cv) {
-    canvas_set_fill_rgba(cv, 0.3f, 0.5f, 0.7f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.3f, 0.5f, 0.7f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     (void)canvas_write_png(cv, "/dev/null");
 }
@@ -223,7 +223,7 @@ int main(void) {
     struct canvas *__single cv = canvas(W, H);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
         uint8_t px[4];
         canvas_get_image_data(cv, W / 2, H / 2, 1, 1, px, 4);

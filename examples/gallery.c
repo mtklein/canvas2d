@@ -72,25 +72,25 @@ static void shapes(void) {
         return;
     }
     record_scene(c, "gallery/shapes.canvas");
-    canvas_set_fill_rgba(c, 0.12f, 0.12f, 0.16f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.12f, 0.12f, 0.16f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 240.0f, 180.0f);
 
-    canvas_set_fill_rgba(c, 0.90f, 0.25f, 0.25f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.25f, 0.25f, 1.0f);
     canvas_fill_rect(c, 20.0f, 20.0f, 55.0f, 55.0f);
 
     canvas_save(c);
     canvas_translate(c, 150.0f, 52.0f);
     canvas_rotate(c, 0.5f);
-    canvas_set_fill_rgba(c, 0.25f, 0.80f, 0.35f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.25f, 0.80f, 0.35f, 1.0f);
     canvas_fill_rect(c, -28.0f, -28.0f, 56.0f, 56.0f);
     canvas_restore(c);
 
     canvas_set_global_alpha(c, 0.5f);
-    canvas_set_fill_rgba(c, 0.25f, 0.45f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.25f, 0.45f, 0.95f, 1.0f);
     canvas_fill_rect(c, 55.0f, 95.0f, 110.0f, 65.0f);
     canvas_set_global_alpha(c, 1.0f);
 
-    canvas_set_fill_rgba(c, 0.30f, 0.85f, 0.85f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.30f, 0.85f, 0.85f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 100.0f, 28.0f);
     canvas_bezier_curve_to(c, 150.0f, 8.0f, 150.0f, 88.0f, 100.0f, 68.0f);
@@ -98,18 +98,18 @@ static void shapes(void) {
     canvas_close_path(c);
     canvas_fill(c, CANVAS_NONZERO);
 
-    canvas_set_fill_rgba(c, 0.85f, 0.30f, 0.75f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.30f, 0.75f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 198.0f, 135.0f, 28.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
-    canvas_set_stroke_rgba(c, 1.0f, 0.60f, 0.10f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 1.0f, 0.60f, 0.10f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
     canvas_arc(c, 198.0f, 135.0f, 28.0f, 0.0f, TAU, false);
     canvas_close_path(c);
     canvas_stroke(c);
 
-    canvas_set_stroke_rgba(c, 0.95f, 0.95f, 0.98f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.98f, 1.0f);
     canvas_set_line_width(c, 5.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 20.0f, 125.0f);
@@ -128,10 +128,10 @@ static void winding(void) {
         return;
     }
     record_scene(c, "gallery/winding.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
-    canvas_set_fill_rgba(c, 0.95f, 0.80f, 0.25f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_begin_path(c);
     canvas_rect(c, 20.0f, 20.0f, 80.0f, 80.0f);
     canvas_move_to(c, 85.0f, 35.0f);
@@ -142,11 +142,11 @@ static void winding(void) {
     canvas_fill(c, CANVAS_NONZERO);
 
     star(c, 160.0f, 60.0f, 40.0f);
-    canvas_set_fill_rgba(c, 0.90f, 0.30f, 0.40f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.30f, 0.40f, 1.0f);
     canvas_fill(c, CANVAS_NONZERO);
 
     star(c, 250.0f, 60.0f, 40.0f);
-    canvas_set_fill_rgba(c, 0.30f, 0.75f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.30f, 0.75f, 0.95f, 1.0f);
     canvas_fill(c, CANVAS_EVENODD);
 
     save(c, "gallery/winding.png");
@@ -159,13 +159,13 @@ static void dashes(void) {
         return;
     }
     record_scene(c, "gallery/dashes.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 260.0f, 120.0f);
     canvas_set_line_width(c, 4.0f);
 
     float const d1[2] = { 14.0f, 9.0f };
     canvas_set_line_dash(c, d1, 2);
-    canvas_set_stroke_rgba(c, 0.90f, 0.45f, 0.45f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.45f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 15.0f, 26.0f);
     canvas_line_to(c, 245.0f, 26.0f);
@@ -173,7 +173,7 @@ static void dashes(void) {
 
     float const d2[4] = { 2.0f, 7.0f, 14.0f, 7.0f };
     canvas_set_line_dash(c, d2, 4);
-    canvas_set_stroke_rgba(c, 0.45f, 0.85f, 0.55f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.45f, 0.85f, 0.55f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 15.0f, 50.0f);
     canvas_line_to(c, 245.0f, 50.0f);
@@ -181,7 +181,7 @@ static void dashes(void) {
 
     float const d3[2] = { 2.0f, 6.0f };
     canvas_set_line_dash(c, d3, 2);
-    canvas_set_stroke_rgba(c, 0.55f, 0.65f, 0.95f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.65f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_move_to(c, 15.0f, 72.0f);
     canvas_line_to(c, 245.0f, 72.0f);
@@ -190,7 +190,7 @@ static void dashes(void) {
     float const d4[2] = { 11.0f, 8.0f };
     canvas_set_line_dash(c, d4, 2);
     canvas_set_line_width(c, 3.0f);
-    canvas_set_stroke_rgba(c, 0.95f, 0.85f, 0.30f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.85f, 0.30f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 130.0f, 98.0f, 16.0f, 0.0f, TAU, false);
     canvas_close_path(c);
@@ -206,14 +206,14 @@ static void imagedata(void) {
         return;
     }
     record_scene(c, "gallery/imagedata.canvas");
-    canvas_set_fill_rgba(c, 0.12f, 0.12f, 0.16f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.12f, 0.12f, 0.16f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 240.0f, 90.0f);
 
-    canvas_set_fill_rgba(c, 0.95f, 0.80f, 0.25f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 30.0f, 45.0f, 17.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
-    canvas_set_fill_rgba(c, 0.85f, 0.30f, 0.75f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.30f, 0.75f, 1.0f);
     canvas_fill_rect(c, 12.0f, 27.0f, 14.0f, 14.0f);
 
     int const blen = 44 * 44 * 4;
@@ -237,7 +237,7 @@ static void joinscaps(void) {
         return;
     }
     record_scene(c, "gallery/joins.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 160.0f);
 
     enum canvas_line_join const js[3] = { CANVAS_JOIN_MITER, CANVAS_JOIN_ROUND,
@@ -245,7 +245,7 @@ static void joinscaps(void) {
     canvas_set_line_width(c, 16.0f);
     for (int k = 0; k < 3; k++) {
         canvas_set_line_join(c, js[k]);
-        canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.35f, 1.0f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.55f, 0.35f, 1.0f);
         float const cx = 55.0f + (float)k * 85.0f;
         canvas_begin_path(c);
         canvas_move_to(c, cx - 28.0f, 80.0f);
@@ -259,7 +259,7 @@ static void joinscaps(void) {
     canvas_set_line_join(c, CANVAS_JOIN_MITER);
     for (int k = 0; k < 3; k++) {
         canvas_set_line_cap(c, cs[k]);
-        canvas_set_stroke_rgba(c, 0.40f, 0.80f, 0.95f, 1.0f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.80f, 0.95f, 1.0f);
         float const x0 = 45.0f + (float)k * 80.0f;
         canvas_begin_path(c);
         canvas_move_to(c, x0, 130.0f);
@@ -277,25 +277,25 @@ static void paths(void) {
         return;
     }
     record_scene(c, "gallery/paths.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 280.0f, 170.0f);
 
-    canvas_set_fill_rgba(c, 0.40f, 0.65f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.65f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_ellipse(c, 72.0f, 52.0f, 52.0f, 28.0f, 0.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
 
-    canvas_set_fill_rgba(c, 0.55f, 0.85f, 0.45f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.85f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
     canvas_fill(c, CANVAS_NONZERO);
-    canvas_set_stroke_rgba(c, 0.95f, 0.60f, 0.20f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.60f, 0.20f, 1.0f);
     canvas_set_line_width(c, 4.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 158.0f, 16.0f, 100.0f, 72.0f, 22.0f);
     canvas_stroke(c);
 
-    canvas_set_stroke_rgba(c, 0.85f, 0.45f, 0.90f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.45f, 0.90f, 1.0f);
     canvas_set_line_width(c, 6.0f);
     canvas_set_line_cap(c, CANVAS_CAP_ROUND);
     canvas_begin_path(c);
@@ -317,7 +317,7 @@ static void roundrect(void) {
         return;
     }
     record_scene(c, "gallery/roundrect.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 548.0f, 232.0f);
 
     float const cw = 110.0f, ch = 120.0f, gap = 20.0f, x0 = 24.0f, y0 = 24.0f;
@@ -349,13 +349,13 @@ static void roundrect(void) {
                                     card[i].r[6], card[i].r[7]);
             if (pass == 0) {
                 canvas_set_fill_linear_gradient(c, x, y0, x + cw, y0 + ch);
-                canvas_add_fill_color_stop(c, 0.0f, card[i].c0[0], card[i].c0[1],
+                canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, card[i].c0[0], card[i].c0[1],
                                            card[i].c0[2], 1.0f);
-                canvas_add_fill_color_stop(c, 1.0f, card[i].c1[0], card[i].c1[1],
+                canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, card[i].c1[0], card[i].c1[1],
                                            card[i].c1[2], 1.0f);
                 canvas_fill(c, CANVAS_NONZERO);
             } else {
-                canvas_set_stroke_rgba(c, 0.96f, 0.97f, 0.99f, 0.9f);
+                canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.96f, 0.97f, 0.99f, 0.9f);
                 canvas_set_line_width(c, 2.0f);
                 canvas_stroke(c);
             }
@@ -365,9 +365,9 @@ static void roundrect(void) {
     // Wide capsule: huge radii everywhere, clamped by the overlap rule.
     float const bx = 24.0f, by = 178.0f, bw = 500.0f, bh = 36.0f;
     canvas_set_fill_linear_gradient(c, bx, 0.0f, bx + bw, 0.0f);
-    canvas_add_fill_color_stop(c, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect_radii(c, bx, by, bw, bh, 200.0f, 200.0f, 200.0f, 200.0f,
                             200.0f, 200.0f, 200.0f, 200.0f);
@@ -386,7 +386,7 @@ static void strokerect(void) {
         return;
     }
     record_scene(c, "gallery/strokerect.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 232.0f);
 
     char const *const labels[6] = { "miter join", "round join", "bevel join",
@@ -410,14 +410,14 @@ static void strokerect(void) {
                                        { 0.36f, 0.62f, 0.95f } };
             canvas_set_line_join(c, j[idx]);
             canvas_set_line_width(c, 14.0f);
-            canvas_set_stroke_rgba(c, col3[idx][0], col3[idx][1], col3[idx][2], 1.0f);
+            canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, col3[idx][0], col3[idx][1], col3[idx][2], 1.0f);
             canvas_stroke_rect(c, rx, ry, rw, rh);
         } else if (idx == 3) {
             float const dash[2] = { 11.0f, 7.0f };
             canvas_set_line_dash(c, dash, 2);
             canvas_set_line_width(c, 4.0f);
             canvas_set_line_cap(c, CANVAS_CAP_ROUND);
-            canvas_set_stroke_rgba(c, 0.95f, 0.82f, 0.30f, 1.0f);
+            canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.82f, 0.30f, 1.0f);
             canvas_stroke_rect(c, rx, ry, rw, rh);
         } else if (idx == 4) {
             // Rotated CTM strokes a rotated quad (corners go through the transform).
@@ -425,8 +425,8 @@ static void strokerect(void) {
             canvas_translate(c, ox + 74.0f, oy + 42.0f);
             canvas_rotate(c, 0.32f);
             canvas_set_stroke_linear_gradient(c, -44.0f, 0.0f, 44.0f, 0.0f);
-            canvas_add_stroke_color_stop(c, 0.0f, 0.30f, 0.90f, 0.95f, 1.0f);
-            canvas_add_stroke_color_stop(c, 1.0f, 0.95f, 0.35f, 0.85f, 1.0f);
+            canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.30f, 0.90f, 0.95f, 1.0f);
+            canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.95f, 0.35f, 0.85f, 1.0f);
             canvas_set_line_width(c, 8.0f);
             canvas_set_line_join(c, CANVAS_JOIN_ROUND);
             canvas_stroke_rect(c, -44.0f, -22.0f, 88.0f, 44.0f);
@@ -436,12 +436,12 @@ static void strokerect(void) {
             float mx = ox + 74.0f, my = oy + 42.0f;
             canvas_set_line_width(c, 10.0f);
             canvas_set_line_cap(c, CANVAS_CAP_ROUND);
-            canvas_set_stroke_rgba(c, 0.95f, 0.45f, 0.55f, 1.0f);
+            canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.45f, 0.55f, 1.0f);
             canvas_stroke_rect(c, mx - 44.0f, my, 88.0f, 0.0f);
             canvas_stroke_rect(c, mx, my - 24.0f, 0.0f, 48.0f);
         }
 
-        canvas_set_fill_rgba(c, 0.78f, 0.82f, 0.90f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.78f, 0.82f, 0.90f, 1.0f);
         canvas_set_font_size(c, 14.0f);
         canvas_fill_text(c, labels[idx], ox + 26.0f, oy + 92.0f);
     }
@@ -458,7 +458,7 @@ static void conic(void) {
         return;
     }
     record_scene(c, "gallery/conic.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 176.0f);
 
     float const cy = 78.0f, r = 56.0f;
@@ -471,7 +471,7 @@ static void conic(void) {
     canvas_set_fill_conic_gradient(c, -TAU * 0.25f, cx[0], cy);
     for (int k = 0; k < ns; k++) {
         float t = (float)k / (float)(ns - 1);
-        canvas_add_fill_color_stop(c, t, 0.5f + 0.5f * cosf(TAU * t),
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, t, 0.5f + 0.5f * cosf(TAU * t),
                                    0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                                    0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
     }
@@ -486,9 +486,9 @@ static void conic(void) {
                                { 0.45f, 0.82f, 0.45f } };
     canvas_set_fill_conic_gradient(c, -TAU * 0.25f, cx[1], cy);
     for (int s = 0; s < 5; s++) {
-        canvas_add_fill_color_stop(c, bnd[s], sect[s][0], sect[s][1], sect[s][2],
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, bnd[s], sect[s][0], sect[s][1], sect[s][2],
                                    1.0f);
-        canvas_add_fill_color_stop(c, bnd[s + 1], sect[s][0], sect[s][1],
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, bnd[s + 1], sect[s][0], sect[s][1],
                                    sect[s][2], 1.0f);
     }
     canvas_begin_path(c);
@@ -497,11 +497,11 @@ static void conic(void) {
 
     // C: a two-tone conic medallion, ringed by a conic-gradient stroke.
     canvas_set_fill_conic_gradient(c, TAU * 0.1f, cx[2], cy);
-    canvas_add_fill_color_stop(c, 0.00f, 0.82f, 0.84f, 0.90f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.25f, 0.30f, 0.33f, 0.42f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.50f, 0.82f, 0.84f, 0.90f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.75f, 0.30f, 0.33f, 0.42f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.00f, 0.82f, 0.84f, 0.90f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.82f, 0.84f, 0.90f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.25f, 0.30f, 0.33f, 0.42f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.50f, 0.82f, 0.84f, 0.90f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.75f, 0.30f, 0.33f, 0.42f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.00f, 0.82f, 0.84f, 0.90f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, cx[2], cy, 24.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
@@ -509,7 +509,7 @@ static void conic(void) {
     canvas_set_stroke_conic_gradient(c, 0.0f, cx[2], cy);
     for (int k = 0; k < ns; k++) {
         float const t = (float)k / (float)(ns - 1);
-        canvas_add_stroke_color_stop(c, t, 0.5f + 0.5f * cosf(TAU * t),
+        canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, t, 0.5f + 0.5f * cosf(TAU * t),
                                      0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                                      0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
     }
@@ -519,7 +519,7 @@ static void conic(void) {
     canvas_close_path(c);
     canvas_stroke(c);
 
-    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     for (int i = 0; i < 3; i++) {
@@ -563,7 +563,7 @@ static void pattern(void) {
         return;
     }
     record_scene(c, "gallery/pattern.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 474.0f, 212.0f);
 
     uint8_t tile[32 * 32 * 4];
@@ -582,11 +582,11 @@ static void pattern(void) {
         canvas_fill_rect(c, 0.0f, 0.0f, 96.0f, 96.0f);
         canvas_restore(c);
 
-        canvas_set_stroke_rgba(c, 0.42f, 0.46f, 0.55f, 1.0f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.42f, 0.46f, 0.55f, 1.0f);
         canvas_set_line_width(c, 1.5f);
         canvas_stroke_rect(c, ox, oy, 96.0f, 96.0f);
 
-        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
         canvas_set_font_size(c, 13.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_fill_text(c, labels[i], ox + 48.0f, 134.0f);
@@ -610,7 +610,7 @@ static void smoothing(void) {
         return;
     }
     record_scene(c, "gallery/smoothing.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 210.0f);
 
     static char const art[16][17] = {
@@ -648,7 +648,7 @@ static void smoothing(void) {
     canvas_set_image_smoothing_enabled(c, true);
     canvas_draw_bitmap_scaled(c, src, 16, 16, 276.0f, 24.0f, 140.0f, 140.0f);
 
-    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "16x16 source", 56.0f, 186.0f);
@@ -668,17 +668,17 @@ static void textgrid(void) {
         return;
     }
     record_scene(c, "gallery/textgrid.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 256.0f);
 
     // --- textAlign: a vertical anchor, three self-naming words ---
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
     canvas_set_text_align(c, CANVAS_ALIGN_START);
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "textAlign", 24.0f, 34.0f);
 
-    canvas_set_stroke_rgba(c, 0.85f, 0.40f, 0.85f, 0.75f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.40f, 0.85f, 0.75f);
     canvas_set_line_width(c, 1.5f);
     canvas_begin_path(c);
     canvas_move_to(c, 270.0f, 44.0f);
@@ -692,9 +692,9 @@ static void textgrid(void) {
     for (int i = 0; i < 3; i++) {
         canvas_set_text_align(c, aligns[i]);
         canvas_set_font_size(c, 24.0f);
-        canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
         canvas_fill_text(c, atext[i], 270.0f, ay[i]);
-        canvas_set_fill_rgba(c, 0.40f, 0.85f, 0.95f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.85f, 0.95f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, 270.0f, ay[i], 3.0f, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
@@ -702,11 +702,11 @@ static void textgrid(void) {
 
     // --- textBaseline: one horizontal baseline, "Hg" set six ways ---
     canvas_set_text_align(c, CANVAS_ALIGN_START);
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "textBaseline", 24.0f, 154.0f);
 
-    canvas_set_stroke_rgba(c, 0.40f, 0.85f, 0.95f, 0.75f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.85f, 0.95f, 0.75f);
     canvas_set_line_width(c, 1.5f);
     canvas_begin_path(c);
     canvas_move_to(c, 24.0f, 200.0f);
@@ -725,11 +725,11 @@ static void textgrid(void) {
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_set_text_baseline(c, bl[i]);
         canvas_set_font_size(c, 28.0f);
-        canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
         canvas_fill_text(c, "Hg", cx, 200.0f);
         canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
         canvas_set_font_size(c, 11.0f);
-        canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
         canvas_fill_text(c, bname[i], cx, 246.0f);
     }
     canvas_set_text_align(c, CANVAS_ALIGN_START);
@@ -747,7 +747,7 @@ static void textmetrics(void) {
         return;
     }
     record_scene(c, "gallery/textmetrics.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 560.0f, 250.0f);
 
     char const *const word = "Graphics";
@@ -768,12 +768,12 @@ static void textmetrics(void) {
     };
     for (int i = 0; i < 3; i++) {
         canvas_set_line_dash(c, i == 1 ? solid : dash, i == 1 ? 0 : 2);
-        canvas_set_stroke_rgba(c, base[i].r, base[i].g, base[i].b, 0.95f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, base[i].r, base[i].g, base[i].b, 0.95f);
         canvas_begin_path(c);
         canvas_move_to(c, lx0, base[i].y);
         canvas_line_to(c, lx1, base[i].y);
         canvas_stroke(c);
-        canvas_set_fill_rgba(c, base[i].r, base[i].g, base[i].b, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, base[i].r, base[i].g, base[i].b, 1.0f);
         canvas_set_font_size(c, 11.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
         canvas_fill_text(c, base[i].name, lx1 + 6.0f, base[i].y + 3.5f);
@@ -782,33 +782,33 @@ static void textmetrics(void) {
     // The glyphs.
     canvas_set_line_dash(c, solid, 0);
     canvas_set_font_size(c, 62.0f);
-    canvas_set_fill_rgba(c, 0.90f, 0.91f, 0.96f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.91f, 0.96f, 1.0f);
     canvas_fill_text(c, word, x0, y0);
 
     // Font bounding box (orange dashed) over the advance width.
     canvas_set_line_dash(c, dash, 2);
     canvas_set_line_width(c, 1.5f);
-    canvas_set_stroke_rgba(c, 0.97f, 0.62f, 0.25f, 0.95f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.97f, 0.62f, 0.25f, 0.95f);
     canvas_stroke_rect(c, x0, y0 - m.font_bounding_box_ascent, m.width,
                        m.font_bounding_box_ascent + m.font_bounding_box_descent);
-    canvas_set_fill_rgba(c, 0.97f, 0.62f, 0.25f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.97f, 0.62f, 0.25f, 1.0f);
     canvas_set_font_size(c, 11.0f);
     canvas_fill_text(c, "font box", x0 + 3.0f, y0 - m.font_bounding_box_ascent - 4.0f);
 
     // Actual (ink) bounding box (cyan solid).
     canvas_set_line_dash(c, solid, 0);
     canvas_set_line_width(c, 1.8f);
-    canvas_set_stroke_rgba(c, 0.30f, 0.85f, 0.95f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.30f, 0.85f, 0.95f, 1.0f);
     float ab_l = x0 - m.actual_bounding_box_left, ab_t = y0 - m.actual_bounding_box_ascent;
     canvas_stroke_rect(c, ab_l, ab_t,
                        m.actual_bounding_box_left + m.actual_bounding_box_right,
                        m.actual_bounding_box_ascent + m.actual_bounding_box_descent);
-    canvas_set_fill_rgba(c, 0.30f, 0.85f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.30f, 0.85f, 0.95f, 1.0f);
     canvas_fill_text(c, "actual box", ab_l + 2.0f, ab_t - 4.0f);
 
     // Advance-width measure below, with the measured value.
     float const wy = y0 + m.font_bounding_box_descent + 26.0f;
-    canvas_set_stroke_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.88f, 0.90f, 0.96f, 1.0f);
     canvas_set_line_width(c, 1.4f);
     canvas_begin_path(c);
     canvas_move_to(c, x0, wy - 5.0f);
@@ -818,13 +818,13 @@ static void textmetrics(void) {
     canvas_move_to(c, x0 + m.width, wy - 5.0f);
     canvas_line_to(c, x0 + m.width, wy + 5.0f);
     canvas_stroke(c);
-    canvas_set_fill_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.88f, 0.90f, 0.96f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "advance width", x0 + m.width * 0.5f, wy + 18.0f);
 
     // Origin point.
-    canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.96f, 0.35f, 0.45f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, x0, y0, 4.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
@@ -841,7 +841,7 @@ static void textmaxwidth(void) {
         return;
     }
     record_scene(c, "gallery/textmaxwidth.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 188.0f);
 
     char const *const phrase = "Condense me to fit the box!";
@@ -849,14 +849,14 @@ static void textmaxwidth(void) {
     float const gy0 = 18.0f, gy1 = 150.0f;
 
     // Shade the overflow zone (right of the marker) faint red.
-    canvas_set_fill_rgba(c, 0.90f, 0.30f, 0.32f, 0.10f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.30f, 0.32f, 0.10f);
     canvas_fill_rect(c, R, gy0, 520.0f - R, gy1 - gy0);
 
     // The two maxWidth markers (dashed vertical guides).
     float const dash[2] = { 5.0f, 4.0f };
     canvas_set_line_dash(c, dash, 2);
     canvas_set_line_width(c, 1.4f);
-    canvas_set_stroke_rgba(c, 0.55f, 0.59f, 0.68f, 0.85f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.68f, 0.85f);
     for (int k = 0; k < 2; k++) {
         float const gx = k == 0 ? L : R;
         canvas_begin_path(c);
@@ -871,23 +871,23 @@ static void textmaxwidth(void) {
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
 
     // Row A: no limit -> natural advance, spilling into the overflow zone.
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "without maxWidth", L, 40.0f);
-    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
     canvas_set_font_size(c, 30.0f);
     canvas_fill_text(c, phrase, L, 74.0f);
 
     // Row B: maxWidth == the marked span -> condensed in x about the left anchor.
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "with maxWidth (condensed to fit)", L, 104.0f);
-    canvas_set_fill_rgba(c, 0.45f, 0.88f, 0.55f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.45f, 0.88f, 0.55f, 1.0f);
     canvas_set_font_size(c, 30.0f);
     canvas_fill_text_max(c, phrase, L, 138.0f, maxw);
 
     // The maxWidth span bracket.
-    canvas_set_stroke_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.88f, 0.90f, 0.96f, 1.0f);
     canvas_set_line_width(c, 1.4f);
     canvas_begin_path(c);
     canvas_move_to(c, L, gy1 - 4.0f);
@@ -897,7 +897,7 @@ static void textmaxwidth(void) {
     canvas_move_to(c, R, gy1 - 4.0f);
     canvas_line_to(c, R, gy1 + 4.0f);
     canvas_stroke(c);
-    canvas_set_fill_rgba(c, 0.88f, 0.90f, 0.96f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.88f, 0.90f, 0.96f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "maxWidth", (L + R) * 0.5f, gy1 + 20.0f);
@@ -916,7 +916,7 @@ static void hittest(void) {
         return;
     }
     record_scene(c, "gallery/hittest.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 262.0f);
 
     int const step = 10, nx = 20, ny = 20;
@@ -926,7 +926,7 @@ static void hittest(void) {
     star(c, 130.0f, 116.0f, 92.0f);
     canvas_set_line_dash(c, solid, 0);
     canvas_set_line_width(c, 1.3f);
-    canvas_set_stroke_rgba(c, 0.55f, 0.58f, 0.66f, 0.55f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.58f, 0.66f, 0.55f);
     canvas_stroke(c);
     bool inA[20 * 20];
     for (int j = 0; j < ny; j++) {
@@ -940,9 +940,9 @@ static void hittest(void) {
             float px = 34.0f + (float)(i * step), py = 22.0f + (float)(j * step);
             bool in = inA[j * nx + i];
             if (in) {
-                canvas_set_fill_rgba(c, 0.30f, 0.85f, 0.70f, 1.0f);
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.30f, 0.85f, 0.70f, 1.0f);
             } else {
-                canvas_set_fill_rgba(c, 0.42f, 0.45f, 0.52f, 0.85f);
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.42f, 0.45f, 0.52f, 0.85f);
             }
             canvas_begin_path(c);
             canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
@@ -962,16 +962,16 @@ static void hittest(void) {
             inB[j * nx + i] = canvas_is_point_in_stroke(c, px, py);
         }
     }
-    canvas_set_stroke_rgba(c, 0.62f, 0.52f, 0.40f, 0.22f);  // faint stroke band
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.52f, 0.40f, 0.22f);  // faint stroke band
     canvas_stroke(c);
     for (int j = 0; j < ny; j++) {
         for (int i = 0; i < nx; i++) {
             float px = 254.0f + (float)(i * step), py = 22.0f + (float)(j * step);
             bool const in = inB[j * nx + i];
             if (in) {
-                canvas_set_fill_rgba(c, 0.97f, 0.62f, 0.25f, 1.0f);
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.97f, 0.62f, 0.25f, 1.0f);
             } else {
-                canvas_set_fill_rgba(c, 0.42f, 0.45f, 0.52f, 0.85f);
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.42f, 0.45f, 0.52f, 0.85f);
             }
             canvas_begin_path(c);
             canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
@@ -979,7 +979,7 @@ static void hittest(void) {
         }
     }
 
-    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "isPointInPath", 130.0f, 248.0f);
@@ -998,7 +998,7 @@ static void dirtyrect(void) {
         return;
     }
     record_scene(c, "gallery/dirtyrect.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 518.0f, 210.0f);
 
     int const W = 220, H = 150;
@@ -1034,12 +1034,12 @@ static void dirtyrect(void) {
         free(img);
     }
 
-    canvas_set_stroke_rgba(c, 0.40f, 0.44f, 0.52f, 0.9f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.44f, 0.52f, 0.9f);
     canvas_set_line_width(c, 1.5f);
     canvas_stroke_rect(c, (float)Lx, (float)Ly, (float)W, (float)H);
     canvas_stroke_rect(c, (float)Rx, (float)Ry, (float)W, (float)H);
 
-    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "putImageData (full)", (float)Lx + (float)W * 0.5f, 196.0f);
@@ -1060,7 +1060,7 @@ static void path2d_demo(void) {
         return;
     }
     record_scene(c, "gallery/path2d.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 240.0f);
 
     // One petal, built once around the origin, drawn under many transforms.
@@ -1076,11 +1076,11 @@ static void path2d_demo(void) {
             canvas_save(c);
             canvas_translate(c, 135.0f, 116.0f);
             canvas_rotate(c, t * TAU);
-            canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.5f + 0.5f * cosf(TAU * t),
                                  0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                                  0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 0.85f);
             canvas_fill_path(c, petal, CANVAS_NONZERO);
-            canvas_set_stroke_rgba(c, 1.0f, 1.0f, 1.0f, 0.5f);
+            canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 0.5f);
             canvas_set_line_width(c, 1.2f);
             canvas_stroke_path(c, petal);
             canvas_restore(c);
@@ -1096,8 +1096,8 @@ static void path2d_demo(void) {
         canvas_path2d_arc(hole, 365.0f, 116.0f, 32.0f, 0.0f, TAU, false);
         canvas_path2d_add_path(ring, hole);
         canvas_set_fill_radial_gradient(c, 348.0f, 98.0f, 6.0f, 365.0f, 116.0f, 58.0f);
-        canvas_add_fill_color_stop(c, 0.0f, 0.55f, 0.95f, 0.95f, 1.0f);
-        canvas_add_fill_color_stop(c, 1.0f, 0.20f, 0.35f, 0.85f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.55f, 0.95f, 0.95f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.20f, 0.35f, 0.85f, 1.0f);
         canvas_fill_path(c, ring, CANVAS_EVENODD);
     }
     if (hole) {
@@ -1120,14 +1120,14 @@ static void path2d_demo(void) {
             }
         }
         canvas_path2d_close_path(starp);
-        canvas_set_stroke_rgba(c, 0.97f, 0.82f, 0.30f, 1.0f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.97f, 0.82f, 0.30f, 1.0f);
         canvas_set_line_width(c, 2.5f);
         canvas_set_line_join(c, CANVAS_JOIN_ROUND);
         canvas_stroke_path(c, starp);
         canvas_path2d_free(starp);
     }
 
-    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "one Path2D, 12 transforms", 135.0f, 226.0f);
@@ -1145,9 +1145,9 @@ static void checker_behind(struct canvas *__single c, float x, float y, float w,
     for (int j = 0; (float)(j * t) < h; j++) {
         for (int i = 0; (float)(i * t) < w; i++) {
             if (((i + j) & 1) == 0) {
-                canvas_set_fill_rgba(c, 0.84f, 0.85f, 0.88f, 1.0f);
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.84f, 0.85f, 0.88f, 1.0f);
             } else {
-                canvas_set_fill_rgba(c, 0.68f, 0.70f, 0.75f, 1.0f);
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.68f, 0.70f, 0.75f, 1.0f);
             }
             canvas_fill_rect(c, x + (float)(i * t), y + (float)(j * t), (float)t,
                              (float)t);
@@ -1157,12 +1157,12 @@ static void checker_behind(struct canvas *__single c, float x, float y, float w,
 }
 
 static void pd_dst(struct canvas *__single c, float ox, float oy) {  // blue square
-    canvas_set_fill_rgba(c, 0.20f, 0.55f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.20f, 0.55f, 0.90f, 1.0f);
     canvas_fill_rect(c, ox + 16.0f, oy + 12.0f, 50.0f, 50.0f);
 }
 
 static void pd_src(struct canvas *__single c, float ox, float oy) {  // orange disc
-    canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.97f, 0.55f, 0.18f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, ox + 62.0f, oy + 52.0f, 27.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
@@ -1179,7 +1179,7 @@ static void porterduff(void) {
         return;
     }
     record_scene(c, "gallery/porterduff.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 504.0f, 329.0f);
 
     enum canvas_composite_op const ops[11] = {
@@ -1211,7 +1211,7 @@ static void porterduff(void) {
         checker_behind(c, ox + 3.0f, oy + 3.0f, 112.0f, 78.0f);
         canvas_restore(c);
 
-        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
         canvas_set_font_size(c, 11.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_fill_text(c, names[idx], ox + cellW * 0.5f, oy + 93.0f);
@@ -1220,17 +1220,17 @@ static void porterduff(void) {
     // Legend cell (bottom-right): the two shapes and what they are.
     float lox = M + 3.0f * cellW, loy = M + 2.0f * cellH;
     pd_dst(c, lox, loy - 4.0f);
-    canvas_set_fill_rgba(c, 0.20f, 0.55f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.20f, 0.55f, 0.90f, 1.0f);
     canvas_fill_rect(c, lox + 20.0f, loy + 14.0f, 30.0f, 22.0f);
-    canvas_set_fill_rgba(c, 0.85f, 0.88f, 0.93f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.88f, 0.93f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_fill_text(c, "destination", lox + 56.0f, loy + 30.0f);
-    canvas_set_fill_rgba(c, 0.97f, 0.55f, 0.18f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.97f, 0.55f, 0.18f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, lox + 35.0f, loy + 58.0f, 13.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
-    canvas_set_fill_rgba(c, 0.85f, 0.88f, 0.93f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.88f, 0.93f, 1.0f);
     canvas_fill_text(c, "source", lox + 56.0f, loy + 62.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_START);
 
@@ -1250,11 +1250,11 @@ static void subrect(void) {
             float ox = (float)(tx * 40), oy = (float)(ty * 40);
             float cx = ox + 20.0f, cy = oy + 20.0f;
             float const t = (float)k / 8.0f;
-            canvas_set_fill_rgba(ac, 0.5f + 0.5f * cosf(TAU * t),
+            canvas_set_fill_rgba(ac, CANVAS_CS_SRGB, 0.5f + 0.5f * cosf(TAU * t),
                                  0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                                  0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
             canvas_fill_rect(ac, ox, oy, 40.0f, 40.0f);
-            canvas_set_fill_rgba(ac, 0.98f, 0.99f, 1.0f, 0.92f);
+            canvas_set_fill_rgba(ac, CANVAS_CS_SRGB, 0.98f, 0.99f, 1.0f, 0.92f);
             switch (k % 4) {
                 case 0:  // circle
                     canvas_begin_path(ac);
@@ -1287,12 +1287,12 @@ static void subrect(void) {
         return;
     }
     record_scene(c, "gallery/subrect.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 468.0f, 196.0f);
 
     // Left: the whole atlas at 1.5x, with a grid showing the tile cells.
     canvas_draw_bitmap_scaled(c, atlas, AW, AH, 20.0f, 30.0f, 240.0f, 120.0f);
-    canvas_set_stroke_rgba(c, 0.20f, 0.22f, 0.28f, 0.9f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.20f, 0.22f, 0.28f, 0.9f);
     canvas_set_line_width(c, 1.0f);
     for (int i = 1; i < 4; i++) {
         canvas_begin_path(c);
@@ -1316,7 +1316,7 @@ static void subrect(void) {
                                   (float)(ty * 40), 40.0f, 40.0f, dx, dy, ts, ts);
     }
 
-    canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
     canvas_set_font_size(c, 14.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_fill_text(c, "sprite atlas", 140.0f, 178.0f);
@@ -1330,12 +1330,12 @@ static void subrect(void) {
 // transform deforms it.  "F" has no symmetry, so reflection and shear read at a
 // glance.
 static void affine_motif(struct canvas *__single c) {
-    canvas_set_fill_rgba(c, 0.25f, 0.70f, 0.78f, 0.85f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.25f, 0.70f, 0.78f, 0.85f);
     canvas_fill_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
-    canvas_set_stroke_rgba(c, 0.95f, 0.97f, 1.0f, 0.95f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.97f, 1.0f, 0.95f);
     canvas_set_line_width(c, 2.0f);
     canvas_stroke_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
-    canvas_set_fill_rgba(c, 0.99f, 0.85f, 0.30f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.99f, 0.85f, 0.30f, 1.0f);
     canvas_set_font_size(c, 54.0f);
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_set_text_baseline(c, CANVAS_BASELINE_MIDDLE);
@@ -1352,7 +1352,7 @@ static void affine(void) {
         return;
     }
     record_scene(c, "gallery/affine.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 478.0f, 272.0f);
 
     struct { float a, b, c, d; char const *name; } const mat[6] = {
@@ -1373,7 +1373,7 @@ static void affine(void) {
         // Identity footprint (dashed), drawn before the matrix is applied.
         canvas_set_line_dash(c, dash, 2);
         canvas_set_line_width(c, 1.2f);
-        canvas_set_stroke_rgba(c, 0.45f, 0.48f, 0.55f, 0.85f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.45f, 0.48f, 0.55f, 0.85f);
         canvas_stroke_rect(c, -32.0f, -32.0f, 64.0f, 64.0f);
         canvas_set_line_dash(c, solid, 0);
         // Apply the matrix, draw the motif deformed.
@@ -1383,7 +1383,7 @@ static void affine(void) {
 
         canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
-        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_fill_text(c, mat[i].name, ox + 75.0f, oy + 108.0f);
     }
@@ -1402,12 +1402,12 @@ static void miterdash(void) {
         return;
     }
     record_scene(c, "gallery/miterdash.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 258.0f);
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "miterLimit", 16.0f, 28.0f);
 
@@ -1422,13 +1422,13 @@ static void miterdash(void) {
     for (int i = 0; i < 4; i++) {
         float const cx = 90.0f + (float)i * 100.0f;
         canvas_set_miter_limit(c, limits[i]);
-        canvas_set_stroke_rgba(c, 0.95f, 0.55f, 0.30f, 1.0f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.55f, 0.30f, 1.0f);
         canvas_begin_path(c);
         canvas_move_to(c, cx - 16.0f, 44.0f);
         canvas_line_to(c, cx, 112.0f);
         canvas_line_to(c, cx + 16.0f, 44.0f);
         canvas_stroke(c);
-        canvas_set_fill_rgba(c, 0.80f, 0.83f, 0.90f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_fill_text(c, mlabel[i], cx, 164.0f);
@@ -1436,7 +1436,7 @@ static void miterdash(void) {
     canvas_set_miter_limit(c, 10.0f);  // restore default
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "lineDashOffset", 16.0f, 186.0f);
 
@@ -1450,12 +1450,12 @@ static void miterdash(void) {
     for (int i = 0; i < 5; i++) {
         float const y = 200.0f + (float)i * 12.0f;
         canvas_set_line_dash_offset(c, offs[i]);
-        canvas_set_stroke_rgba(c, 0.40f, 0.82f, 0.95f, 1.0f);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.82f, 0.95f, 1.0f);
         canvas_begin_path(c);
         canvas_move_to(c, 80.0f, y);
         canvas_line_to(c, 462.0f, y);
         canvas_stroke(c);
-        canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
         canvas_set_font_size(c, 11.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_RIGHT);
         canvas_fill_text(c, olabel[i], 68.0f, y + 4.0f);
@@ -1474,7 +1474,7 @@ static void clip_stripes(struct canvas *__single c, float x0, float y0, float x1
     float const bw = (x1 - x0) / (float)n;
     for (int i = 0; i < n; i++) {
         float const t = (float)i / (float)(n - 1);
-        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
         canvas_fill_rect(c, x0 + (float)i * bw, y0, bw + 1.0f, y1 - y0);
@@ -1489,7 +1489,7 @@ static void clipping(void) {
         return;
     }
     record_scene(c, "gallery/clip.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_save(c);
@@ -1526,37 +1526,37 @@ static void gradients(void) {
         return;
     }
     record_scene(c, "gallery/gradients.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_set_fill_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.90f, 0.22f, 0.42f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.90f, 0.22f, 0.42f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_fill(c, CANVAS_NONZERO);
     // Outline it with a contrasting gradient stroke (cyan -> yellow, diagonal).
     canvas_set_stroke_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
-    canvas_add_stroke_color_stop(c, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
-    canvas_add_stroke_color_stop(c, 1.0f, 0.95f, 0.95f, 0.20f, 1.0f);
+    canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
+    canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.95f, 0.95f, 0.20f, 1.0f);
     canvas_set_line_width(c, 5.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_stroke(c);
 
     canvas_set_fill_radial_gradient(c, 140.0f, 46.0f, 3.0f, 150.0f, 60.0f, 44.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.4f, 0.30f, 0.65f, 0.95f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.05f, 0.10f, 0.35f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.4f, 0.30f, 0.65f, 0.95f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.05f, 0.10f, 0.35f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 150.0f, 60.0f, 44.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
 
     canvas_set_fill_linear_gradient(c, 205.0f, 0.0f, 285.0f, 0.0f);
-    canvas_add_fill_color_stop(c, 0.00f, 0.90f, 0.20f, 0.25f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.33f, 0.95f, 0.80f, 0.25f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.66f, 0.30f, 0.80f, 0.45f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.00f, 0.30f, 0.45f, 0.95f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.90f, 0.20f, 0.25f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.33f, 0.95f, 0.80f, 0.25f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.66f, 0.30f, 0.80f, 0.45f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.00f, 0.30f, 0.45f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 205.0f, 25.0f, 75.0f, 70.0f, 12.0f);
     canvas_fill(c, CANVAS_NONZERO);
@@ -1581,7 +1581,7 @@ static void batching(void) {
         return;
     }
     record_scene(c, "gallery/batch.canvas");
-    canvas_set_fill_rgba(c, 0.07f, 0.08f, 0.10f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.07f, 0.08f, 0.10f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     canvas_set_global_alpha(c, 0.55f);
@@ -1590,7 +1590,7 @@ static void batching(void) {
         float const y = batch_rand() * 120.0f;
         float const r = 3.0f + batch_rand() * 9.0f;
         float const t = batch_rand();
-        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
         canvas_begin_path(c);
@@ -1609,7 +1609,7 @@ static void drawimage(void) {
         return;
     }
     record_scene(c, "gallery/drawimage.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     // A 16x16 multi-hue source image (tightly packed RGBA8).
@@ -1644,19 +1644,19 @@ static void text(void) {
         return;
     }
     record_scene(c, "gallery/text.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 420.0f, 170.0f);
 
     // Gradient-filled headline: Latin + Chinese in a single fill_text.
     canvas_set_fill_linear_gradient(c, 20.0f, 0.0f, 390.0f, 0.0f);
-    canvas_add_fill_color_stop(c, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 52.0f);
     canvas_fill_text(c, "canvas2d 畫布", 20.0f, 70.0f);
 
     // Stroked subtitle, also mixing scripts.
-    canvas_set_stroke_rgba(c, 0.85f, 0.88f, 0.95f, 1.0f);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.88f, 0.95f, 1.0f);
     canvas_set_line_width(c, 1.2f);
     canvas_set_line_join(c, CANVAS_JOIN_ROUND);
     canvas_set_font_size(c, 26.0f);
@@ -1666,7 +1666,7 @@ static void text(void) {
     canvas_save(c);
     canvas_translate(c, 352.0f, 152.0f);
     canvas_rotate(c, -0.32f);
-    canvas_set_fill_rgba(c, 0.45f, 0.85f, 0.55f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.45f, 0.85f, 0.55f, 1.0f);
     canvas_set_font_size(c, 26.0f);
     canvas_fill_text(c, "你好!", 0.0f, 0.0f);
     canvas_restore(c);
@@ -1695,7 +1695,7 @@ static void blend(void) {
         return;
     }
     record_scene(c, "gallery/blend.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.13f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 724.0f, 396.0f);
 
     for (int i = 0; i < 15; i++) {
@@ -1706,26 +1706,26 @@ static void blend(void) {
         canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
         canvas_set_fill_linear_gradient(c, ox + 18.0f, oy + 12.0f, ox + 122.0f,
                                         oy + 100.0f);
-        canvas_add_fill_color_stop(c, 0.0f, 0.20f, 0.65f, 0.95f, 1.0f);
-        canvas_add_fill_color_stop(c, 1.0f, 0.98f, 0.85f, 0.30f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.20f, 0.65f, 0.95f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.98f, 0.85f, 0.30f, 1.0f);
         canvas_begin_path(c);
         canvas_round_rect(c, ox + 18.0f, oy + 12.0f, 104.0f, 88.0f, 12.0f);
         canvas_fill(c, CANVAS_NONZERO);
 
         // Two overlapping discs under this cell's blend mode.
         canvas_set_global_composite_operation(c, cell[i].op);
-        canvas_set_fill_rgba(c, 0.92f, 0.26f, 0.21f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.26f, 0.21f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 54.0f, oy + 42.0f, 26.0f, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
-        canvas_set_fill_rgba(c, 0.18f, 0.85f, 0.42f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.18f, 0.85f, 0.42f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 80.0f, oy + 66.0f, 26.0f, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
 
         // Label.
         canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
-        canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.92f, 0.96f, 1.0f);
         canvas_set_font_size(c, 13.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_fill_text(c, cell[i].name, ox + cellW * 0.5f, oy + 116.0f);
@@ -1747,35 +1747,35 @@ static void shadows(void) {
         return;
     }
     record_scene(c, "gallery/shadows.canvas");
-    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.96f, 1.0f);  // light ground
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.96f, 1.0f);  // light ground
     canvas_fill_rect(c, 0.0f, 0.0f, 400.0f, 185.0f);
 
     // Sharp offset drop shadow under a rounded rectangle.
-    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.45f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.45f);
     canvas_set_shadow_blur(c, 0.0f);
     canvas_set_shadow_offset_x(c, 7.0f);
     canvas_set_shadow_offset_y(c, 7.0f);
-    canvas_set_fill_rgba(c, 0.92f, 0.30f, 0.34f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.30f, 0.34f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 30.0f, 32.0f, 72.0f, 62.0f, 12.0f);
     canvas_fill(c, CANVAS_NONZERO);
 
     // Soft, blurred shadow under a disc.
-    canvas_set_shadow_color_rgba(c, 0.10f, 0.20f, 0.45f, 0.8f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.20f, 0.45f, 0.8f);
     canvas_set_shadow_blur(c, 16.0f);
     canvas_set_shadow_offset_x(c, 0.0f);
     canvas_set_shadow_offset_y(c, 5.0f);
-    canvas_set_fill_rgba(c, 0.35f, 0.70f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.35f, 0.70f, 0.95f, 1.0f);
     canvas_begin_path(c);
     canvas_arc(c, 185.0f, 60.0f, 34.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
 
     // Text shadow.
-    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.5f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.5f);
     canvas_set_shadow_blur(c, 3.0f);
     canvas_set_shadow_offset_x(c, 2.0f);
     canvas_set_shadow_offset_y(c, 3.0f);
-    canvas_set_fill_rgba(c, 0.15f, 0.55f, 0.35f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.15f, 0.55f, 0.35f, 1.0f);
     canvas_set_font_size(c, 34.0f);
     canvas_fill_text(c, "shadow", 250.0f, 78.0f);
 
@@ -1783,9 +1783,9 @@ static void shadows(void) {
     // 6.75 / 7.0 (both axes).  The leading edges ramp smoothly across the
     // quarter-pixel steps -- whole-pixel snapping would make the first four
     // identical and the last jump a full column.
-    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.55f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.55f);
     canvas_set_shadow_blur(c, 0.0f);
-    canvas_set_fill_rgba(c, 0.45f, 0.40f, 0.85f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.45f, 0.40f, 0.85f, 1.0f);
     for (int i = 0; i < 5; i++) {
         float const off = 6.0f + 0.25f * (float)i;
         canvas_set_shadow_offset_x(c, off);
@@ -1805,14 +1805,14 @@ static void emoji(void) {
         return;
     }
     record_scene(c, "gallery/emoji.canvas");
-    canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);  // light ground (shows shadows)
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.94f, 0.94f, 0.96f, 1.0f);  // light ground (shows shadows)
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 250.0f);
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
 
     // Inline with Latin + Chinese in a single fill_text.
-    canvas_set_fill_rgba(c, 0.16f, 0.17f, 0.22f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.16f, 0.17f, 0.22f, 1.0f);
     canvas_set_font_size(c, 30.0f);
     canvas_fill_text(c, "canvas2d 🎨 畫布", 26.0f, 50.0f);
 
@@ -1825,13 +1825,13 @@ static void emoji(void) {
     canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
     canvas_set_text_baseline(c, CANVAS_BASELINE_MIDDLE);
 
-    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.55f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.55f);
     canvas_set_shadow_blur(c, 6.0f);
     canvas_set_shadow_offset_x(c, 3.0f);
     canvas_set_shadow_offset_y(c, 4.0f);
     canvas_set_font_size(c, 52.0f);
     canvas_fill_text(c, "🎨", cxs[0], 186.0f);
-    canvas_set_shadow_color_rgba(c, 0.0f, 0.0f, 0.0f, 0.0f);  // disable
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);  // disable
     canvas_set_shadow_blur(c, 0.0f);
     canvas_set_shadow_offset_x(c, 0.0f);
     canvas_set_shadow_offset_y(c, 0.0f);
@@ -1847,7 +1847,7 @@ static void emoji(void) {
     canvas_fill_text(c, "🌈", cxs[2], 186.0f);
 
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
-    canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.43f, 0.50f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     char const *const labels[3] = { "shadow", "rotate", "scale" };
     for (int i = 0; i < 3; i++) {
@@ -1872,7 +1872,7 @@ static void emojiscale(void) {
         return;
     }
     record_scene(c, "gallery/emojiscale.canvas");
-    canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.94f, 0.94f, 0.96f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 600.0f);
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
@@ -1903,7 +1903,7 @@ static void emojiscale(void) {
     }
     canvas_set_global_alpha(c, 1.0f);
 
-    canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.43f, 0.50f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "8px → 200px, geometric; canonical capture 160px", 14.0f, 268.0f);
     canvas_fill_text(c, "the same ramp, progressively rotated", 14.0f, 580.0f);
@@ -1930,7 +1930,7 @@ static void imagescale(void) {
         return;
     }
     record_scene(c, "gallery/imagescale.canvas");
-    canvas_set_fill_rgba(c, 0.94f, 0.94f, 0.96f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.94f, 0.94f, 0.96f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 700.0f, 520.0f);
 
     // The rocket source: rendered on a scratch canvas and SNAPSHOTTED --
@@ -1996,7 +1996,7 @@ static void imagescale(void) {
     // reads source-then-tiers straight down.
     canvas_draw_image(c, rocket, 20.0f, 14.0f);
     canvas_draw_image(c, card, 593.0f, 166.0f);
-    canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.43f, 0.50f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "the rocket source, 1:1 (160px)", 20.0f, 192.0f);
     canvas_fill_text(c, "the test card, 1:1 (10px)", 528.0f, 192.0f);
@@ -2023,7 +2023,7 @@ static void imagescale(void) {
         }
         // The test card, 10 source px blown up to 84 (8.4x).
         canvas_draw_image_scaled(c, card, 556.0f, top, 84.0f, 84.0f);
-        canvas_set_fill_rgba(c, 0.40f, 0.43f, 0.50f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.40f, 0.43f, 0.50f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_fill_text(c, label[row], 12.0f, top + 96.0f);
     }
@@ -2043,15 +2043,15 @@ static void shaping(void) {
         return;
     }
     record_scene(c, "gallery/shaping.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 348.0f);
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
 
     canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 360.0f, 0.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 21.0f);
     canvas_fill_text(c, "one fill_text, every script", 36.0f, 46.0f);
 
@@ -2068,17 +2068,17 @@ static void shaping(void) {
     for (int i = 0; i < 8; i++) {
         float const y = 92.0f + (float)i * 31.0f;
         float const t = (float)i / 8.0f;
-        canvas_set_fill_rgba(c, 0.5f + 0.5f * cosf(TAU * t),
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.5f + 0.5f * cosf(TAU * t),
                              0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
                              0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
         canvas_set_font_size(c, 28.0f);
         canvas_fill_text(c, row[i].greeting, 40.0f, y);
-        canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_fill_text(c, row[i].label, 320.0f, y - 4.0f);
     }
 
-    canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
     canvas_set_font_size(c, 13.0f);
     canvas_fill_text(c, "Core Text fallback + shaping, one coverage rasterizer",
                      40.0f, 338.0f);
@@ -2098,13 +2098,13 @@ static void rtl(void) {
         return;
     }
     record_scene(c, "gallery/rtl.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 330.0f);
 
     // Headline, ltr.
     canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 464.0f, 0.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 20.0f);
     canvas_fill_text(c, "direction: rtl", 36.0f, 40.0f);
 
@@ -2113,18 +2113,18 @@ static void rtl(void) {
     canvas_set_direction(c, CANVAS_DIRECTION_RTL);
     canvas_set_text_align(c, CANVAS_ALIGN_START);
     canvas_set_font_size(c, 30.0f);
-    canvas_set_fill_rgba(c, 0.95f, 0.83f, 0.45f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.83f, 0.45f, 1.0f);
     canvas_fill_text(c, "שלום עולם", right, 88.0f);          // Hebrew
-    canvas_set_fill_rgba(c, 0.55f, 0.85f, 0.65f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.85f, 0.65f, 1.0f);
     canvas_fill_text(c, "مرحبا بالعالم", right, 130.0f);     // Arabic, joined
     canvas_set_font_size(c, 26.0f);
-    canvas_set_fill_rgba(c, 0.70f, 0.75f, 0.95f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.75f, 0.95f, 1.0f);
     canvas_fill_text(c, "טקסט עם canvas2d בפנים", right, 172.0f);  // mixed bidi
 
     // Captions, back to ltr at the left margin.
     canvas_set_direction(c, CANVAS_DIRECTION_LTR);
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
-    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "Hebrew", 36.0f, 84.0f);
     canvas_fill_text(c, "Arabic joins", 36.0f, 126.0f);
@@ -2132,7 +2132,7 @@ static void rtl(void) {
 
     // start/end resolve against direction: four rows off one anchor line.
     float const ax = 250.0f;
-    canvas_set_fill_rgba(c, 0.85f, 0.35f, 0.35f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.85f, 0.35f, 0.35f, 1.0f);
     canvas_fill_rect(c, ax - 0.5f, 196.0f, 1.0f, 122.0f);
     struct {
         enum canvas_direction dir;
@@ -2148,12 +2148,12 @@ static void rtl(void) {
         float const y = 222.0f + (float)i * 28.0f;
         canvas_set_direction(c, row[i].dir);
         canvas_set_text_align(c, row[i].align);
-        canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.92f, 0.96f, 1.0f);
         canvas_set_font_size(c, 18.0f);
         canvas_fill_text(c, "אב ab", ax, y);
         canvas_set_direction(c, CANVAS_DIRECTION_LTR);
         canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
-        canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
         canvas_set_font_size(c, 12.0f);
         canvas_fill_text(c, row[i].label, 36.0f, y);
     }
@@ -2203,7 +2203,7 @@ static void selection(void) {
         return;
     }
     record_scene(c, "gallery/selection.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 520.0f, 352.0f);
 
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
@@ -2211,8 +2211,8 @@ static void selection(void) {
 
     // Headline.
     canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 484.0f, 0.0f);
-    canvas_add_fill_color_stop(c, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 20.0f);
     canvas_fill_text(c, "selection & carets", 36.0f, 36.0f);
 
@@ -2225,7 +2225,7 @@ static void selection(void) {
 
     // Row 1: a Latin selection -- logical [4,15) "quick brown" is one visual
     // span, filled selection-blue under the glyphs.
-    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "a Latin selection [4,15): one visual span", lx, 66.0f);
     float const y1 = 102.0f;
@@ -2234,13 +2234,13 @@ static void selection(void) {
     cnvs_xspan sp[4];
     if (latin) {
         int const n = cnvs_shaped_selection(latin, 4, 15, sp, 4);
-        canvas_set_fill_rgba(c, 0.25f, 0.47f, 0.90f, 0.45f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.25f, 0.47f, 0.90f, 0.45f);
         for (int k = 0; k < n; k++) {
             canvas_fill_rect(c, lx + sp[k].x0, y1 - asc, sp[k].x1 - sp[k].x0, asc + desc);
         }
     }
     cnvs_shaped_free(latin);
-    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_LATIN, lx, y1);
 
@@ -2248,7 +2248,7 @@ static void selection(void) {
     // paragraph base the embedded Latin reorders, so logical [5,12) -- Hebrew
     // "עם", a space, and "canv" -- maps to TWO visual spans with the Latin
     // run's unselected middle between them.
-    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "bidi: one logical range [5,12), two visual spans", lx, 142.0f);
     float const y2 = 178.0f;
@@ -2257,12 +2257,12 @@ static void selection(void) {
     if (bidi) {
         float const bx = 484.0f - cnvs_shaped_width(bidi);  // hang from the right margin
         int const n = cnvs_shaped_selection(bidi, 5, 12, sp, 4);
-        canvas_set_fill_rgba(c, 0.25f, 0.47f, 0.90f, 0.45f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.25f, 0.47f, 0.90f, 0.45f);
         for (int k = 0; k < n; k++) {
             canvas_fill_rect(c, bx + sp[k].x0, y2 - asc, sp[k].x1 - sp[k].x0, asc + desc);
         }
         canvas_set_direction(c, CANVAS_DIRECTION_RTL);  // the base the spans assume
-        canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
         canvas_set_font_size(c, size);
         canvas_fill_text(c, SEL_BIDI, bx, y2);  // align left: the pen origin is bx
         canvas_set_direction(c, CANVAS_DIRECTION_LTR);
@@ -2273,12 +2273,12 @@ static void selection(void) {
     // start, the emoji's leading edge, a boundary inside joined Arabic, and the
     // end-of-line caret; index 5 (pink, shorter) is the emoji's low surrogate
     // -- inside the cluster -- and snaps onto index 4's caret.
-    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "carets at indices 0, 4, 9, 12; 5 is inside the emoji and snaps onto 4",
                      lx, 218.0f);
     float const y3 = 254.0f;
-    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CARET, lx, y3);
     struct cnvs_shaped *__single line = cnvs_shape_text(S(SELECTION_FONT), size,
@@ -2289,26 +2289,26 @@ static void selection(void) {
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         for (int i = 0; i < 4; i++) {
             float const x = lx + cnvs_shaped_x_at_index(line, at[i]);
-            canvas_set_fill_rgba(c, 0.99f, 0.80f, 0.26f, 1.0f);
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.99f, 0.80f, 0.26f, 1.0f);
             caret(c, x, y3 - asc, asc + desc);
-            canvas_set_fill_rgba(c, 0.62f, 0.66f, 0.74f, 1.0f);
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.66f, 0.74f, 1.0f);
             canvas_set_font_size(c, 11.0f);
             canvas_fill_text(c, lbl[i], x, y3 + desc + 14.0f);
         }
         canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
-        canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);  // the snapped caret
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.96f, 0.35f, 0.45f, 1.0f);  // the snapped caret
         caret(c, lx + cnvs_shaped_x_at_index(line, 5), y3 - asc * 0.5f, asc * 0.5f + desc);
     }
     cnvs_shaped_free(line);
 
     // Row 4: the round trip.  A click (pink dot) hit-tests to a logical index,
     // and that index's caret (amber) lands on the clicked glyph's left edge.
-    canvas_set_fill_rgba(c, 0.55f, 0.59f, 0.67f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.67f, 1.0f);
     canvas_set_font_size(c, 12.0f);
     canvas_fill_text(c, "caret from a click: index_at_x, then x_at_index back to the glyph edge",
                      lx, 300.0f);
     float const y4 = 336.0f;
-    canvas_set_fill_rgba(c, 0.93f, 0.94f, 0.98f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.93f, 0.94f, 0.98f, 1.0f);
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CLICK, lx, y4);
     struct cnvs_shaped *__single click = cnvs_shape_text(S(SELECTION_FONT), size,
@@ -2316,9 +2316,9 @@ static void selection(void) {
     if (click) {
         float const cx = cnvs_shaped_width(click) * 0.5f;     // the click, mid-line
         int const idx = cnvs_shaped_index_at_x(click, cx);
-        canvas_set_fill_rgba(c, 0.99f, 0.80f, 0.26f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.99f, 0.80f, 0.26f, 1.0f);
         caret(c, lx + cnvs_shaped_x_at_index(click, idx), y4 - asc, asc + desc);
-        canvas_set_fill_rgba(c, 0.96f, 0.35f, 0.45f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.96f, 0.35f, 0.45f, 1.0f);
         canvas_begin_path(c);
         canvas_arc(c, lx + cx, y4 - asc * 0.35f, 3.0f, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
@@ -2381,7 +2381,7 @@ static void filters(void) {
         return;
     }
     record_scene(c, "gallery/filters.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.13f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.13f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 444.0f, 644.0f);
 
     for (int i = 0; i < 15; i++) {
@@ -2398,7 +2398,7 @@ static void filters(void) {
             cell[i].add2(c, cell[i].amt2);
         }
         if (cell[i].shadow) {
-            canvas_add_filter_drop_shadow(c, cell[i].sdx, cell[i].sdy,
+            canvas_add_filter_drop_shadow(c, CANVAS_CS_SRGB, cell[i].sdx, cell[i].sdy,
                                           cell[i].sblur, cell[i].sr, cell[i].sg,
                                           cell[i].sb, cell[i].sa);
         }
@@ -2406,25 +2406,25 @@ static void filters(void) {
         // The motif, filtered: a gradient tile, then two translucent discs.
         canvas_set_fill_linear_gradient(c, ox + 18.0f, oy + 12.0f,
                                         ox + 122.0f, oy + 100.0f);
-        canvas_add_fill_color_stop(c, 0.0f, 0.98f, 0.55f, 0.15f, 1.0f);
-        canvas_add_fill_color_stop(c, 0.5f, 0.85f, 0.25f, 0.55f, 1.0f);
-        canvas_add_fill_color_stop(c, 1.0f, 0.20f, 0.55f, 0.95f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.98f, 0.55f, 0.15f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.85f, 0.25f, 0.55f, 1.0f);
+        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.20f, 0.55f, 0.95f, 1.0f);
         canvas_begin_path(c);
         canvas_round_rect(c, ox + 18.0f, oy + 12.0f, 104.0f, 88.0f, 12.0f);
         canvas_fill(c, CANVAS_NONZERO);
 
-        canvas_set_fill_rgba(c, 0.15f, 0.90f, 0.45f, 0.55f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.15f, 0.90f, 0.45f, 0.55f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 52.0f, oy + 44.0f, 24.0f, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
-        canvas_set_fill_rgba(c, 0.95f, 0.20f, 0.20f, 0.55f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.20f, 0.20f, 0.55f);
         canvas_begin_path(c);
         canvas_arc(c, ox + 84.0f, oy + 64.0f, 24.0f, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
 
         // Label, with the filter cleared so every caption reads uniformly.
         canvas_set_filter_none(c);
-        canvas_set_fill_rgba(c, 0.90f, 0.92f, 0.96f, 1.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.90f, 0.92f, 0.96f, 1.0f);
         canvas_set_font_size(c, 13.0f);
         canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
         canvas_fill_text(c, cell[i].label, ox + cellW * 0.5f, oy + 116.0f);
@@ -2440,7 +2440,7 @@ static void filters(void) {
 // linear sRGB the same translucent colours composite in light, so the overlaps
 // stay bright.  Drawn into the half rect at (ox, oy).
 static void linearlight_motif(struct canvas *__single c, float ox, float oy) {
-    canvas_set_fill_rgba(c, 0.5f, 0.5f, 0.5f, 1.0f);  // mid-grey ground
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.5f, 0.5f, 0.5f, 1.0f);  // mid-grey ground
     canvas_fill_rect(c, ox, oy, 150.0f, 150.0f);
 
     float const r = 42.0f, cx = ox + 75.0f, cy = oy + 64.0f, off = 30.0f;
@@ -2451,7 +2451,7 @@ static void linearlight_motif(struct canvas *__single c, float ox, float oy) {
         { 0.20f, 0.35f, 0.95f,  off * 0.87f, off * 0.5f },// blue, lower-right
     };
     for (int i = 0; i < 3; i++) {
-        canvas_set_fill_rgba(c, disc[i].r, disc[i].g, disc[i].b, a);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, disc[i].r, disc[i].g, disc[i].b, a);
         canvas_begin_path(c);
         canvas_arc(c, cx + disc[i].dx, cy + disc[i].dy, r, 0.0f, TAU, false);
         canvas_fill(c, CANVAS_NONZERO);
@@ -2511,16 +2511,16 @@ static void oklab_ramp(struct canvas *__single c, float y, enum canvas_color_spa
     // Rainbow red -> green -> blue across the left half.
     canvas_set_fill_linear_gradient(c, 16.0f, 0.0f, 150.0f, 0.0f);
     canvas_set_fill_gradient_interpolation(c, interp);
-    canvas_add_fill_color_stop(c, 0.0f, 0.90f, 0.10f, 0.10f, 1.0f);
-    canvas_add_fill_color_stop(c, 0.5f, 0.10f, 0.80f, 0.20f, 1.0f);
-    canvas_add_fill_color_stop(c, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.90f, 0.10f, 0.10f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.10f, 0.80f, 0.20f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);
     canvas_fill_rect(c, 16.0f, y, 134.0f, 40.0f);
 
     // Transparent red -> opaque blue across the right half (premul hygiene).
     canvas_set_fill_linear_gradient(c, 166.0f, 0.0f, 284.0f, 0.0f);
     canvas_set_fill_gradient_interpolation(c, interp);
-    canvas_add_fill_color_stop(c, 0.0f, 0.90f, 0.10f, 0.10f, 0.0f);  // transparent red
-    canvas_add_fill_color_stop(c, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);  // opaque blue
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.90f, 0.10f, 0.10f, 0.0f);  // transparent red
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.15f, 0.25f, 0.90f, 1.0f);  // opaque blue
     canvas_fill_rect(c, 166.0f, y, 118.0f, 40.0f);
 }
 
@@ -2530,7 +2530,7 @@ static void oklab(void) {
         return;
     }
     record_scene(c, "gallery/oklab.canvas");
-    canvas_set_fill_rgba(c, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
     // A pale checker behind the right (fade-to-transparent) ramp so the premul
@@ -2538,7 +2538,7 @@ static void oklab(void) {
     for (int gy = 0; gy < 120; gy += 12) {
         for (int gx = 160; gx < 300; gx += 12) {
             bool const lit = ((gx / 12) + (gy / 12)) % 2 == 0;
-            canvas_set_fill_rgba(c, lit ? 0.75f : 0.55f, lit ? 0.75f : 0.55f,
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lit ? 0.75f : 0.55f, lit ? 0.75f : 0.55f,
                                  lit ? 0.78f : 0.58f, 1.0f);
             canvas_fill_rect(c, (float)gx, (float)gy, 12.0f, 12.0f);
         }

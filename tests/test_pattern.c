@@ -87,7 +87,7 @@ int main(void) {
 
     // Invalid dimensions are ignored, leaving the (solid) fill paint in place.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_fill_pattern(cv, src, 0, 2, CANVAS_REPEAT);  // w = 0: rejected
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_read_rgba(cv, px, len);

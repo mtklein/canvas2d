@@ -94,7 +94,7 @@ int main(void) {
     struct canvas *__single cv = canvas(W, H);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
-        canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 2.0f, 2.0f, 4.0f, 4.0f);
         canvas_get_image_data(cv, 0, 0, W, H, px, len);
         CHECK(px_near(pixel_at(px, len, W, 3, 3), 255, 0, 0, 255, 1));  // red square

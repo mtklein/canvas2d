@@ -14,9 +14,9 @@ static long ink_bbox(struct canvas *__single cv, uint8_t *__counted_by(len) px, 
                      enum canvas_text_align align, enum canvas_text_baseline base,
                      float x0, float y0,
                      int *__single ixmin, int *__single iymin) {
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_text_align(cv, align);
     canvas_set_text_baseline(cv, base);
     canvas_fill_text(cv, "Hi", x0, y0);

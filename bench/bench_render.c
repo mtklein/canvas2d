@@ -20,14 +20,14 @@
 static void scene(struct canvas *__single cv, int f) {
     float w = (float)DIM, h = (float)DIM;
     canvas_clear_rect(cv, 0.0f, 0.0f, w, h);
-    canvas_set_fill_rgba(cv, 0.10f, 0.12f, 0.15f, 1.0f);  // opaque background
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.10f, 0.12f, 0.15f, 1.0f);  // opaque background
     canvas_fill_rect(cv, 0.0f, 0.0f, w, h);
 
     // A handful of translucent star fills (concave coverage + per-fill blend).
     for (int i = 0; i < 6; i++) {
         float const cx = 30.0f + (float)((i * 47 + f * 3) % 200);
         float const cy = 40.0f + (float)((i * 31 + f * 5) % 180);
-        canvas_set_fill_rgba(cv, 0.2f + 0.1f * (float)i, 0.5f, 0.9f - 0.1f * (float)i, 0.8f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f + 0.1f * (float)i, 0.5f, 0.9f - 0.1f * (float)i, 0.8f);
         canvas_begin_path(cv);
         canvas_move_to(cv, cx + 20.0f, cy);
         for (int k = 1; k < 10; k++) {
@@ -41,17 +41,17 @@ static void scene(struct canvas *__single cv, int f) {
 
     // Linear + radial gradient fills (the 8-wide param solve + stop lerp rows).
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, w, h);
-    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 0.3f, 0.2f, 0.9f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.2f, 0.4f, 1.0f, 0.9f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.3f, 0.2f, 0.9f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.2f, 0.4f, 1.0f, 0.9f);
     canvas_fill_rect(cv, 20.0f, 20.0f, 100.0f, 100.0f);
 
     canvas_set_fill_radial_gradient(cv, 180.0f, 180.0f, 4.0f, 180.0f, 180.0f, 60.0f);
-    canvas_add_fill_color_stop(cv, 0.0f, 1.0f, 1.0f, 1.0f, 0.95f);
-    canvas_add_fill_color_stop(cv, 1.0f, 0.1f, 0.2f, 0.5f, 0.0f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 0.95f);
+    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.1f, 0.2f, 0.5f, 0.0f);
     canvas_fill_rect(cv, 120.0f, 120.0f, 120.0f, 120.0f);
 
     // A curved stroke.
-    canvas_set_stroke_rgba(cv, 0.95f, 0.85f, 0.2f, 0.9f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.85f, 0.2f, 0.9f);
     canvas_set_line_width(cv, 3.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 10.0f, 200.0f);
@@ -63,7 +63,7 @@ static void scene(struct canvas *__single cv, int f) {
     canvas_begin_path(cv);
     canvas_arc(cv, 128.0f, 128.0f, 70.0f, 0.0f, 6.2831853f, false);
     canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, 1.0f, 0.4f, 0.7f, 0.6f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.4f, 0.7f, 0.6f);
     canvas_fill_rect(cv, 60.0f, 60.0f, 140.0f, 140.0f);
     canvas_restore(cv);
 
@@ -71,7 +71,7 @@ static void scene(struct canvas *__single cv, int f) {
     enum canvas_composite_op modes[3] = { CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN,
                                      CANVAS_OP_LIGHTEN };
     canvas_set_global_composite_operation(cv, modes[f % 3]);
-    canvas_set_fill_rgba(cv, 0.9f, 0.3f, 0.5f, 0.7f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.3f, 0.5f, 0.7f);
     canvas_fill_rect(cv, 80.0f, 30.0f, 90.0f, 90.0f);
     canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
 }

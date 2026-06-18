@@ -59,7 +59,7 @@ int main(void) {
 
     // global alpha composites the image source-over: 50% opaque blue over red.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     uint8_t blue[16] = {
         0, 0, 255, 255,  0, 0, 255, 255,

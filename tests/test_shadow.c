@@ -22,8 +22,8 @@ int main(void) {
 
     // Sharp (no blur) offset shadow: a red rect [8,24) casts a blue shadow at
     // +12,+12 -> [20,36).  The shadow sits under the shape.
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_shadow_offset_x(cv, 12.0f);
     canvas_set_shadow_offset_y(cv, 12.0f);
     canvas_set_shadow_blur(cv, 0.0f);
@@ -56,7 +56,7 @@ int main(void) {
     canvas_set_shadow_blur(cv, 0.0f);
     canvas_set_shadow_offset_x(cv, 12.0f);
     canvas_set_shadow_offset_y(cv, 12.0f);
-    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 1.0f, 0.0f);  // transparent
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.0f);  // transparent
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 0, 0, 2));      // no shadow
@@ -64,17 +64,17 @@ int main(void) {
 
     // The shadow colour's alpha carries through (a 50% blue shadow).
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 1.0f, 0.5f);
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.5f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% blue
 
     // Strokes cast shadows too.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_color_rgba(cv, 0.0f, 1.0f, 0.0f, 1.0f);  // green shadow
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);  // green shadow
     canvas_set_shadow_offset_x(cv, 12.0f);
     canvas_set_shadow_offset_y(cv, 0.0f);
-    canvas_set_stroke_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 8.0f);
     canvas_begin_path(cv);
     canvas_move_to(cv, 8.0f, 24.0f);
@@ -89,7 +89,7 @@ int main(void) {
     uint8_t img[16] = { 255, 0, 0, 255, 255, 0, 0, 255,
                         255, 0, 0, 255, 255, 0, 0, 255 };
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_color_rgba(cv, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_shadow_offset_x(cv, 12.0f);
     canvas_set_shadow_offset_y(cv, 12.0f);
     canvas_draw_bitmap_scaled(cv, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
@@ -117,7 +117,7 @@ int main(void) {
     // Translucent paint shadows at its own strength: a 50% fill's shadow
     // carries 50% alpha (shadow = blur(A's alpha), not its coverage).
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 0.5f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 0.5f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_read_rgba(cv, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% shadow
@@ -127,7 +127,7 @@ int main(void) {
     // rect [8,24) lands the shadow on x [20.5, 36.5): its first and last
     // columns carry half alpha, the interior full strength.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_shadow_offset_x(cv, 12.5f);
     canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
     canvas_read_rgba(cv, px, len);

@@ -104,9 +104,9 @@ static void snapshot_roundtrip(void) {
     struct canvas *__single b = canvas(N, N);
     CHECK(a != NULL && b != NULL);
     if (a && b) {
-        canvas_set_fill_rgba(a, 0.8f, 0.3f, 0.2f, 1.0f);
+        canvas_set_fill_rgba(a, CANVAS_CS_SRGB, 0.8f, 0.3f, 0.2f, 1.0f);
         canvas_fill_rect(a, 0.0f, 0.0f, 16.0f, 32.0f);
-        canvas_set_fill_rgba(a, 0.1f, 0.5f, 0.9f, 0.5f);
+        canvas_set_fill_rgba(a, CANVAS_CS_SRGB, 0.1f, 0.5f, 0.9f, 0.5f);
         canvas_fill_rect(a, 16.0f, 0.0f, 16.0f, 32.0f);
         struct canvas_image *__single snap = canvas_snapshot(a);
         CHECK(snap != NULL);
@@ -143,7 +143,7 @@ static void record_replay_roundtrip(void) {
     struct canvas *__single b = canvas(N, N);
     CHECK(content != NULL && a != NULL && b != NULL);
     if (content && a && b) {
-        canvas_set_fill_rgba(content, 0.2f, 0.7f, 0.4f, 0.8f);
+        canvas_set_fill_rgba(content, CANVAS_CS_SRGB, 0.2f, 0.7f, 0.4f, 0.8f);
         canvas_fill_rect(content, 4.0f, 4.0f, 24.0f, 24.0f);
         struct canvas_image *__single snap = canvas_snapshot(content);
         struct canvas_image *__single img = canvas_image_unorm8(src, N, N, CANVAS_ALPHA_UNPREMUL);

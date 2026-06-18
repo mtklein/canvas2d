@@ -48,9 +48,9 @@ static void check_renders_in_color(void) {
     }
 
     // White ground; a black fill colour (ignored for a color glyph).
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 64.0f);  // 🌈 U+1F308
     canvas_read_rgba(cv, px, len);
@@ -94,9 +94,9 @@ static void check_renders_in_color(void) {
     }
 
     // Plain ASCII still renders ink (the outline path coexists with color glyphs).
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_rgba(cv, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "Hi", 8.0f, 60.0f);
     canvas_read_rgba(cv, px, len);
@@ -303,7 +303,7 @@ static void check_draw_matches_level(struct canvas *__single cv, float size_px,
                                      cnvs_mip lvl, int ox, int oy) {
     int const w = 192, len = 192 * 192 * 4;
     static uint8_t px[192 * 192 * 4];
-    canvas_set_fill_rgba(cv, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, 192.0f, 192.0f);
     canvas_set_font_size(cv, size_px);
     // The capture covers glyph-space y in [ink_y0, ink_y0 + capture_h] = [-20, 140]

@@ -18,7 +18,7 @@ int main(void) {
     struct canvas *__single cv = canvas(w, h);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_fill_rgba(cv, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cv, px, len);
         CHECK(px_near(pixel_at(px, len, w, 4, 4), 255, 0, 0, 255, 1));
@@ -35,9 +35,9 @@ int main(void) {
     struct canvas *__single cb = canvas(w, h);
     CHECK(cb != NULL);
     if (cb) {
-        canvas_set_fill_rgba(cb, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas_set_fill_rgba(cb, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cb, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_set_fill_rgba(cb, 0.0f, 0.0f, 1.0f, 1.0f);
+        canvas_set_fill_rgba(cb, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
         canvas_set_global_alpha(cb, 0.5f);
         canvas_fill_rect(cb, 0.0f, 0.0f, (float)w, (float)h);
         canvas_read_rgba(cb, px, len);
