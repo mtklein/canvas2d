@@ -268,6 +268,37 @@ drawing keeps its coloured shadow:
 
 ![filters](gallery/filters.png)
 
+Working colour space — the same translucent discs composited on an sRGB canvas
+(left, the spec's gamma-space blending) and an extended-linear-sRGB canvas
+(right, linear-light blending). Identical colours and coverage; only the
+compositing space differs. The overlaps tell it: linear light keeps the
+crossings bright and saturated where gamma-space compositing darkens and
+muddies them (the classic red-over-green midtone). Same checked-C blend kernel,
+run on f16 tiles whose values are either encoded or linear:
+
+![linearlight](gallery/linearlight.png)
+
+`createLinearGradient` interpolation space — the same stops interpolated in
+sRGB (top of each pair) versus Oklab (bottom). Left, a rainbow ramp: Oklab
+spreads the hues more evenly and skips the dark dip sRGB falls into through the
+middle. Right, a colour fading to transparent over a checkerboard: sRGB lets
+the transparent end bleed a muddy tint into the ramp, while Oklab's
+premultiplied interpolation keeps it clean — the stop fades in alpha, not
+toward grey:
+
+![oklab](gallery/oklab.png)
+
+Explicit colour spaces — every colour the API takes now names its space, and
+the tag changes the colour. Row 1 tags six numeric RGBA triples sRGB (stored as
+given); row 2 tags the *identical numbers* extended-linear-sRGB, so they encode
+to sRGB on the way to the surface and land conspicuously brighter (linear 0.5 →
+sRGB ≈ 0.74) — the gamma gap, swatch beside swatch; row 3 tags eight swatches
+Oklab at one lightness with the hue swept around the a/b circle, a perceptual
+ring of even apparent brightness. The first recorded `.canvas` program to carry
+per-colour `linear`/`oklab` space tokens:
+
+![colorspaces](gallery/colorspaces.png)
+
 ## Quick start
 
 ```sh
