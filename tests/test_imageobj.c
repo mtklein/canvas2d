@@ -48,8 +48,8 @@ static void image_matches_bitmap(void) {
 
         canvas_draw_bitmap(a, src, N, N, 0.0f, 0.0f);
         canvas_draw_image(b, img, 0.0f, 0.0f);
-        canvas_read_rgba(a, pa, len);
-        canvas_read_rgba(b, pb, len);
+        canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
+        canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
         CHECK(memcmp(pa, pb, (size_t)len) == 0);  // 1:1
 
         canvas_clear_rect(a, 0.0f, 0.0f, (float)N, (float)N);
@@ -58,8 +58,8 @@ static void image_matches_bitmap(void) {
         canvas_set_image_smoothing_quality(b, CANVAS_SMOOTHING_MEDIUM);
         canvas_draw_bitmap_scaled(a, src, N, N, 2.0f, 2.0f, 8.0f, 8.0f);
         canvas_draw_image_scaled(b, img, 2.0f, 2.0f, 8.0f, 8.0f);
-        canvas_read_rgba(a, pa, len);
-        canvas_read_rgba(b, pb, len);
+        canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
+        canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
         CHECK(memcmp(pa, pb, (size_t)len) == 0);  // 4x minify, shared chain
     }
     canvas_image_free(img);
@@ -84,8 +84,8 @@ static void no_mips_falls_back_bilinear(void) {
         canvas_set_image_smoothing_quality(b, CANVAS_SMOOTHING_MEDIUM);
         canvas_draw_bitmap_scaled(a, src, N, N, 2.0f, 2.0f, 8.0f, 8.0f);
         canvas_draw_image_scaled(b, img, 2.0f, 2.0f, 8.0f, 8.0f);  // mip-less
-        canvas_read_rgba(a, pa, len);
-        canvas_read_rgba(b, pb, len);
+        canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
+        canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
         CHECK(memcmp(pa, pb, (size_t)len) == 0);
     }
     canvas_image_free(img);
@@ -112,8 +112,8 @@ static void snapshot_roundtrip(void) {
         CHECK(snap != NULL);
         if (snap) {
             canvas_draw_image(b, snap, 0.0f, 0.0f);
-            canvas_read_rgba(a, pa, len);
-            canvas_read_rgba(b, pb, len);
+            canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
+            canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
             CHECK(px_near(pixel_at(pb, len, N, 4, 4), pa[(4 * N + 4) * 4 + 0],
                           pa[(4 * N + 4) * 4 + 1], pa[(4 * N + 4) * 4 + 2],
                           pa[(4 * N + 4) * 4 + 3], 0));  // opaque: exact
@@ -154,12 +154,12 @@ static void record_replay_roundtrip(void) {
             canvas_set_image_smoothing_quality(a, CANVAS_SMOOTHING_MEDIUM);
             canvas_draw_image_scaled(a, snap, 0.0f, 0.0f, 8.0f, 8.0f);  // mips
             canvas_draw_image_scaled(a, img, 8.0f, 8.0f, 8.0f, 8.0f);  // mip-less
-            canvas_read_rgba(a, pa, len);
+            canvas_read_rgba(a, CANVAS_CS_SRGB, pa, len);
             canvas_free(a);  // flush + close
             a = NULL;
 
             CHECK(canvas_replay_from(b, path));
-            canvas_read_rgba(b, pb, len);
+            canvas_read_rgba(b, CANVAS_CS_SRGB, pb, len);
             CHECK(memcmp(pa, pb, (size_t)len) == 0);
         }
         canvas_image_free(snap);
@@ -191,7 +191,7 @@ static void f16_formats(void) {
     CHECK(un != NULL && cv != NULL);
     if (un && cv) {
         canvas_draw_image(cv, un, 0.0f, 0.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 255, 0, 0, 128, 0));
     }
     canvas_image_free(un);
@@ -208,7 +208,7 @@ static void f16_formats(void) {
         canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
         canvas_draw_image_scaled(cv, pm, 4.0f, 4.0f, 8.0f, 8.0f);  // 4x minify
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 255, 0, 0, 128, 0));
     }
     canvas_image_free(pm);

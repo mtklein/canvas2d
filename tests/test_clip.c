@@ -28,7 +28,7 @@ int main(void) {
     canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 0, 255, 1));  // inside clip
     CHECK(px_near(pixel_at(px, len, w, 8, 8), 0, 0, 0, 0, 1));        // outside clip
     CHECK(px_near(pixel_at(px, len, w, 56, 56), 0, 0, 0, 0, 1));      // outside clip
@@ -37,7 +37,7 @@ int main(void) {
     canvas_restore(cv);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 8, 8), 0, 255, 0, 255, 1));    // now paintable
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 1));
 
@@ -52,7 +52,7 @@ int main(void) {
     canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 255, 255, 1));  // in both
     CHECK(px_near(pixel_at(px, len, w, 12, 32), 0, 0, 0, 0, 1));      // first only (x<24)
     CHECK(px_near(pixel_at(px, len, w, 52, 32), 0, 0, 0, 0, 1));      // second only (x>=48)
@@ -66,7 +66,7 @@ int main(void) {
     canvas_clip(cv, CANVAS_NONZERO);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 0, 255, 1));  // disc centre
     CHECK(px_near(pixel_at(px, len, w, 32, 10), 0, 0, 0, 0, 1));        // outside disc
     canvas_restore(cv);
@@ -75,7 +75,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 4, 4), 255, 0, 255, 255, 1));    // corner paints
 
     canvas_free(cv);

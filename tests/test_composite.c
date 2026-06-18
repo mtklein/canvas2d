@@ -17,7 +17,7 @@ static struct rgba blend(struct canvas *__single cv, int w, int h,
     canvas_set_global_composite_operation(cv, op);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, sr, sg, sb, sa);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     return pixel_at(px, len, w, w / 2, h / 2);
 }
 

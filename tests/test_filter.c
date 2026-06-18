@@ -133,7 +133,7 @@ static void blur_matches_reference(void) {
         canvas_add_filter_blur(cv, 3.0f);  // stdDev 3 -> box radius 3
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.4f, 0.8f, 0.6f);
         canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         for (int y = 16; y < 32; y++) {
             for (int x = 16; x < 32; x++) {
                 int const i = (y * N + x) * 4;
@@ -170,7 +170,7 @@ static void blur_noop_amounts(void) {
         canvas_add_filter_blur(cv, INFINITY);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 12, 12), 255, 0, 0, 255, 1));
         CHECK(px_near(pixel_at(px, len, N, 8, 12), 255, 0, 0, 255, 1));   // crisp edge
         CHECK(px_near(pixel_at(px, len, N, 7, 12), 0, 0, 0, 0, 0));       // no skirt
@@ -194,7 +194,7 @@ static void blur_expands_bbox(void) {
         canvas_add_filter_blur(cv, 4.0f);  // box radius 4: spread 12
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 20.0f, 20.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         struct rgba skirt = pixel_at(px, len, N, 16, 24);  // 4px left of the bbox
         CHECK(skirt.a > 5);
         CHECK(skirt.r > 0 && skirt.g == 0 && skirt.b == 0);  // still red
@@ -245,7 +245,7 @@ static void blur_order_visible(void) {
             canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
             canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
             canvas_fill_rect(cv, 8.0f, 8.0f, 32.0f, 32.0f);
-            canvas_read_rgba(cv, order == 0 ? pxa : pxb, len);
+            canvas_read_rgba(cv, CANVAS_CS_SRGB, order == 0 ? pxa : pxb, len);
             // Reference: the unblurred premultiplied tile (contrast(2) fixes
             // both pure endpoints, so it is also the contrast-applied tile)...
             memset(want, 0, (size_t)nf * sizeof(float));
@@ -295,7 +295,7 @@ static void blur_translucent_consistent(void) {
         canvas_add_filter_blur(cv, 2.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.4f, 0.8f, 0.5f);
         canvas_fill_rect(cv, 12.0f, 12.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         bool consistent = true;
         for (int y = 0; y < N; y++) {
             for (int x = 0; x < N; x++) {
@@ -333,7 +333,7 @@ static void blur_clipped(void) {
         canvas_add_filter_blur(cv, 3.0f);  // spread 9: the skirt spans x in [3, 29)
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 12.0f, 16.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(pixel_at(px, len, N, 10, 20).a > 5);                    // skirt, inside clip
         CHECK(px_near(pixel_at(px, len, N, 26, 20), 0, 0, 0, 0, 0));  // skirt, clipped away
         CHECK(px_near(pixel_at(px, len, N, 4, 20), 0, 0, 0, 0, 0));
@@ -392,7 +392,7 @@ static void drop_shadow_hard_offset(void) {
                                       1.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow [12,20)
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 18, 18), 255, 0, 0, 255, 0));  // shadow only
         CHECK(px_near(pixel_at(px, len, N, 19, 13), 255, 0, 0, 255, 0));
         CHECK(px_near(pixel_at(px, len, N, 10, 10), 0, 0, 255, 255, 0));  // drawing only
@@ -421,7 +421,7 @@ static void drop_shadow_subpixel_offset(void) {
                                       1.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow x [12.5,20.5)
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 12, 18), 255, 0, 0, 128, 1));  // leading half
         CHECK(px_near(pixel_at(px, len, N, 18, 18), 255, 0, 0, 255, 1));  // interior
         CHECK(px_near(pixel_at(px, len, N, 20, 18), 255, 0, 0, 128, 1));  // trailing half
@@ -452,7 +452,7 @@ static void drop_shadow_matches_reference(void) {
                                       0.1f, 0.3f, 0.9f, 0.8f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.4f, 0.8f, 0.6f);
         canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         for (int y = 16; y < 32; y++) {
             for (int x = 16; x < 32; x++) {
                 int const i = (y * N + x) * 4;
@@ -488,7 +488,7 @@ static void drop_shadow_tint_translucent(void) {
                                       1.0f, 0.0f, 1.0f, 0.5f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // shadow x in [16,24)
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 20, 12), 255, 0, 255, 128, 1));
         CHECK(px_near(pixel_at(px, len, N, 12, 12), 0, 255, 0, 255, 0));
     }
@@ -512,7 +512,7 @@ static void drop_shadow_translucent_source(void) {
                                       0.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.5f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow [14,22)
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         // Shadow only: black at the source's alpha.
         CHECK(px_near(pixel_at(px, len, N, 18, 12), 0, 0, 0, 128, 1));
         // Drawing only: the translucent blue itself.
@@ -544,7 +544,7 @@ static void drop_shadow_order_visible(void) {
         canvas_add_filter_grayscale(cv, 1.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);  // square [8,16); shadow [14,22)
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 18, 18), 182, 182, 182, 255, 2));
         CHECK(px_near(pixel_at(px, len, N, 10, 10), 54, 54, 54, 255, 2));
 
@@ -557,7 +557,7 @@ static void drop_shadow_order_visible(void) {
                                       0.0f, 1.0f, 0.0f, 1.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 18, 18), 0, 255, 0, 255, 0));
         CHECK(px_near(pixel_at(px, len, N, 10, 10), 54, 54, 54, 255, 2));
     }
@@ -582,7 +582,7 @@ static void drop_shadow_margin(void) {
                                       0.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         // Well outside the unblurred bbox (x >= 16), still solidly shadowed --
         // a too-small tile would have clipped this to 0.
         CHECK(pixel_at(px, len, N, 18, 18).a > 200);
@@ -616,7 +616,7 @@ static void drop_shadow_with_canvas_shadow(void) {
                                       0.0f, 0.0f, 1.0f, 1.0f);  // filter: x in [8,16)
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 16.0f, 16.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 20, 20), 0, 255, 0, 255, 0));  // drawing
         struct rgba fs = pixel_at(px, len, N, 12, 20);  // filter shadow: blue
         CHECK(fs.a > 100 && fs.b > 100 && fs.g < 50);
@@ -647,7 +647,7 @@ static void drop_shadow_clamps(void) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 4.0f, 4.0f, 0.0f, 1, 0, 0, 0.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 12, 12), 0, 255, 0, 255, 0));
         CHECK(px_near(pixel_at(px, len, N, 18, 18), 0, 0, 0, 0, 0));  // no shadow
         CHECK(px_near(pixel_at(px, len, N, 7, 12), 0, 0, 0, 0, 0));   // crisp edge
@@ -658,7 +658,7 @@ static void drop_shadow_clamps(void) {
                                       2.0f, -1.0f, 0.5f, 5.0f);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 8.0f, 8.0f, 8.0f, 8.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 20, 12), 255, 0, 128, 255, 1));
     }
     if (cv) {
@@ -674,7 +674,7 @@ static struct rgba fill_and_read(struct canvas *__single cv, uint8_t *__counted_
                                 int len, float r, float g, float b, float a) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, r, g, b, a);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     return pixel_at(px, len, W, 8, 8);
 }
 
@@ -826,14 +826,14 @@ int main(void) {
     uint8_t img[16] = { 255, 0, 0, 255, 255, 0, 0, 255,
                         255, 0, 0, 255, 255, 0, 0, 255 };
     canvas_draw_bitmap_scaled(cv, img, 2, 2, 4.0f, 4.0f, 8.0f, 8.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 8, 8), 54, 54, 54, 255, 2));
 
     // put_image_data is NOT filtered (it overwrites; not a painted op).
     canvas_reset(cv);
     canvas_add_filter_invert(cv, 1.0f);
-    canvas_put_image_data(cv, img, (int)sizeof img, 2, 2, 7, 7);
-    canvas_read_rgba(cv, px, len);
+    canvas_put_image_data(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 2, 2, 7, 7);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 8, 8), 255, 0, 0, 255, 1));
 
     // save/restore brackets the list: the inner invert composes with the outer
@@ -897,7 +897,7 @@ int main(void) {
         canvas_set_fill_rgba(tcv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_set_font_size(tcv, 28.0f);
         canvas_fill_text(tcv, "M", 4.0f, 26.0f);
-        canvas_read_rgba(tcv, tpx, tlen);
+        canvas_read_rgba(tcv, CANVAS_CS_SRGB, tpx, tlen);
         bool found_solid = false, all_gray = true;
         for (int y = 0; y < TW; y++) {
             for (int x = 0; x < TW; x++) {

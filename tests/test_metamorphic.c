@@ -29,7 +29,7 @@ static struct rgba over(struct canvas *__single cv, uint8_t *__counted_by(LEN) p
     canvas_set_global_composite_operation(cv, op);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, r1, g1, b1, a1);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     return pixel_at(px, LEN, W, W / 2, H / 2);
 }
 
@@ -165,7 +165,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_arc(cv, 9.0f, 9.0f, 4.0f, 0.0f, 6.2831853f, false);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, LEN);          // disc at (9,9), direct
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);          // disc at (9,9), direct
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_save(cv);
     canvas_translate(cv, 4.0f, 3.0f);
@@ -174,7 +174,7 @@ int main(void) {
     canvas_arc(cv, 5.0f, 6.0f, 4.0f, 0.0f, 6.2831853f, false);  // 5+4=9, 6+3=9
     canvas_fill(cv, CANVAS_NONZERO);
     canvas_restore(cv);
-    canvas_read_rgba(cv, qx, LEN);          // disc at (9,9), via translate
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, qx, LEN);          // disc at (9,9), via translate
     CHECK(memcmp(px, qx, (size_t)LEN) == 0);
 
     // 7. fill_rect is equivalent to filling the same rectangle as a path.
@@ -182,13 +182,13 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.3f, 0.7f, 0.9f, 1.0f);
     canvas_fill_rect(cv, 2.0f, 3.0f, 9.0f, 7.0f);
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.3f, 0.7f, 0.9f, 1.0f);
     canvas_begin_path(cv);
     canvas_rect(cv, 2.0f, 3.0f, 9.0f, 7.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, qx, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, qx, LEN);
     CHECK(memcmp(px, qx, (size_t)LEN) == 0);
 
     // 8. A gradient whose stops are all one colour IS a solid fill of that
@@ -198,13 +198,13 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_read_rgba(cv, px, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)W, 0.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_read_rgba(cv, qx, LEN);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, qx, LEN);
     CHECK(memcmp(px, qx, (size_t)LEN) == 0);
 
     canvas_free(cv);

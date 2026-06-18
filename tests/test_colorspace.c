@@ -32,7 +32,7 @@ static int space_probe(struct canvas *__single cv, int w, int h,
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.5f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     return (int)pixel_at(px, len, w, w / 2, h / 2).r;
 }
 
@@ -116,7 +116,7 @@ static void linear_color_round_trip(void) {
         float const c = 188.0f / 255.0f;
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, c, c * 0.5f, c * 0.25f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
         CHECK(abs((int)p.r - 188) <= 2);
         CHECK(abs((int)p.g - (int)(c * 0.5f * 255.0f + 0.5f)) <= 2);
@@ -148,14 +148,14 @@ static void linear_image_data_round_trip(void) {
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.6f, 0.9f, 1.0f);
         canvas_fill_rect(cv, 4.0f, 4.0f, 8.0f, 8.0f);
-        canvas_get_image_data(cv, 0, 0, w, h, a, len);
+        canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, w, h, a, len);
 
         // Round the read-back bytes back onto a fresh linear canvas, read again.
         struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
         CHECK(cv2 != NULL);
         if (cv2) {
-            canvas_put_image_data(cv2, a, len, w, h, 0, 0);
-            canvas_get_image_data(cv2, 0, 0, w, h, b, len);
+            canvas_put_image_data(cv2, CANVAS_CS_SRGB, a, len, w, h, 0, 0);
+            canvas_get_image_data(cv2, CANVAS_CS_SRGB, 0, 0, w, h, b, len);
             int maxd = 0;
             for (int i = 0; i < len; i++) {
                 int const d = abs((int)a[i] - (int)b[i]);
@@ -203,7 +203,7 @@ static void linear_source_over_oracle(void) {
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, sd, sd, sd, sa);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         int const got = (int)pixel_at(px, len, w, w / 2, h / 2).r;
         CHECK(abs(got - want_lin) <= 2);   // matches the LINEAR oracle
         CHECK(abs(got - want_srgb) > 4);   // and is NOT the sRGB answer
@@ -239,7 +239,7 @@ static void linear_multiply_differs(void) {
         canvas_set_global_composite_operation(cv, CANVAS_OP_MULTIPLY);
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.2f, 0.5f);  // translucent source
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         int const r = (int)pixel_at(px, len, w, w / 2, h / 2).r;
         if (pass == 0) { srgb_red = r; } else { lin_red = r; }
         canvas_free(cv);
@@ -275,7 +275,7 @@ static void srgb_canvas_tag_branches(void) {
         int const want_b = (int)(cnvs_clamp01(cnvs_linear_to_srgb(lb)) * 255.0f + 0.5f);
         canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, lr, lg, lb, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
         CHECK(abs((int)p.r - want_r) <= 2);  // ~188, the encoded byte
         CHECK(abs((int)p.g - want_g) <= 2);
@@ -291,7 +291,7 @@ static void srgb_canvas_tag_branches(void) {
         int const ok_b = (int)(cnvs_clamp01(enc.b) * 255.0f + 0.5f);  // ~121
         canvas_set_fill_rgba(cv, CANVAS_CS_OKLAB, lab.L, lab.a, lab.b, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         struct rgba const q = pixel_at(px, len, w, w / 2, h / 2);
         CHECK(abs((int)q.r - ok_r) <= 2);
         CHECK(abs((int)q.g - ok_g) <= 2);
@@ -328,16 +328,173 @@ static void linear_canvas_tag_branches(void) {
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, v, v, v, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(abs((int)pixel_at(px, len, w, w / 2, h / 2).r - want_linear_tag) <= 2);
 
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, v, v, v, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(abs((int)pixel_at(px, len, w, w / 2, h / 2).r - want_srgb_tag) <= 2);
         canvas_free(cv);
     }
     free(px);
+}
+
+// read_rgba's OUTPUT-space tag on a LINEAR working canvas.  The stored colour is
+// linear, so CANVAS_CS_LINEAR_SRGB emits it RAW (quantized, no encode) while
+// CANVAS_CS_SRGB emits the encoded byte -- the two diverge, and the gap is the
+// proof the tag routes the readback, not the canvas.  A known linear value goes
+// in (tagged LINEAR_SRGB so it stores verbatim), read back both ways.
+static void read_rgba_output_space(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    CHECK(px != NULL);
+    if (!px) {
+        return;
+    }
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        float const v = 0.5f;  // a linear value, stored verbatim (LINEAR_SRGB in)
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, v, v, v, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+
+        // LINEAR_SRGB out: the raw stored linear value quantized -> ~128.
+        canvas_read_rgba(cv, CANVAS_CS_LINEAR_SRGB, px, len);
+        int const want_raw = (int)(v * 255.0f + 0.5f);
+        CHECK(abs((int)pixel_at(px, len, w, w / 2, h / 2).r - want_raw) <= 2);
+
+        // SRGB out: encode(0.5) ~ 188, the legacy linear-canvas readback.
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        int const want_enc = (int)(cnvs_linear_to_srgb(v) * 255.0f + 0.5f);
+        CHECK(abs((int)pixel_at(px, len, w, w / 2, h / 2).r - want_enc) <= 2);
+
+        CHECK(abs(want_raw - want_enc) > 20);  // the two output tags diverge
+        canvas_free(cv);
+    }
+    free(px);
+}
+
+// put(CANVAS_CS_LINEAR_SRGB) -> read(CANVAS_CS_LINEAR_SRGB) on a linear canvas
+// preserves the linear values within 8-bit tolerance: the put interprets the
+// incoming bytes as linear and stores them verbatim (no transfer on a linear
+// canvas), and the read emits them raw -- so the bytes survive the trip but for
+// premultiply/quantize rounding.  A translucent source keeps premultiply in the
+// loop.
+static void linear_put_read_round_trip(void) {
+    int const w = 16, h = 16, len = w * h * 4;
+    uint8_t *__counted_by(len) src = malloc((size_t)len);
+    uint8_t *__counted_by(len) out = malloc((size_t)len);
+    CHECK(src != NULL && out != NULL);
+    if (!src || !out) {
+        free(src);
+        free(out);
+        return;
+    }
+    // A deterministic assortment of (linear-byte) colours, alpha included.
+    for (int i = 0; i < w * h; i++) {
+        src[i * 4 + 0] = (uint8_t)((i * 7) & 0xff);
+        src[i * 4 + 1] = (uint8_t)((i * 13 + 40) & 0xff);
+        src[i * 4 + 2] = (uint8_t)((i * 3 + 90) & 0xff);
+        src[i * 4 + 3] = (uint8_t)(128 + ((i * 5) & 0x7f));  // 128..255, opaque-ish
+    }
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        canvas_put_image_data(cv, CANVAS_CS_LINEAR_SRGB, src, len, w, h, 0, 0);
+        canvas_read_rgba(cv, CANVAS_CS_LINEAR_SRGB, out, len);
+        int maxd = 0;
+        for (int i = 0; i < len; i++) {
+            int const d = abs((int)src[i] - (int)out[i]);
+            if (d > maxd) { maxd = d; }
+        }
+        CHECK(maxd <= 2);  // linear in, linear out: no transfer, only rounding
+        canvas_free(cv);
+    }
+    free(src);
+    free(out);
+}
+
+// The OKLAB pixel-I/O round trip: a known opaque sRGB colour put as sRGB, read
+// back as OKLAB, then those Oklab bytes put back (as OKLAB) and read once more as
+// sRGB -- the colour survives within 8-bit tolerance, exercising both new OKLAB
+// branches (read working->linear->Oklab, put Oklab->linear->working) against the
+// shared CNVS_OKLAB_AB_BIAS byte convention.  In-gamut so a,b stay inside the
+// centred window the byte transport can represent.
+static void oklab_pixel_io_round_trip(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    uint8_t *__counted_by(len) lab = malloc((size_t)len);
+    uint8_t *__counted_by(len) back = malloc((size_t)len);
+    CHECK(lab != NULL && back != NULL);
+    if (!lab || !back) {
+        free(lab);
+        free(back);
+        return;
+    }
+    int const R = 180, G = 96, B = 130;  // an in-gamut opaque sRGB colour
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB,
+                             (float)R / 255.0f, (float)G / 255.0f,
+                             (float)B / 255.0f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+
+        // Read back as Oklab bytes, push them onto a fresh canvas as Oklab, and
+        // read THAT as sRGB -- the original colour should reappear.
+        canvas_read_rgba(cv, CANVAS_CS_OKLAB, lab, len);
+        struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_SRGB);
+        CHECK(cv2 != NULL);
+        if (cv2) {
+            canvas_put_image_data(cv2, CANVAS_CS_OKLAB, lab, len, w, h, 0, 0);
+            canvas_read_rgba(cv2, CANVAS_CS_SRGB, back, len);
+            struct rgba const p = pixel_at(back, len, w, w / 2, h / 2);
+            CHECK(abs((int)p.r - R) <= 3);  // Oklab byte quantization tolerance
+            CHECK(abs((int)p.g - G) <= 3);
+            CHECK(abs((int)p.b - B) <= 3);
+            CHECK(p.a == 255);
+            canvas_free(cv2);
+        }
+        canvas_free(cv);
+    }
+    free(lab);
+    free(back);
+}
+
+// The CANVAS_CS_SRGB pixel-I/O paths still match today, byte for byte: a put of
+// known sRGB bytes then a read in sRGB returns them (on an sRGB canvas the store
+// is a pass-through and the readback the SIMD bypass, the legacy identity).  This
+// is the byte-identity anchor for the migrated call sites.
+static void srgb_pixel_io_identity(void) {
+    int const w = 16, h = 16, len = w * h * 4;
+    uint8_t *__counted_by(len) src = malloc((size_t)len);
+    uint8_t *__counted_by(len) out = malloc((size_t)len);
+    CHECK(src != NULL && out != NULL);
+    if (!src || !out) {
+        free(src);
+        free(out);
+        return;
+    }
+    for (int i = 0; i < w * h; i++) {
+        src[i * 4 + 0] = (uint8_t)((i * 11) & 0xff);
+        src[i * 4 + 1] = (uint8_t)((i * 17 + 30) & 0xff);
+        src[i * 4 + 2] = (uint8_t)((i * 5 + 70) & 0xff);
+        src[i * 4 + 3] = 255;  // opaque: an unpremultiplied byte survives exactly
+    }
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        canvas_put_image_data(cv, CANVAS_CS_SRGB, src, len, w, h, 0, 0);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, out, len);
+        bool exact = true;
+        for (int i = 0; i < len; i++) {
+            if (src[i] != out[i]) { exact = false; break; }
+        }
+        CHECK(exact);  // sRGB canvas, sRGB I/O: byte-identical, no transfer
+        canvas_free(cv);
+    }
+    free(src);
+    free(out);
 }
 
 int main(void) {
@@ -348,5 +505,9 @@ int main(void) {
     linear_multiply_differs();
     srgb_canvas_tag_branches();
     linear_canvas_tag_branches();
+    read_rgba_output_space();
+    linear_put_read_round_trip();
+    oklab_pixel_io_round_trip();
+    srgb_pixel_io_identity();
     return TEST_REPORT();
 }

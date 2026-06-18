@@ -67,8 +67,8 @@ int main(void) {
 
         // Image data round-trip (get allocates, blit, free; put builds a tile).
         uint8_t buf[48 * 48 * 4];
-        canvas_get_image_data(cv, 0, 0, 48, 48, buf, (int)sizeof buf);
-        canvas_put_image_data(cv, buf, (int)sizeof buf, 24, 24, 4, 4);
+        canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 48, 48, buf, (int)sizeof buf);
+        canvas_put_image_data(cv, CANVAS_CS_SRGB, buf, (int)sizeof buf, 24, 24, 4, 4);
 
         // drawImage source (its own bbox tile + premultiplied sampling path).
         uint8_t src[16 * 16 * 4];

@@ -570,8 +570,15 @@ void canvas_stroke_text_max_n(struct canvas *__single cv,
                               char const *__counted_by(len) text,
                               int len, float x, float y, float max_width);
 
-// Tightly packed RGBA8, top row first; len must be width*height*4.
-void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out, int len);
+// Tightly packed RGBA8, top row first; len must be width*height*4.  `space` names
+// the OUTPUT colour space (see canvas_color_space): CANVAS_CS_SRGB is today's
+// behaviour byte for byte (and the common case); CANVAS_CS_LINEAR_SRGB emits
+// linear-sRGB bytes and CANVAS_CS_OKLAB emits Oklab (L,a,b) bytes.
+void canvas_read_rgba(struct canvas *__single cv, enum canvas_color_space space,
+                      uint8_t *__counted_by(len) out, int len);
+// canvas_write_png reads back as sRGB by convention (it has no space parameter):
+// the PNG carries encoded sRGB, exactly the bytes read_rgba(.., CANVAS_CS_SRGB)
+// would.
 bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated path);
 
 // Read back a PNG that canvas_write_png wrote.  Returns a freshly malloc'd RGBA8
@@ -591,17 +598,25 @@ canvas_read_png(char const *__null_terminated path,
 // Pixel I/O for a w*h sub-image (tightly packed RGBA8, len must be w*h*4).
 // get: pixels outside the canvas read back transparent black.
 // put: overwrites (no blending), clipped to the canvas.
-void canvas_get_image_data(struct canvas *__single cv, int x, int y, int w, int h,
+// `space` (see canvas_color_space) is the space the bytes are in: for get, the
+// OUTPUT space (routed through read_rgba); for put, the space the INCOMING bytes
+// are interpreted in.  CANVAS_CS_SRGB is today's behaviour byte for byte.
+void canvas_get_image_data(struct canvas *__single cv,
+                           enum canvas_color_space space,
+                           int x, int y, int w, int h,
                            uint8_t *__counted_by(len) out, int len);
 void canvas_put_image_data(struct canvas *__single cv,
+                           enum canvas_color_space space,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy);
 // putImageData with a dirty rectangle: only the source sub-rect
 // [dirtyX, dirtyX+dirtyWidth) x [dirtyY, dirtyY+dirtyHeight) (ImageData
 // coordinates) is written, still placed with the image origin at (dx, dy).  The
 // dirty rect is normalised like the spec -- negative extents flip, then it is
-// clamped to the source; an empty result is a no-op.
+// clamped to the source; an empty result is a no-op.  `space` is the incoming
+// bytes' space, as for canvas_put_image_data.
 void canvas_put_image_data_dirty(struct canvas *__single cv,
+                                 enum canvas_color_space space,
                                  uint8_t const *__counted_by(len) data, int len,
                                  int w, int h, int dx, int dy,
                                  int dirty_x, int dirty_y,

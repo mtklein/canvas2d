@@ -30,7 +30,7 @@ int main(void) {
     // 1:1 draw at (1,1) reproduces the source texels exactly (bilinear is
     // identity at integer scale and aligned pixel centres).
     canvas_draw_bitmap(cv, src, 2, 2, 1.0f, 1.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 1, 1), 255, 0, 0, 255, 2));      // red
     CHECK(px_near(pixel_at(px, len, w, 2, 1), 0, 255, 0, 255, 2));      // green
     CHECK(px_near(pixel_at(px, len, w, 1, 2), 0, 0, 255, 255, 2));      // blue
@@ -41,7 +41,7 @@ int main(void) {
     // is a horizontal red<->green bilinear blend.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_draw_bitmap_scaled(cv, src, 2, 2, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 255, 0, 0, 255, 4));      // red corner
     CHECK(px_near(pixel_at(px, len, w, 7, 0), 0, 255, 0, 255, 4));      // green corner
     CHECK(px_near(pixel_at(px, len, w, 0, 7), 0, 0, 255, 255, 4));      // blue corner
@@ -53,7 +53,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_draw_bitmap_subrect(cv, src, 2, 2, 1.0f, 0.0f, 1.0f, 2.0f,
                               0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba mid = pixel_at(px, len, w, 4, 4);
     CHECK(mid.g > 200 && mid.b < 30);                                  // green/yellow
 
@@ -67,7 +67,7 @@ int main(void) {
     };
     canvas_set_global_alpha(cv, 0.5f);
     canvas_draw_bitmap_scaled(cv, blue, 2, 2, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 4, 4), 128, 0, 128, 255, 4));    // half blue over red
 
     // A huge source rect maps device pixels to source coordinates that

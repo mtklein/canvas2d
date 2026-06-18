@@ -20,12 +20,12 @@ int main(void) {
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, w, 4, 4), 255, 0, 0, 255, 1));
         CHECK(px_near(pixel_at(px, len, w, 0, 0), 255, 0, 0, 255, 1));
 
         canvas_clear_rect(cv, 2.0f, 2.0f, 4.0f, 4.0f);
-        canvas_read_rgba(cv, px, len);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, w, 4, 4), 0, 0, 0, 0, 1));
         CHECK(px_near(pixel_at(px, len, w, 0, 0), 255, 0, 0, 255, 1));
         canvas_free(cv);
@@ -40,7 +40,7 @@ int main(void) {
         canvas_set_fill_rgba(cb, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
         canvas_set_global_alpha(cb, 0.5f);
         canvas_fill_rect(cb, 0.0f, 0.0f, (float)w, (float)h);
-        canvas_read_rgba(cb, px, len);
+        canvas_read_rgba(cb, CANVAS_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, w, 4, 4), 128, 0, 128, 255, 3));
         canvas_free(cb);
     }

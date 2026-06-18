@@ -67,12 +67,12 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                                                coord(&c), coord(&c)); break;
             case S_GET_IMAGE: {
                 uint8_t out[8 * 8 * 4];
-                canvas_get_image_data(cv, (int)u8(&c) - 8, (int)u8(&c) - 8, 8, 8,
+                canvas_get_image_data(cv, CANVAS_CS_SRGB, (int)u8(&c) - 8, (int)u8(&c) - 8, 8, 8,
                                       out, (int)sizeof out);
                 break;
             }
             case S_PUT_IMAGE:
-                canvas_put_image_data(cv, img, (int)sizeof img, 16, 16,
+                canvas_put_image_data(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 16, 16,
                                       (int)u8(&c) - 8, (int)u8(&c) - 8);
                 break;
             case S_GRADIENT:

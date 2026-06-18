@@ -29,8 +29,8 @@ static void roundtrip_exhaustive(void) {
                 in[i + 3] = (uint8_t)(y + 1);
             }
         }
-        canvas_put_image_data(cv, in, rlen, RW, RH, 0, 0);
-        canvas_get_image_data(cv, 0, 0, RW, RH, out, rlen);
+        canvas_put_image_data(cv, CANVAS_CS_SRGB, in, rlen, RW, RH, 0, 0);
+        canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, RW, RH, out, rlen);
         int mismatched = 0;
         for (int i = 0; i < rlen; i++) {
             if (in[i] != out[i]) {
@@ -96,7 +96,7 @@ int main(void) {
     if (px && cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_fill_rect(cv, 2.0f, 2.0f, 4.0f, 4.0f);
-        canvas_get_image_data(cv, 0, 0, W, H, px, len);
+        canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, W, H, px, len);
         CHECK(px_near(pixel_at(px, len, W, 3, 3), 255, 0, 0, 255, 1));  // red square
         CHECK(px_near(pixel_at(px, len, W, 0, 0), 0, 0, 0, 0, 1));      // transparent
 
@@ -104,7 +104,7 @@ int main(void) {
         int const s2 = 4 * 4 * 4;
         uint8_t *__counted_by(s2) sub = malloc((size_t)s2);
         if (sub) {
-            canvas_get_image_data(cv, 6, 6, 4, 4, sub, s2);
+            canvas_get_image_data(cv, CANVAS_CS_SRGB, 6, 6, 4, 4, sub, s2);
             CHECK(px_near(pixel_at(sub, s2, 4, 3, 3), 0, 0, 0, 0, 1));  // off-canvas
             free(sub);
         }
@@ -119,14 +119,14 @@ int main(void) {
                     green[i + c] = gpx[c];
                 }
             }
-            canvas_put_image_data(cv, green, g4, 4, 4, 2, 2);
-            canvas_get_image_data(cv, 0, 0, W, H, px, len);
+            canvas_put_image_data(cv, CANVAS_CS_SRGB, green, g4, 4, 4, 2, 2);
+            canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, W, H, px, len);
             CHECK(px_near(pixel_at(px, len, W, 3, 3), 0, 255, 0, 255, 1));  // now green
             CHECK(px_near(pixel_at(px, len, W, 0, 0), 0, 0, 0, 0, 1));      // untouched
 
             // Clipped put (negative origin): only the in-canvas corner lands.
-            canvas_put_image_data(cv, green, g4, 4, 4, -2, -2);
-            canvas_get_image_data(cv, 0, 0, W, H, px, len);
+            canvas_put_image_data(cv, CANVAS_CS_SRGB, green, g4, 4, 4, -2, -2);
+            canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, W, H, px, len);
             CHECK(px_near(pixel_at(px, len, W, 0, 0), 0, 255, 0, 255, 1));
             free(green);
         }

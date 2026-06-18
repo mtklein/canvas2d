@@ -141,8 +141,8 @@ static void draw_program(struct canvas *__single cv) {
     canvas_draw_bitmap_scaled(cv, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
     canvas_draw_bitmap_subrect(cv, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
                               18.0f, 2.0f, 6.0f, 6.0f);
-    canvas_put_image_data(cv, img, (int)sizeof img, 4, 3, 26, 2);
-    canvas_put_image_data_dirty(cv, img, (int)sizeof img, 4, 3, 32, 2,
+    canvas_put_image_data(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 4, 3, 26, 2);
+    canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 4, 3, 32, 2,
                                 1, 1, 2, 2);
     canvas_set_fill_pattern(cv, img, 4, 3, CANVAS_REPEAT);
     canvas_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
@@ -225,7 +225,7 @@ int main(void) {
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p1));
         draw_program(cv);
-        canvas_read_rgba(cv, recorded_px, (int)sizeof recorded_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
         canvas_free(cv);  // flush + close p1
     }
 
@@ -244,7 +244,7 @@ int main(void) {
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, p1));
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, replayed_px, (int)sizeof replayed_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
         canvas_free(cv);
     }
@@ -284,7 +284,7 @@ int main(void) {
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, lp1));
         draw_program(cv);
-        canvas_read_rgba(cv, lin_px, (int)sizeof lin_px);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, lin_px, (int)sizeof lin_px);
         canvas_free(cv);
     }
     {
@@ -303,7 +303,7 @@ int main(void) {
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, lp1));
         uint8_t replayed[NPX];
-        canvas_read_rgba(cv, replayed, (int)sizeof replayed);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed, (int)sizeof replayed);
         CHECK(memcmp(lin_px, replayed, sizeof lin_px) == 0);
         canvas_free(cv);
     }

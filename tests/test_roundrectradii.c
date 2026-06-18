@@ -15,7 +15,7 @@ static void draw(struct canvas *__single cv, uint8_t *__counted_by(len) px, int 
     canvas_round_rect_radii(cv, x, y, w, h, tl_x, tl_y, tr_x, tr_y,
                             br_x, br_y, bl_x, bl_y);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
 }
 
 static bool red(uint8_t const *__counted_by(len) px, int len, int x, int y) {

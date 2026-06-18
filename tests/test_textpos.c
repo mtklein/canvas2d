@@ -20,7 +20,7 @@ static long ink_bbox(struct canvas *__single cv, uint8_t *__counted_by(len) px, 
     canvas_set_text_align(cv, align);
     canvas_set_text_baseline(cv, base);
     canvas_fill_text(cv, "Hi", x0, y0);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     *ixmin = W;
     *iymin = H;
     long n = 0;

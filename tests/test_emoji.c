@@ -53,7 +53,7 @@ static void check_renders_in_color(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "\xF0\x9F\x8C\x88", 12.0f, 64.0f);  // 🌈 U+1F308
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
 
     long ink = 0, colored = 0;
     for (int i = 0; i < n; i++) {
@@ -99,7 +99,7 @@ static void check_renders_in_color(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_font_size(cv, 56.0f);
     canvas_fill_text(cv, "Hi", 8.0f, 60.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     long ascii_ink = 0;
     for (int i = 0; i < n; i++) {
         if (px[i * 4] < 128) {
@@ -311,7 +311,7 @@ static void check_draw_matches_level(struct canvas *__single cv, float size_px,
     // the baseline: baseline = oy + 140*k puts the top edge at device y = oy.
     float const k = size_px / (float)CNVS_CAPTURE_EM;
     canvas_fill_text(cv, "\xF0\x9F\x8D\x95", (float)ox, (float)oy + 140.0f * k);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     int bad = 0;
     for (int y = 1; y + 1 < lvl.h; y++) {  // interior: skip the coverage edge
         for (int x = 1; x + 1 < lvl.w; x++) {

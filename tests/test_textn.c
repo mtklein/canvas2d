@@ -45,9 +45,9 @@ int main(void) {
     canvas_fill_text(c, "ABCDEF", 4.0f, 20.0f);
 
     uint8_t pa[NPX], pb[NPX], pc[NPX];
-    canvas_read_rgba(a, pa, (int)sizeof pa);
-    canvas_read_rgba(b, pb, (int)sizeof pb);
-    canvas_read_rgba(c, pc, (int)sizeof pc);
+    canvas_read_rgba(a, CANVAS_CS_SRGB, pa, (int)sizeof pa);
+    canvas_read_rgba(b, CANVAS_CS_SRGB, pb, (int)sizeof pb);
+    canvas_read_rgba(c, CANVAS_CS_SRGB, pc, (int)sizeof pc);
 
     CHECK(memcmp(pa, pb, sizeof pa) == 0);  // slice of 3 == "ABC"
     CHECK(memcmp(pa, pc, sizeof pa) != 0);  // and "ABC" != "ABCDEF" (non-trivial)
@@ -62,8 +62,8 @@ int main(void) {
     canvas_stroke_text(d, "ABC", 4.0f, 20.0f);
     canvas_stroke_text_n(e, buf, 3, 4.0f, 20.0f);
     uint8_t pd[NPX], pe[NPX];
-    canvas_read_rgba(d, pd, (int)sizeof pd);
-    canvas_read_rgba(e, pe, (int)sizeof pe);
+    canvas_read_rgba(d, CANVAS_CS_SRGB, pd, (int)sizeof pd);
+    canvas_read_rgba(e, CANVAS_CS_SRGB, pe, (int)sizeof pe);
     CHECK(memcmp(pd, pe, sizeof pd) == 0);
 
     // A zero-length slice draws nothing (and must not read text at all).
@@ -72,7 +72,7 @@ int main(void) {
     setup(f);
     canvas_fill_text_n(f, buf, 0, 4.0f, 20.0f);
     uint8_t pf[NPX];
-    canvas_read_rgba(f, pf, (int)sizeof pf);
+    canvas_read_rgba(f, CANVAS_CS_SRGB, pf, (int)sizeof pf);
     bool any = false;
     for (int i = 0; i < NPX; i++) {
         if (pf[i] != 0) { any = true; break; }

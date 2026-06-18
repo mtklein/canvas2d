@@ -45,7 +45,7 @@ int main(void) {
     canvas_reset(cv);
 
     // The bitmap is cleared to transparent black.
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 8, 8), 0, 0, 0, 0, 0));
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 0));
 
@@ -58,7 +58,7 @@ int main(void) {
     // open: the whole canvas -- including the old clip's excluded area -- paints
     // opaque black.
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 8, 8), 0, 0, 0, 255, 1));
     CHECK(px_near(pixel_at(px, len, w, 15, 15), 0, 0, 0, 255, 1));
 

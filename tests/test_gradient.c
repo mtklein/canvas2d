@@ -27,7 +27,7 @@ int main(void) {
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba lft = pixel_at(px, len, w, 6, 32);
     struct rgba mid = pixel_at(px, len, w, 32, 32);
     struct rgba rgt = pixel_at(px, len, w, 58, 32);
@@ -43,7 +43,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba ctr = pixel_at(px, len, w, 32, 32);
     struct rgba ring = pixel_at(px, len, w, 46, 32);  // ~half radius
     struct rgba rim = pixel_at(px, len, w, 60, 32);   // at/over the rim
@@ -60,7 +60,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba g_mid = pixel_at(px, len, w, 32, 32);
     CHECK(g_mid.g > 200 && g_mid.r < 40 && g_mid.b < 40);  // green at the centre stop
 
@@ -70,7 +70,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 6, 32), 0, 255, 0, 255, 1));  // solid green again
 
     // save/restore brackets the gradient: restore brings back the solid fill.
@@ -84,7 +84,7 @@ int main(void) {
     canvas_begin_path(cv);
     canvas_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 6, 32), 51, 51, 51, 255, 2));  // restored solid
 
     // Gradient stroke: a thick horizontal line, red -> blue left to right.
@@ -97,7 +97,7 @@ int main(void) {
     canvas_move_to(cv, 6.0f, 32.0f);
     canvas_line_to(cv, 58.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba s_lft = pixel_at(px, len, w, 10, 32);
     struct rgba s_rgt = pixel_at(px, len, w, 54, 32);
     CHECK(s_lft.r > 180 && s_lft.b < 80);  // red end
@@ -111,7 +111,7 @@ int main(void) {
     canvas_move_to(cv, 6.0f, 32.0f);
     canvas_line_to(cv, 58.0f, 32.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 255, 0, 255, 2));  // solid green again
 
     // Per spec, exact degenerates paint NOTHING -- the draw is a no-op:
@@ -123,13 +123,13 @@ int main(void) {
     canvas_set_fill_linear_gradient(cv, 32.0f, 32.0f, 32.0f, 32.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 255, 255, 0));
 
     canvas_set_fill_radial_gradient(cv, 32.0f, 32.0f, 8.0f, 32.0f, 32.0f, 8.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 255, 255, 0));
 
     // The boundary is exact equality: a tiny-but-nonzero linear gradient and a
@@ -137,13 +137,13 @@ int main(void) {
     canvas_set_fill_linear_gradient(cv, 32.0f, 32.0f, 32.001f, 32.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 0, 255, 2));
 
     canvas_set_fill_conic_gradient(cv, 0.0f, 32.0f, 32.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 0, 0, 255, 255, 2));
 
     canvas_free(cv);

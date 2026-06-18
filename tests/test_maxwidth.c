@@ -10,7 +10,7 @@
 // Ink bounding-box width and height (black text on a white ground).
 static void ink_extent(struct canvas *__single cv, uint8_t *__counted_by(len) px, int len,
                        int *__single iw, int *__single ih) {
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     int xmin = W, xmax = -1, ymin = H, ymax = -1;
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {

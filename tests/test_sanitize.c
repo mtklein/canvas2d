@@ -65,7 +65,7 @@ int main(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, 64.0f, 64.0f);
 
     uint8_t px[64 * 64 * 4];
-    canvas_get_image_data(cv, 0, 0, 64, 64, px, (int)sizeof px);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 64, 64, px, (int)sizeof px);
     CHECK(px[0] == 128 || px[0] == 127);  // mid-grey was painted
 
     canvas_free(cv);

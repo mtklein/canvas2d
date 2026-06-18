@@ -420,7 +420,7 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
     }
     canvas_close_path(cv);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, W * H * 4);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, W * H * 4);
 
     // Pixel-aligned source-over rect fills onto transparent land the exact
     // premultiplied paint; mirror that for the reference's destination.

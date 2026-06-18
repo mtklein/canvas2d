@@ -35,7 +35,7 @@ int main(void) {
     // REPEAT: the 2x2 image tiles across the whole canvas.
     canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_REPEAT);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 0, 0, 255, 0, 0, 255));     // red
     CHECK(is(px, len, 1, 0, 0, 255, 0, 255));     // green
     CHECK(is(px, len, 0, 1, 0, 0, 255, 255));     // blue
@@ -47,7 +47,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_NO_REPEAT);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 0, 0, 255, 0, 0, 255));     // inside
     CHECK(is(px, len, 1, 1, 255, 255, 255, 255)); // inside
     CHECK(is(px, len, 5, 5, 0, 0, 0, 0));         // outside -> transparent
@@ -57,7 +57,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
     canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_REPEAT_X);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 5, 0, 0, 255, 0, 255));     // x wraps: column 5 -> green
     CHECK(is(px, len, 0, 5, 0, 0, 0, 0));         // y outside -> transparent
 
@@ -69,7 +69,7 @@ int main(void) {
     canvas_set_fill_pattern(cv, src, 2, 2, CANVAS_REPEAT);
     canvas_reset_transform(cv);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 0, 0, 0, 255, 0, 255));     // shifted: green at the origin
 
     // A pattern paints strokes too.
@@ -81,7 +81,7 @@ int main(void) {
     canvas_move_to(cv, 0.0f, 4.0f);
     canvas_line_to(cv, (float)W, 4.0f);
     canvas_stroke(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     struct rgba s = pixel_at(px, len, W, 4, 4);
     CHECK(s.a > 0);  // the stroke laid down pattern ink
 
@@ -90,7 +90,7 @@ int main(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_fill_pattern(cv, src, 0, 2, CANVAS_REPEAT);  // w = 0: rejected
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(is(px, len, 4, 4, 0, 255, 0, 255));  // still solid green
 
     canvas_free(cv);

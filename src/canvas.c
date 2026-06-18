@@ -4254,20 +4254,120 @@ static cnvs_px8 unpremul_encode_to_unorm8(cnvs_px8 p) {
     return o;
 }
 
-// Per-canvas readback: the sRGB SIMD bypass, or the linear scalar encode.
-static cnvs_px8 read_unorm8(struct canvas *__single cv, cnvs_px8 p) {
-    return cv->space == CANVAS_CS_LINEAR_SRGB ? unpremul_encode_to_unorm8(p)
-                                         : unpremul_to_unorm8(p);
+// One Oklab byte-channel convention, shared by the OKLAB readback below and the
+// OKLAB putImageData input (px8_oklab_to_linear): L rides [0,1] straight onto a
+// byte; the signed a,b ride a centred [-0.5, 0.5] window (byte = (v+0.5)*255,
+// the inverse v = byte/255 - 0.5).  In-window components round-trip to 8-bit
+// tolerance; out-of-window components saturate at the byte ends -- exotic, but
+// uniform and self-inverse, which is what a consistent transport demands.
+#define CNVS_OKLAB_AB_BIAS 0.5f
+
+// The OKLAB readback: un-premultiply, take the unpremultiplied colour
+// working->linear->Oklab, and quantize (L, a, b, alpha) to bytes via the
+// convention above.  Scalar per lane (the Oklab pipeline is f32 transcendental
+// math, no half8 spelling; correctness over speed, like the linear encode).  A
+// transparent lane stays all-zero, and alpha takes no transfer (coverage, not
+// colour) -- both as in the other readbacks.  `linear_canvas` says the STORED
+// colour is already linear (skip the sRGB decode); otherwise the stored colour
+// is encoded sRGB and decodes first.
+static cnvs_px8 unpremul_to_oklab_unorm8(cnvs_px8 p, bool linear_canvas) {
+    cnvs_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
+                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    for (int i = 0; i < 8; i++) {
+        float const a = (float)p.a[i];
+        float qL = 0.0f, qa = 0.0f, qb = 0.0f, ca = 0.0f;
+        if (a > 0.0f) {  // a transparent lane stays all-zero
+            float const inv = 1.0f / a;
+            cnvs_rgb lin = { .r = (float)p.r[i] * inv,
+                             .g = (float)p.g[i] * inv,
+                             .b = (float)p.b[i] * inv };
+            if (!linear_canvas) {  // stored encoded sRGB -> linear first
+                lin = cnvs_rgb_srgb_to_linear(lin);
+            }
+            cnvs_oklab const lab = cnvs_linear_srgb_to_oklab(lin);
+            qL = cnvs_clamp01(lab.L);
+            qa = cnvs_clamp01(lab.a + CNVS_OKLAB_AB_BIAS);
+            qb = cnvs_clamp01(lab.b + CNVS_OKLAB_AB_BIAS);
+            ca = cnvs_clamp01(a);
+        }
+        o.r[i] = (_Float16)(qL * 255.0f + 0.5f);
+        o.g[i] = (_Float16)(qa * 255.0f + 0.5f);
+        o.b[i] = (_Float16)(qb * 255.0f + 0.5f);
+        o.a[i] = (_Float16)(ca * 255.0f + 0.5f);
+    }
+    return o;
 }
 
-// Read the canvas back as unpremultiplied RGBA8, straight off the
-// premultiplied target: the un-premultiply and 8-bit quantize happen here,
-// eight pixels per step over channel planes with st4 re-interleaving at the
-// RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same slab gathered.  An
-// sRGB canvas is the SIMD bypass (byte-identical); a linear canvas encodes
-// linear->sRGB at this exit (read_unorm8).  write_png and get_image_data read
-// back through this same entry point.
-void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out, int len) {
+// The LINEAR_SRGB readback: emit the unpremultiplied colour as linear-sRGB bytes
+// (no encode).  On a LINEAR canvas the stored colour already IS linear, so this
+// is just un-premultiply + clamp + quantize (no transfer at all).  On an sRGB
+// canvas the stored colour is encoded sRGB and decodes sRGB->linear first.  Both
+// clamp into [0,1] for the byte range (an extended linear value saturates here;
+// the byte transport has no room for out-of-gamut).  Scalar per lane to share the
+// decode with the sRGB-canvas branch; alpha takes no transfer.
+static cnvs_px8 unpremul_to_linear_unorm8(cnvs_px8 p, bool linear_canvas) {
+    cnvs_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
+                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    for (int i = 0; i < 8; i++) {
+        float const a = (float)p.a[i];
+        float r = 0.0f, g = 0.0f, b = 0.0f, ca = 0.0f;
+        if (a > 0.0f) {  // a transparent lane stays all-zero
+            float const inv = 1.0f / a;
+            r = (float)p.r[i] * inv;
+            g = (float)p.g[i] * inv;
+            b = (float)p.b[i] * inv;
+            if (!linear_canvas) {  // stored encoded sRGB -> linear
+                r = cnvs_srgb_to_linear(r);
+                g = cnvs_srgb_to_linear(g);
+                b = cnvs_srgb_to_linear(b);
+            }
+            r  = cnvs_clamp01(r);
+            g  = cnvs_clamp01(g);
+            b  = cnvs_clamp01(b);
+            ca = cnvs_clamp01(a);
+        }
+        o.r[i] = (_Float16)(r  * 255.0f + 0.5f);
+        o.g[i] = (_Float16)(g  * 255.0f + 0.5f);
+        o.b[i] = (_Float16)(b  * 255.0f + 0.5f);
+        o.a[i] = (_Float16)(ca * 255.0f + 0.5f);
+    }
+    return o;
+}
+
+// Per-canvas, per-output-space readback.  CANVAS_CS_SRGB is the byte-identity
+// path, EXACTLY the legacy two-way switch (sRGB-canvas SIMD bypass, linear-canvas
+// scalar encode) -- not a linear round-trip, so every existing caller stays byte
+// for byte.  The LINEAR_SRGB and OKLAB branches are the new outputs, scalar (the
+// transfer/Oklab math has no half8 spelling).
+static cnvs_px8 read_unorm8(struct canvas *__single cv,
+                            enum canvas_color_space space, cnvs_px8 p) {
+    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
+    if (space == CANVAS_CS_LINEAR_SRGB) {
+        return unpremul_to_linear_unorm8(p, lin);
+    }
+    if (space == CANVAS_CS_OKLAB) {
+        return unpremul_to_oklab_unorm8(p, lin);
+    }
+    // CANVAS_CS_SRGB (and any out-of-range value): the legacy path verbatim --
+    // never a decode/encode round trip.
+    return lin ? unpremul_encode_to_unorm8(p) : unpremul_to_unorm8(p);
+}
+
+// Read the canvas back as unpremultiplied RGBA8 in the requested OUTPUT colour
+// space, straight off the premultiplied target: the un-premultiply and 8-bit
+// quantize happen here, eight pixels per step over channel planes with st4
+// re-interleaving at the RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same
+// slab gathered.  `space` names the space the OUTPUT bytes are encoded in:
+//   CANVAS_CS_SRGB        -- encoded sRGB, today's behaviour byte for byte (an
+//                            sRGB canvas is the SIMD bypass, a linear canvas
+//                            encodes linear->sRGB).  NOT a linear round trip.
+//   CANVAS_CS_LINEAR_SRGB -- linear-sRGB bytes (linear canvas: the stored values
+//                            quantized directly; sRGB canvas: decode then quantize).
+//   CANVAS_CS_OKLAB       -- Oklab (L,a,b) bytes (working->linear->Oklab).
+// write_png and get_image_data read back through this same entry point (with
+// CANVAS_CS_SRGB -- PNG and the get/put round trip stay sRGB by convention).
+void canvas_read_rgba(struct canvas *__single cv, enum canvas_color_space space,
+                      uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {
         return;
     }
@@ -4275,12 +4375,12 @@ void canvas_read_rgba(struct canvas *__single cv, uint8_t *__counted_by(len) out
     int i = 0;
     for (; i + 8 <= n; i += 8) {
         cnvs_px8_store_rgba8(out + i * 4,
-                             read_unorm8(cv, cnvs_px8_load(cv->target + i)));
+                             read_unorm8(cv, space, cnvs_px8_load(cv->target + i)));
     }
     if (i < n) {
         int const k = n - i;
         cnvs_px8_store_rgba8_k(out + i * 4, k,
-                               read_unorm8(cv, cnvs_px8_load_k(cv->target + i, k)));
+                               read_unorm8(cv, space, cnvs_px8_load_k(cv->target + i, k)));
     }
 }
 
@@ -4290,7 +4390,7 @@ bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated 
     if (!out) {
         return false;
     }
-    canvas_read_rgba(cv, out, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, out, len);  // PNG stays sRGB by convention
     bool const ok = cnvs_png_write(path, out, cv->width, cv->height);
     free(out);
     return ok;
@@ -4302,7 +4402,9 @@ canvas_read_png(char const *__null_terminated path,
     return cnvs_png_read(path, w, h, len);
 }
 
-void canvas_get_image_data(struct canvas *__single cv, int x, int y, int w, int h,
+void canvas_get_image_data(struct canvas *__single cv,
+                           enum canvas_color_space space,
+                           int x, int y, int w, int h,
                            uint8_t *__counted_by(len) out, int len) {
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
         return;
@@ -4313,7 +4415,7 @@ void canvas_get_image_data(struct canvas *__single cv, int x, int y, int w, int 
     if (!buf) {
         return;
     }
-    canvas_read_rgba(cv, buf, clen);
+    canvas_read_rgba(cv, space, buf, clen);  // reads back in the requested space
     cnvs_blit_rgba(out, w, h, 0, 0, buf, cv->width, cv->height, x, y, w, h);
     free(buf);
 }
@@ -4349,12 +4451,69 @@ static cnvs_px8 px8_decode_rgb(cnvs_px8 p) {
     return p;
 }
 
+// putImageData's non-sRGB input transfers, in place over a [0,1]-normalized
+// straight slab (alpha untouched -- coverage, not colour).  These mirror
+// intern_color's non-sRGB branches at the bulk seam: reduce the incoming bytes
+// to linear sRGB, then leave them linear for a LINEAR canvas or encode
+// linear->sRGB for an sRGB canvas.  Scalar per lane (the transfer/Oklab math is
+// f32 transcendental, no half8 spelling); reached only off the CANVAS_CS_SRGB
+// fast path.  `linear_canvas` says the WORKING space is linear (skip the encode).
+
+// Incoming bytes ARE linear sRGB (CANVAS_CS_LINEAR_SRGB input).
+static cnvs_px8 px8_in_linear(cnvs_px8 p, bool linear_canvas) {
+    if (linear_canvas) {
+        return p;  // input already linear, working space linear: store as-is
+    }
+    for (int i = 0; i < 8; i++) {  // sRGB working canvas: encode linear->sRGB
+        p.r[i] = (_Float16)cnvs_linear_to_srgb((float)p.r[i]);
+        p.g[i] = (_Float16)cnvs_linear_to_srgb((float)p.g[i]);
+        p.b[i] = (_Float16)cnvs_linear_to_srgb((float)p.b[i]);
+    }
+    return p;
+}
+
+// Incoming bytes are an Oklab (L,a,b) triple in the CNVS_OKLAB_AB_BIAS
+// convention (above): un-bias a,b, Oklab->linear sRGB, then the linear handling.
+static cnvs_px8 px8_in_oklab(cnvs_px8 p, bool linear_canvas) {
+    for (int i = 0; i < 8; i++) {
+        cnvs_oklab const lab = { .L = (float)p.r[i],
+                                 .a = (float)p.g[i] - CNVS_OKLAB_AB_BIAS,
+                                 .b = (float)p.b[i] - CNVS_OKLAB_AB_BIAS };
+        cnvs_rgb lin = cnvs_oklab_to_linear_srgb(lab);
+        if (!linear_canvas) {  // sRGB working canvas: encode linear->sRGB
+            lin = cnvs_rgb_linear_to_srgb(lin);
+        }
+        p.r[i] = (_Float16)lin.r;
+        p.g[i] = (_Float16)lin.g;
+        p.b[i] = (_Float16)lin.b;
+    }
+    return p;
+}
+
+// Route a [0,1]-normalized straight slab from the INPUT space `space` into the
+// working space (alpha already in [0,1] off the /255 divide).  CANVAS_CS_SRGB
+// is the byte-identity path: on a linear canvas it is exactly px8_decode_rgb, on
+// an sRGB canvas it is a literal pass-through -- the legacy behaviour, verbatim.
+static cnvs_px8 put_to_working(cnvs_px8 p, enum canvas_color_space space,
+                               bool linear_canvas) {
+    if (space == CANVAS_CS_LINEAR_SRGB) {
+        return px8_in_linear(p, linear_canvas);
+    }
+    if (space == CANVAS_CS_OKLAB) {
+        return px8_in_oklab(p, linear_canvas);
+    }
+    // CANVAS_CS_SRGB (and any out-of-range value): the byte-identity path --
+    // px8_decode_rgb on a linear canvas, a literal pass-through on an sRGB one.
+    return linear_canvas ? px8_decode_rgb(p) : p;
+}
+
 // Copy the sub-rectangle [sx, sx+sw) x [sy, sy+sh) of the w-wide RGBA8 source onto
 // the canvas with the ImageData origin at (dx, dy): source pixel (col, row) lands
 // at (dx+col, dy+row).  Overwrites (no blending) and ignores the clip, clipped to
 // the canvas.  The caller guarantees the sub-rect lies within the source
 // ([0,w] x [0,h]) with sw, sh > 0, and len >= w*h*4.
 static void put_image_sub(struct canvas *__single cv,
+                          enum canvas_color_space space,
                           uint8_t const *__counted_by(len) data, int len,
                           int w, int dx, int dy, int sx, int sy, int sw, int sh) {
     (void)len;
@@ -4377,7 +4536,10 @@ static void put_image_sub(struct canvas *__single cv,
     // and the planar premultiply writes finished tile pixels through st4.
     int const col0 = (int)(cx0 - dx);
     int const row0 = (int)(cy0 - dy);
-    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;  // decode incoming sRGB->linear
+    // The working space, and whether this input space needs any transfer.  On the
+    // byte-identity path (CANVAS_CS_SRGB) put_to_working is px8_decode_rgb on a
+    // linear canvas and a no-op on an sRGB canvas -- exactly the legacy behaviour.
+    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
     _Float16 const k255 = (_Float16)255.0f;
     for (int py = 0; py < rh; py++) {
         int px = 0;
@@ -4385,7 +4547,7 @@ static void put_image_sub(struct canvas *__single cv,
             int si = ((row0 + py) * w + (col0 + px)) * 4;
             cnvs_px8 p = cnvs_px8_load_rgba8(data + si);
             p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
-            if (lin) { p = px8_decode_rgb(p); }
+            p = put_to_working(p, space, lin);
             cnvs_px8_store(cv->tile + py * rw + px, cnvs_px8_premultiply(p));
         }
         if (px < rw) {
@@ -4393,7 +4555,7 @@ static void put_image_sub(struct canvas *__single cv,
             int const si = ((row0 + py) * w + (col0 + px)) * 4;
             cnvs_px8 p = cnvs_px8_load_rgba8_k(data + si, k);
             p = (cnvs_px8){ p.r / k255, p.g / k255, p.b / k255, p.a / k255 };
-            if (lin) { p = px8_decode_rgb(p); }
+            p = put_to_working(p, space, lin);
             cnvs_px8_store_k(cv->tile + py * rw + px, k, cnvs_px8_premultiply(p));
         }
     }
@@ -4403,6 +4565,7 @@ static void put_image_sub(struct canvas *__single cv,
 }
 
 void canvas_put_image_data(struct canvas *__single cv,
+                           enum canvas_color_space space,
                            uint8_t const *__counted_by(len) data, int len,
                            int w, int h, int dx, int dy) {
     if (!rgba8_dims_ok(w, h) || len < w * h * 4) {
@@ -4410,7 +4573,11 @@ void canvas_put_image_data(struct canvas *__single cv,
     }
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
-        // placement rides the op line.
+        // placement rides the op line.  Recording stays UNTAGGED for now: the
+        // bytes ride as-is and replay re-applies them as CANVAS_CS_SRGB, so an
+        // sRGB-input program records byte-identically (the optional space token
+        // is a later chunk; a non-sRGB input is not yet round-trippable through
+        // the recorded format).
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
                                       CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL);
         if (id >= 0) {
@@ -4418,10 +4585,11 @@ void canvas_put_image_data(struct canvas *__single cv,
                                 (int[]){ dx, dy }, 2);
         }
     }
-    put_image_sub(cv, data, len, w, dx, dy, 0, 0, w, h);
+    put_image_sub(cv, space, data, len, w, dx, dy, 0, 0, w, h);
 }
 
 void canvas_put_image_data_dirty(struct canvas *__single cv,
+                                 enum canvas_color_space space,
                                  uint8_t const *__counted_by(len) data, int len,
                                  int w, int h, int dx, int dy,
                                  int dirty_x, int dirty_y,
@@ -4453,7 +4621,7 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (dww <= 0 || dhh <= 0) {
         return;  // empty (or fully-clipped) dirty rect: nothing to copy
     }
-    put_image_sub(cv, data, len, w, dx, dy,
+    put_image_sub(cv, space, data, len, w, dx, dy,
                   (int)dxx, (int)dyy, (int)dww, (int)dhh);
 }
 

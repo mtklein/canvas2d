@@ -38,7 +38,7 @@ int main(void) {
 
     // It actually drew: the grey fill is visible.
     uint8_t px[64 * 48 * 4];
-    canvas_get_image_data(cv, 0, 0, 64, 48, px, (int)sizeof px);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 64, 48, px, (int)sizeof px);
     CHECK(px[0] == 128 || px[0] == 127);
 
     // Malformed inputs are all rejected (and, crucially, don't crash).
@@ -74,7 +74,7 @@ int main(void) {
         "fill_rect 4 12 8 8\n"
         "set_stroke_pattern 0 no-repeat\n"));
     // The 1x1 red source landed via put_image_data.
-    canvas_get_image_data(cv, 24, 4, 1, 1, px, 4);
+    canvas_get_image_data(cv, CANVAS_CS_SRGB, 24, 4, 1, 1, px, 4);
     CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255);
 
     // The scalar ops: conic gradients, per-corner radii, smoothing, the

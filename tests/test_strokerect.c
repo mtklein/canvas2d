@@ -26,7 +26,7 @@ int main(void) {
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 4.0f);
     canvas_stroke_rect(cv, 16.0f, 16.0f, 32.0f, 32.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 16, 32), 255, 0, 0, 255, 1));  // left edge
     CHECK(px_near(pixel_at(px, len, w, 32, 16), 255, 0, 0, 255, 1));  // top edge
     CHECK(px_near(pixel_at(px, len, w, 48, 32), 255, 0, 0, 255, 1));  // right edge
@@ -42,7 +42,7 @@ int main(void) {
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_stroke_rect(cv, 0.0f, 0.0f, 20.0f, 20.0f);
     canvas_restore(cv);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 10, 20), 0, 0, 255, 255, 1));  // left edge
     CHECK(px_near(pixel_at(px, len, w, 20, 20), 0, 0, 0, 0, 1));      // hollow centre
 
@@ -51,7 +51,7 @@ int main(void) {
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 4.0f);
     canvas_stroke_rect(cv, 10.0f, 30.0f, 40.0f, 0.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 30, 30), 0, 255, 0, 255, 1));  // on the line
     CHECK(px_near(pixel_at(px, len, w, 30, 20), 0, 0, 0, 0, 1));      // off the line
 
@@ -65,7 +65,7 @@ int main(void) {
     canvas_stroke_rect(cv, 40.0f, 40.0f, 16.0f, 16.0f);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 16, 16), 0, 0, 255, 255, 1));  // path filled
     CHECK(px_near(pixel_at(px, len, w, 40, 48), 255, 0, 0, 255, 1));  // strokeRect edge
     CHECK(px_near(pixel_at(px, len, w, 48, 48), 0, 0, 0, 0, 1));      // strokeRect hollow
@@ -74,7 +74,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_stroke_rect(cv, 0.0f, 0.0f, (float)INFINITY, 10.0f);
-    canvas_read_rgba(cv, px, len);
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 0, 0), 0, 0, 0, 0, 1));
 
     canvas_free(cv);

@@ -219,9 +219,9 @@ static void imagedata(void) {
     int const blen = 44 * 44 * 4;
     uint8_t *__counted_by(blen) block = malloc((size_t)blen);
     if (block) {
-        canvas_get_image_data(c, 8, 23, 44, 44, block, blen);
+        canvas_get_image_data(c, CANVAS_CS_SRGB, 8, 23, 44, 44, block, blen);
         for (int k = 1; k < 5; k++) {
-            canvas_put_image_data(c, block, blen, 44, 44, 8 + k * 46, 23);
+            canvas_put_image_data(c, CANVAS_CS_SRGB, block, blen, 44, 44, 8 + k * 46, 23);
         }
         free(block);
     }
@@ -1020,13 +1020,13 @@ static void dirtyrect(void) {
             }
         }
         // Left: the whole image in one putImageData.
-        canvas_put_image_data(c, img, len, W, H, Lx, Ly);
+        canvas_put_image_data(c, CANVAS_CS_SRGB, img, len, W, H, Lx, Ly);
         // Right: only a checkerboard of dirty sub-rects is written.
         int const tile = 22;
         for (int j = 0; j * tile < H; j++) {
             for (int i = 0; i * tile < W; i++) {
                 if (((i + j) & 1) == 0) {
-                    canvas_put_image_data_dirty(c, img, len, W, H, Rx, Ry,
+                    canvas_put_image_data_dirty(c, CANVAS_CS_SRGB, img, len, W, H, Rx, Ry,
                                                 i * tile, j * tile, tile, tile);
                 }
             }
@@ -1278,7 +1278,7 @@ static void subrect(void) {
                     break;
             }
         }
-        canvas_read_rgba(ac, atlas, AW * AH * 4);
+        canvas_read_rgba(ac, CANVAS_CS_SRGB, atlas, AW * AH * 4);
         canvas_free(ac);
     }
 
@@ -2484,8 +2484,8 @@ static void linearlight(void) {
         int const blen = 150 * 150 * 4;
         uint8_t *__counted_by(blen) block = malloc((size_t)blen);
         if (block) {
-            canvas_get_image_data(srgb, 0, 0, 150, 150, block, blen);
-            canvas_put_image_data(out, block, blen, 150, 150, 0, 0);
+            canvas_get_image_data(srgb, CANVAS_CS_SRGB, 0, 0, 150, 150, block, blen);
+            canvas_put_image_data(out, CANVAS_CS_SRGB, block, blen, 150, 150, 0, 0);
             free(block);
         }
         canvas_free(srgb);
