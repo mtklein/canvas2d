@@ -1,22 +1,22 @@
-# Canvas 2D coverage: the honest gap list
+# Canvas 2D coverage: the gap list
 
-The README's capability table shows what works. This is the complement: a sweep of
-the full [`CanvasRenderingContext2D`](https://html.spec.whatwg.org/multipage/canvas.html#canvasrenderingcontext2d)
-surface against what we actually implement, splitting **partial** (we have it, but
-narrower than spec) from **missing entirely**, plus the handful that are genuinely
-out of scope for a headless C library. (Last swept against the living spec:
-June 2026 — the sweep that caught `lang`, `colorType`/`pixelFormat`, and
-`scrollPathIntoView`'s removal.)
+The README's capability table shows what works. This is the complement: a sweep
+of the full [`CanvasRenderingContext2D`](https://html.spec.whatwg.org/multipage/canvas.html#canvasrenderingcontext2d)
+surface against what is implemented, splitting **partial** (implemented but
+narrower than spec) from **missing entirely**, plus the items out of scope for a
+headless C library. (Last swept against the living spec: June 2026 — the sweep
+that caught `lang`, `colorType`/`pixelFormat`, and `scrollPathIntoView`'s
+removal.)
 
-This project isn't chasing spec completeness for its own sake — it's a vehicle for
-learning `-fbounds-safety`. So the selection is biased: we prioritize features
-whose hot path is *indexed-buffer-dense*, where bounds checking has something to
-say, over features that are mostly plumbing or string parsing.
+The project is a vehicle for learning `-fbounds-safety`, not for spec
+completeness, so the selection is biased: features whose hot path is
+*indexed-buffer-dense*, where bounds checking applies, are prioritized over
+features that are mostly plumbing or string parsing.
 
 ## Near-term plan
 
-Chosen because their kernels are exactly the kind of dense, per-pixel,
-indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
+Chosen because their kernels are dense, per-pixel, indexed-buffer work and good
+SIMD targets:
 
 1. ~~**`globalCompositeOperation`**~~ — **done** (all 26 modes), as the
    checked-C blend kernels (item 2). (A since-removed Metal backend ran
@@ -27,10 +27,10 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    `blend8(src, dst, mode)`
    kernel is all 26 composite/blend modes, premultiplied, over `__counted_by`
    tiles, ~350 lines of checked C compositing onto the canvas's own RGBA16F
-   target. It began life behind a compositor ABI chosen against a Metal GPU
+   target. It began behind a compositor ABI selected against a Metal GPU
    backend at build time and held
    bit-for-bit identical to it by a tolerance-0 differential; once measurements showed
-   the CPU path winning the flagship workload, Metal was removed, the GPU-parity
+   the CPU path faster on the flagship workload, Metal was removed, the GPU-parity
    rounding it required was dropped, and the compositor object itself was later
    dissolved into canvas.c (see
    [decisions/backend-differential.md](decisions/backend-differential.md) and
@@ -53,7 +53,7 @@ indexed-buffer work `-fbounds-safety` is meant for (and good SIMD targets):
    transparency rather than clamped edges; each paint site widens its bbox by
    the filter chain's spread so the soft skirt outgrows the shape. Held to a
    brute-force reference in `test_filter`.
-6. ~~**`filter` `drop-shadow()`**~~ — **done**, and with it the filter list is
+6. ~~**`filter` `drop-shadow()`**~~ — **done**; with it the filter list is
    feature-complete. The entry composites the op's tile source-over on top of
    a blurred (item 5's passes), offset, colour-tinted copy of its own alpha —
    shadow-under-drawing as one image, which later list entries keep filtering
@@ -67,9 +67,9 @@ Internals (not API features) considered and deferred:
 
 - A sparse/RLE coverage format to skip the transparent ~40–60% of a fill's bbox —
   analysis and why dense+SIMD stays the default in [sparse-coverage.md](sparse-coverage.md).
-- The internal colour type — **settled**. A devil's-advocate pass kept `_Float16`
-  storage and corrected its rationale (it round-trips the spec's 8-bit edges
-  exactly where u8 corrupts ~half of them) — see
+- The internal colour type — **settled**. A review kept `_Float16` storage and
+  corrected its rationale (it round-trips the spec's 8-bit edges exactly where u8
+  corrupts ~half of them) — see
   [decisions/float16-color-type.md](decisions/float16-color-type.md). The arm it
   left open was then measured three ways (f32-everywhere vs f16-storage/f32-compute
   vs pervasive 8-wide `_Float16` compute) and ruled in
@@ -197,8 +197,7 @@ Listed for completeness; these have no meaning without a document/host, so we do
 intend to implement them:
 
 - `drawFocusIfNeeded` — accessibility / DOM focus. (Its old sibling
-  `scrollPathIntoView` has since been removed from the spec entirely, so it no
-  longer counts against anyone.)
+  `scrollPathIntoView` has since been removed from the spec entirely.)
 - Context attributes and the context-loss machinery, each for its own reason:
   - `alpha: false` exists so a page compositor can skip blending the element
     over the page; headless, an opaque canvas is just a background fill.

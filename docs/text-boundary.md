@@ -1,10 +1,10 @@
 # The text boundary under `-fbounds-safety`: shaping a glyph run
 
-Text is where this project's real boundary to un-annotated unsafe code lives. Core
-Text is a pure-C framework with no bounds annotations, so the shim that binds it is
-built without `-fbounds-safety` (`configure.py BOUNDARY_C`). The question this probe
-asks: as the text API grows from "draw a string" to real shaping — RTL, ligatures,
-emoji, font fallback — what crosses that boundary, and how does the flag shape it?
+Text is the project's boundary to un-annotated unsafe code. Core Text is a
+pure-C framework with no bounds annotations, so the shim that binds it is built
+without `-fbounds-safety` (`configure.py BOUNDARY_C`). This document tracks, as
+the text API grows from "draw a string" to real shaping — RTL, ligatures, emoji,
+font fallback — what crosses that boundary and how the flag shapes it.
 
 > The two boundary shims this doc develops separately — the per-codepoint
 > `cnvs_font_ct.c` and the shaping `cnvs_shape_ct.c` — have since been unified into a
@@ -18,8 +18,8 @@ emoji, font fallback — what crosses that boundary, and how does the flag shape
 does all the Core Text array work internally with fixed count-1 buffers, and hands the
 checked core only *finished* `cnvs_path` outlines and `float` metrics. **No glyph
 array ever crosses the boundary.** That keeps the checked side forge-free, but it also
-means every bit of text logic lives in the *unsafe* TU — fine while that logic is
-trivial, a growing liability once it's shaping.
+means every bit of text logic lives in the *unsafe* TU — acceptable while that
+logic is trivial, a liability once it is shaping.
 
 ## Real shaping produces runtime-count runs
 
@@ -45,7 +45,7 @@ and the checked core reads it (the attribute is enforced there), with no marshal
 in between. Every `glyph[i]`, `xadv[i]`, `cluster[i]` in [../src/cnvs_text.c](../src/cnvs_text.c)
 is bounds-checked against the count the boundary supplied.
 
-This is the friendliest boundary in the whole exploration:
+The cost of this boundary compared with the others:
 
 | boundary | how data crosses | cost |
 |---|---|---|
@@ -53,7 +53,7 @@ This is the friendliest boundary in the whole exploration:
 | tagged pointer | `uintptr_t` round-trip | `__unsafe_forge` (bound lost) |
 | **shaped glyph run (C↔C)** | **`(ptr, count)` ABI** | **none** |
 
-Two consequences worth stating:
+Two consequences:
 
 - **Put the rich logic in the checked core.** Because a run crosses for free, layout,
   cluster mapping, RTL handling, and hit-testing belong on the checked side — the
@@ -119,7 +119,7 @@ be outlined or measured later, which adds two more boundary shapes.
 - **An opaque handle crosses for free.** The per-run font is a `CTFontRef`, stored as
   `void *__single font` and passed back to the boundary for CT calls. It needs **no
   forge** — an opaque handle carries no bounds metadata to lose, so it isn't an
-  `__unsafe_indexable` problem at all. Its only cost is *lifetime*: `CFRetain` when
+  `__unsafe_indexable` problem. Its only cost is *lifetime*: `CFRetain` when
   copied out of the `CTLine`, `CFRelease` in `cnvs_shaped_free`. (Contrast the tagged
   pointer, where the *value* was the bound and the round-trip destroyed it.)
 - **Output buffers cross the other direction, same ABI.** `cnvs_run_font_name` hands
@@ -157,17 +157,17 @@ glyph at its pen position. The split falls out naturally:
   genuinely awkward CT idiom (the callback) costs nothing precisely because it lives on
   the unsafe side of a boundary the run already crossed cheaply.
 
-This is the architecture the boundary findings argued for: the index-heavy work
-(layout) is checked; only the irreducibly-CT bits (path fetch, callback walk) are
-unsafe, and they're per-glyph leaves with no bounds logic of their own.
+The index-heavy work (layout) is checked; only the irreducibly-CT bits (path
+fetch, callback walk) are unsafe, and they are per-glyph leaves with no bounds
+logic of their own.
 
 ### The color-glyph gap
 
 `CTFontCreatePathForGlyph` returns `NULL` for a color (emoji) glyph — there is no
 outline. Outlining a lone emoji therefore yields a real *advance* but an *empty path*
-(`test_shape` asserts `pt_len == 0`). Outlines are a dead end for color glyphs; they
-need to be **drawn**, not traced — which is a different boundary shape (a pixel buffer
-the boundary fills), taken up next.
+(`test_shape` asserts `pt_len == 0`). Color glyphs have no outline to trace; they
+are **drawn** instead — a different boundary shape (a pixel buffer the boundary
+fills), taken up next.
 
 ## Color emoji: the bitmap boundary
 
@@ -182,11 +182,11 @@ glyph with `CTFontDrawGlyphs`.
   writes *within* the dimensions it was told (`w*4 × h = w*h*4` bytes). Same `(ptr,
   count)` trust model, opposite direction, **no forge**. Bounded data now crosses this
   boundary in every shape we've needed: glyph arrays in, name/pixel buffers out.
-- **Color works.** On current macOS `CTFontDrawGlyphs` renders the emoji *in colour*
-  (the test asserts non-grayscale pixels and real alpha), so the outline gap is fully
-  covered. Text rendering therefore has exactly two boundary shapes — **vector outline**
+- **Color output.** On current macOS `CTFontDrawGlyphs` renders the emoji *in colour*
+  (the test asserts non-grayscale pixels and real alpha), so the outline gap is
+  covered. Text rendering therefore has two boundary shapes — **vector outline**
   for normal glyphs, **raster draw-into-buffer** for color glyphs — and both pass
-  bounded data across cleanly.
+  bounded data across.
 - **ASan-clean.** Drawing into the checked heap buffer through CoreGraphics does not
   trip AddressSanitizer; CG writes inside the dimensions, so the boundary's contract
   ("dims match the buffer") holds at runtime too.
@@ -194,7 +194,7 @@ glyph with `CTFontDrawGlyphs`.
 So the whole text path — shape, fall back, lay out, outline or draw — keeps its
 index-heavy logic on the checked side and its irreducibly-CT work (shaping, glyph
 paths, glyph rasterization) on the unsafe side, with every crossing a plain
-`(pointer, count)` and not one forge among them.
+`(pointer, count)` and no forges.
 
 **Wired into the public API.** `canvas_fill_text`/`stroke_text` now lay out through
 `cnvs_shape`: outline runs accumulate into one device-space path and fill/stroke as
@@ -203,21 +203,21 @@ while a *color* run's glyphs are drawn with `cnvs_glyph_draw` into a checked RGB
 buffer and composited through the CTM by the very same code as `drawImage` — so an
 emoji takes the transform, clip, global alpha, and shadow like any other image.
 (`CGBitmapContext` hands back premultiplied, top-row-first RGBA, so the core only
-unpremultiplies before that hand-off — no row flip; an early version added one and
-rendered every emoji upside down.)  Measurement is unified onto the same path:
+unpremultiplies before that hand-off — no row flip is needed.)  Measurement is
+unified onto the same path:
 `measureText`, the advance used for `textAlign`, and the `maxWidth` condense all read
 the shaped line (`cnvs_shaped_metrics` measures each glyph in its own fallback font),
 so a string measures the way it draws.  Only the font-wide metrics
 (ascent/descent/em/baselines) still come from the primary font handle — cheap, and
 text-independent.
 
-## Bidi caret and selection: the intricate part adds no boundary at all
+## Bidi caret and selection: no added boundary
 
-Caret placement and selection are the most index-heavy text feature, and they are the
-cleanest result: **they add zero unsafe surface.** `cnvs_shaped_x_at_index` (logical
-index → visual x) and `cnvs_shaped_selection` (logical range → visual spans) are pure
-cross-indexing over the cluster map the boundary already handed across — no CT call,
-no new crossing.
+Caret placement and selection are the most index-heavy text feature, and they
+add zero unsafe surface. `cnvs_shaped_x_at_index` (logical index → visual x) and
+`cnvs_shaped_selection` (logical range → visual spans) are pure cross-indexing
+over the cluster map the boundary already handed across — no CT call, no new
+crossing.
 
 The bidi behaviour falls out of the index logic. A *full* selection stays one span
 over the whole line; a logical range that straddles the LTR↔RTL boundary maps to
@@ -230,11 +230,10 @@ free.
 Every piece of that is checked: each `cluster[i]` read against the run count, each
 `out[n++]` against the `__counted_by(max)` output buffer (the span count is capped, so
 a pathological input can't overflow the caller's array), the cluster value
-range-validated before it's trusted as a source index. **No forge, no CT, all
-checked.** The thesis the whole exploration kept hitting lands hardest here: put the
-indexed data in a `(pointer, count)` form once at the boundary, and even the most
-intricate downstream logic — bidi — is ordinary bounds-checked C. The unsafe surface
-of real text never grew past shape + outline + draw.
+range-validated before it's trusted as a source index. No forge, no CT, all
+checked. With the indexed data in `(pointer, count)` form once at the boundary,
+the downstream bidi logic is ordinary bounds-checked C. The unsafe surface of
+real text never grew past shape + outline + draw.
 
 ## The outline boundary, re-cut: canonical curves in font units
 
@@ -270,12 +269,11 @@ the core walks it defensively: a byte that isn't a verb, or a verb whose points 
 run past the count, stops the walk instead of being trusted as an index — the same
 posture as the cluster-map range check.
 
-Why re-cut a boundary that rendered correctly? Because canonical curves are the
-prerequisite for what comes next: a lookup from call parameters to derived glyph
-data, checked before Core Text is ever called, and a self-contained serialization of
-glyph geometry into the canvas-program format. Both need the boundary's output to be
-*reusable* — keyed by font + glyph id, valid at any transform — which is exactly what
-device-space flattened points can never be.
+The re-cut is the prerequisite for what comes next: a lookup from call
+parameters to derived glyph data, checked before Core Text is called, and a
+self-contained serialization of glyph geometry into the canvas-program format.
+Both need the boundary's output to be reusable — keyed by font + glyph id, valid
+at any transform — which device-space flattened points cannot be.
 
 ## The lookup in front: the boundary becomes a cache-miss path
 
@@ -287,11 +285,12 @@ two things that cross:
 - **Shaped lines**, keyed by `(size_px bits, paragraph direction, text bytes)`.
   `fillText`, `strokeText`, and both measure paths used to shape and free a
   `cnvs_shaped` per call; they now *borrow* the cached line (the cache owns it,
-  retained `CTFontRef`s and all), so the universal measure-then-draw pattern shapes
+  retained `CTFontRef`s and all), so the measure-then-draw pattern shapes
   once. The direction bit is in the key because the same bytes shape differently
   under ltr and rtl paragraph bases (run order, neutral resolution) — the canvas
   `direction` attribute supplies it. 64 slots, LRU-evicted — a frame's
-  repeated labels stay hot, and a 64-entry scan is cheaper than anything clever.
+  repeated labels stay hot, and a 64-entry scan is cheaper than a hash lookup at
+  this size.
 - **Glyph curves**, keyed by `(font name, glyph id)`. This is what the canonical
   re-cut bought: the cached verbs/points are font-unit bytes, valid at every size,
   pen, and transform, so one entry serves every draw — including the rare overflow
@@ -308,12 +307,12 @@ any cache-side allocation failure degrades that lookup to a plain boundary call 
 never an op failure (the OOM sweep's text scene covers the cache's allocation
 sites). `reset()` clears it back to cold along with the rest of the canvas state.
 
-The bounds-safety story stays the good one: the memo is ordinary checked C —
-`__counted_by` key bytes and curve arrays, every probe and comparison in the sized
-model — and it *narrows* the runtime trust surface: a warm canvas re-trusts nothing,
-because the unsafe TU isn't called at all. On a text-heavy tight loop (2000×
-`fill_text` + `measure_text` of one string) the caches are worth 1.43× end to end;
-the whole-gallery number doesn't move because each scene renders once on a fresh
+The bounds-safety position: the memo is ordinary checked C — `__counted_by` key
+bytes and curve arrays, every probe and comparison in the sized model — and it
+*narrows* the runtime trust surface: a warm canvas re-trusts nothing, because the
+unsafe TU isn't called at all. On a text-heavy tight loop (2000× `fill_text` +
+`measure_text` of one string) the caches are worth 1.43× end to end; the
+whole-gallery number doesn't move because each scene renders once on a fresh
 canvas — cold caches, by construction.
 
 This is the **live half** of the params → derived-data lookup. The serialized half
@@ -471,27 +470,26 @@ loaded pointer's bounds are its *current* count), so the build assembles the
 level array in a local and installs pointer + count once, adjacent — the same
 grouped-assignment idiom the rest of the cache uses.
 
-With this, the bitmap boundary matches the outline boundary's shape exactly:
-**canonical, keyed, size-independent bytes cross once**, the cache serves
-every draw, and the serialized form is the cache entry, losslessly deflated. The last
-boundary-per-draw path in text is gone — a warm canvas renders emoji, and a
-replayed program renders *and measures* them, without Core Text existing at
-all.
+The bitmap boundary now matches the outline boundary's shape: canonical, keyed,
+size-independent bytes cross once, the cache serves every draw, and the
+serialized form is the cache entry, losslessly deflated. There is no remaining
+boundary-per-draw path in text — a warm canvas renders emoji, and a replayed
+program renders *and measures* them, without Core Text existing at all.
 
-## The capstone: proving it on a machine without the fonts
+## Proving it on a machine without the fonts
 
-Every claim above — canonical curves cross the boundary, a cache sits in front
-of it, the program format embeds the derived data — `test_record_text` already
-pins *locally*, where the fonts exist: it records a text scene, replays it, and
-asserts byte-identical pixels with **zero** shape/glyph boundary misses. But the
-real claim is cross-machine: a program recorded on a machine with Libian TC and
-AppleColorEmoji must replay byte-for-byte on a machine that has neither. The CI
-runner is exactly that machine — Libian TC is download-on-demand, so it isn't
-there — which is why the byte-for-byte gate (`gate.yml`) only covers the ten
-text-free scenes. The fontless proof had to come from inside the suite, which
-the runner runs via bare `ninja`.
+The claims above — canonical curves cross the boundary, a cache sits in front of
+it, the program format embeds the derived data — `test_record_text` pins
+*locally*, where the fonts exist: it records a text scene, replays it, and
+asserts byte-identical pixels with **zero** shape/glyph boundary misses. The
+cross-machine claim is that a program recorded on a machine with Libian TC and
+AppleColorEmoji replays byte-for-byte on a machine that has neither. The CI
+runner is that machine — Libian TC is download-on-demand, so it isn't there —
+which is why the byte-for-byte gate (`gate.yml`) only covers the ten text-free
+scenes. The fontless proof comes from inside the suite, which the runner runs via
+bare `ninja`.
 
-It now does. Every gallery scene — all 34, the nine text scenes (`text`,
+Every gallery scene — all 34, the nine text scenes (`text`,
 `textgrid`, `textmetrics`, `textmaxwidth`, `emoji`, `emojiscale`, `shaping`,
 `rtl`, `selection`) among them — records a self-contained `gallery/<scene>.canvas` program
 alongside its committed PNG
@@ -537,10 +535,10 @@ have nothing to hook until then), and the scalar stragglers — conic gradients,
 record as plain op lines. So the determinism gate covers all 34 gallery
 scenes, not just the text ones, byte-for-byte.
 
-That is the arc's end state: glyph outlines and emoji captures cross the Core
-Text boundary as canonical, keyed, size-independent bytes; a cache serves every
-warm draw without re-crossing; the program format embeds those bytes — and
-every image, path, and op a scene uses — so a recorded program is
-self-contained; and every recorded gallery scene reproduces its committed
-render **byte-for-byte on a machine that has none of the fonts** — gated, in
-lockstep with the renderer, by a test that runs everywhere `ninja` does.
+End state: glyph outlines and emoji captures cross the Core Text boundary as
+canonical, keyed, size-independent bytes; a cache serves every warm draw without
+re-crossing; the program format embeds those bytes — and every image, path, and
+op a scene uses — so a recorded program is self-contained; and every recorded
+gallery scene reproduces its committed render **byte-for-byte on a machine that
+has none of the fonts** — gated, in lockstep with the renderer, by a test that
+runs everywhere `ninja` does.

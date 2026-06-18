@@ -1,16 +1,16 @@
 # Vocabulary: the survey and the rulings
 
 Status: **rulings implemented; this doc is the standing vocabulary
-reference.**  Each family below carries a "Landed:" line saying what the
-tree now does. Same word should mean one
-thing; one thing should have one word; generic looks generic, specific
-specific.  Precedents, in order: the web spec's names where we implement it,
-OpenCL's names for lane/vector vocabulary, Mike's len rule (size = bytes,
-nfoo/foo_count = element counts, len = spatial).
+reference.**  Each family below carries a "Landed:" line saying what the tree now
+does. The naming goals: one word per meaning, one meaning per word; generic names
+for generic concepts, specific names for specific ones.  Precedents, in order:
+the web spec's names where the project implements it, OpenCL's names for
+lane/vector vocabulary, Mike's len rule (size = bytes, nfoo/foo_count = element
+counts, len = spatial).
 
 ## Collisions (same word, different meanings)
 
-### C1. `cap` — four meanings, the worst token in the tree
+### C1. `cap` — four meanings
 - capacity (cnvs_verts.cap, pt_cap/sp_cap, stack_cap, cov_cap, tile_cap,
   bitwr.cap, vcap/pcap, get_line_dash(out, cap)) — Go/stb-standard usage
 - line cap (canvas_line_cap, emit_cap) — W3C term, immovable
@@ -429,7 +429,7 @@ half8_if_then_else.
 
 ## The len/size/count audit
 
-The project's strongest convention is nfoo (nruns, nfonts, nimg, npath,
+The project's dominant convention is nfoo (nruns, nfonts, nimg, npath,
 nverbs, npts, ncmds, nlines, npix...).  A consistent "len = bytes (int)"
 dialect exists, largely forced by __counted_by wanting int sibling fields
 (size_t is rare by construction).  True offenders — element counts named

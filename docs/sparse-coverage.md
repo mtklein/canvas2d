@@ -1,7 +1,7 @@
-# Sparse (RLE) coverage — a considered future direction
+# Sparse (RLE) coverage — a future direction
 
 Status: **not implemented, intentionally.** This records the analysis so a future
-pass doesn't have to rediscover it.
+pass does not have to rediscover it.
 
 ## Today: dense coverage
 
@@ -52,17 +52,17 @@ skipping that work across resolve → paint → blit.
 ## Where it *would* pay off (if revisited)
 
 - **Clip masks (highest value, lowest friction).** A sparse/RLE clip — Skia's
-  `SkAAClip` — is a well-known win for complex clip regions, shrinks the per-state
+  `SkAAClip` — is a known win for complex clip regions, shrinks the per-state
   memory the clip is copied with, and sidesteps the dense-tile boundary entirely
-  (clip intersection is CPU-only). This is the slice to prototype first.
+  (clip intersection is CPU-only). The slice to prototype first.
 - **Very sparse content** — text runs, thin strokes, intricate paths — where the
   bbox is mostly empty and runs are long enough to amortize the per-run overhead.
 - **The blend kernels** ([canvas.c](../src/canvas.c))
   skipping fully-transparent source runs.
 
-## Bottom line
+## Conclusion
 
-Keep the dense + SIMD path as the default; it's a good local optimum for typical
+Keep the dense + SIMD path as the default; it is a local optimum for typical
 solid/convex fills. Treat RLE as a targeted tool for sparse/text/clip-heavy
 workloads, starting with a sparse clip mask, and only behind a dense-vs-sparse
-chooser — never as a wholesale replacement.
+chooser — not as a wholesale replacement.

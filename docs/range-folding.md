@@ -54,12 +54,12 @@ pays the check.
 | contiguous runs | 84 ms | 56 ms | **1.49×** |
 
 This is the opposite extreme from the earlier probes. The buffer is L1-resident and
-the loop is compute-bound (load, add), so there are **no memory stalls to hide the
-checks behind** — they land squarely on the critical path. Compare the memory-bound
-cases where the same kind of check was nearly free: the data-dependent LUT (1.05×) and
+the loop is compute-bound (load, add), so there are no memory stalls to hide the
+checks behind — they land on the critical path. Compare the memory-bound cases
+where the same kind of check was nearly free: the data-dependent LUT (1.05×) and
 the vertical blur (~1.0×).
 
-That gives a compact model for the whole exploration:
+A model for the cost across these probes:
 
 > **cost of a bounds check ≈ (is it elided?) × (is it hidden by a stall?)**
 
@@ -67,8 +67,8 @@ A register-resident or loop-induction access pays nothing because the check is e
 A memory-bound access pays little because the check hides in a cache-miss shadow. A
 *computed-index, compute-bound* access — a ring buffer, a hash probe — loses on both
 counts and pays the full ~1.5–1.6×. That, not raw arithmetic, is where
-`-fbounds-safety` actually costs you; and the escape (a forge) is the same
-checked-domain exit that [bit-stealing](tagptr.md) needed.
+`-fbounds-safety` costs the most; the escape (a forge) is the same checked-domain
+exit that [bit-stealing](tagptr.md) needed.
 
 ## Across optimization levels: the check blocks the vectorizer
 
@@ -101,22 +101,22 @@ So the model takes a third factor:
 > **cost ≈ (elided?) × (hidden by a stall?) × (blocks vectorization?)**
 
 At `-Os` that third factor is ~1 — the baseline isn't vectorized either — which is why
-every probe in this exploration measured only a modest flag cost. **`-Os` flatters
-`-fbounds-safety`.** At `-O2`/`-O3` the third factor dominates for any vectorizable
+every probe here measured only a modest flag cost: `-Os` is the favorable case for
+`-fbounds-safety`. At `-O2`/`-O3` the third factor dominates for any vectorizable
 loop with an un-elided per-element check: the check pins the safe build to scalar
 while the baseline pulls away. The register-residency wins ([the pipeline's
 channels](pixel-pipelines.md), [the `vtbl` table](gather-lut.md)) are immune — no
 per-element check, nothing to block the vectorizer — so "keep the hot index in the
-canonical `i < count` form, or move the data into registers" matters *more* at
-production optimization than `-Os` alone let on.
+canonical `i < count` form, or move the data into registers" matters more at
+production optimization than at `-Os`.
 
-## Explicit SIMD is the reliable answer
+## Explicit SIMD
 
-Autovectorization is the wrong thing to lean on here: it only fires at `-O2`+, only on
-the simplest loops, and the flag blocks it for checked code regardless. The durable
-move is to vectorize *explicitly* and let `-fbounds-safety` check the loads at a
-granularity you choose. `ring_sum_simd` is the same contiguous runs written as a hand
-SIMD reduction — a whole-vector bounds-checked block load (`memcpy` of 64 bytes, one
+Autovectorization is unreliable here: it only fires at `-O2`+, only on the simplest
+loops, and the flag blocks it for checked code regardless. The alternative is to
+vectorize *explicitly* and let `-fbounds-safety` check the loads at a chosen
+granularity. `ring_sum_simd` is the same contiguous runs written as a hand SIMD
+reduction — a whole-vector bounds-checked block load (`memcpy` of 64 bytes, one
 check per 16 elements) into four register accumulators:
 
 | checked form | `-Os` | `-O1` | `-O2` | flag cost |
@@ -142,18 +142,18 @@ check per 16 elements) into four register accumulators:
   [the register pipeline](pixel-pipelines.md) and [the `vtbl` LUT](gather-lut.md) free,
   here applied to check *granularity* rather than eliminating the check.
 
-Bottom line: `-fbounds-safety` is friendly to *explicit* vectorization (the
-whole-vector load is one cheap, amortizable check) and hostile to the *auto*vectorizer
-(the per-element check is a barrier it won't cross). Reach for vectors and pick your
-check granularity; don't expect `-O2` to rescue a checked scalar loop — it can't.
+Summary: `-fbounds-safety` is friendly to *explicit* vectorization (the
+whole-vector load is one cheap, amortizable check) and hostile to the
+*auto*vectorizer (the per-element check is a barrier it won't cross). Vectorize
+explicitly and pick the check granularity; `-O2` does not rescue a checked scalar
+loop.
 
 ## Epilogue: the probe is retired
 
 The circular buffer this study measured (`ring.c`/`ring.h`, the `ring_sum_masked` /
 `ring_sum_runs` / `ring_sum_simd` variants, their test and three benches) was a
-self-contained probe, never wired into the renderer. The boundary it mapped is
-charted and the cost model it built — *elided? × hidden by a stall? × blocks
-vectorization?* — is daily practice: keep the hot index in the canonical `i < count`
-form or move the data into registers, and vectorize explicitly to choose your check
-granularity. With the question answered, the code has been retired from the tree; the
-finding stands without it, and git history holds the modules.
+self-contained probe, never wired into the renderer. The cost model it built —
+*elided? × hidden by a stall? × blocks vectorization?* — applies across the live
+kernels: keep the hot index in the canonical `i < count` form or move the data
+into registers, and vectorize explicitly to choose the check granularity. The
+code has been retired from the tree; git history holds the modules.
