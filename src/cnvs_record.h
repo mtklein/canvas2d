@@ -54,6 +54,7 @@ void cnvs_rec_text_max(struct cnvs_recorder *__single r, char const *__null_term
 extern char const *const cnvs_composite_name[CANVAS_OP_LUMINOSITY + 1];
 extern char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1];
 extern char const *const cnvs_working_space_name[CANVAS_WS_LINEAR + 1];
+extern char const *const cnvs_gradient_interp_name[CNVS_INTERP_OKLAB + 1];
 
 // `working_space <name>` -- emitted at record start ONLY for a non-sRGB working
 // space, so every existing (sRGB) .canvas file stays byte-identical (absence
@@ -171,3 +172,11 @@ void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_alig
 void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
                             enum canvas_text_baseline baseline);
 void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction dir);
+// `<name> <interp>` -- the fill/stroke gradient interpolation setters, `name`
+// being the op spelling (set_fill_gradient_interpolation /
+// set_stroke_gradient_interpolation) and the interp space written by name.
+// ALWAYS emitted (both spaces), so an Oklab gradient round-trips; absence on
+// replay is the sRGB default, keeping every legacy program byte-identical.
+void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
+                             char const *__null_terminated name,
+                             enum cnvs_gradient_interp interp);

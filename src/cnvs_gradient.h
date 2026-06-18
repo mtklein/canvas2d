@@ -5,6 +5,7 @@
 // save/restore.  Fills and strokes sample it per pixel on the CPU into the tile the
 // blend stage composites.
 
+#include "canvas.h"     // enum canvas_working_space, enum cnvs_gradient_interp
 #include "cnvs_math.h"
 
 #include <ptrcheck.h>
@@ -27,6 +28,15 @@ struct cnvs_gradient {
     float angle;   // conic: start angle (radians), device space; unused otherwise
     cnvs_stop stops[CNVS_STOPS_MAX];
     int stop_count;
+    // Oklab interpolation needs to take the stored stop colours (which live in
+    // the canvas WORKING space) to linear and back at eval time.  The space is
+    // stamped onto the gradient when it is created -- it is immutable on the
+    // canvas, so reading cv->space once at set time is exactly as correct as
+    // threading the canvas into every eval call, and keeps the colour kernels
+    // (cnvs_gradient_color_at/_row) dependent only on the gradient, not the
+    // canvas.  Zero (CANVAS_WS_SRGB) for designated-initializer gradients.
+    enum cnvs_gradient_interp interp;
+    enum canvas_working_space space;
 };
 
 // Insert a stop in offset order (offset clamped to [0,1]); a no-op once full.

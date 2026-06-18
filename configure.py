@@ -229,8 +229,8 @@ def main():
     gallery_scenes = [
         "affine", "batch", "blend", "clip", "conic", "dashes", "dirtyrect",
         "drawimage", "emoji", "emojiscale", "filters", "gradients", "hittest",
-        "imagedata", "imagescale", "joins", "linearlight", "miterdash", "path2d",
-        "paths", "pattern",
+        "imagedata", "imagescale", "joins", "linearlight", "miterdash", "oklab",
+        "path2d", "paths", "pattern",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",
         "textmaxwidth", "textmetrics", "winding",
