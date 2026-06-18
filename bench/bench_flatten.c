@@ -1,4 +1,6 @@
-// Isolated benchmark: adaptive de Casteljau flattening of cubic Beziers.
+// Isolated benchmark: adaptive de Casteljau flattening of cubic Beziers, worst
+// case -- random control points across the canvas force deep subdivision.
+// bench_flatten_real is the median twin (arc and glyph-like curves).
 #include "bench_reps.h"
 #include "bench_util.h"
 

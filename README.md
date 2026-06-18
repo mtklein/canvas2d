@@ -454,7 +454,8 @@ run; all CPU-only. A run on an Apple Silicon laptop:
 | `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 71 ms | 71 ms | **1.00×** |
 | `bench_stroke` — stroke expansion: 4-wide segment/join planes, block-staged verts | 26 ms | 26 ms | **1.00×** |
 | `bench_gradient_fill` — gradient fill: 8-wide radial solve + 8-wide exact stop lerp | 14.5 ms | 14.4 ms | **1.01×** |
-| `bench_flatten` — cubic-Bézier flattening | 116 ms | 114 ms | **1.02×** |
+| `bench_flatten_real` — cubic flattening, median case (arc / glyph-like curves) | 39 ms | 39 ms | **1.00×** |
+| `bench_flatten` — cubic flattening, worst case (random control points) | 118 ms | 116 ms | **1.01×** |
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.0 ms | 8.8 ms | **1.02×** |
 | `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.10×** |
 | `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 30 ms | **1.11×** |
