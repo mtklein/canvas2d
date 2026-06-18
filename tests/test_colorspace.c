@@ -255,6 +255,160 @@ static void linear_multiply_differs(void) {
     free(px);
 }
 
+// --- linear-canvas blend modes: the encode-roundtrip arm ---------------------
+//
+// On a LINEAR canvas the spec-in-sRGB modes (overlay, darken, lighten, the
+// dodge/burn pair, hard/soft-light, additive lighter, and the non-separable
+// hue/saturation/color/luminosity) run through canvas.c's encode->sRGB / blend /
+// decode->linear wrapper.  This sweep paints each over a known backdrop on a
+// CANVAS_CS_LINEAR_SRGB canvas and checks the centre pixel against a
+// double-precision oracle computed in the SAME frame the wrapper uses.
+//
+// Inputs are tagged CANVAS_CS_LINEAR_SRGB so they reach the surface verbatim
+// (no entry transfer); both are OPAQUE so the premultiplied fold collapses to
+// the bare blend term and the unpremul/repremul rounding through f16 stays
+// small.  The wrapper encodes the stored linear operands to sRGB, blends there,
+// decodes to linear; the CANVAS_CS_SRGB readback re-encodes -- so the observable
+// sRGB byte is exactly the sRGB-space blend of the sRGB-encoded operands.  That
+// is the oracle: encode each linear operand, blend per the spec formula, quantize.
+
+static double clampd(double x) { return x < 0.0 ? 0.0 : x > 1.0 ? 1.0 : x; }
+
+// Separable spec blend B(cb, cs) for one channel, in encoded [0,1].
+static double sep_blend(enum canvas_composite_op m, double cb, double cs) {
+    switch ((int)m) {
+        case CANVAS_OP_MULTIPLY:   return cb * cs;
+        case CANVAS_OP_SCREEN:     return cb + cs - cb * cs;
+        case CANVAS_OP_OVERLAY:    return cb <= 0.5 ? 2.0 * cb * cs
+                                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
+        case CANVAS_OP_DARKEN:     return cb < cs ? cb : cs;
+        case CANVAS_OP_LIGHTEN:    return cb > cs ? cb : cs;
+        case CANVAS_OP_COLOR_DODGE:
+            return cb <= 0.0 ? 0.0 : cs >= 1.0 ? 1.0
+                 : (cb / (1.0 - cs) < 1.0 ? cb / (1.0 - cs) : 1.0);
+        case CANVAS_OP_COLOR_BURN:
+            return cb >= 1.0 ? 1.0 : cs <= 0.0 ? 0.0
+                 : 1.0 - ((1.0 - cb) / cs < 1.0 ? (1.0 - cb) / cs : 1.0);
+        case CANVAS_OP_HARD_LIGHT: return cs <= 0.5 ? 2.0 * cb * cs
+                                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
+        case CANVAS_OP_SOFT_LIGHT: {
+            double const d = cb <= 0.25 ? ((16.0 * cb - 12.0) * cb + 4.0) * cb : sqrt(cb);
+            return cs <= 0.5 ? cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
+                             : cb + (2.0 * cs - 1.0) * (d - cb);
+        }
+        default:                   return cs;  // (unreached for the modes swept)
+    }
+}
+
+// The double-precision spec luminosity / saturation helpers (W3C compositing),
+// matching blend_nonsep8's set_lum/clip_color/set_saturation in float frame.
+typedef struct { double r, g, b; } rgbd;
+static double lumd(rgbd c) { return 0.3 * c.r + 0.59 * c.g + 0.11 * c.b; }
+static double mind3(rgbd c) { double m = c.r < c.g ? c.r : c.g; return m < c.b ? m : c.b; }
+static double maxd3(rgbd c) { double m = c.r > c.g ? c.r : c.g; return m > c.b ? m : c.b; }
+static rgbd clip_color(rgbd c) {
+    double const l = lumd(c), n = mind3(c), x = maxd3(c);
+    if (n < 0.0) {
+        double const k = l / (l - n);
+        c.r = l + (c.r - l) * k; c.g = l + (c.g - l) * k; c.b = l + (c.b - l) * k;
+    }
+    if (x > 1.0) {
+        double const k = (1.0 - l) / (x - l);
+        c.r = l + (c.r - l) * k; c.g = l + (c.g - l) * k; c.b = l + (c.b - l) * k;
+    }
+    return c;
+}
+static rgbd set_lum(rgbd c, double l) {
+    double const d = l - lumd(c);
+    c.r += d; c.g += d; c.b += d;
+    return clip_color(c);
+}
+static double satd(rgbd c) { return maxd3(c) - mind3(c); }
+static rgbd set_sat(rgbd c, double s) {
+    double const mn = mind3(c), mx = maxd3(c);
+    if (mx <= mn) { return (rgbd){ 0.0, 0.0, 0.0 }; }
+    double const k = s / (mx - mn);
+    return (rgbd){ (c.r - mn) * k, (c.g - mn) * k, (c.b - mn) * k };
+}
+static rgbd nonsep_blend(enum canvas_composite_op m, rgbd cb, rgbd cs) {
+    switch ((int)m) {
+        case CANVAS_OP_HUE:        return set_lum(set_sat(cs, satd(cb)), lumd(cb));
+        case CANVAS_OP_SATURATION: return set_lum(set_sat(cb, satd(cs)), lumd(cb));
+        case CANVAS_OP_COLOR:      return set_lum(cs, lumd(cb));
+        default:                   return set_lum(cb, lumd(cs));  // luminosity
+    }
+}
+
+static void linear_blend_modes_oracle(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    CHECK(px != NULL);
+    if (!px) {
+        return;
+    }
+    // Backdrop and source as LINEAR values (tagged LINEAR_SRGB, stored verbatim),
+    // distinct per channel so the non-separable HSL math has a real axis to work.
+    rgbd const bl = { 0.62, 0.30, 0.78 };  // backdrop, linear
+    rgbd const sl = { 0.18, 0.71, 0.42 };  // source, linear
+
+    enum canvas_composite_op const modes[] = {
+        CANVAS_OP_OVERLAY, CANVAS_OP_DARKEN, CANVAS_OP_LIGHTEN,
+        CANVAS_OP_COLOR_DODGE, CANVAS_OP_COLOR_BURN, CANVAS_OP_HARD_LIGHT,
+        CANVAS_OP_SOFT_LIGHT, CANVAS_OP_LIGHTER,
+        CANVAS_OP_HUE, CANVAS_OP_SATURATION, CANVAS_OP_COLOR, CANVAS_OP_LUMINOSITY,
+    };
+    for (int mi = 0; mi < (int)(sizeof modes / sizeof modes[0]); mi++) {
+        enum canvas_composite_op const m = modes[mi];
+
+        // Encode the stored linear operands to sRGB -- the wrapper's blend frame.
+        rgbd const bs = { (double)cnvs_linear_to_srgb((float)bl.r),
+                          (double)cnvs_linear_to_srgb((float)bl.g),
+                          (double)cnvs_linear_to_srgb((float)bl.b) };
+        rgbd const ss = { (double)cnvs_linear_to_srgb((float)sl.r),
+                          (double)cnvs_linear_to_srgb((float)sl.g),
+                          (double)cnvs_linear_to_srgb((float)sl.b) };
+        rgbd blended;
+        if (m == CANVAS_OP_LIGHTER) {  // additive: co = s + d, clamped per channel
+            blended = (rgbd){ ss.r + bs.r, ss.g + bs.g, ss.b + bs.b };
+        } else if ((int)m >= CANVAS_OP_HUE) {
+            blended = nonsep_blend(m, bs, ss);
+        } else {
+            blended = (rgbd){ sep_blend(m, bs.r, ss.r),
+                              sep_blend(m, bs.g, ss.g),
+                              sep_blend(m, bs.b, ss.b) };
+        }
+        // The wrapper decodes the sRGB blend back to linear; the SRGB readback
+        // re-encodes -- the two cancel, so the observable byte is the encoded
+        // blend, quantized.  (For lighter, the per-channel clamp lands the byte.)
+        int const want_r = (int)(clampd(blended.r) * 255.0 + 0.5);
+        int const want_g = (int)(clampd(blended.g) * 255.0 + 0.5);
+        int const want_b = (int)(clampd(blended.b) * 255.0 + 0.5);
+
+        struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+        CHECK(cv != NULL);
+        if (!cv) {
+            continue;
+        }
+        canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB,
+                             (float)bl.r, (float)bl.g, (float)bl.b, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        canvas_set_global_composite_operation(cv, m);
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB,
+                             (float)sl.r, (float)sl.g, (float)sl.b, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+        // f16 surface + two transfer round trips: a few-LSB tolerance.
+        CHECK(abs((int)p.r - want_r) <= 4);
+        CHECK(abs((int)p.g - want_g) <= 4);
+        CHECK(abs((int)p.b - want_b) <= 4);
+        CHECK(p.a == 255);
+        canvas_free(cv);
+    }
+    free(px);
+}
+
 // The NEW tag branches on an sRGB working canvas.  A CANVAS_CS_LINEAR_SRGB fill
 // of a known LINEAR value encodes linear->sRGB then clamps: linear 0.5 reads
 // back as the sRGB-encoded byte (~188), NOT 128 (which is what an SRGB-tagged
@@ -507,6 +661,7 @@ int main(void) {
     linear_image_data_round_trip();
     linear_source_over_oracle();
     linear_multiply_differs();
+    linear_blend_modes_oracle();
     srgb_canvas_tag_branches();
     linear_canvas_tag_branches();
     read_rgba_output_space();

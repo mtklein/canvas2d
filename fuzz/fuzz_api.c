@@ -99,6 +99,60 @@ static void do_image_draw(struct canvas *__single cv, struct cursor *c) {
     free(src);
 }
 
+// A reified canvas_image in one of the four formats, optionally with mips, drawn
+// scaled at a chosen smoothing quality -- so the structured fuzzer reaches the
+// trilinear chain, the Catmull-Rom magnifier, and the whole f16 sampler family
+// (the bitmap path do_image_draw above never builds an image object).
+static void do_image_obj(struct canvas *__single cv, struct cursor *c) {
+    int const sw = rd_range(c, 1, 32), sh = rd_range(c, 1, 32);
+    int const fmt = rd_range(c, 0, 3);  // 0:u8 unpremul 1:u8 premul 2:f16 unpremul 3:f16 premul
+    bool const f16 = fmt >= 2;
+    enum canvas_alpha_type const at = (fmt & 1) ? CANVAS_ALPHA_PREMUL
+                                                : CANVAS_ALPHA_UNPREMUL;
+    int const npx = sw * sh;
+    struct canvas_image *__single img = NULL;
+    if (f16) {
+        int const n = npx * 4;
+        _Float16 *__counted_by(n) px = malloc((size_t)n * sizeof *px);
+        if (px) {
+            for (int i = 0; i < n; i++) {
+                // Bytes -> [0,1] f16; the channels need not be valid premul, the
+                // sampler must tolerate any data (the total-decoder contract).
+                px[i] = (_Float16)((float)rd_u8(c) / 255.0f);
+            }
+            img = canvas_image_f16(CANVAS_CS_SRGB, px, sw, sh, at);
+        }
+        free(px);
+    } else {
+        int const n = npx * 4;
+        uint8_t *__counted_by(n) px = malloc((size_t)n);
+        if (px) {
+            for (int i = 0; i < n; i++) {
+                px[i] = rd_u8(c);
+            }
+            img = canvas_image_unorm8(CANVAS_CS_SRGB, px, sw, sh, at);
+        }
+        free(px);
+    }
+    if (!img) {
+        return;
+    }
+    if (rd_u8(c) & 1) {
+        (void)canvas_image_build_mips(img);  // half the time: the cached chain
+    }
+    canvas_set_image_smoothing_enabled(cv, (rd_u8(c) & 1) != 0);
+    canvas_set_image_smoothing_quality(cv,
+        (enum canvas_image_smoothing_quality)rd_range(c, 0, 2));
+    // Pick a draw overload: scaled (minify/magnify chosen by the dims) or subrect.
+    if (rd_u8(c) & 1) {
+        canvas_draw_image_scaled(cv, img, rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c));
+    } else {
+        canvas_draw_image_subrect(cv, img, rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c),
+                                  rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c));
+    }
+    canvas_image_free(img);
+}
+
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
     struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
 
@@ -202,6 +256,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_GET_IMAGE_DATA: do_image_get(cv, &c, W, H); break;
             case OP_PUT_IMAGE_DATA: do_image_put(cv, &c); break;
             case OP_DRAW_IMAGE:     do_image_draw(cv, &c); break;
+            case OP_DRAW_IMAGE_OBJ: do_image_obj(cv, &c); break;
             default: break;
         }
     }

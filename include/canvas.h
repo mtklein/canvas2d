@@ -65,7 +65,9 @@ enum canvas_composite_op {
 
 // The colour spaces this API names.  ONE enum spanning every role; each
 // surface that takes a space accepts only the valid SUBSET for that role and
-// rejects the rest (see canvas_in_space and the gradient interpolation setters).
+// ignores the rest (canvas_in_space takes the two compositing spaces; the
+// gradient interpolation setters take all three -- an out-of-range value is
+// ignored either way, never asserted).
 //   CANVAS_CS_SRGB        -- encoded sRGB.
 //   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB (same primaries, linear
 //                            transfer).
@@ -98,12 +100,18 @@ enum canvas_composite_op {
 // canvas): it rides the fill/stroke gradient, so save/restore brackets it like
 // any drawing state, and a fresh canvas_set_*_gradient resets it to the sRGB
 // default.  The geometry of the gradient (which stop pair, how far between) is
-// identical either way; only the colour lerp differs.  The valid subset here is
-// sRGB and Oklab:
+// identical either way; only the colour lerp differs.  All THREE colour spaces
+// are valid here (the orthogonal alpha knob, premul or unpremul, applies to
+// each); an out-of-range value for either knob is ignored, leaving the
+// gradient's interpolation untouched:
 //   CANVAS_CS_SRGB        -- component-wise lerp of the stop colours as stored,
 //                            today's behaviour byte for byte.  The default, so
 //                            an untouched gradient -- and every legacy program
 //                            with no interpolation line -- is unchanged.
+//   CANVAS_CS_LINEAR_SRGB -- lerp in linear-light sRGB (the stops decode
+//                            sRGB->linear, blend, encode back), so the ramp
+//                            tracks physical light rather than the encoded
+//                            values.
 //   CANVAS_CS_OKLAB       -- lerp in PREMULTIPLIED Oklab (L,a,b each scaled by
 //                            that stop's alpha, alpha lerped on its own,
 //                            unpremultiplied before converting out) for a

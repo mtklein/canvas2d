@@ -515,6 +515,122 @@ int main(void) {
         }
     }
 
+    // 7. Recording SUSPEND: each compound op records its own line, then brackets
+    // the public sub-calls it expands into with cnvs_rec_enter/leave so those
+    // sub-calls emit NOTHING while suspend != 0.  Record each compound op in
+    // isolation and assert: its own line is present, and the expansion's lines
+    // are absent (proving the suspend arms swallowed them).  This drives the
+    // suspend != 0 branch in every cnvs_rec_* emitter.
+    {
+        char const *__null_terminated sp = "build/test_record_suspend.canvas";
+        // Helper: record one drawing closure to sp via a tiny inline scope.
+        // arc -> records `arc`, swallows the canvas_ellipse it expands to.
+        {
+            struct canvas *__single cv = canvas(W, H);
+            CHECK(cv != NULL);
+            CHECK(canvas_record_to(cv, sp));
+            canvas_begin_path(cv);
+            canvas_arc(cv, 16.0f, 12.0f, 6.0f, 0.0f, 3.0f, false);
+            canvas_free(cv);
+            char b[1 << 13];
+            int const n = slurp(sp, b, (int)sizeof b);
+            CHECK(n > 0 && n < (int)sizeof b);
+            CHECK(HAS_LINE(b, n, "arc 16 12 6 0 3 0\n"));   // its own line
+            CHECK(HAS_NO_SUBSTR(b, n, "ellipse "));         // expansion swallowed
+        }
+        // round_rect -> records `round_rect`, swallows move_to/arc/close_path.
+        {
+            struct canvas *__single cv = canvas(W, H);
+            CHECK(cv != NULL);
+            CHECK(canvas_record_to(cv, sp));
+            canvas_begin_path(cv);
+            canvas_round_rect(cv, 1.0f, 1.0f, 10.0f, 10.0f, 2.0f);
+            canvas_free(cv);
+            char b[1 << 13];
+            int const n = slurp(sp, b, (int)sizeof b);
+            CHECK(n > 0 && n < (int)sizeof b);
+            CHECK(HAS_LINE(b, n, "round_rect 1 1 10 10 2\n"));
+            CHECK(HAS_NO_SUBSTR(b, n, "move_to "));
+            CHECK(HAS_NO_SUBSTR(b, n, "arc "));
+            CHECK(HAS_NO_SUBSTR(b, n, "close_path"));
+        }
+        // round_rect_radii -> records itself, swallows its arc_to expansion.
+        {
+            struct canvas *__single cv = canvas(W, H);
+            CHECK(cv != NULL);
+            CHECK(canvas_record_to(cv, sp));
+            canvas_begin_path(cv);
+            canvas_round_rect_radii(cv, 1.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
+                                    4.0f, 2.0f, 0.0f, 0.0f, 5.0f, 5.0f);
+            canvas_free(cv);
+            char b[1 << 13];
+            int const n = slurp(sp, b, (int)sizeof b);
+            CHECK(n > 0 && n < (int)sizeof b);
+            CHECK(HAS_LINE(b, n, "round_rect_radii 1 1 12 10 2 3 4 2 0 0 5 5\n"));
+            CHECK(HAS_NO_SUBSTR(b, n, "move_to "));
+            CHECK(HAS_NO_SUBSTR(b, n, "arc_to "));
+            CHECK(HAS_NO_SUBSTR(b, n, "line_to "));
+        }
+        // arc_to -> records `arc_to`, swallows the line_to/arc its impl issues.
+        {
+            struct canvas *__single cv = canvas(W, H);
+            CHECK(cv != NULL);
+            CHECK(canvas_record_to(cv, sp));
+            canvas_begin_path(cv);
+            canvas_move_to(cv, 2.0f, 2.0f);   // the only move_to expected
+            canvas_arc_to(cv, 2.0f, 2.0f, 8.0f, 2.0f, 3.0f);
+            canvas_free(cv);
+            char b[1 << 13];
+            int const n = slurp(sp, b, (int)sizeof b);
+            CHECK(n > 0 && n < (int)sizeof b);
+            CHECK(HAS_LINE(b, n, "arc_to 2 2 8 2 3\n"));
+            CHECK(HAS_LINE(b, n, "move_to 2 2\n"));         // the caller's, not swallowed
+            CHECK(HAS_NO_SUBSTR(b, n, "line_to "));         // arc_to's impl swallowed
+            CHECK(HAS_NO_SUBSTR(b, n, "arc "));
+        }
+        // fill_path -> records `path` block + `fill_path`, swallows p2d_replay's
+        // path methods AND the nested current-path build.
+        {
+            struct canvas *__single cv = canvas(W, H);
+            CHECK(cv != NULL);
+            CHECK(canvas_record_to(cv, sp));
+            struct canvas_path2d *__single p = canvas_path2d();
+            CHECK(p != NULL);
+            if (p) {
+                canvas_path2d_move_to(p, 4.0f, 4.0f);
+                canvas_path2d_line_to(p, 20.0f, 4.0f);
+                canvas_path2d_line_to(p, 12.0f, 18.0f);
+                canvas_path2d_close_path(p);
+                canvas_fill_path(cv, p, CANVAS_NONZERO);
+                canvas_path2d_free(p);
+            }
+            canvas_free(cv);
+            char b[1 << 13];
+            int const n = slurp(sp, b, (int)sizeof b);
+            CHECK(n > 0 && n < (int)sizeof b);
+            CHECK(HAS_LINE(b, n, "fill_path 0 nonzero\n"));
+            // The path's commands live in the `path` block's m/l/z lines (a
+            // distinct grammar); the suspend guard means NO current-path op
+            // lines (move_to/line_to/begin_path) leaked from p2d_replay.
+            CHECK(HAS_NO_SUBSTR(b, n, "move_to "));
+            CHECK(HAS_NO_SUBSTR(b, n, "line_to "));
+            CHECK(HAS_NO_SUBSTR(b, n, "begin_path"));
+        }
+        // resize -> records `resize`, swallows the reset it expands to.
+        {
+            struct canvas *__single cv = canvas(W, H);
+            CHECK(cv != NULL);
+            CHECK(canvas_record_to(cv, sp));
+            canvas_resize(cv, W, H);
+            canvas_free(cv);
+            char b[1 << 13];
+            int const n = slurp(sp, b, (int)sizeof b);
+            CHECK(n > 0 && n < (int)sizeof b);
+            CHECK(HAS_LINE(b, n, "resize 48 32\n"));
+            CHECK(HAS_NO_SUBSTR(b, n, "reset"));            // the swallowed expansion
+        }
+    }
+
     // 6. Strict parsing: an unknown trailing colour-space token on a colour op
     // line is rejected (replay returns false), like every other bad enum token.
     // A well-formed leading subset already applied; the canvas stays valid.
