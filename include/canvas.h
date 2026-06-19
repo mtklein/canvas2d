@@ -223,9 +223,10 @@ void canvas_set_shadow_offset_y(struct canvas *__single cv, float offset);
 // are device pixels, subpixel fractions honoured on a 1/256th-px grid like
 // shadowOffset{X,Y} (per spec, filter coordinates and shadow offsets alike
 // ignore the CTM).  The painted region grows by the shadow's
-// offset and blur spread.  Colour channels clamp to [0,1] as for
-// set_fill_rgba; a non-finite dx/dy/blur or a negative blur is ignored (the
-// call appends nothing), and so is a fully transparent colour (its shadow
+// offset and blur spread.  Colour channels follow set_fill_rgba: on an sRGB
+// canvas they clamp to [0,1], on a linear canvas extended values carry (an HDR
+// or wide-gamut shadow).  A non-finite dx/dy/blur or a negative blur is ignored
+// (the call appends nothing), and so is a fully transparent colour (its shadow
 // would composite as nothing).  Independent of the shadow_color state, which
 // casts the op's own shadow from the tile's alpha after the whole filter
 // list runs -- so a drop_shadow's skirt shapes that shadow too.

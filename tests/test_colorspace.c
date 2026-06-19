@@ -854,9 +854,48 @@ static void extended_fill_survives(void) {
     }
 }
 
+// Shadow tints carry extended values too, both shadow mechanisms.  A bright HDR
+// cyan shadow, offset clear of its 6x6 source with no blur, lands full-coverage
+// in the exposed region -- so the surface there is the extended tint, not clamped
+// to 1.  Checked for the canvas shadowColor path (emit_shadow / shade8) and the
+// filter drop-shadow path (apply_drop_shadow).
+static void extended_shadow_survives(void) {
+    int const w = 16, h = 16;
+    int const idx = 10 * w + 10;  // inside the (8,8)-offset shadow of a 6x6 source
+    cnvs_premul surf[256];
+
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        canvas_set_shadow_color_rgba(cv, CANVAS_CS_LINEAR_SRGB, 0.0f, 4.0f, 4.0f, 1.0f);
+        canvas_set_shadow_offset_x(cv, 8.0f);
+        canvas_set_shadow_offset_y(cv, 8.0f);
+        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.5f, 0.5f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, 6.0f, 6.0f);
+        cnvs_blend_read(cv, surf, w * h);
+        CHECK((float)surf[idx].g > 3.5f);  // HDR cyan shadow, not clamped to 1
+        CHECK((float)surf[idx].b > 3.5f);
+        canvas_free(cv);
+    }
+
+    struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv2 != NULL);
+    if (cv2) {
+        canvas_add_filter_drop_shadow(cv2, CANVAS_CS_LINEAR_SRGB, 8.0f, 8.0f, 0.0f,
+                                      0.0f, 4.0f, 4.0f, 1.0f);
+        canvas_set_fill_rgba(cv2, CANVAS_CS_SRGB, 0.5f, 0.5f, 0.5f, 1.0f);
+        canvas_fill_rect(cv2, 0.0f, 0.0f, 6.0f, 6.0f);
+        cnvs_blend_read(cv2, surf, w * h);
+        CHECK((float)surf[idx].g > 3.5f);  // HDR cyan drop-shadow, not clamped
+        CHECK((float)surf[idx].b > 3.5f);
+        canvas_free(cv2);
+    }
+}
+
 int main(void) {
     space_default_and_persistence();
     extended_fill_survives();
+    extended_shadow_survives();
     pq_rec2020_known_answers();
     image_sample_space_convert();
     linear_color_round_trip();

@@ -967,12 +967,11 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv,
         return;  // a fully transparent shadow composites as nothing
     }
     if (cv->rec) {
-        // dx/dy/blur are guarded finite and ride raw; the colour rides
-        // clamped (identity for in-range values, and a NaN channel would
-        // otherwise print as unreparseable "nan").
+        // dx/dy/blur are guarded finite; the colour rides raw, like set_fill_rgba
+        // and set_shadow_color -- so an extended (HDR / wide-gamut) shadow colour
+        // on a linear canvas round-trips (in-range values record identically).
         cnvs_rec_floats_cs(cv->rec, "add_filter_drop_shadow",
-                           (float[]){ dx, dy, blur, cnvs_clamp01(r), cnvs_clamp01(g),
-                                      cnvs_clamp01(b), cnvs_clamp01(a) }, 7, space);
+                           (float[]){ dx, dy, blur, r, g, b, a }, 7, space);
     }
     // The offsets split onto the 1/256th-px grid (shadow_offset_split, as for
     // shadowOffset{X,Y}); blur IS the Gaussian's stdDev, like blur() -- but
@@ -1184,8 +1183,15 @@ static void apply_drop_shadow(struct canvas *__single cv, cnvs_filter f, int w, 
     if (!ensure_blur_tmp(cv, 2 * npix)) {
         return;
     }
-    cnvs_premul const tint = cnvs_premultiply(
-        cnvs_unpremul_of(f.color[0], f.color[1], f.color[2], f.color[3]));
+    // Premultiply the tint without clamp: on a linear canvas an HDR or
+    // wide-gamut shadow colour (f.color is interned extended) carries through,
+    // the composite's space-aware output clamp being the bound, as for shade8.
+    // On an sRGB canvas f.color is already [0,1], so this stays byte-identical.
+    float const ta = f.color[3];
+    cnvs_premul const tint = { .r = (_Float16)(f.color[0] * ta),
+                               .g = (_Float16)(f.color[1] * ta),
+                               .b = (_Float16)(f.color[2] * ta),
+                               .a = (_Float16)ta };
     if (f.kx || f.ky) {
         // Bilinear gather: the source point x - (dx + kx/256) sits between
         // columns xa = x-dx-1 (weight tx) and xb = x-dx (weight 1-tx), rows
