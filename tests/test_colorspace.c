@@ -838,6 +838,20 @@ static void extended_fill_survives(void) {
         CHECK((float)surf[5].g < -0.05f);  // negative: outside sRGB gamut, survived
         canvas_free(cv2);
     }
+
+    // Gradients carry extended values too (no inconsistency with solid fills): a
+    // ramp from reference white to 6x white keeps the bright end above 1.0.
+    struct canvas *__single cv3 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv3 != NULL);
+    if (cv3) {
+        canvas_set_fill_linear_gradient(cv3, 0.0f, 0.0f, (float)w, 0.0f);
+        canvas_add_fill_color_stop(cv3, CANVAS_CS_LINEAR_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas_add_fill_color_stop(cv3, CANVAS_CS_LINEAR_SRGB, 1.0f, 6.0f, 6.0f, 6.0f, 1.0f);
+        canvas_fill_rect(cv3, 0.0f, 0.0f, (float)w, (float)h);
+        cnvs_blend_read(cv3, surf, w * h);
+        CHECK((float)surf[3].r > 4.0f);  // near the 6x end, extended (not clamped)
+        canvas_free(cv3);
+    }
 }
 
 int main(void) {

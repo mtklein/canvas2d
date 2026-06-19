@@ -2010,8 +2010,13 @@ static void paint_tile_gradient(struct canvas *__single cv, cbbox b,
                 if (fold) {
                     alpha = alpha * ((_Float16)cv->cov[i] * (_Float16)(1.0f / 255.0f));
                 }
-                cv->tile[i] = cnvs_premultiply((cnvs_unpremul){
-                    .r = col.r, .g = col.g, .b = col.b, .a = alpha });
+                // Premultiply without clamp, matching the vectorized arm's
+                // shade8: the colour bound is the blend's space-aware output
+                // clamp, so an extended linear gradient stop survives here too.
+                cv->tile[i] = (cnvs_premul){ .r = (_Float16)(col.r * alpha),
+                                            .g = (_Float16)(col.g * alpha),
+                                            .b = (_Float16)(col.b * alpha),
+                                            .a = alpha };
             }
         }
     }
