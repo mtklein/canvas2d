@@ -327,7 +327,7 @@ bare `ninja` in the checked variants and again under the `tsan` variant.
       ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
       ├── cnvs_geom     growable vertex/int buffers
       ├── cnvs_zlib     deflate + strict inflate (RFC 1950/1951) + adler32
-      ├── cnvs_png      RGBA8 ↔ PNG: Up-filtered encoder + strict own-output decoder
+      ├── cnvs_png      RGBA8 → PNG: Up-filtered encoder (output only; no decoder)
       ├── cnvs_color    sRGB transfer + linear-sRGB ↔ Oklab conversions
       ├── cnvs_record   draw calls → text canvas-program (the write side)
       ├── cnvs_replay   text canvas-program → draw calls (the read side)
@@ -459,12 +459,10 @@ run; all CPU-only. A run on an Apple Silicon laptop:
 | `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.0 ms | 8.8 ms | **1.02×** |
 | `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.10×** |
 | `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 30 ms | **1.11×** |
-| `bench_pngdec` — PNG decode of a committed gallery scene (strict inflate + un-Up) | 17 ms | 16 ms | **1.11×** |
 | `bench` — end-to-end (renders + PNG-encodes each frame; codec-bound) | 42 ms | 38 ms | **1.11×** |
 | `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 30 ms | 26 ms | **1.14×** |
 | `bench_render_large` — a full gallery-scale scene, planar f16 compositing | 179 ms | 147 ms | **1.22×** |
 | `bench_render` — the same at default size | 18 ms | 15 ms | **1.23×** |
-| `bench_pngenc` — PNG encode of a gallery scene (Up filter + LZ77 deflate + HW CRC32) | 43 ms | 33 ms | **1.33×** |
 | `bench_png` — PNG encode, synthetic run-heavy 256×256 (long-match stress) | 14 ms | 9.6 ms | **1.40×** |
 
 Per-element bounds checks are the cost, so a kernel's overhead tracks how much

@@ -292,8 +292,9 @@ read (bulk copy-out AND parse AND cnvs_png_read = file), get (web +
 accessors + getbits), fetch/peek (prose).  File I/O is load publicly,
 read internally, for the same operation.
 
-Landed: Landed: file I/O reads -- canvas_read_png (was canvas_load_png), matching
-cnvs_png_read and canvas_write_png; load/store stay register traffic.
+Landed: file I/O reads were named canvas_read_png / cnvs_png_read (matching
+canvas_write_png), then removed with the PNG decoder -- canvas_write_png is now
+the only file verb.  load/store stay register traffic.
 
 ### D7. premul family — coherent rule emerges: abbreviated
 premul/unpremul = the data format; spelled-out premultiply = the

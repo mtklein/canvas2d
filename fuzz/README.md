@@ -91,13 +91,6 @@ for the OOB-write classes.
   the pre-sized write cursor, and the CRC32 paths. With `-fbounds-safety` off
   here, ASan independently witnesses the cursor never overruns. (83k execs
   against the stored-block encoder: clean.)
-- **`fuzz_pngdec.c`** — the strict PNG **decoder** (`cnvs_png_decode`) on
-  adversarial bytes: chunk framing, per-chunk CRC verification, the IHDR
-  dimension gate, IDAT-run sequencing, and the None/Up defilter. On a
-  successful decode, the pixels re-encode and re-decode and must match
-  byte-for-byte (round-trip oracle). Seeds in `fuzz/seeds_pngdec/` (a 1x1 and
-  an 8x8 written by our own encoder):
-  `./build/fuzz/fuzz_pngdec -max_len=4096 /tmp/pngdec_corpus fuzz/seeds_pngdec`.
 - **`fuzz_inflate.c`** — the strict zlib **inflate** (`src/cnvs_zlib.c`) on
   adversarial bytes — the most CVE-scarred parser class in C: Huffman table
   construction from untrusted code lengths, 16/17/18 repeat handling, window
@@ -140,7 +133,7 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 ## Files
 
 - `fuzz_ops.h` — opcode enum, shared by `fuzz_api` and the seed generator.
-- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c`, `fuzz_pngdec.c`,
+- `fuzz_api.c`, `fuzz_state.c`, `fuzz_text.c`, `fuzz_png.c`,
   `fuzz_inflate.c`, `fuzz_zlib_diff.c`, `fuzz_replay.c` — the harnesses
   (`LLVMFuzzerTestOneInput` + a file-replay `main` behind
   `#ifndef FUZZ_NO_MAIN`).
@@ -150,8 +143,6 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
   font/glyph/shape and emoji-bitmap block programs, an `image`-block program
   driving every image op, a Path2D `path`-block program, the scalar ops, an
   rtl-direction program, and a reduced sampler-overflow crasher.
-- `seeds_pngdec/` — committed PNG seeds for `fuzz_pngdec`, written by our own
-  encoder.
 - `seeds_zlib/` — committed zlib streams for `fuzz_inflate` and
   `fuzz_zlib_diff`: minimal/stored/dynamic shapes plus a trailing-garbage
   stream that lands in the differential harness's one allowed asymmetry.
@@ -160,6 +151,6 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 There's no build script here: `ninja fuzzers` builds every harness (Homebrew clang +
 libFuzzer) straight from the main ninja graph — see configure.py's `fuzzers` target.
 
-Not yet done: adding `fuzz_state`/`fuzz_text`/`fuzz_png`/`fuzz_pngdec`/
-`fuzz_replay` to the committed-corpus replay gate (coordinate with `fuzzcorpus`,
-which currently replays `fuzz_api` only).
+Not yet done: adding `fuzz_state`/`fuzz_text`/`fuzz_png`/`fuzz_replay` to the
+committed-corpus replay gate (coordinate with `fuzzcorpus`, which currently
+replays `fuzz_api` only).

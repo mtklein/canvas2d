@@ -142,7 +142,7 @@ EXTRA_LIBS = {
 # stale runok stamps survived and their directory-census CHECKs (the "list
 # every committed file" pattern) never re-fired locally.  A new test that
 # opens gallery/ paths belongs in this set.
-GALLERY_READERS = {"test_replay_gallery", "test_pngread"}
+GALLERY_READERS = {"test_replay_gallery"}
 
 # The two -fsanitize-address-use-after-* flags widen ASan's *temporal* coverage
 # (stack use-after-scope and use-after-return) -- the class -fbounds-safety
@@ -436,9 +436,7 @@ def main():
                 # run_gallery edge that rewrites those same files in the same
                 # ninja invocation unless ordered after it.  CI hit exactly
                 # this: test_replay_gallery read emojiscale's fresh .canvas
-                # against a stale .png mid-re-render, DIVERGED.  test_pngread
-                # (decodes every committed PNG) is the same class with a
-                # narrower window (a mid-write truncated PNG).  Order-only
+                # against a stale .png mid-re-render, DIVERGED.  Order-only
                 # (||): the test must run after the re-render, but re-rendered
                 # pixels don't dirty the test.  In-suite these tests therefore
                 # check *this* machine's render; gate.yml's restore step is

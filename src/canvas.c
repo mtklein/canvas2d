@@ -4517,12 +4517,6 @@ bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated 
     return ok;
 }
 
-uint8_t *__counted_by_or_null(*len)
-canvas_read_png(char const *__null_terminated path,
-                int *__single w, int *__single h, int *__single len) {
-    return cnvs_png_read(path, w, h, len);
-}
-
 void canvas_get_image_data(struct canvas *__single cv,
                            enum canvas_color_space space,
                            int x, int y, int w, int h,

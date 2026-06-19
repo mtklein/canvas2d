@@ -1,21 +1,22 @@
 // The capstone of the record/replay arc: each committed gallery/<scene>.canvas
 // program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls -- all 38 scenes, the format's whole surface.
+// ZERO Core Text boundary calls -- all 39 scenes, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
 // (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
 // font/glyph/bitmap/shape blocks the text needs, the image blocks behind
 // drawImage/putImageData/patterns, and the path blocks behind the Path2D
 // draws).  This test is the determinism gate: for each program it
-//   (a) loads the committed PNG via canvas_read_png (the Z2 decoder),
-//   (b) replays the program onto a fresh canvas of the PNG's dimensions,
-//   (c) byte-compares the canvas's read_rgba to the decoded PNG, and
+//   (a) reads the committed PNG file (its IHDR gives the canvas dimensions),
+//   (b) replays the program onto a fresh canvas of those dimensions,
+//   (c) re-encodes the replayed canvas and byte-compares to the PNG file, and
 //   (d) asserts the replay took ZERO shape/glyph boundary cache-misses.
 //
-// Both directions are the proof.  The byte compare proves the replayed pixels
-// match the committed render exactly.  The zero-miss assertion proves the
-// glyphs and emoji captures came from the program's embedded blocks, not from
-// host fonts -- a single miss would mean a fill_text fell back through the
+// Both directions are the proof.  The re-encode-and-compare proves the replayed
+// pixels match the committed render exactly AND that the encoder is
+// deterministic (there is no decoder in the tree).  The zero-miss assertion
+// proves the glyphs and emoji captures came from the program's embedded blocks,
+// not from host fonts -- a single miss would mean a fill_text fell back through the
 // boundary to Core Text (and on a machine WITHOUT the recording machine's
 // fonts -- the CI runner has no Libian TC, it is download-on-demand -- that
 // fallback would also have produced different, wrong, or blank glyphs, which
@@ -34,11 +35,13 @@
 #include "test_util.h"
 
 #include "canvas.h"
+#include "cnvs_png.h"
 #include "cnvs_text.h"
 
 #include <dirent.h>
 #include <ptrcheck.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,16 +102,50 @@ static scene_pair const k_scenes[] = {
 };
 enum { SCENE_N = (int)(sizeof k_scenes / sizeof k_scenes[0]) };
 
-// Replay one scene's program onto a fresh canvas sized to its PNG, then prove
-// the pixels match the PNG byte for byte and the replay never crossed the text
-// boundary.
+// Replay one scene's program onto a fresh canvas sized from its PNG's IHDR, then
+// prove the re-encoded canvas matches the committed PNG byte for byte and the
+// replay never crossed the text boundary.
 static void check_scene(scene_pair s) {
-    int w = 0, h = 0, len = 0;
-    uint8_t *want = canvas_read_png(s.png, &w, &h, &len);
+    // Read the committed PNG file whole (the count sits beside its pointer, the
+    // -fbounds-safety idiom; no decoder in the tree, just raw bytes).
+    FILE *f = fopen(s.png, "rb");
+    CHECK(f != NULL);
+    if (!f) {
+        (void)fprintf(stderr, "  open failed: %s\n", s.png);
+        return;
+    }
+    long sz = -1;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        sz = ftell(f);
+    }
+    rewind(f);
+    CHECK(sz >= 24 && sz <= (1 << 30));  // signature + IHDR header (width/height)
+    if (sz < 24 || sz > (1 << 30)) {
+        (void)fclose(f);
+        return;
+    }
+    int const fsz = (int)sz;
+    uint8_t *__counted_by_or_null(fsz) want = malloc((size_t)fsz);
     CHECK(want != NULL);
-    CHECK(w > 0 && h > 0 && len == w * h * 4);
-    if (!want || len <= 0) {
-        (void)fprintf(stderr, "  load failed: %s\n", s.png);
+    if (!want) {
+        (void)fclose(f);
+        return;
+    }
+    bool const rd = fread(want, 1, (size_t)fsz, f) == (size_t)fsz;
+    (void)fclose(f);
+    CHECK(rd);
+    if (!rd) {
+        free(want);
+        return;
+    }
+    // The IHDR width/height (bytes 16..23, big-endian) size the replay canvas --
+    // a fixed-offset peek of bytes we are about to byte-compare, not a decode.
+    int const w = (int)(((uint32_t)want[16] << 24) | ((uint32_t)want[17] << 16) |
+                        ((uint32_t)want[18] << 8) | (uint32_t)want[19]);
+    int const h = (int)(((uint32_t)want[20] << 24) | ((uint32_t)want[21] << 16) |
+                        ((uint32_t)want[22] << 8) | (uint32_t)want[23]);
+    CHECK(w > 0 && h > 0 && w <= 16384 && h <= 16384);
+    if (w <= 0 || h <= 0 || w > 16384 || h > 16384) {
         free(want);
         return;
     }
@@ -143,20 +180,29 @@ static void check_scene(scene_pair s) {
                       s.canvas, c->shaping_misses, c->glyph_misses);
     }
 
-    int const n = len;
-    uint8_t *__counted_by_or_null(n) got = malloc((size_t)n);
+    // Re-encode the replayed canvas exactly as canvas_write_png does, then
+    // byte-compare to the committed PNG file.
+    int const rgba = w * h * 4;
+    uint8_t *__counted_by_or_null(rgba) got = malloc((size_t)rgba);
     CHECK(got != NULL);
     if (got) {
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, got, n);
-        int const cmp = memcmp(want, got, (size_t)n);
-        CHECK(cmp == 0);
-        if (cmp != 0) {
-            (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);
-        } else if (getenv("REPLAY_GALLERY_VERBOSE")) {
-            // Tests are silent on success (the suite's convention); the
-            // per-scene IDENTICAL table is opt-in for a human run.
-            (void)fprintf(stderr, "  %-32s IDENTICAL\n", s.canvas);
+        canvas_read_rgba(cv, CANVAS_CS_SRGB, got, rgba);
+        int elen = 0;
+        uint8_t *enc = cnvs_png_encode(got, w, h, &elen);
+        CHECK(enc != NULL);
+        CHECK(elen == fsz);
+        if (enc && elen == fsz) {
+            int const cmp = memcmp(enc, want, (size_t)fsz);
+            CHECK(cmp == 0);
+            if (cmp != 0) {
+                (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);
+            } else if (getenv("REPLAY_GALLERY_VERBOSE")) {
+                // Tests are silent on success (the suite's convention); the
+                // per-scene IDENTICAL table is opt-in for a human run.
+                (void)fprintf(stderr, "  %-32s IDENTICAL\n", s.canvas);
+            }
         }
+        free(enc);
     }
 
     free(got);
