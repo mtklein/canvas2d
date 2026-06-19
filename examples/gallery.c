@@ -1935,18 +1935,19 @@ static void extendedrange(void) {
 
     float const lx = 20.0f, gw = 440.0f;
 
-    // A. Precision: a shallow grey ramp at full 16-bit (top, smooth) over the same
-    // ramp quantized to the sRGB 8-bit grid (bottom, banded).  The 16-bit row is a
-    // linear gradient; the 8-bit row draws one bar per distinct output byte -- the
-    // staircase the old 8-bit PNG would have shown.
+    // A. Precision: the same shallow grey ramp quantized to the sRGB 8-bit grid
+    // (top, banded) over full 16-bit (bottom, smooth) -- legacy on top, new on
+    // bottom, to parallel the wide-gamut row.  The 8-bit row draws one bar per
+    // distinct output byte (the staircase the old 8-bit PNG would have shown); the
+    // 16-bit row is a linear gradient.
     float const lo = 0.045f, hi = 0.062f;  // shallow: ~11 byte levels across gw
     canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
-    canvas_fill_text(c, "shallow gradient: 16-bit (top, smooth) vs 8-bit (bottom, banded)",
+    canvas_fill_text(c, "shallow gradient: 8-bit (top, banded) vs 16-bit (bottom, smooth)",
                      lx, 28.0f);
     canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, lo, lo, lo, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, hi, hi, hi, 1.0f);
-    canvas_fill_rect(c, lx, 40.0f, gw, 26.0f);
+    canvas_fill_rect(c, lx, 70.0f, gw, 26.0f);
 
     int const gwi = (int)gw;
     int prev = (int)(cnvs_linear_to_srgb(lo) * 255.0f + 0.5f);
@@ -1957,7 +1958,7 @@ static void extendedrange(void) {
         if (byte != prev || px == gwi) {
             float const q = (float)prev / 255.0f;
             canvas_set_fill_rgba(c, CANVAS_CS_SRGB, q, q, q, 1.0f);
-            canvas_fill_rect(c, band_x0, 70.0f, (lx + (float)px) - band_x0, 26.0f);
+            canvas_fill_rect(c, band_x0, 40.0f, (lx + (float)px) - band_x0, 26.0f);
             band_x0 = lx + (float)px;
             prev = byte;
         }
