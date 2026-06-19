@@ -3,9 +3,9 @@
 [![gate](https://github.com/mtklein/canvas2d/actions/workflows/gate.yml/badge.svg)](https://github.com/mtklein/canvas2d/actions/workflows/gate.yml)
 
 A C23 implementation of a subset of the HTML Canvas 2D API. Geometry,
-antialiasing, compositing, gradients, text rasterization, blur, and a PNG codec
-run on the CPU; Core Text supplies glyph outlines. Built with ninja, compiled
-under `-fbounds-safety`.
+antialiasing, compositing, gradients, text rasterization, blur, and a PNG
+encoder run on the CPU; Core Text supplies glyph outlines. Built with ninja,
+compiled under `-fbounds-safety`.
 
 Build and safety notes: [docs/bounds-safety.md](docs/bounds-safety.md).
 Performance studies: [docs/pixel-pipelines.md](docs/pixel-pipelines.md),
@@ -15,7 +15,10 @@ Performance studies: [docs/pixel-pipelines.md](docs/pixel-pipelines.md),
 ## Gallery
 
 Each image is written by the in-tree PNG encoder
-([examples/gallery.c](examples/gallery.c)); regenerate with `ninja images`.
+([examples/gallery.c](examples/gallery.c)); regenerate with `ninja images`. The
+PNGs are 16-bit Rec.2020 / PQ (BT.2100); most scenes are SDR-range content in
+that container, while the last (`extendedrange`) carries wide-gamut and HDR
+values that need a wide-gamut HDR display to see in full.
 
 Transforms, `save`/`restore`, global alpha, filled Béziers and arcs, strokes:
 
@@ -253,6 +256,23 @@ lightness with the hue swept around the a/b circle:
 
 ![colorspaces](gallery/colorspaces.png)
 
+Image colour-space conversion — the same mid-tone sRGB test card drawn on a
+linear canvas with its colour-space tag honoured (left, the sampler converts
+sRGB→linear on deposit) vs ignored (right, the bytes treated as already linear,
+washing the colours out). The image's format governs filtering; the canvas
+working space governs compositing:
+
+![imagecolorspace](gallery/imagecolorspace.png)
+
+Extended range — what the 16-bit Rec.2020 / PQ output adds over 8-bit sRGB, on a
+linear canvas where extended values survive. A shallow gradient banded at 8-bit
+(top) but smooth at 16-bit (bottom); saturated colours past the sRGB gamut (sRGB
+primaries over Rec.2020); fills brighter than sRGB white (1×–8×); gradients that
+interpolate through HDR and wide-gamut values; and a shadow whose glow reads past
+white. The wide-gamut and brighter-than-white rows need a wide-gamut HDR display:
+
+![extendedrange](gallery/extendedrange.png)
+
 ## Quick start
 
 ```sh
@@ -395,7 +415,7 @@ canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
 canvas_fill(rule) / canvas_stroke / canvas_clip(rule) / is_point_in_path / is_point_in_stroke
 canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas_path2d_free
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
-canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / read_png
+canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / encode_png
 canvas_draw_bitmap / draw_bitmap_scaled / draw_bitmap_subrect   // borrowed RGBA8
 canvas_image_unorm8 / canvas_image_f16 / canvas_snapshot / canvas_image_build_mips / canvas_image_width / canvas_image_height / canvas_image_free
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // reified image
@@ -416,16 +436,16 @@ partial, planned).
 | Area | Status |
 |---|---|
 | Transforms, save/restore, alpha blending | ✅ |
-| `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export + load (Up-filtered rows, in-house deflate; the loader is strict and scoped to our own files) | ✅ |
+| `fill_rect` / `clear_rect` / `stroke_rect`, solid fills, PNG export — 16-bit Rec.2020 / PQ (BT.2100), cICP-signalled, Up-filtered rows, in-house deflate | ✅ output only (no decoder) |
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: per-corner elliptical radii) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
-| `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData) | ◑ no colorSpace |
+| `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData; each names a colour space {sRGB, extended-linear-sRGB, Oklab}) | ◑ RGBA8 only (no float16 ImageData) |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial + conic, fills and strokes, multi-stop; interpolation space (sRGB/linear/Oklab) × alpha (premul/unpremul) | ✅ per-pixel exact stop lerp, 8-wide (≤0.16/255 of exact, hard stops exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas_image`s in any of {unorm8, f16} × {unpremul, premul}; `canvas_snapshot` is canvas-as-source (premultiplied f16, one memcpy); `canvas_image_build_mips` caches the pyramid explicitly | ◑ DOM sources out of scope |
-| Colour — every colour input/output names a colour space {sRGB, extended-linear-sRGB, Oklab}; compositing in sRGB or extended-linear-sRGB | ◑ sRGB primaries only |
+| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas_image`s in any of {unorm8, f16} × {unpremul, premul}, each carrying a colour-space tag (sampled in its own space, the resolved sample converted to the working space on deposit); `canvas_snapshot` is canvas-as-source (premultiplied f16, one memcpy); `canvas_image_build_mips` caches the pyramid explicitly | ◑ DOM sources out of scope |
+| Colour — every colour input/output names a colour space {sRGB, extended-linear-sRGB, Oklab}; compositing in sRGB or extended-linear-sRGB; on a linear canvas extended values (HDR above 1, wide gamut below 0) carry through fills, gradients, images, and shadows to the Rec.2020 / PQ output | ◑ sRGB primaries for compositing (no Display-P3 / Rec.2020 working space) |
 | Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end) | ◑ no font-family/weight; full `measureText` TextMetrics |
 | Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering every pixel-affecting op (font/glyph/bitmap/shape blocks for text, numbered image blocks naming their {unorm8, f16} × {unpremul, premul} format for bitmap/image/putImageData/pattern sources with `image_mips` carrying mip state, numbered path blocks for Path2D, plus op lines with optional per-colour space tokens); replay reproduces the render with no Core Text call — gallery scenes replay byte-for-byte on a machine without the fonts (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
