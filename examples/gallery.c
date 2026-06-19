@@ -1921,7 +1921,7 @@ static void emojiscale(void) {
 // rows need a wide-gamut HDR display; on sRGB / SDR they gamut-map and clip.  The
 // program carries a `working_space linear` line and replays onto a linear canvas.
 static void extendedrange(void) {
-    int const w = 480, h = 360;
+    int const w = 480, h = 600;
     struct canvas *__single c = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
     if (!c) {
         return;
@@ -1994,6 +1994,35 @@ static void extendedrange(void) {
         canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.08f, 0.08f, 0.10f, 1.0f);
         canvas_fill_text(c, mlabel[i], x + 8.0f, 308.0f);
     }
+
+    // D. Extended gradients: the ramp itself carries extended values.  An HDR grey
+    // ramp (reference white -> 6x) over a wide-gamut ramp (sRGB red -> Rec.2020
+    // red); both far endpoints are outside [0,1] and the gradient interpolates
+    // straight through them.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+    canvas_fill_text(c, "extended gradients: HDR white->6x (top), sRGB->Rec.2020 red (bottom)",
+                     lx, 356.0f);
+    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, 6.0f, 6.0f, 6.0f, 1.0f);
+    canvas_fill_rect(c, lx, 368.0f, gw, 26.0f);
+    cnvs_rgb const wred = cnvs_rec2020_to_linear_srgb((cnvs_rgb){ 1.0f, 0.0f, 0.0f });
+    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, wred.r, wred.g, wred.b, 1.0f);
+    canvas_fill_rect(c, lx, 398.0f, gw, 26.0f);
+
+    // E. HDR shadow: a shape whose shadow colour is brighter than sRGB white -- on
+    // an HDR display the glow reads past paper-white.  Blur, no offset, so the
+    // glow is a halo around the shape (the shadow tint no longer clamps).
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+    canvas_fill_text(c, "HDR shadow: a glow brighter than sRGB white", lx, 462.0f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 5.0f, 5.0f, 1.0f);
+    canvas_set_shadow_blur(c, 16.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.57f, 0.62f, 1.0f);
+    canvas_fill_rect(c, 180.0f, 500.0f, 120.0f, 44.0f);
+    canvas_set_shadow_color_rgba(c, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);  // shadow off
+    canvas_set_shadow_blur(c, 0.0f);
 
     save(c, "gallery/extendedrange.png");
 }
