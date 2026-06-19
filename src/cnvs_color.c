@@ -103,6 +103,17 @@ cnvs_rgb cnvs_linear_srgb_to_rec2020(cnvs_rgb c) {
     };
 }
 
+// The BT.2087 2020->709 matrix, the inverse of the above.  Off-diagonals are
+// negative, so a saturated Rec.2020 colour lands outside [0,1] in linear sRGB --
+// exactly the extended values the linear working space is for.
+cnvs_rgb cnvs_rec2020_to_linear_srgb(cnvs_rgb c) {
+    return (cnvs_rgb){
+        .r =  1.66049100f * c.r - 0.58764114f * c.g - 0.07284986f * c.b,
+        .g = -0.12455047f * c.r + 1.13289990f * c.g - 0.00834942f * c.b,
+        .b = -0.01815076f * c.r - 0.10057890f * c.g + 1.11872966f * c.b,
+    };
+}
+
 // PQ (SMPTE ST 2084) OETF.  y is display luminance normalized so 1.0 == 10000
 // cd/m^2; clamp into [0,1] (PQ is undefined outside) and apply the standard
 // rational-power curve.  E' = ((c1 + c2 y^m1) / (1 + c3 y^m1))^m2.

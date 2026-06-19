@@ -6,6 +6,7 @@
 // ops, so its program replays fontless like every other scene's.
 
 #include "canvas.h"
+#include "cnvs_color.h"
 #include "cnvs_text.h"
 
 #include <math.h>
@@ -1911,6 +1912,72 @@ static void emojiscale(void) {
     save(c, "gallery/emojiscale.png");
 }
 
+// What the BT.2100 (16-bit Rec.2020 / PQ) output enables, on a linear canvas
+// where extended values survive: a shallow gradient that stays smooth at 16-bit
+// (8-bit would band), saturated colours past the sRGB gamut (authored in
+// Rec.2020, converted to extended linear sRGB), and fills brighter than sRGB
+// white (linear values above 1.0, which PQ carries as HDR highlights).  The full
+// effect needs a wide-gamut HDR display; on sRGB / SDR the wide swatches
+// gamut-map and the bright patches clip to white.  The program carries a
+// `working_space linear` line and replays onto a linear canvas.
+static void extendedrange(void) {
+    int const w = 480, h = 360;
+    struct canvas *__single c = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/extendedrange.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_font_size(c, 13.0f);
+
+    float const lx = 20.0f;
+
+    // A. 16-bit precision: a shallow grey gradient, band-free.  Stops in linear
+    // space, the default linear lerp -- the shallow slope bands visibly at 8-bit.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+    canvas_fill_text(c, "16-bit: shallow gradient (smooth; 8-bit would band)", lx, 28.0f);
+    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + 440.0f, 0.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 0.040f, 0.040f, 0.050f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, 0.070f, 0.070f, 0.085f, 1.0f);
+    canvas_fill_rect(c, lx, 40.0f, 440.0f, 54.0f);
+
+    // B. Wide gamut: each hue's sRGB primary (top) over its Rec.2020 primary
+    // (bottom), the latter authored in Rec.2020 -> extended linear sRGB.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+    canvas_fill_text(c, "wide gamut: sRGB (top) vs Rec.2020 (bottom)", lx, 132.0f);
+    cnvs_rgb const prim[3] = {
+        { 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f },
+    };
+    for (int i = 0; i < 3; i++) {
+        float const x = lx + (float)i * 150.0f;
+        canvas_set_fill_rgba(c, CANVAS_CS_LINEAR_SRGB, prim[i].r, prim[i].g, prim[i].b, 1.0f);
+        canvas_fill_rect(c, x, 144.0f, 130.0f, 34.0f);
+        cnvs_rgb const wide = cnvs_rec2020_to_linear_srgb(prim[i]);
+        canvas_set_fill_rgba(c, CANVAS_CS_LINEAR_SRGB, wide.r, wide.g, wide.b, 1.0f);
+        canvas_fill_rect(c, x, 180.0f, 130.0f, 34.0f);
+    }
+
+    // C. Brighter than sRGB white: fills above linear 1.0, which PQ carries as
+    // HDR highlights (1.0 == the reference white, ~203 cd/m^2).
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+    canvas_fill_text(c, "brighter than sRGB white: 1x .. 8x (HDR highlights)", lx, 252.0f);
+    float const mult[4] = { 1.0f, 2.0f, 4.0f, 8.0f };
+    char const *const mlabel[4] = { "1x", "2x", "4x", "8x" };
+    for (int i = 0; i < 4; i++) {
+        float const x = lx + (float)i * 112.0f;
+        float const k = mult[i];
+        canvas_set_fill_rgba(c, CANVAS_CS_LINEAR_SRGB, k, k, k, 1.0f);
+        canvas_fill_rect(c, x, 264.0f, 96.0f, 56.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.08f, 0.08f, 0.10f, 1.0f);
+        canvas_fill_text(c, mlabel[i], x + 8.0f, 308.0f);
+    }
+
+    save(c, "gallery/extendedrange.png");
+}
+
 // Image colour-space conversion on a linear-working-space canvas, shown as a
 // difference: a mid-tone-rich sRGB test card -- a grayscale ramp, per-channel
 // ramps, and mid-tone colour swatches, where the sRGB transfer curves most --
@@ -2802,6 +2869,7 @@ static void render_all(void) {
     shadows();
     emoji();
     emojiscale();
+    extendedrange();
     imagecolorspace();
     imagescale();
     shaping();

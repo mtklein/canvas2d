@@ -228,7 +228,7 @@ def main():
     # gallery scene, sorted.
     gallery_scenes = [
         "affine", "batch", "blend", "clip", "colorspaces", "conic", "dashes", "dirtyrect",
-        "drawimage", "emoji", "emojiscale", "filters", "gradients", "gradinterp",
+        "drawimage", "emoji", "emojiscale", "extendedrange", "filters", "gradients", "gradinterp",
         "hittest",
         "imagecolorspace", "imagedata", "imagescale", "joins", "linearlight", "miterdash",
         "path2d", "paths", "pattern",

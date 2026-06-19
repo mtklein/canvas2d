@@ -791,6 +791,17 @@ static void pq_rec2020_known_answers(void) {
     CHECK(fabsf(grn.r - 0.3292830f) < 1e-3f && fabsf(grn.g - 0.9195404f) < 1e-3f &&
           fabsf(grn.b - 0.0880133f) < 1e-3f);
     CHECK(red.g >= 0.0f && red.b >= 0.0f);  // sRGB gamut is inside Rec.2020
+
+    // The 2020->709 inverse round-trips, and a Rec.2020 primary lands outside
+    // [0,1] in linear sRGB (a negative off-axis component -- wide gamut).
+    cnvs_rgb const cols[] = { { 0.8f, 0.3f, 0.1f }, { 0.1f, 0.7f, 0.4f }, { 0.2f, 0.2f, 0.9f } };
+    for (int i = 0; i < (int)(sizeof cols / sizeof cols[0]); i++) {
+        cnvs_rgb const rt = cnvs_linear_srgb_to_rec2020(cnvs_rec2020_to_linear_srgb(cols[i]));
+        CHECK(fabsf(rt.r - cols[i].r) < 1e-3f && fabsf(rt.g - cols[i].g) < 1e-3f &&
+              fabsf(rt.b - cols[i].b) < 1e-3f);
+    }
+    cnvs_rgb const g2020 = cnvs_rec2020_to_linear_srgb((cnvs_rgb){ 0.0f, 1.0f, 0.0f });
+    CHECK(g2020.r < 0.0f && g2020.b < 0.0f);  // outside the sRGB gamut
 }
 
 int main(void) {
