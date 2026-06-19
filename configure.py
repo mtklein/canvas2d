@@ -230,7 +230,7 @@ def main():
         "affine", "batch", "blend", "clip", "colorspaces", "conic", "dashes", "dirtyrect",
         "drawimage", "emoji", "emojiscale", "filters", "gradients", "gradinterp",
         "hittest",
-        "imagedata", "imagescale", "joins", "linearlight", "miterdash",
+        "imagecolorspace", "imagedata", "imagescale", "joins", "linearlight", "miterdash",
         "path2d", "paths", "pattern",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",

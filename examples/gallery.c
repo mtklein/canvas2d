@@ -1911,6 +1911,90 @@ static void emojiscale(void) {
     save(c, "gallery/emojiscale.png");
 }
 
+// Image colour-space conversion on a linear-working-space canvas, shown as a
+// difference: a mid-tone-rich sRGB test card -- a grayscale ramp, per-channel
+// ramps, and mid-tone colour swatches, where the sRGB transfer curves most --
+// drawn twice.  LEFT is tagged sRGB, so the sampler converts sRGB->linear on
+// deposit; RIGHT is tagged linear, matched, so the same bytes deposit unchanged.
+// RIGHT is the old behaviour (bytes treated as already linear): its shadows lift
+// and its colours wash out.  The program carries a `working_space linear` line
+// and replays onto a linear canvas.
+static void imagecolorspace(void) {
+    enum { CW = 192, CH = 144 };
+    int const pad = 16, gap = 28, top = 26;
+    int const w = pad + CW + gap + CW + pad, h = top + CH + 30;
+    struct canvas *__single out = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    if (!out) {
+        return;
+    }
+    record_scene(out, "gallery/imagecolorspace.canvas");
+    canvas_set_fill_rgba(out, CANVAS_CS_SRGB, 0.12f, 0.12f, 0.15f, 1.0f);
+    canvas_fill_rect(out, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_text_align(out, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(out, CANVAS_BASELINE_ALPHABETIC);
+
+    int const clen = CW * CH * 4;
+    uint8_t *__counted_by(clen) card = malloc((size_t)clen);
+    if (!card) {
+        canvas_free(out);
+        return;
+    }
+    static uint8_t const swatch[8][3] = {
+        { 180, 90, 90 },  { 90, 180, 90 },   { 90, 90, 180 },   { 180, 180, 90 },
+        { 180, 90, 180 }, { 90, 180, 180 },  { 150, 150, 150 }, { 110, 140, 170 },
+    };
+    for (int y = 0; y < CH; y++) {
+        for (int x = 0; x < CW; x++) {
+            int const ramp = x * 255 / (CW - 1);
+            uint8_t r, g, b;
+            if (y < 48) {  // grayscale ramp
+                r = g = b = (uint8_t)ramp;
+            } else if (y < 96) {  // R / G / B channel ramps, 16px bands
+                int const band = (y - 48) / 16;
+                r = band == 0 ? (uint8_t)ramp : 0;
+                g = band == 1 ? (uint8_t)ramp : 0;
+                b = band == 2 ? (uint8_t)ramp : 0;
+            } else {  // eight mid-tone swatches
+                int const i = x * 8 / CW;
+                r = swatch[i][0];
+                g = swatch[i][1];
+                b = swatch[i][2];
+            }
+            int const o = (y * CW + x) * 4;
+            card[o + 0] = r;
+            card[o + 1] = g;
+            card[o + 2] = b;
+            card[o + 3] = 255;
+        }
+    }
+
+    // The SAME bytes, tagged two ways: sRGB (converts on deposit) and linear
+    // (matched, deposits unchanged -- the old, wrong reading).
+    struct canvas_image *__single honored =
+        canvas_image_unorm8(CANVAS_CS_SRGB, card, CW, CH, CANVAS_ALPHA_UNPREMUL);
+    struct canvas_image *__single ignored =
+        canvas_image_unorm8(CANVAS_CS_LINEAR_SRGB, card, CW, CH, CANVAS_ALPHA_UNPREMUL);
+    free(card);
+    if (honored) {
+        canvas_draw_image(out, honored, (float)pad, (float)top);
+    }
+    if (ignored) {
+        canvas_draw_image(out, ignored, (float)(pad + CW + gap), (float)top);
+    }
+    canvas_image_free(honored);
+    canvas_image_free(ignored);
+
+    canvas_set_fill_rgba(out, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(out, 12.0f);
+    canvas_fill_text(out, "tag honored (sRGB -> linear)", (float)pad, 18.0f);
+    canvas_fill_text(out, "tag ignored (bytes as linear)",
+                     (float)(pad + CW + gap), 18.0f);
+    canvas_set_fill_rgba(out, CANVAS_CS_SRGB, 0.55f, 0.59f, 0.68f, 1.0f);
+    canvas_fill_text(out, "same sRGB bytes on a linear canvas", (float)pad,
+                     (float)(top + CH + 20));
+    save(out, "gallery/imagecolorspace.png");
+}
+
 // imageSmoothingQuality made live -- the drawImage flavour of the emoji ruler,
 // one row per quality tier.  The minify ramp draws the same 160px rocket
 // bitmap (rendered once on a scratch canvas, read back as straight RGBA8:
@@ -1924,6 +2008,7 @@ static void emojiscale(void) {
 // differ on it; single-pixel checker, dots, and diagonals are where they
 // part.  At 7x, low/medium's bilinear turns the dots into a soft bead
 // lattice while high's 4x4 Catmull-Rom keeps them round and contrasty.
+
 static void imagescale(void) {
     struct canvas *__single c = canvas(700, 520);
     if (!c) {
@@ -2717,6 +2802,7 @@ static void render_all(void) {
     shadows();
     emoji();
     emojiscale();
+    imagecolorspace();
     imagescale();
     shaping();
     rtl();

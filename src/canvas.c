@@ -69,6 +69,7 @@ struct cnvs_pattern {
     int len;
     int w, h;
     enum canvas_pattern_repeat repeat;
+    enum canvas_color_space space;  // the source pixels' space; sampled in it, converted on deposit
     cnvs_mat to_pattern;
 };
 
@@ -185,6 +186,7 @@ static void draw_image_quad(struct canvas *__single cv,
                             float sww, float shh, float dx, float dy,
                             float dw, float dh, bool premul_src,
                             enum canvas_color_type src_ct,
+                            enum canvas_color_space src_space,
                             bool quality_tiers, bool chain_on_demand,
                             struct canvas_image const *__single img,
                             cnvs_mip hi, cnvs_mip lo, float lt);
@@ -198,6 +200,7 @@ static void pattern_reset(struct cnvs_pattern *p) {
     p->w = 0;
     p->h = 0;
     p->repeat = CANVAS_NO_REPEAT;
+    p->space = CANVAS_CS_SRGB;
     p->to_pattern = cnvs_mat_identity();
 }
 
@@ -590,6 +593,39 @@ static cnvs_unpremul intern_color(struct canvas *__single cv,
                             cnvs_clamp01(enc.b), ca);
 }
 
+// Convert one sampled RGB triple from `src` space into the canvas working space,
+// in place (s[3], the alpha, is untouched).  The sampling counterpart to
+// intern_color: the same pivot through linear sRGB and the same working-space
+// encoding (linear canvas stores linear with no rgb clamp so extended values
+// propagate; sRGB canvas encodes then clamps), but applied to a colour read out
+// of an image rather than to an API input.  Callers skip this when src equals
+// cv->space, so the matched path stays bit-exact.  The transfer is nonlinear, so
+// a premultiplied sample is unpremultiplied before the call and re-premultiplied
+// after.
+static void sample_to_working(struct canvas const *__single cv,
+                              enum canvas_color_space src,
+                              float *__counted_by(4) s) {
+    cnvs_rgb lin = { .r = s[0], .g = s[1], .b = s[2] };
+    switch (src) {
+        case CANVAS_CS_SRGB:        lin = cnvs_rgb_srgb_to_linear(lin); break;
+        case CANVAS_CS_LINEAR_SRGB: break;  // already linear sRGB
+        case CANVAS_CS_OKLAB:
+            lin = cnvs_oklab_to_linear_srgb(
+                (cnvs_oklab){ .L = s[0], .a = s[1], .b = s[2] });
+            break;
+    }
+    if (cv->space == CANVAS_CS_LINEAR_SRGB) {
+        s[0] = lin.r;
+        s[1] = lin.g;
+        s[2] = lin.b;
+        return;
+    }
+    cnvs_rgb const enc = cnvs_rgb_linear_to_srgb(lin);
+    s[0] = cnvs_clamp01(enc.r);
+    s[1] = cnvs_clamp01(enc.g);
+    s[2] = cnvs_clamp01(enc.b);
+}
+
 void canvas_set_fill_rgba(struct canvas *__single cv, enum canvas_color_space space,
                           float r, float g, float b, float a) {
     if (cv->rec) { cnvs_rec_floats_cs(cv->rec, "set_fill_rgba", (float[]){ r, g, b, a }, 4, space); }
@@ -667,12 +703,14 @@ static void grad_set_conic(struct canvas *__single cv, struct cnvs_gradient *gr,
 // __counted_by(w*h*4), exactly the new len.
 static void pattern_set(struct canvas *__single cv, struct cnvs_pattern *p,
                         uint8_t const *__counted_by(w * h * 4) src, int w, int h,
-                        enum canvas_pattern_repeat repeat) {
+                        enum canvas_pattern_repeat repeat,
+                        enum canvas_color_space space) {
     p->data = src;
     p->len = w * h * 4;
     p->w = w;
     p->h = h;
     p->repeat = repeat;
+    p->space = space;
     p->to_pattern = cnvs_mat_invert(cv->cur.ctm);  // device -> pattern image space
 }
 
@@ -751,9 +789,9 @@ void canvas_set_fill_pattern(struct canvas *__single cv, enum canvas_color_space
                                       space);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_fill_pattern", id, repeat); }
     }
-    // The space tag is interpretation metadata only -- the sampler honouring
-    // it is deferred (see draw_image_quad), so it does not reach pattern_set.
-    pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat);
+    // The source pixels are sampled in `space` and converted to the working
+    // space on deposit (paint_tile_pattern); the tag rides the pattern state.
+    pattern_set(cv, &cv->cur.fill_pattern, src, w, h, repeat, space);
     cv->cur.fill_kind = CNVS_PAINT_PATTERN;
 }
 
@@ -807,9 +845,9 @@ void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_spa
                                       space);
         if (id >= 0) { cnvs_rec_pattern(cv->rec, "set_stroke_pattern", id, repeat); }
     }
-    // Interpretation metadata only -- the deferred-sampler tag stays out of
-    // pattern_set (the fill twin's note).
-    pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat);
+    // Sampled in `space`, converted to the working space on deposit (the fill
+    // twin's note).
+    pattern_set(cv, &cv->cur.stroke_pattern, src, w, h, repeat, space);
     cv->cur.stroke_kind = CNVS_PAINT_PATTERN;
 }
 
@@ -2056,6 +2094,9 @@ static void paint_tile_pattern(struct canvas *__single cv, cbbox b, struct cnvs_
                 }
                 float s[4];
                 pattern_sample(p, uv.x[l], uv.y[l], smooth, s);
+                if (p->space != cv->space) {  // straight samples: convert in place
+                    sample_to_working(cv, p->space, s);
+                }
                 sr[l] = s[0];
                 sg[l] = s[1];
                 sb[l] = s[2];
@@ -3071,7 +3112,8 @@ static void draw_glyph_capture(struct canvas *__single cv, struct cnvs_glyph_slo
     }
     draw_image_quad(cv, hi.px, hi.len, hi.w, hi.h, 0.0f, 0.0f,
                     (float)hi.w, (float)hi.h, dx, dy, dw, dh, true,
-                    CANVAS_COLOR_UNORM8, false, false, NULL, hi, lo, lt);
+                    CANVAS_COLOR_UNORM8, CANVAS_CS_SRGB, false, false, NULL,
+                    hi, lo, lt);
 }
 
 // The degraded path when the capture cache can't serve (full table, OOM) but
@@ -3116,8 +3158,8 @@ static void draw_color_glyph(struct canvas *__single cv, void *__single font,
     // the glyph ink, its top edge `gh - margin + y0` glyph-px above the baseline.
     float const dest_x = pen_x + x0 - (float)margin;
     float const dest_y = baseline_y - ((float)gh - (float)margin + y0);
-    // The decoded glyph capture is sRGB RGBA8 -- tag it so (interpretation
-    // metadata; the sampler honouring it is deferred).
+    // The decoded glyph capture is sRGB RGBA8 -- tag it so it converts to the
+    // working space on deposit like any other source.
     canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, buf, gw, gh, 0.0f, 0.0f,
                               (float)gw, (float)gh,
                               dest_x, dest_y, (float)gw, (float)gh);
@@ -3707,8 +3749,8 @@ struct canvas_image {
     enum canvas_color_type ct;  // unorm8 or f16 channels...
     enum canvas_alpha_type at;  // ...straight or premultiplied -- all four
                                 // format combinations are peers
-    enum canvas_color_space cs; // interpretation metadata; the sampler honouring
-                                // it is deferred (see draw_image_quad)
+    enum canvas_color_space cs; // the pixels' space; sampled in it, the resolved
+                                // sample converts to the working space on deposit
     uint8_t *__counted_by(len) px;  // raw bytes, w * h * px_bpp(ct)
     int len;
     // The explicit mip chain (canvas_image_build_mips): fill_mips' layout in
@@ -3873,6 +3915,7 @@ static void draw_image_quad(struct canvas *__single cv,
                             float sww, float shh, float dx, float dy,
                             float dw, float dh, bool premul_src,
                             enum canvas_color_type src_ct,
+                            enum canvas_color_space src_space,
                             bool quality_tiers, bool chain_on_demand,
                             struct canvas_image const *__single img,
                             cnvs_mip hi, cnvs_mip lo, float lt) {
@@ -4032,6 +4075,26 @@ static void draw_image_quad(struct canvas *__single cv,
                         }
                         break;
                 }
+                // Sampled in the source's space; convert the resolved sample to
+                // the working space before it composites.  Skipped (bit-exact)
+                // when the spaces match.  The transfer is nonlinear, so a
+                // premultiplied sample unpremultiplies around the convert.
+                if (src_space != cv->space) {
+                    if (premul_data) {
+                        float const a = s[3];
+                        if (a > 0.0f) {
+                            s[0] /= a;
+                            s[1] /= a;
+                            s[2] /= a;
+                            sample_to_working(cv, src_space, s);
+                            s[0] *= a;
+                            s[1] *= a;
+                            s[2] *= a;
+                        }  // a == 0: every channel is already 0
+                    } else {
+                        sample_to_working(cv, src_space, s);
+                    }
+                }
                 sr[l] = s[0];
                 sg[l] = s[1];
                 sb[l] = s[2];
@@ -4090,10 +4153,10 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv, enum canvas_color_sp
                                   8);
         }
     }
-    // `space` is interpretation metadata only -- the sampler honouring it is
-    // deferred (see draw_image_quad), so it does not change the sampling math.
+    // Sampled in `space`; the resolved sample converts to the working space in
+    // draw_image_quad (a no-op when they match).
     draw_image_quad(cv, src, sw * sh * 4, sw, sh, sx, sy, sww, shh,
-                    dx, dy, dw, dh, false, CANVAS_COLOR_UNORM8, true, true,
+                    dx, dy, dw, dh, false, CANVAS_COLOR_UNORM8, space, true, true,
                     NULL,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
@@ -4171,7 +4234,7 @@ void canvas_draw_image_subrect(struct canvas *__single cv,
     }
     draw_image_quad(cv, img->px, img->len, img->w, img->h, sx, sy, sww, shh,
                     dx, dy, dw, dh, img->at == CANVAS_ALPHA_PREMUL, img->ct,
-                    true, false, img,
+                    img->cs, true, false, img,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }
@@ -4252,7 +4315,7 @@ void cnvs_canvas_draw_block(struct canvas *__single cv,
         }
     }
     draw_image_quad(cv, px, slen, w, h, sx, sy, sww, shh, dx, dy, dw, dh,
-                    at == CANVAS_ALPHA_PREMUL, ct, true, mips, NULL,
+                    at == CANVAS_ALPHA_PREMUL, ct, cs, true, mips, NULL,
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 },
                     (cnvs_mip){ .px = NULL, .len = 0, .w = 0, .h = 0 }, 0.0f);
 }

@@ -655,8 +655,110 @@ static void srgb_pixel_io_identity(void) {
     free(out);
 }
 
+// Image sampling converts the resolved sample from the source's space into the
+// working space -- the sampling counterpart to intern_color's colour-entry
+// transfer.  Each case draws 1:1 (integer aligned, so the sample lands on a
+// texel centre and the filter is exact), isolating the transfer.  An sRGB
+// source on a linear canvas decodes on deposit, and the sRGB read-back encodes,
+// so the byte returns to the source value; without the convert it would read
+// far brighter (stored as if already linear).  A linear source on an sRGB canvas
+// encodes.  A matched source is bit-exact.  A premultiplied translucent source
+// exercises the unpremultiply / convert / re-premultiply path.
+static void image_sample_space_convert(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    CHECK(px != NULL);
+    if (!px) {
+        return;
+    }
+
+    // 1. Opaque sRGB grey 128 on a LINEAR canvas: read back ~128, decisively not
+    //    the ~188 an unconverted store would give.
+    uint8_t src[8 * 8 * 4];
+    for (int i = 0; i < w * h; i++) {
+        src[i * 4 + 0] = 128;
+        src[i * 4 + 1] = 128;
+        src[i * 4 + 2] = 128;
+        src[i * 4 + 3] = 255;
+    }
+    struct canvas *__single lin = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(lin != NULL);
+    if (lin) {
+        canvas_draw_bitmap(lin, CANVAS_CS_SRGB, src, w, h, 0.0f, 0.0f);
+        canvas_read_rgba(lin, CANVAS_CS_SRGB, px, len);
+        struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+        CHECK(abs((int)p.r - 128) <= 2);
+        CHECK(p.r < 170);  // not the unconverted ~188
+        canvas_free(lin);
+    }
+
+    // 2. Matched: the SAME sRGB source on an sRGB canvas is byte-exact.
+    struct canvas *__single srgb = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    CHECK(srgb != NULL);
+    if (srgb) {
+        canvas_draw_bitmap(srgb, CANVAS_CS_SRGB, src, w, h, 0.0f, 0.0f);
+        canvas_read_rgba(srgb, CANVAS_CS_SRGB, px, len);
+        struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+        CHECK(p.r == 128 && p.g == 128 && p.b == 128 && p.a == 255);
+        canvas_free(srgb);
+    }
+
+    // 3. Opaque linear-grey 0.5 f16 image on an sRGB canvas: encode on deposit,
+    //    read back ~188 (cnvs_linear_to_srgb(0.5)); unconverted it would be 128.
+    _Float16 fpx[8 * 8 * 4];
+    for (int i = 0; i < w * h; i++) {
+        fpx[i * 4 + 0] = (_Float16)0.5f;
+        fpx[i * 4 + 1] = (_Float16)0.5f;
+        fpx[i * 4 + 2] = (_Float16)0.5f;
+        fpx[i * 4 + 3] = (_Float16)1.0f;
+    }
+    int const want_enc = (int)(cnvs_linear_to_srgb(0.5f) * 255.0f + 0.5f);
+    struct canvas_image *__single fimg =
+        canvas_image_f16(CANVAS_CS_LINEAR_SRGB, fpx, w, h, CANVAS_ALPHA_UNPREMUL);
+    struct canvas *__single sc = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    CHECK(fimg != NULL && sc != NULL);
+    if (fimg && sc) {
+        canvas_draw_image(sc, fimg, 0.0f, 0.0f);
+        canvas_read_rgba(sc, CANVAS_CS_SRGB, px, len);
+        struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+        CHECK(abs((int)p.r - want_enc) <= 2);
+        CHECK(p.r > 160);  // not the unconverted 128
+    }
+    canvas_image_free(fimg);
+    canvas_free(sc);
+
+    // 4. Premultiplied translucent sRGB image (colour 204, alpha 128) on a
+    //    LINEAR canvas over the transparent default: the unpremul/convert/
+    //    re-premul path round-trips the colour back to ~204.
+    uint8_t pm[8 * 8 * 4];
+    int const col = 204, a = 128;
+    int const pc = (int)((double)col * (double)a / 255.0 + 0.5);  // premultiplied store
+    for (int i = 0; i < w * h; i++) {
+        pm[i * 4 + 0] = (uint8_t)pc;
+        pm[i * 4 + 1] = (uint8_t)pc;
+        pm[i * 4 + 2] = (uint8_t)pc;
+        pm[i * 4 + 3] = (uint8_t)a;
+    }
+    struct canvas_image *__single pimg =
+        canvas_image_unorm8(CANVAS_CS_SRGB, pm, w, h, CANVAS_ALPHA_PREMUL);
+    struct canvas *__single lc = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(pimg != NULL && lc != NULL);
+    if (pimg && lc) {
+        canvas_draw_image(lc, pimg, 0.0f, 0.0f);
+        canvas_read_rgba(lc, CANVAS_CS_SRGB, px, len);
+        struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+        CHECK(abs((int)p.r - col) <= 4);
+        CHECK(abs((int)p.a - a) <= 2);
+    }
+    canvas_image_free(pimg);
+    canvas_free(lc);
+
+    free(px);
+}
+
 int main(void) {
     space_default_and_persistence();
+    image_sample_space_convert();
     linear_color_round_trip();
     linear_image_data_round_trip();
     linear_source_over_oracle();

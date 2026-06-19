@@ -120,6 +120,7 @@ static char const *__null_terminated const k_gallery[] = {
     "gallery/gradients.png",
     "gallery/gradinterp.png",
     "gallery/hittest.png",
+    "gallery/imagecolorspace.png",
     "gallery/imagedata.png",
     "gallery/imagescale.png",
     "gallery/joins.png",

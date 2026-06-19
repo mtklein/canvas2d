@@ -483,12 +483,12 @@ struct canvas_image;
 // Construct an image, one typed constructor per colour type, each taking its
 // alpha type -- the four formats are peers, none favoured.  Pixels are RGBA,
 // top row first, copied in (lossless: a 1:1 draw of an unorm8 unpremul image
-// is byte-identical to drawing the bitmap directly).  `space` tags how to
-// interpret the pixels' colours -- interpretation metadata only: the sampler
-// honouring it is deferred (see the LINEAR-WORKING-SPACE deferral in
-// canvas.c's draw_image_quad), so today the tag is stored but unread.  NULL
-// on bad dimensions or allocation failure; free with canvas_image_free
-// (which, like free(), accepts NULL).
+// in the working space is byte-identical to drawing the bitmap directly).
+// `space` tags how to interpret the pixels' colours: the image is filtered in
+// that space (its mip chain too), and the resolved sample converts to the
+// canvas working space on deposit -- a no-op when they match.  NULL on bad
+// dimensions or allocation failure; free with canvas_image_free (which, like
+// free(), accepts NULL).
 struct canvas_image *__single canvas_image_unorm8(
     enum canvas_color_space space,
     uint8_t const *__counted_by(w * h * 4) px, int w, int h,
