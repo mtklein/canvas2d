@@ -1914,12 +1914,12 @@ static void emojiscale(void) {
 
 // What the BT.2100 (16-bit Rec.2020 / PQ) output enables, on a linear canvas
 // where extended values survive: a shallow gradient that stays smooth at 16-bit
-// (8-bit would band), saturated colours past the sRGB gamut (authored in
-// Rec.2020, converted to extended linear sRGB), and fills brighter than sRGB
-// white (linear values above 1.0, which PQ carries as HDR highlights).  The full
-// effect needs a wide-gamut HDR display; on sRGB / SDR the wide swatches
-// gamut-map and the bright patches clip to white.  The program carries a
-// `working_space linear` line and replays onto a linear canvas.
+// over a simulated 8-bit version of the same ramp (which bands); saturated
+// colours past the sRGB gamut (authored in Rec.2020, converted to extended
+// linear sRGB); and fills brighter than sRGB white (linear values above 1.0,
+// which PQ carries as HDR highlights).  The wide-gamut and brighter-than-white
+// rows need a wide-gamut HDR display; on sRGB / SDR they gamut-map and clip.  The
+// program carries a `working_space linear` line and replays onto a linear canvas.
 static void extendedrange(void) {
     int const w = 480, h = 360;
     struct canvas *__single c = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
@@ -1933,16 +1933,35 @@ static void extendedrange(void) {
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
     canvas_set_font_size(c, 13.0f);
 
-    float const lx = 20.0f;
+    float const lx = 20.0f, gw = 440.0f;
 
-    // A. 16-bit precision: a shallow grey gradient, band-free.  Stops in linear
-    // space, the default linear lerp -- the shallow slope bands visibly at 8-bit.
+    // A. Precision: a shallow grey ramp at full 16-bit (top, smooth) over the same
+    // ramp quantized to the sRGB 8-bit grid (bottom, banded).  The 16-bit row is a
+    // linear gradient; the 8-bit row draws one bar per distinct output byte -- the
+    // staircase the old 8-bit PNG would have shown.
+    float const lo = 0.045f, hi = 0.062f;  // shallow: ~11 byte levels across gw
     canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
-    canvas_fill_text(c, "16-bit: shallow gradient (smooth; 8-bit would band)", lx, 28.0f);
-    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + 440.0f, 0.0f);
-    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 0.040f, 0.040f, 0.050f, 1.0f);
-    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, 0.070f, 0.070f, 0.085f, 1.0f);
-    canvas_fill_rect(c, lx, 40.0f, 440.0f, 54.0f);
+    canvas_fill_text(c, "shallow gradient: 16-bit (top, smooth) vs 8-bit (bottom, banded)",
+                     lx, 28.0f);
+    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, lo, lo, lo, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, hi, hi, hi, 1.0f);
+    canvas_fill_rect(c, lx, 40.0f, gw, 26.0f);
+
+    int const gwi = (int)gw;
+    int prev = (int)(cnvs_linear_to_srgb(lo) * 255.0f + 0.5f);
+    float band_x0 = lx;
+    for (int px = 1; px <= gwi; px++) {
+        float const t = (float)px / gw;
+        int const byte = (int)(cnvs_linear_to_srgb(lo + (hi - lo) * t) * 255.0f + 0.5f);
+        if (byte != prev || px == gwi) {
+            float const q = (float)prev / 255.0f;
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB, q, q, q, 1.0f);
+            canvas_fill_rect(c, band_x0, 70.0f, (lx + (float)px) - band_x0, 26.0f);
+            band_x0 = lx + (float)px;
+            prev = byte;
+        }
+    }
 
     // B. Wide gamut: each hue's sRGB primary (top) over its Rec.2020 primary
     // (bottom), the latter authored in Rec.2020 -> extended linear sRGB.
