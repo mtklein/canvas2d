@@ -327,7 +327,7 @@ bare `ninja` in the checked variants and again under the `tsan` variant.
       ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
       ├── cnvs_geom     growable vertex/int buffers
       ├── cnvs_zlib     deflate + strict inflate (RFC 1950/1951) + adler32
-      ├── cnvs_png      RGBA8 → PNG: Up-filtered encoder (output only; no decoder)
+      ├── cnvs_png      → PNG: 16-bit Rec.2020/PQ (BT.2100) Up-filtered encoder, output only
       ├── cnvs_color    sRGB transfer + linear-sRGB ↔ Oklab conversions
       ├── cnvs_record   draw calls → text canvas-program (the write side)
       ├── cnvs_replay   text canvas-program → draw calls (the read side)

@@ -50,3 +50,14 @@ cnvs_rgb cnvs_rgb_linear_to_srgb(cnvs_rgb c);
 // L=1, a=0, b=0; black maps to the origin.
 cnvs_oklab cnvs_linear_srgb_to_oklab(cnvs_rgb c);
 cnvs_rgb   cnvs_oklab_to_linear_srgb(cnvs_oklab c);
+
+// linear sRGB (Rec.709 primaries) -> linear Rec.2020 primaries (BT.2087).  The
+// sRGB gamut sits inside Rec.2020, so in-gamut inputs land in [0,1]; extended
+// (wide-gamut / HDR) inputs carry through unclamped.
+cnvs_rgb cnvs_linear_srgb_to_rec2020(cnvs_rgb c);
+
+// SMPTE ST 2084 (PQ) opto-electrical transfer: display luminance normalized to
+// [0,1] over 0..10000 cd/m^2 -> encoded [0,1].  Unlike the kernels above this is
+// a bounded display transfer, not total over R: out-of-range inputs clamp to
+// [0,1] (PQ has no meaning outside it).  cnvs_pq_oetf(0)=0, (1)=1, monotone.
+float cnvs_pq_oetf(float y);

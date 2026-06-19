@@ -105,16 +105,14 @@ Internals (not API features) considered and deferred:
   the cluster's edge, and `cnvs_shaped_index_at_x` hit-tests a click back to a
   logical index (the gallery's `selection` scene; `test_shaping`). These are
   internal (`cnvs_text.h`) — no public mirror yet.
-- **PNG I/O**: `canvas_write_png` writes real compression (Up-filtered rows +
-  the in-house `cnvs_zlib` deflate — Up-only because it vectorizes as whole-row
-  ops with no left-neighbor recurrence, and the adaptive five-filter chooser
-  only measured ~2% smaller across the gallery), and `canvas_load_png` reads
-  those files back, byte-exact. The decoder is deliberately scoped to our own
-  encoder's output — 8-bit RGBA, non-interlaced, None/Up filters, every chunk
-  CRC-verified, dimensions capped — and strictly rejects the rest of the PNG
-  universe (palette, gray, 16-bit, interlace, Sub/Avg/Paeth), keeping the
-  untrusted-parser surface small. There is no general-purpose PNG importer,
-  and no `toDataURL`/`toBlob` string forms.
+- **PNG I/O**: `canvas_write_png` writes a BT.2100 PNG — 16-bit, Rec.2020
+  primaries, PQ (ST 2084) transfer, signalled by a `cICP` chunk — with real
+  compression (Up-filtered rows + the in-house `cnvs_zlib` deflate; Up-only
+  because it vectorizes as whole-row ops with no left-neighbor recurrence). The
+  surface is transformed into that encoding on the way out regardless of working
+  space, so wide-gamut and HDR values from a linear canvas carry through. Output
+  only: there is no PNG decoder (nothing reads PNGs back — image input is raw
+  bitmaps and the `.canvas` format), and no `toDataURL`/`toBlob` string forms.
 - **`Path2D`** has no SVG path-data string constructor (string parsing); the
   constructible object, `add_path`, the builders, and the
   fill/stroke/clip/isPointIn* overloads are all supported.
@@ -131,13 +129,14 @@ Internals (not API features) considered and deferred:
   extended-linear-sRGB, Oklab}); untagged input is sRGB (the legacy spelling)
   and the tagged forms convert at the boundary. Gradients interpolate in a
   chosen space (sRGB / linear / Oklab) and alpha mode (unpremultiplied /
-  premultiplied), set independently. Conversions are the sRGB transfer and a
-  linear-sRGB↔Oklab pair ([cnvs_color.c](../src/cnvs_color.c)). Two deliberate
-  limits: **sRGB primaries only** (no Display-P3 / Rec.2020 — a single linear
-  hub covers the current effects; parameterized primaries deferred), and image
-  **sampling on a non-sRGB canvas is not yet linear-correct** (the per-image
-  colour-space tag is carried and serialized, but the sampler does not decode
-  to linear before averaging).
+  premultiplied), set independently. Conversions are the sRGB transfer, a
+  linear-sRGB↔Oklab pair, and the Rec.2020 matrix + PQ transfer the PNG output
+  uses ([cnvs_color.c](../src/cnvs_color.c)). Image sources are sampled in their
+  own tagged space and the resolved sample converts to the working space on
+  deposit (the image format governs filtering, the canvas governs compositing).
+  One deliberate limit: **compositing uses sRGB primaries only** (no Display-P3 /
+  Rec.2020 working space — a single linear hub covers the current effects;
+  parameterized primaries deferred).
 - **`getImageData`** returns RGBA8 in a chosen colour space (sRGB /
   extended-linear-sRGB / Oklab); no `pixelFormat` (`rgba-float16`, the
   `Float16Array`-backed `ImageData`).

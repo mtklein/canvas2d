@@ -35,7 +35,6 @@
 #include "test_util.h"
 
 #include "canvas.h"
-#include "cnvs_png.h"
 #include "cnvs_text.h"
 
 #include <dirent.h>
@@ -180,32 +179,25 @@ static void check_scene(scene_pair s) {
                       s.canvas, c->shaping_misses, c->glyph_misses);
     }
 
-    // Re-encode the replayed canvas exactly as canvas_write_png does, then
-    // byte-compare to the committed PNG file.
-    int const rgba = w * h * 4;
-    uint8_t *__counted_by_or_null(rgba) got = malloc((size_t)rgba);
-    CHECK(got != NULL);
-    if (got) {
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, got, rgba);
-        int elen = 0;
-        uint8_t *enc = cnvs_png_encode(got, w, h, &elen);
-        CHECK(enc != NULL);
-        CHECK(elen == fsz);
-        if (enc && elen == fsz) {
-            int const cmp = memcmp(enc, want, (size_t)fsz);
-            CHECK(cmp == 0);
-            if (cmp != 0) {
-                (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);
-            } else if (getenv("REPLAY_GALLERY_VERBOSE")) {
-                // Tests are silent on success (the suite's convention); the
-                // per-scene IDENTICAL table is opt-in for a human run.
-                (void)fprintf(stderr, "  %-32s IDENTICAL\n", s.canvas);
-            }
+    // Re-encode the replayed canvas through the real save path, then byte-compare
+    // to the committed PNG file.
+    int elen = 0;
+    uint8_t *enc = canvas_encode_png(cv, &elen);
+    CHECK(enc != NULL);
+    CHECK(elen == fsz);
+    if (enc && elen == fsz) {
+        int const cmp = memcmp(enc, want, (size_t)fsz);
+        CHECK(cmp == 0);
+        if (cmp != 0) {
+            (void)fprintf(stderr, "  %s DIVERGED from %s\n", s.canvas, s.png);
+        } else if (getenv("REPLAY_GALLERY_VERBOSE")) {
+            // Tests are silent on success (the suite's convention); the
+            // per-scene IDENTICAL table is opt-in for a human run.
+            (void)fprintf(stderr, "  %-32s IDENTICAL\n", s.canvas);
         }
-        free(enc);
     }
 
-    free(got);
+    free(enc);
     free(want);
     canvas_free(cv);
 }

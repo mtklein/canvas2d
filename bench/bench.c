@@ -65,11 +65,11 @@ int main(void) {
         // /dev/null keeps disk I/O out of the timing; the encode still runs in full.
         int const iw = 256;
         int const ih = 256;
-        int const len = iw * ih * 4;
-        uint8_t *px = malloc((size_t)len);
+        int const len = iw * ih * 4;  // uint16 samples
+        uint16_t *px = malloc((size_t)len * sizeof *px);
         if (px) {
             for (int i = 0; i < len; i++) {
-                px[i] = (uint8_t)((i * 37 + frames) & 0xFF);
+                px[i] = (uint16_t)((i * 37 + frames) & 0xFFFF);
             }
             for (int i = 0; i < 40; i++) {
                 if (cnvs_png_write("/dev/null", px, iw, ih)) {

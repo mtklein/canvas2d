@@ -91,3 +91,25 @@ cnvs_rgb cnvs_oklab_to_linear_srgb(cnvs_oklab c) {
         .b = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s,
     };
 }
+
+// The BT.2087 709->2020 matrix: a basis change through XYZ folded to one 3x3.
+// Each row sums to 1, so D65 white (1,1,1) maps to itself.  Linear in, linear
+// out, so it is total over R like the kernels above.
+cnvs_rgb cnvs_linear_srgb_to_rec2020(cnvs_rgb c) {
+    return (cnvs_rgb){
+        .r = 0.62740390f * c.r + 0.32928304f * c.g + 0.04331307f * c.b,
+        .g = 0.06909729f * c.r + 0.91954040f * c.g + 0.01136232f * c.b,
+        .b = 0.01639144f * c.r + 0.08801331f * c.g + 0.89559525f * c.b,
+    };
+}
+
+// PQ (SMPTE ST 2084) OETF.  y is display luminance normalized so 1.0 == 10000
+// cd/m^2; clamp into [0,1] (PQ is undefined outside) and apply the standard
+// rational-power curve.  E' = ((c1 + c2 y^m1) / (1 + c3 y^m1))^m2.
+float cnvs_pq_oetf(float y) {
+    float const m1 = 0.1593017578125f, m2 = 78.84375f;
+    float const c1 = 0.8359375f, c2 = 18.8515625f, c3 = 18.6875f;
+    float const v = y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+    float const p = powf(v, m1);
+    return powf((c1 + c2 * p) / (1.0f + c3 * p), m2);
+}

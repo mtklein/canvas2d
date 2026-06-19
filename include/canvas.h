@@ -607,10 +607,17 @@ void canvas_stroke_text_max_n(struct canvas *__single cv,
 // linear-sRGB bytes and CANVAS_CS_OKLAB emits Oklab (L,a,b) bytes.
 void canvas_read_rgba(struct canvas *__single cv, enum canvas_color_space space,
                       uint8_t *__counted_by(len) out, int len);
-// canvas_write_png reads back as sRGB by convention (it has no space parameter):
-// the PNG carries encoded sRGB, exactly the bytes read_rgba(.., CANVAS_CS_SRGB)
-// would.
+// canvas_write_png emits a BT.2100 PNG: 16-bit, Rec.2020 primaries, PQ (ST 2084)
+// transfer, cICP-signalled, regardless of the working space (the surface is
+// transformed into that encoding on the way out -- wide-gamut and HDR values
+// from a linear canvas carry through, an sRGB canvas's content lands in the same
+// container).  There is no decoder; PNG is output only.
 bool canvas_write_png(struct canvas *__single cv, char const *__null_terminated path);
+
+// canvas_write_png's in-memory sibling: the same BT.2100 PNG bytes in a malloc'd
+// buffer (caller frees), *outlen its length.  NULL on OOM.
+uint8_t *__counted_by_or_null(*outlen)
+canvas_encode_png(struct canvas *__single cv, int *__single outlen);
 
 // Pixel I/O for a w*h sub-image (tightly packed RGBA8, len must be w*h*4).
 // get: pixels outside the canvas read back transparent black.

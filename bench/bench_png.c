@@ -13,13 +13,13 @@
 int main(void) {
     int const w = DIM;
     int const h = DIM;
-    int const len = w * h * 4;
-    uint8_t *px = malloc((size_t)len);
+    int const len = w * h * 4;  // uint16 samples
+    uint16_t *px = malloc((size_t)len * sizeof *px);
     if (!px) {
         return 1;
     }
     for (int i = 0; i < len; i++) {
-        px[i] = (uint8_t)((i * 37) & 0xFF);
+        px[i] = (uint16_t)((i * 37) & 0xFFFF);
     }
 
     double sink = 0.0;

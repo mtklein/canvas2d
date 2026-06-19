@@ -20,19 +20,22 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
         return 0;
     }
     // Modest dimensions: enough to exercise multi-segment (>65535-byte) zlib
-    // blocks and the size math, while keeping the w*h*4 buffer small per run.
+    // blocks and the size math, while keeping the buffer small per run.
     int const w = (int)(((unsigned)data[0] | ((unsigned)data[1] << 8)) % 512u) + 1;  // 1..512
     int const h = (int)(((unsigned)data[2] | ((unsigned)data[3] << 8)) % 512u) + 1;
-    size_t const need = (size_t)w * (size_t)h * 4u;
+    size_t const need = (size_t)w * (size_t)h * 4u;  // uint16 samples
 
-    uint8_t *px = malloc(need);
+    uint16_t *px = malloc(need * sizeof *px);
     if (!px) {
         return 0;
     }
-    // Fill from the remaining fuzz bytes (repeating) so adler32/CRC see varied data.
+    // Fill each 16-bit sample from the remaining fuzz bytes (repeating) so
+    // adler32/CRC and the big-endian serialization see varied data.
     size_t const src_len = size - 4;
     for (size_t i = 0; i < need; i++) {
-        px[i] = src_len ? data[4 + (i % src_len)] : (uint8_t)i;
+        uint8_t const hi = src_len ? data[4 + ((2 * i) % src_len)] : (uint8_t)i;
+        uint8_t const lo = src_len ? data[4 + ((2 * i + 1) % src_len)] : (uint8_t)(i >> 8);
+        px[i] = (uint16_t)(((unsigned)hi << 8) | lo);
     }
 
     (void)cnvs_png_write("/dev/null", px, w, h);

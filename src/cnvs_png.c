@@ -1,15 +1,16 @@
-// PNG writer: 8-bit RGBA, non-interlaced, Up-filtered rows, deflate via
-// cnvs_zlib.
+// PNG writer: 16-bit RGBA, non-interlaced, Up-filtered rows, deflate via
+// cnvs_zlib.  The colour is BT.2100 -- Rec.2020 primaries, PQ (ST 2084)
+// transfer -- signalled by a cICP chunk; the pixel pipeline that produces it is
+// in canvas.c (canvas_encode_png).  Encode only; nothing reads PNGs back.
 //
-// Row filtering is Up-ONLY (every row's filter byte is 2): each row encodes as
-// its byte-wise difference from the row above, which vectorizes in both
-// directions as a whole-row subtract (encode) / add (decode) -- no
-// left-neighbor recurrence like Sub/Avg/Paeth, so the kernels are straight
-// 16-lane vector ops with one bounds check per block.  The first row's
-// implicit prior row is all zeros (PNG spec), so Up degenerates to None there;
-// we still emit filter byte 2 uniformly so every row decodes through the same
-// kernel.  Only our own files are decoded, so the adaptive five-filter
-// chooser (which costs a per-row trial encode) is not used.
+// Samples are big-endian (PNG byte order for bit depth 16).  Row filtering is
+// Up-ONLY (every row's filter byte is 2): each row encodes as its byte-wise
+// difference from the row above, which vectorizes as a whole-row subtract with
+// no left-neighbor recurrence like Sub/Avg/Paeth -- the filter operates per
+// byte, so 16-bit needs no new kernel.  The first row's implicit prior row is
+// all zeros (PNG spec), so Up degenerates to None there; we still emit filter
+// byte 2 uniformly.  The adaptive five-filter chooser (a per-row trial encode)
+// is not used.
 
 #include "cnvs_png.h"
 
@@ -117,23 +118,50 @@ static void filter_up(uint8_t *__counted_by(n) out,
 }
 
 uint8_t *__counted_by_or_null(*outlen)
-cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
+cnvs_png_encode(uint16_t const *__counted_by(width * height * 4) pixels,
                 int width, int height, int *__single outlen) {
     *outlen = 0;
-    // Bounded so every size computation below fits an int: rawlen <=
-    // 16384 * (16384*4 + 1) = 1,073,758,208 < INT_MAX, and cnvs_zlib_bound of
-    // that is ~1.21e9, still < INT_MAX.
     if (width <= 0 || height <= 0 || width > 16384 || height > 16384) {
         return NULL;
     }
+    // 8 bytes per pixel (16-bit RGBA).  Guard the int arithmetic the zlib codec
+    // works in, with 1/256 headroom so cnvs_zlib_bound (~n*1.001) fits too: a
+    // raw image past this is ~2 GB, not a real output.
+    int64_t const stride64 = (int64_t)width * 8;
+    int64_t const rawlen64 = (int64_t)height * (stride64 + 1);
+    if (rawlen64 > (int64_t)INT_MAX - (int64_t)INT_MAX / 256) {
+        return NULL;
+    }
+    int const stride = (int)stride64;
+    int const rawlen = (int)rawlen64;
 
-    int const stride = width * 4;
-    int const rawlen = height * (stride + 1);
+    // Serialize the image to big-endian bytes (16-bit PNG byte order); the
+    // filter loop below then reads whole rows from it, exactly as the 8-bit
+    // encoder read the caller's bytes.  belen == rawlen - height, fits an int.
+    int const belen = (int)(rawlen64 - (int64_t)height);
+    uint8_t *__counted_by_or_null(belen) be = calloc((size_t)belen, 1);
+    if (!be) {
+        return NULL;
+    }
+    {
+        int const samples = width * 4;  // <= 16384*4, fits an int
+        for (int y = 0; y < height; y++) {
+            uint16_t const *__counted_by(samples) row =
+                pixels + (size_t)y * (size_t)samples;
+            uint8_t *__counted_by(stride) dst = be + (size_t)y * (size_t)stride;
+            for (int x = 0; x < samples; x++) {
+                uint16_t const v = row[x];
+                dst[x * 2]     = (uint8_t)(v >> 8);     // big-endian
+                dst[x * 2 + 1] = (uint8_t)(v & 0xffu);
+            }
+        }
+    }
 
     // The filtered stream: each row is a filter byte (2 = Up) + the row's
     // Up-filtered bytes.
     uint8_t *__counted_by_or_null(rawlen) raw = malloc((size_t)rawlen);
     if (!raw) {
+        free(be);
         return NULL;
     }
     {
@@ -141,18 +169,19 @@ cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
         for (int y = 0; y < height; y++) {
             raw[pos] = 2;  // per-row filter byte: Up, uniformly
             pos += 1;
-            uint8_t const *__counted_by(stride) cur = pixels + (size_t)y * (size_t)stride;
+            uint8_t const *__counted_by(stride) cur = be + (size_t)y * (size_t)stride;
             if (y == 0) {
                 // Row 0's implicit prior is all zeros: Up == None, a plain copy.
                 memcpy(raw + pos, cur, (size_t)stride);
             } else {
                 uint8_t const *__counted_by(stride) prev =
-                    pixels + (size_t)(y - 1) * (size_t)stride;
+                    be + (size_t)(y - 1) * (size_t)stride;
                 filter_up(raw + pos, cur, prev, stride);
             }
             pos += stride;
         }
     }
+    free(be);
 
     int const zcap = cnvs_zlib_bound(rawlen);
     uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
@@ -169,6 +198,7 @@ cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
 
     size_t const total = 8u                  // signature
                        + (12u + 13u)         // IHDR
+                       + (12u + 4u)          // cICP
                        + (12u + (size_t)zn)  // IDAT
                        + 12u;                // IEND
     uint8_t *__counted_by_or_null(total) out = malloc(total);
@@ -189,12 +219,23 @@ cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
     put8(&w, 'I'); put8(&w, 'H'); put8(&w, 'D'); put8(&w, 'R');
     put32be(&w, (uint32_t)width);
     put32be(&w, (uint32_t)height);
-    put8(&w, 8u);  // bit depth
-    put8(&w, 6u);  // colour type RGBA
-    put8(&w, 0u);  // compression
-    put8(&w, 0u);  // filter method
-    put8(&w, 0u);  // interlace
+    put8(&w, 16u);  // bit depth
+    put8(&w, 6u);   // colour type RGBA
+    put8(&w, 0u);   // compression
+    put8(&w, 0u);   // filter method
+    put8(&w, 0u);   // interlace
     put32be(&w, crc32_buf(w.buf + ihdr, w.at - ihdr));
+
+    // cICP: the BT.2100 colour signal -- Rec.2020 primaries (9), PQ/ST 2084
+    // transfer (16), identity/RGB matrix (0, required for PNG), full range (1).
+    put32be(&w, 4u);
+    size_t const cicp = w.at;
+    put8(&w, 'c'); put8(&w, 'I'); put8(&w, 'C'); put8(&w, 'P');
+    put8(&w, 9u);
+    put8(&w, 16u);
+    put8(&w, 0u);
+    put8(&w, 1u);
+    put32be(&w, crc32_buf(w.buf + cicp, w.at - cicp));
 
     put32be(&w, (uint32_t)zn);
     size_t const idat = w.at;
@@ -218,7 +259,7 @@ cnvs_png_encode(uint8_t const *__counted_by(width * height * 4) pixels,
 }
 
 bool cnvs_png_write(char const *__null_terminated path,
-                    uint8_t const *__counted_by(width * height * 4) pixels,
+                    uint16_t const *__counted_by(width * height * 4) pixels,
                     int width, int height) {
     int total = 0;
     uint8_t *out = cnvs_png_encode(pixels, width, height, &total);

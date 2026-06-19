@@ -756,8 +756,46 @@ static void image_sample_space_convert(void) {
     free(px);
 }
 
+// Known-answer checks for the BT.2100 output kernels.  PQ is checked against an
+// independent double-precision evaluation using the spec's canonical fractional
+// constants (a transcription error in the float constants would show up), at the
+// endpoints, the reference-white region, and for clamping + monotonicity.  The
+// Rec.2020 matrix is checked on white (must stay white -- rows sum to 1) and the
+// pure linear primaries.
+static void pq_rec2020_known_answers(void) {
+    double const m1 = 2610.0 / 16384.0, m2 = 2523.0 / 4096.0 * 128.0;
+    double const c1 = 3424.0 / 4096.0, c2 = 2413.0 / 4096.0 * 32.0,
+                 c3 = 2392.0 / 4096.0 * 32.0;
+    double const ys[] = { 0.0, 0.01, 0.0203, 0.1, 0.5, 1.0 };
+    for (int i = 0; i < (int)(sizeof ys / sizeof ys[0]); i++) {
+        double const y = ys[i];
+        double const p = pow(y, m1);
+        double const ref = pow((c1 + c2 * p) / (1.0 + c3 * p), m2);
+        CHECK(fabs((double)cnvs_pq_oetf((float)y) - ref) < 1e-3);
+    }
+    // PQ(0) is c1^m2 (~7e-7, rounds to code 0), not exactly zero; PQ(1) == 1.
+    CHECK(cnvs_pq_oetf(0.0f) >= 0.0f && cnvs_pq_oetf(0.0f) < 1e-5f);
+    CHECK(fabsf(cnvs_pq_oetf(1.0f) - 1.0f) < 1e-4f);
+    CHECK(cnvs_pq_oetf(-0.5f) >= 0.0f && cnvs_pq_oetf(-0.5f) < 1e-5f);  // clamps below
+    CHECK(fabsf(cnvs_pq_oetf(2.0f) - 1.0f) < 1e-4f);   // clamps above
+    CHECK(cnvs_pq_oetf(0.1f) > cnvs_pq_oetf(0.01f));   // monotone
+    CHECK(cnvs_pq_oetf(0.01f) > cnvs_pq_oetf(0.001f));
+
+    cnvs_rgb const wht = cnvs_linear_srgb_to_rec2020((cnvs_rgb){ 1.0f, 1.0f, 1.0f });
+    CHECK(fabsf(wht.r - 1.0f) < 1e-3f && fabsf(wht.g - 1.0f) < 1e-3f &&
+          fabsf(wht.b - 1.0f) < 1e-3f);
+    cnvs_rgb const red = cnvs_linear_srgb_to_rec2020((cnvs_rgb){ 1.0f, 0.0f, 0.0f });
+    CHECK(fabsf(red.r - 0.6274039f) < 1e-3f && fabsf(red.g - 0.0690973f) < 1e-3f &&
+          fabsf(red.b - 0.0163914f) < 1e-3f);
+    cnvs_rgb const grn = cnvs_linear_srgb_to_rec2020((cnvs_rgb){ 0.0f, 1.0f, 0.0f });
+    CHECK(fabsf(grn.r - 0.3292830f) < 1e-3f && fabsf(grn.g - 0.9195404f) < 1e-3f &&
+          fabsf(grn.b - 0.0880133f) < 1e-3f);
+    CHECK(red.g >= 0.0f && red.b >= 0.0f);  // sRGB gamut is inside Rec.2020
+}
+
 int main(void) {
     space_default_and_persistence();
+    pq_rec2020_known_answers();
     image_sample_space_convert();
     linear_color_round_trip();
     linear_image_data_round_trip();
