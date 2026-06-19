@@ -203,19 +203,15 @@ static inline cnvs_px8 cnvs_px8_clamp_premul(cnvs_px8 co) {
 
 // The LINEAR working space's blend output clamp: alpha clamps into [0,1] (so
 // 'lighter' still saturates alpha and the readback's a>0 test stays meaningful),
-// but the colour planes keep NO upper bound -- extended linear sRGB carries
-// colours outside the [0,1] gamut, and the only place they collapse is the
-// output encode+quantize.  Lower-bounded at 0 still: a premultiplied colour
-// plane below zero is not a wider gamut, it is a sign error, and the over-family
-// math never produces one from non-negative inputs.  A NEW helper rather than a
-// branch inside cnvs_px8_clamp_premul, so the sRGB path's exact [0,ao] rounding
-// is provably untouched (this is reached only on cv->space == CANVAS_CS_LINEAR_SRGB).
+// but the colour planes keep NO bound in either direction.  Extended linear sRGB
+// carries colour both above the [0,1] gamut (HDR, brighter than white) and below
+// it (wide gamut -- a Rec.2020 primary has negative sRGB-primary components); the
+// only place either collapses is the output encode+quantize.  A NEW helper
+// rather than a branch inside cnvs_px8_clamp_premul, so the sRGB path's exact
+// [0,ao] rounding is provably untouched (reached only on a linear canvas).
 static inline cnvs_px8 cnvs_px8_clamp_premul_lin(cnvs_px8 co) {
     half8 const zero = (half8)(_Float16)0.0f;
     co.a = __builtin_elementwise_max(zero,
                __builtin_elementwise_min(co.a, (half8)(_Float16)1.0f));
-    co.r = __builtin_elementwise_max(zero, co.r);
-    co.g = __builtin_elementwise_max(zero, co.g);
-    co.b = __builtin_elementwise_max(zero, co.b);
-    return co;
+    return co;  // colour planes unbounded
 }

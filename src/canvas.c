@@ -1857,9 +1857,13 @@ static half8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
     return half8_from_u8_k(cov, k) * (_Float16)(1.0f / 255.0f);
 }
 
-// Premultiply the colour planes under the folded alpha plane.
+// Premultiply the colour planes under the folded alpha plane.  No clamp: alpha
+// is already in [0,1] (coverage x global x sample), and the colour planes' bound
+// belongs to the blend's space-aware output clamp -- the sRGB path re-clamps to
+// [0,ao] (so this stays byte-identical there), the linear path keeps extended
+// (HDR above 1, wide-gamut below 0) colour.
 static cnvs_px8 shade8(half8 r, half8 g, half8 b, half8 alpha) {
-    return cnvs_px8_premultiply((cnvs_px8){ r, g, b, alpha });
+    return (cnvs_px8){ r * alpha, g * alpha, b * alpha, alpha };
 }
 
 // cnvs_mat_apply for eight pixel centres along one row: only x varies and the

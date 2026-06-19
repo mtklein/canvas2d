@@ -15,6 +15,7 @@
 // then re-encoded) -- a gap of ~30/255, far outside any rounding tolerance.
 
 #include "canvas.h"
+#include "cnvs_blend.h"
 #include "cnvs_color.h"
 #include "cnvs_math.h"
 #include "test_pixels.h"
@@ -804,8 +805,44 @@ static void pq_rec2020_known_answers(void) {
     CHECK(g2020.r < 0.0f && g2020.b < 0.0f);  // outside the sRGB gamut
 }
 
+// The linear working space carries extended values through the fill path: with
+// premul and the blend output clamp no longer bounding colour on a linear canvas,
+// an HDR fill (linear 4.0) survives in the surface as ~4.0 (not clamped to 1),
+// and a Rec.2020-red fill keeps its negative green component (wide gamut, not
+// clamped to 0).  Read straight off the f16 surface (cnvs_blend_read), before the
+// output encode that would collapse the range.
+static void extended_fill_survives(void) {
+    int const w = 4, h = 4;
+    cnvs_premul surf[16];
+
+    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv != NULL);
+    if (cv) {
+        canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, 4.0f, 4.0f, 4.0f, 1.0f);
+        canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
+        cnvs_blend_read(cv, surf, w * h);
+        CHECK((float)surf[5].r > 3.5f);  // ~4.0, not clamped to 1.0 (HDR)
+        CHECK((float)surf[5].g > 3.5f);
+        CHECK((float)surf[5].b > 3.5f);
+        canvas_free(cv);
+    }
+
+    struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv2 != NULL);
+    if (cv2) {
+        cnvs_rgb const wide = cnvs_rec2020_to_linear_srgb((cnvs_rgb){ 1.0f, 0.0f, 0.0f });
+        canvas_set_fill_rgba(cv2, CANVAS_CS_LINEAR_SRGB, wide.r, wide.g, wide.b, 1.0f);
+        canvas_fill_rect(cv2, 0.0f, 0.0f, (float)w, (float)h);
+        cnvs_blend_read(cv2, surf, w * h);
+        CHECK((float)surf[5].r > 1.0f);    // past sRGB max (extended)
+        CHECK((float)surf[5].g < -0.05f);  // negative: outside sRGB gamut, survived
+        canvas_free(cv2);
+    }
+}
+
 int main(void) {
     space_default_and_persistence();
+    extended_fill_survives();
     pq_rec2020_known_answers();
     image_sample_space_convert();
     linear_color_round_trip();
