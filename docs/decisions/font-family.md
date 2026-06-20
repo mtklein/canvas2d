@@ -33,9 +33,16 @@ are already done.
    Menlo, …) and replay from the embedded blocks with no Core Text, so the fontless CI gate
    holds.  As with the emoji captures, recorded outlines are macOS-version-sensitive at
    record time; replay is not.
-3. **Core Text synthesizes weight/style.**  When a family has no real bold/italic face, let
-   Core Text synthesize it (browser behaviour) rather than falling back to regular.  Try it
-   and see how it reads.
+3. **Synthesis is minimized; faking styles is accepted as inherently hacky.**  Resolved
+   after F2: Core Text synthesizes bold/italic only at *raster* time
+   (`CTFontDrawGlyphs`), not in the *outline* (`CTFontCreatePathForGlyph`), so the
+   outline-recording (Libian) model cannot capture a synth-bold.  Outcome:
+   - **Synth-italic** is done by baking the slant into the font matrix, which genuinely
+     skews the recorded outline — kept.
+   - **Synth-bold** is NOT done: a family with no real bold face falls back to its nearest
+     real weight.  Faux-bold by *outline dilation* (stroking/offsetting the recorded
+     curves) is a possible future approach, deliberately deferred — fake styling is hacky
+     however it is done, and real bold faces cover the overwhelming majority.
 
 ## Plan — four phases, each a reviewable/mergeable chunk
 
