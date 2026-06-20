@@ -232,7 +232,7 @@ def main():
         "gradients", "gradinterp",
         "hittest",
         "imagecolorspace", "imagedata", "imagescale", "joins", "linearlight", "miterdash",
-        "nestedclip", "path2d", "path2dhit", "paths", "pattern",
+        "nestedclip", "path2d", "paths", "pattern",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",
         "textmaxwidth", "textmetrics", "winding",

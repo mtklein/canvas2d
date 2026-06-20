@@ -72,13 +72,6 @@ hole:
 
 ![path2d](gallery/path2d.png)
 
-`is_point_in_path2d` / `is_point_in_stroke_path` — the Path2D hit-testing
-overloads. Left: a triangular Path2D sampled on a grid under
-`is_point_in_path2d`; right: an arc Path2D sampled under
-`is_point_in_stroke_path` with a 24px line width:
-
-![path2dhit](gallery/path2dhit.png)
-
 Clipping — a circular window, the intersection of two discs, and a
 self-intersecting star, each masking the same flood of stripes:
 

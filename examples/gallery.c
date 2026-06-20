@@ -2933,106 +2933,6 @@ static void ellipserot(void) {
     save(c, "gallery/ellipserot.png");
 }
 
-// is_point_in_path2d and is_point_in_stroke_path (the Path2D hit-testing
-// overloads).  Left: a Path2D triangle under is_point_in_path2d (even-odd);
-// right: a Path2D arc under is_point_in_stroke_path.  Sampled on a 10px grid;
-// hit points draw large and bright, miss points draw small and dim.
-static void path2dhit(void) {
-    struct canvas *__single c = canvas(480, 262);
-    if (!c) {
-        return;
-    }
-    record_scene(c, "gallery/path2dhit.canvas");
-    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
-    canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 262.0f);
-
-    int const step = 10, nx = 22, ny = 22;
-
-    // ---- is_point_in_path2d: a filled rounded triangle ----
-    struct canvas_path2d *__single tri = canvas_path2d();
-    if (tri) {
-        canvas_path2d_move_to(tri, 130.0f, 26.0f);
-        canvas_path2d_line_to(tri, 222.0f, 198.0f);
-        canvas_path2d_line_to(tri, 38.0f, 198.0f);
-        canvas_path2d_close_path(tri);
-
-        // Draw the outline so the shape is visible.
-        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.58f, 0.66f, 0.55f);
-        canvas_set_line_width(c, 1.3f);
-        canvas_stroke_path(c, tri);
-
-        // Collect hits first (so the dot pass uses a clean current path).
-        bool inA[22 * 22];
-        for (int j = 0; j < ny; j++) {
-            for (int i = 0; i < nx; i++) {
-                float px = 22.0f + (float)(i * step);
-                float py = 18.0f + (float)(j * step);
-                inA[j * nx + i] = canvas_is_point_in_path2d(c, tri, px, py,
-                                                             CANVAS_NONZERO);
-            }
-        }
-        for (int j = 0; j < ny; j++) {
-            for (int i = 0; i < nx; i++) {
-                float px = 22.0f + (float)(i * step);
-                float py = 18.0f + (float)(j * step);
-                bool const in = inA[j * nx + i];
-                canvas_set_fill_rgba(c, CANVAS_CS_SRGB,
-                                     in ? 0.30f : 0.42f,
-                                     in ? 0.85f : 0.45f,
-                                     in ? 0.70f : 0.52f,
-                                     in ? 1.0f  : 0.85f);
-                canvas_begin_path(c);
-                canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
-                canvas_fill(c, CANVAS_NONZERO);
-            }
-        }
-        canvas_path2d_free(tri);
-    }
-
-    // ---- is_point_in_stroke_path: a thick arc ----
-    struct canvas_path2d *__single arc = canvas_path2d();
-    if (arc) {
-        canvas_path2d_arc(arc, 350.0f, 116.0f, 66.0f, 0.0f, TAU, false);
-        canvas_set_line_width(c, 24.0f);
-
-        bool inB[22 * 22];
-        for (int j = 0; j < ny; j++) {
-            for (int i = 0; i < nx; i++) {
-                float px = 254.0f + (float)(i * step);
-                float py = 18.0f + (float)(j * step);
-                inB[j * nx + i] = canvas_is_point_in_stroke_path(c, arc, px, py);
-            }
-        }
-        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.52f, 0.40f, 0.22f);
-        canvas_stroke_path(c, arc);
-        for (int j = 0; j < ny; j++) {
-            for (int i = 0; i < nx; i++) {
-                float px = 254.0f + (float)(i * step);
-                float py = 18.0f + (float)(j * step);
-                bool const in = inB[j * nx + i];
-                canvas_set_fill_rgba(c, CANVAS_CS_SRGB,
-                                     in ? 0.97f : 0.42f,
-                                     in ? 0.62f : 0.45f,
-                                     in ? 0.25f : 0.52f,
-                                     in ? 1.0f  : 0.85f);
-                canvas_begin_path(c);
-                canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
-                canvas_fill(c, CANVAS_NONZERO);
-            }
-        }
-        canvas_path2d_free(arc);
-    }
-
-    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
-    canvas_set_font_size(c, 14.0f);
-    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
-    canvas_fill_text(c, "is_point_in_path2d", 130.0f, 248.0f);
-    canvas_fill_text(c, "is_point_in_stroke_path", 350.0f, 248.0f);
-    canvas_set_text_align(c, CANVAS_ALIGN_START);
-
-    save(c, "gallery/path2dhit.png");
-}
-
 // Nested clips: three save/restore levels each narrowing the active region, then
 // the same rainbow-stripe flood from the clip scene.  The outer clip is a circle;
 // inside it the second clip intersects a rotated rectangle; inside both the third
@@ -3138,7 +3038,6 @@ static void render_all(void) {
     colorspaces();
     ellipserot();
     nestedclip();
-    path2dhit();
 }
 
 int main(void) {
