@@ -15,6 +15,12 @@ in [decisions/opt-level.md](decisions/opt-level.md),
 (planarize the shade stage) landed; the pre-landing table this document was
 written around is in git history.
 
+Touched 2026-06-20 (SIMD pass): the `canvas_clip` bbox-limit landed and the
+bilinear-sampler vectorization was tried and reverted (kill condition) — both in
+§4. The §1 table predates them; the clip line is gone from the leaderboard and
+the image-sampling bucket is unchanged (sampler reverted), so the §1 shares hold
+otherwise. A fresh §1 re-grounding waits for the next structural change.
+
 ## 1. Where the milliseconds go
 
 Top-of-stack self-time across the whole gallery (all 33 scenes, PNG encode
@@ -747,26 +753,37 @@ recorded in §3.8's landed note. The staged-row shape won by default at row
 granularity; the fused-register shape is #27's remaining question, now fighting
 for row-cache bandwidth rather than DRAM.)
 
-1. **Vectorize the sampling interior of `draw_image_quad`** (the 25 %
-   pole). The taps stay scalar — there is no NEON gather — but per block the
-   four tap colours can land in f32 planes and the bilinear weight/lerp
-   arithmetic (`tx`/`ty`, two lerps × four channels, the /255) plus the index
-   floor/clamp/wrap math are elementwise and can run 8-wide bit-exactly
-   (`__builtin_elementwise_floor` is IEEE floor = `floorf` per lane; the
-   `cnvs_f2i` saturation semantics must be reproduced exactly, watch NaN→0).
-   *Expected:* a real slice of 25 % on the gallery, more on emoji/drawimage
-   scenes — the probe. *Kill:* the gather/insert shuffling eats the arithmetic
-   win (the taps are ~16 byte-loads per pixel either way).
-2. **Vectorize `canvas_clip`'s intersect loop** (§3.6, promoted: now 10.6 % and
-   still a half-day). 8-wide integer `old * pc / 255` with the planar seams,
-   bbox-limited. The /255 must stay exact (it's integer today; keep it
-   integer). No memo needed; the byte-gate is the gate.
-3. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
-   no threads). *Re-priced after #1 landed:* the solid-tile fast path now skips
-   much cheaper shade work, so the 5–15 % guess shrinks; coverage (22 %) is the
-   bigger target now. *Kill:* < 5 % flagship, or a measurable regression on
-   concave/small-op content; if killed, keep only the binning design notes as
-   #1's load-balancer fallback.
+(#1, vectorize the bilinear sampler interior of `draw_image_quad`, **tried and
+reverted 2026-06-20** — the kill condition fired. `sample_src_8wide` did the
+weight/lerp/clamp 8-wide (taps still scalar gathers), byte-exact. But the new
+`bench_drawimage` (added to price exactly this pole — it had no bench before)
+measured **1.01× ± 0.05× vs the per-lane form, a wash**: the four tap-gathers
+(~16 byte-loads/pixel) dominate, so vectorizing the arithmetic around them buys
+nothing — precisely the "gather/insert shuffling eats the arithmetic win"
+predicted. The ~150 lines were reverted; `bench_drawimage` stays so the next
+attempt can re-price before committing. Lesson: profile-scene's "`sample_src`
+self-time halved" was redistribution into `draw_image_quad`, not a speedup —
+proportions located it, only hyperfine priced it.)
+
+(#2, `canvas_clip` bbox-limit, **landed 2026-06-20** — the cheap half of §3.6.
+The intersect now memsets the mask and multiplies only the path's canvas-clamped
+bbox; `canvas_clip` dropped off the profile-scene top-15 (was 10.6 %), byte-exact.
+The `old*pc/255` stayed the scalar mul+shift the compiler already emits — the
+8-wide inner multiply is the remaining, now-smaller half, below.)
+
+The post-pass re-rank (sampler reverted, clip bbox-limited; coverage and
+composite are now the largest buckets the gallery still pays per pixel):
+
+1. **Tile classification, serial first** (§3.4 phase 1: bin + empty/solid skip,
+   no threads). Coverage (~22 %) and composite (~17 %) are the bigger targets
+   now; tile classification attacks both via the solid-tile fast path. *Kill:*
+   < 5 % flagship, or a regression on concave/small-op content; if killed, keep
+   the binning design notes as the threading load-balancer fallback.
+2. **Vectorize `canvas_clip`'s in-bbox multiply 8-wide** (the remaining half of
+   the bbox-limit landing). 16-wide `(old*pc*0x8081)>>23` — the mul+shift the
+   compiler already emits scalar — with planar seams; keep /255 integer-exact.
+   Smaller now that the bbox-limit landed and `canvas_clip` left the top.
+   No memo; the byte-gate is the gate.
 
 Below the line, in order: the conflation oracle scenes (§3.7 — quality bound,
 not speed), resolve→shade f16-coverage fusion (§3.1's step two — deletes 2 B/px
