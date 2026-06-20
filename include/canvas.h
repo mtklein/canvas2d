@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 struct canvas;  // the rendering context: canvas() constructs, canvas_free() frees
+                // (see canvas() below; the working colour space is required)
 
 // The six components of a 2D affine transform: (x,y) maps to
 // (a*x + c*y + e, b*x + d*y + f) -- the argument order of canvas_set_transform.
@@ -65,7 +66,7 @@ enum canvas_composite_op {
 
 // The colour spaces this API names.  ONE enum spanning every role; each
 // surface that takes a space accepts only the valid SUBSET for that role
-// (canvas_in_space takes the two compositing spaces and returns NULL otherwise;
+// (canvas takes the two compositing spaces and returns NULL otherwise;
 // the gradient interpolation setters take all three and silently ignore an
 // out-of-range value).  Neither asserts.
 //   CANVAS_CS_SRGB        -- encoded sRGB.
@@ -74,14 +75,14 @@ enum canvas_composite_op {
 //   CANVAS_CS_OKLAB       -- Oklab; a perceptual interpolation space, not a
 //                            compositing space.
 //
-// The canvas's WORKING COLOUR SPACE (canvas_in_space): the space untagged
-// (encoded sRGB) colours are converted INTO for compositing.  Chosen at
-// creation and immutable -- it lives on the canvas, not the save/restore
-// drawing state, and reset/resize leave it alone.  Only the two sRGB-primaried
-// spaces are valid here (Oklab is not a compositing space):
-//   CANVAS_CS_SRGB        -- encoded sRGB; today's behaviour, byte for byte.
-//                            NO transfer ever runs: entry, compositing, and
-//                            exit are a literal bypass of the legacy path.
+// The canvas's WORKING COLOUR SPACE (canvas): the space untagged (encoded sRGB)
+// colours are converted INTO for compositing.  Chosen at creation and immutable
+// -- it lives on the canvas, not the save/restore drawing state, and
+// reset/resize leave it alone.  The two sRGB-primaried spaces are equal peer
+// choices here (Oklab is not a compositing space):
+//   CANVAS_CS_SRGB        -- encoded sRGB.  NO transfer ever runs: entry,
+//                            compositing, and exit are a literal bypass of the
+//                            transfer path.
 //   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB; translucent overlaps
 //                            composite in linear light (they stay bright rather
 //                            than going muddy).  Untagged colours decode
@@ -128,11 +129,12 @@ enum canvas_color_space {
 };
 
 // The constructor: NULL on failure; the canvas starts transparent black.
-// canvas_free accepts NULL, like free() itself.  canvas(w,h) is the sRGB
-// working space (today's behaviour); canvas_in_space picks the space explicitly.
-struct canvas *__single canvas(int width, int height);
-struct canvas *__single canvas_in_space(int width, int height,
-                                        enum canvas_color_space space);
+// canvas_free accepts NULL, like free() itself.  `space` is the working colour
+// space (see canvas_color_space), a required choice between the two compositing
+// spaces; NULL is returned for a non-compositing space (CANVAS_CS_OKLAB) or bad
+// dimensions.
+struct canvas *__single canvas(int width, int height,
+                               enum canvas_color_space space);
 void canvas_free(struct canvas *__single cv);
 
 // Whether the rendering context has been lost (matching isContextLost).  This

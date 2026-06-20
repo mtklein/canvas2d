@@ -31,8 +31,8 @@ static void draw_scene(struct canvas *__single cv) {
 // drawn again) on another -- the readback bytes must match exactly, and the
 // stats must prove the second draw never went back to the boundary.
 static void check_transparent(void) {
-    struct canvas *__single cold = canvas(W, H);
-    struct canvas *__single warm = canvas(W, H);
+    struct canvas *__single cold = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas *__single warm = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cold != NULL && warm != NULL);
     if (!cold || !warm) {
         canvas_free(cold);
@@ -63,7 +63,7 @@ static void check_transparent(void) {
 // The measure-then-draw pattern real callers use, plus key correctness: a
 // different size or different bytes is a different key; the originals stay hot.
 static void check_keys(void) {
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -115,8 +115,8 @@ static char const k_family[] = "Libian TC";  // the canvas's pinned family;
                                              // joins the boundary call, not the key
 
 static void check_eviction(void) {
-    struct canvas *__single churn = canvas(W, H);
-    struct canvas *__single fresh = canvas(W, H);
+    struct canvas *__single churn = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas *__single fresh = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(churn != NULL && fresh != NULL);
     if (!churn || !fresh) {
         canvas_free(churn);
@@ -163,7 +163,7 @@ static void check_eviction(void) {
 // The glyph-curve map: a repeated glyph is fetched once per (font, glyph), a
 // blank (the space) caches as "no outline", and a warm redraw adds no misses.
 static void check_glyph_once(void) {
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -188,7 +188,7 @@ static void check_glyph_once(void) {
 // outline font, so two names intern and their glyph keys live side by side --
 // a second draw hits every one of them (no key collisions across fonts).
 static void check_fallback_fonts(void) {
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -209,8 +209,8 @@ static void check_fallback_fonts(void) {
 // reset(): the cache goes back to its initial (empty) state -- documented with
 // the reset contract in canvas.c -- and a post-reset draw is cold but correct.
 static void check_reset(void) {
-    struct canvas *__single cv = canvas(W, H);
-    struct canvas *__single fresh = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas *__single fresh = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cv != NULL && fresh != NULL);
     if (!cv || !fresh) {
         canvas_free(cv);

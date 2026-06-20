@@ -18,7 +18,7 @@ static bool exact(float a, float b) {
 }
 
 int main(void) {
-    struct canvas *__single cv = canvas(96, 64);
+    struct canvas *__single cv = canvas(96, 64, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
@@ -118,7 +118,7 @@ int main(void) {
     char const *__null_terminated path = "build/test_textspacing.canvas";
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single rc = canvas(W, H);
+        struct canvas *__single rc = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(rc != NULL);
         if (rc) {
             CHECK(canvas_record_to(rc, path));
@@ -140,7 +140,7 @@ int main(void) {
         CHECK(any);
     }
     {
-        struct canvas *__single pc = canvas(W, H);
+        struct canvas *__single pc = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(pc != NULL);
         if (pc) {
             CHECK(canvas_replay_from(pc, path));

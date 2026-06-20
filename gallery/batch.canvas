@@ -1,3 +1,4 @@
+working_space srgb
 set_fill_rgba 0.0700000003 0.0799999982 0.100000001 1
 fill_rect 0 0 300 120
 set_global_alpha 0.550000012

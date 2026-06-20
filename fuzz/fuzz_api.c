@@ -168,7 +168,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     // compositing space).  Fuzzes the linear decode/encode + extended-range paths.
     enum canvas_color_space const ws =
         (rd_u8(&c) & 1) ? CANVAS_CS_LINEAR_SRGB : CANVAS_CS_SRGB;
-    struct canvas *__single cv = canvas_in_space(W, H, ws);
+    struct canvas *__single cv = canvas(W, H, ws);
     if (!cv) {
         return 0;
     }

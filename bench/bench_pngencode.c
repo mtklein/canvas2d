@@ -14,7 +14,7 @@
 #define DIM 512
 
 int main(void) {
-    struct canvas *__single cv = canvas(DIM, DIM);
+    struct canvas *__single cv = canvas(DIM, DIM, CANVAS_CS_SRGB);
     if (!cv) {
         return 1;
     }

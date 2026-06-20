@@ -17,7 +17,7 @@
 #define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
 
 int main(void) {
-    struct canvas *__single cv = canvas(64, 48);
+    struct canvas *__single cv = canvas(64, 48, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
 
     // A valid program: comments, blank lines, no trailing newline on the last line.
@@ -212,7 +212,7 @@ int main(void) {
     // of the two COMPOSITING spaces (oklab is not a working space, only an
     // interpolation one), and carry exactly that one token.
     {
-        struct canvas *__single ws = canvas(8, 8);
+        struct canvas *__single ws = canvas(8, 8, CANVAS_CS_SRGB);
         CHECK(ws != NULL);
         CHECK(REPLAY(ws, "working_space linear\n"
                          "fill_rect 0 0 8 8\n"));

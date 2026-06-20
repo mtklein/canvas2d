@@ -70,7 +70,15 @@ char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1] = {
 struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
-    bool wrote_ws;  // a `working_space` line has been emitted for this file
+    // The working space leads the file, written unconditionally.  It is PENDING
+    // until the first other line is recorded: record_to latches the canvas's
+    // creation space, and a leading replay `working_space` line (the only thing
+    // that reconfigures the immutable space, and only before any draw) updates
+    // the pending value -- so a replay-while-recording records the space the
+    // file actually replays in, not the recording canvas's as-created one.  The
+    // line is flushed (once) the instant any other op is recorded.
+    enum canvas_color_space pending_space;
+    bool wrote_ws;  // the `working_space` line has been flushed for this file
     // The spacing the most recently emitted `shaping` block carried.  Replay
     // sets its canvas spacing from each shaping block, so a text op whose
     // spacing matches the last block's needs no fresh block (the deduped one
@@ -128,6 +136,26 @@ void cnvs_rec_leave(struct cnvs_recorder *__single r) {
     }
 }
 
+// Flush the pending working_space line, the file's leading line.  Called at the
+// head of every line-writing entry point: the first call writes the line and
+// latches wrote_ws, every later call is a no-op.  An unnameable pending space
+// (no caller produces one -- only the two compositing spaces reach a canvas)
+// writes nothing, leaving the file headerless rather than emitting a token the
+// strict parser would reject.
+static void cnvs_rec_flush_ws(struct cnvs_recorder *__single r) {
+    if (r->wrote_ws) {
+        return;
+    }
+    r->wrote_ws = true;  // latch first: a malformed space still settles the head
+    unsigned const i = (unsigned)r->pending_space;
+    if (i >= sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
+        return;
+    }
+    fputs("working_space ", r->f);
+    fputs(canvas_color_space_name[i], r->f);
+    fputc('\n', r->f);
+}
+
 // Append " <v>" for each of the n floats; %.9g round-trips a float32's value.
 static void put_floats(FILE *__single f, float const *__counted_by(n) v, int n) {
     for (int i = 0; i < n; i++) {
@@ -139,6 +167,7 @@ void cnvs_rec_op(struct cnvs_recorder *__single r, char const *__null_terminated
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fputc('\n', r->f);
 }
@@ -148,6 +177,7 @@ void cnvs_rec_floats(struct cnvs_recorder *__single r, char const *__null_termin
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     put_floats(r->f, v, n);
     fputc('\n', r->f);
@@ -158,6 +188,7 @@ void cnvs_rec_floats_bool(struct cnvs_recorder *__single r, char const *__null_t
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     put_floats(r->f, v, n);
     fputs(flag ? " 1" : " 0", r->f);
@@ -177,6 +208,7 @@ void cnvs_rec_floats_cs(struct cnvs_recorder *__single r, char const *__null_ter
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     put_floats(r->f, v, n);
     unsigned const i = (unsigned)space;
@@ -193,6 +225,7 @@ void cnvs_rec_text(struct cnvs_recorder *__single r, char const *__null_terminat
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fprintf(r->f, " %.9g %.9g ", (double)x, (double)y);
     // The text is the rest of the line, verbatim (UTF-8): exactly `len` bytes,
@@ -211,6 +244,7 @@ void cnvs_rec_text_max(struct cnvs_recorder *__single r, char const *__null_term
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     // x, y, max_width, then the text verbatim (the rest of the line, UTF-8):
     // the parser reads three floats and takes the remainder as the string.
@@ -313,6 +347,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     if (!r || r->suspend != 0 || !c) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, size_px, rtl,
                                                                 ls, ws, text, len);
     if (!slot) {
@@ -517,6 +552,7 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     bool const emit_cs =
         cs != CANVAS_CS_SRGB &&
         csi < sizeof canvas_color_space_name / sizeof canvas_color_space_name[0];
+    cnvs_rec_flush_ws(r);  // the working_space line leads the file, ahead of any block
     fprintf(r->f, "image %d %s %s %d %d %d %d", id,
             ct == CANVAS_COLOR_F16 ? "f16" : "unorm8",
             at == CANVAS_ALPHA_PREMUL ? "premul" : "unpremul",
@@ -549,6 +585,7 @@ void cnvs_rec_image_mips(struct cnvs_recorder *__single r, int id) {
         r->img[id].mips_done) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fprintf(r->f, "image_mips %d\n", id);
     r->img[id].mips_done = true;
 }
@@ -559,6 +596,7 @@ void cnvs_rec_image_floats(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fprintf(r->f, " %d", id);
     put_floats(r->f, v, n);
@@ -571,6 +609,7 @@ void cnvs_rec_image_ints(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fprintf(r->f, " %d", id);
     for (int i = 0; i < n; i++) {
@@ -585,6 +624,7 @@ void cnvs_rec_pattern(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     unsigned const i = (unsigned)repeat;
     if (i >= sizeof cnvs_repeat_name / sizeof cnvs_repeat_name[0]) {
         return;  // out of range; the setter stored it but no draw reads past
@@ -660,6 +700,7 @@ int cnvs_rec_path(struct cnvs_recorder *__single r, struct canvas_path2d const *
         memcpy(copy, p->cmds, (size_t)n * sizeof *copy);
     }
     int const id = r->npath;
+    cnvs_rec_flush_ws(r);  // the working_space line leads the file, ahead of any block
     fprintf(r->f, "path %d %d\n", id, n);
     for (int i = 0; i < n; i++) {
         int k = 0;
@@ -682,6 +723,7 @@ void cnvs_rec_path_op(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fprintf(r->f, " %d", id);
     fputc('\n', r->f);
@@ -693,6 +735,7 @@ void cnvs_rec_path_rule(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fprintf(r->f, " %d ", id);
     fputs(rule == CANVAS_EVENODD ? "evenodd" : "nonzero", r->f);
@@ -704,6 +747,7 @@ void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminat
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     for (int i = 0; i < n; i++) {
         fprintf(r->f, " %d", v[i]);
@@ -716,6 +760,7 @@ void cnvs_rec_rule(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     fputc(' ', r->f);
     fputs(rule == CANVAS_EVENODD ? "evenodd" : "nonzero", r->f);
@@ -727,6 +772,7 @@ void cnvs_rec_smoothing_quality(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     char const *__null_terminated name = "low";
     switch (quality) {
         case CANVAS_SMOOTHING_LOW:    name = "low";    break;
@@ -742,6 +788,7 @@ void cnvs_rec_line_join(struct cnvs_recorder *__single r, enum canvas_line_join 
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     char const *__null_terminated name = "miter";
     if (join == CANVAS_JOIN_ROUND) {
         name = "round";
@@ -757,6 +804,7 @@ void cnvs_rec_line_cap(struct cnvs_recorder *__single r, enum canvas_line_cap ca
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     char const *__null_terminated name = "butt";
     if (cap == CANVAS_CAP_ROUND) {
         name = "round";
@@ -772,6 +820,7 @@ void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_alig
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     char const *__null_terminated name = "start";
     switch (align) {
         case CANVAS_ALIGN_START:  name = "start";  break;
@@ -790,6 +839,7 @@ void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     char const *__null_terminated name = "alphabetic";
     switch (baseline) {
         case CANVAS_BASELINE_ALPHABETIC:  name = "alphabetic";  break;
@@ -808,6 +858,7 @@ void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction 
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     fputs("set_direction ", r->f);
     fputs(dir == CANVAS_DIRECTION_RTL ? "rtl" : "ltr", r->f);
     fputc('\n', r->f);
@@ -817,6 +868,7 @@ void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     unsigned const i = (unsigned)op;
     if (i >= sizeof cnvs_composite_name / sizeof cnvs_composite_name[0]) {
         return;  // out of range; the caller's setter ignored it too (the hook
@@ -829,20 +881,19 @@ void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_
 
 void cnvs_rec_working_space(struct cnvs_recorder *__single r,
                            enum canvas_color_space space) {
-    // sRGB records NOTHING: absence is sRGB, so every pre-existing .canvas file
-    // stays byte-identical (the determinism gate's 35 scenes are all sRGB).  An
-    // out-of-range value is treated as sRGB (emit nothing) for the same reason.
-    // Idempotent: at most ONE working_space line per file -- record_to emits it
-    // for a linear canvas at the top, and replay re-applies it when it parses
-    // the leading line; the flag keeps those from stacking two lines (which the
-    // strict parser, requiring the line to lead, would then reject on re-replay).
-    if (!r || r->suspend != 0 || space != CANVAS_CS_LINEAR_SRGB || r->wrote_ws) {
+    // The working space is written UNCONDITIONALLY -- sRGB and linear are equal
+    // peers, so every .canvas file leads with its space rather than leaning on
+    // an "absent == sRGB" convention.  Only update the PENDING space: the line
+    // is flushed lazily (cnvs_rec_flush_ws) at the first other op, so a leading
+    // replay `working_space` line -- which arrives after record_to latched the
+    // recording canvas's as-created space but before any draw -- corrects the
+    // pending value rather than racing against a line already on disk.  Once the
+    // line is flushed, the space is settled and further calls are no-ops (the
+    // strict parser, requiring the line to lead, would reject a second one).
+    if (!r || r->suspend != 0 || r->wrote_ws) {
         return;
     }
-    fputs("working_space ", r->f);
-    fputs(canvas_color_space_name[CANVAS_CS_LINEAR_SRGB], r->f);
-    fputc('\n', r->f);
-    r->wrote_ws = true;
+    r->pending_space = space;
 }
 
 void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
@@ -852,6 +903,7 @@ void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
     if (!r || r->suspend != 0) {
         return;
     }
+    cnvs_rec_flush_ws(r);
     // The default (srgb + unpremul) is the absence of the line entirely, so a
     // default-interp gradient records nothing and stays byte-identical to a
     // legacy program.  Only a non-default interp emits.

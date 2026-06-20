@@ -251,12 +251,8 @@ static void state_defaults(struct canvas_state *s) {
     s->clip_mask = NULL;
 }
 
-struct canvas *__single canvas(int width, int height) {
-    return canvas_in_space(width, height, CANVAS_CS_SRGB);
-}
-
-struct canvas *__single canvas_in_space(int width, int height,
-                                        enum canvas_color_space space) {
+struct canvas *__single canvas(int width, int height,
+                               enum canvas_color_space space) {
     if (width <= 0 || height <= 0 ||
         width > CANVAS_DIM_MAX || height > CANVAS_DIM_MAX) {
         return NULL;
@@ -264,7 +260,7 @@ struct canvas *__single canvas_in_space(int width, int height,
     if (space != CANVAS_CS_SRGB && space != CANVAS_CS_LINEAR_SRGB) {
         return NULL;  // only the compositing spaces are valid here; an
                       // out-of-range value (or CANVAS_CS_OKLAB, not a
-                      // compositing space) is a caller error, not a default
+                      // compositing space) is a caller error
     }
     int const n = width * height;
     cnvs_premul *__counted_by_or_null(n) target = calloc((size_t)n, sizeof *target);
@@ -338,9 +334,9 @@ bool cnvs_canvas_set_working_space(struct canvas *__single cv,
     // re-stamping the immutable space is creation-time, not a mid-stream flip.
     if (space == CANVAS_CS_SRGB || space == CANVAS_CS_LINEAR_SRGB) {
         cv->space = space;
-        // Replaying a linear program onto a recording canvas re-emits the line,
-        // so the round trip stays byte-idempotent (the no-op-for-sRGB emitter
-        // keeps sRGB programs from gaining a line they never had).
+        // Replaying a program onto a recording canvas re-emits the line, so the
+        // round trip stays byte-idempotent (the once-per-file latch keeps it
+        // from stacking a second line atop the one record_to already wrote).
         cnvs_rec_working_space(cv->rec, space);
     }
     return true;  // an out-of-range value leaves sRGB; the parser already
@@ -365,10 +361,9 @@ bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated 
     // A new file holds no blocks yet: forget what any prior recording emitted,
     // so warm cache entries serialize afresh into this one.
     cnvs_text_cache_unmark(&cv->text_cache);
-    // The working space rides the very first line, before any draw -- but only
-    // when it is non-sRGB, so every sRGB program stays byte-identical (the
-    // emitter is a no-op for CANVAS_CS_SRGB).  Replay applies it to the fresh
-    // canvas before the first colour interns.
+    // The working space rides the very first line, before any draw -- written
+    // unconditionally (sRGB and linear are equal peers, both spelled out).
+    // Replay applies it to the fresh canvas before the first colour interns.
     cnvs_rec_working_space(cv->rec, cv->space);
     return cv->rec != NULL;
 }

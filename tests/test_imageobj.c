@@ -40,8 +40,8 @@ static void image_matches_bitmap(void) {
     uint8_t pb[N * N * 4];
     fill_src(src);
     struct canvas_image *__single img = canvas_image_unorm8(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single a = canvas(N, N);
-    struct canvas *__single b = canvas(N, N);
+    struct canvas *__single a = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single b = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(img != NULL && a != NULL && b != NULL);
     if (img && a && b) {
         CHECK(canvas_image_width(img) == N && canvas_image_height(img) == N);
@@ -78,8 +78,8 @@ static void no_mips_falls_back_bilinear(void) {
     uint8_t pb[N * N * 4];
     fill_src(src);
     struct canvas_image *__single img = canvas_image_unorm8(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single a = canvas(N, N);
-    struct canvas *__single b = canvas(N, N);
+    struct canvas *__single a = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single b = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(img != NULL && a != NULL && b != NULL);
     if (img && a && b) {
         canvas_set_image_smoothing_quality(a, CANVAS_SMOOTHING_LOW);
@@ -102,8 +102,8 @@ static void snapshot_roundtrip(void) {
     int const len = N * N * 4;
     uint8_t pa[N * N * 4];
     uint8_t pb[N * N * 4];
-    struct canvas *__single a = canvas(N, N);
-    struct canvas *__single b = canvas(N, N);
+    struct canvas *__single a = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single b = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(a != NULL && b != NULL);
     if (a && b) {
         canvas_set_fill_rgba(a, CANVAS_CS_SRGB, 0.8f, 0.3f, 0.2f, 1.0f);
@@ -140,9 +140,9 @@ static void record_replay_roundtrip(void) {
     uint8_t pa[N * N * 4];
     uint8_t pb[N * N * 4];
     fill_src(src);
-    struct canvas *__single content = canvas(N, N);
-    struct canvas *__single a = canvas(N, N);
-    struct canvas *__single b = canvas(N, N);
+    struct canvas *__single content = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single a = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single b = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(content != NULL && a != NULL && b != NULL);
     if (content && a && b) {
         canvas_set_fill_rgba(content, CANVAS_CS_SRGB, 0.2f, 0.7f, 0.4f, 0.8f);
@@ -189,7 +189,7 @@ static void f16_formats(void) {
     }
     struct canvas_image *__single un =
         canvas_image_f16(CANVAS_CS_SRGB, src, N, N, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(un != NULL && cv != NULL);
     if (un && cv) {
         canvas_draw_image(cv, un, 0.0f, 0.0f);
@@ -276,8 +276,8 @@ static void colorspace_tag_serialization(void) {
 
     // (1) A linear-tagged image records the `linear` token; (2) an sRGB image
     // records no token at all.  Both replay cleanly.
-    struct canvas *__single lin = canvas(N, N);
-    struct canvas *__single srgb = canvas(N, N);
+    struct canvas *__single lin = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single srgb = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(lin != NULL && srgb != NULL);
     if (lin && srgb) {
         struct canvas_image *__single img_lin =
@@ -313,7 +313,7 @@ static void colorspace_tag_serialization(void) {
 
             // The linear file replays without error: the parser accepts the
             // optional token and threads the tag onto the rebuilt block.
-            struct canvas *__single rb = canvas(N, N);
+            struct canvas *__single rb = canvas(N, N, CANVAS_CS_SRGB);
             CHECK(rb != NULL);
             if (rb) {
                 CHECK(canvas_replay_from(rb, lin_path));
@@ -331,7 +331,7 @@ static void colorspace_tag_serialization(void) {
     // -> re-record intact (the round-trip idempotence the format guarantees).
     char const *__null_terminated re_path = "build/test_imageobj_lin_re.canvas";
     static char re_text[CAP];
-    struct canvas *__single re = canvas(N, N);
+    struct canvas *__single re = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(re != NULL);
     if (re) {
         CHECK(canvas_record_to(re, re_path));

@@ -40,7 +40,7 @@ static void check_renders_in_color(void) {
         return;
     }
 
-    struct canvas *__single cv = canvas(w, h);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -218,7 +218,7 @@ static void check_halve_premul(void) {
 // Mip selection on a real capture: the smallest level >= the footprint in
 // both dimensions, the capture above the top level, 1x1 at the bottom.
 static void check_mip_select(void) {
-    struct canvas *__single cv = canvas(64, 64);
+    struct canvas *__single cv = canvas(64, 64, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -261,7 +261,7 @@ static void check_mip_select(void) {
 // minification ratio (160/footprint).  Pinned at the seams: a level's own
 // size blends 0, magnification and the 1x1 floor collapse to one level.
 static void check_mip_pair(void) {
-    struct canvas *__single cv = canvas(64, 64);
+    struct canvas *__single cv = canvas(64, 64, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -336,7 +336,7 @@ static void check_draw_matches_level(struct canvas *__single cv, float size_px,
 }
 
 static void check_draw_equivalence(void) {
-    struct canvas *__single cv = canvas(192, 192);
+    struct canvas *__single cv = canvas(192, 192, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;

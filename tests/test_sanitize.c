@@ -13,7 +13,7 @@
 #include <ptrcheck.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas(64, 64);
+    struct canvas *__single cv = canvas(64, 64, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
 
     // The reported crash value (finite, > INT_MAX) plus NaN/Inf and other huge

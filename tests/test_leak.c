@@ -58,7 +58,7 @@ static void draw_some(struct canvas *__single cv, int seed) {
 
 int main(void) {
     for (int i = 0; i < 16; i++) {
-        struct canvas *__single cv = canvas(48, 48);
+        struct canvas *__single cv = canvas(48, 48, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -98,7 +98,7 @@ int main(void) {
     // truncated-block drop paths, which a failing replay exercises.
     for (int i = 0; i < 4; i++) {
         char const *__null_terminated path = "build/test_leak.canvas";
-        struct canvas *__single cv = canvas(48, 48);
+        struct canvas *__single cv = canvas(48, 48, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -121,7 +121,7 @@ int main(void) {
         canvas_fill_text(cv, "Ag", 4.0f, 40.0f);
         canvas_free(cv);  // closes the recording, freeing its copies
 
-        struct canvas *__single rv = canvas(48, 48);
+        struct canvas *__single rv = canvas(48, 48, CANVAS_CS_SRGB);
         CHECK(rv != NULL);
         if (!rv) {
             continue;

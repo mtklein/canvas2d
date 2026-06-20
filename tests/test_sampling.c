@@ -25,7 +25,7 @@ static void flat_exact(void) {
         src[i * 4 + 2] = 200;
         src[i * 4 + 3] = 255;
     }
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
@@ -61,7 +61,7 @@ static void stripes_average(void) {
             src[o + 3] = 255;
         }
     }
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
@@ -98,7 +98,7 @@ static void catmullrom_phase(void) {
             src[o + 3] = 255;
         }
     }
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
@@ -130,7 +130,7 @@ static void no_transparent_bleed(void) {
         src[lo + 0] = 255; src[lo + 1] = 0; src[lo + 2] = 0;   src[lo + 3] = 0;
         src[ro + 0] = 0;   src[ro + 1] = 0; src[ro + 2] = 255; src[ro + 3] = 255;
     }
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
@@ -186,8 +186,8 @@ static void f16_nearest_matches_unorm8(void) {
     fill_column4(b8, f16);
     struct canvas_image *__single imf = canvas_image_f16(CANVAS_CS_SRGB, f16, 4, 4, CANVAS_ALPHA_UNPREMUL);
     struct canvas_image *__single imu = canvas_image_unorm8(CANVAS_CS_SRGB, b8, 4, 4, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single cf = canvas(N, N);
-    struct canvas *__single cu = canvas(N, N);
+    struct canvas *__single cf = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single cu = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(imf != NULL && imu != NULL && cf != NULL && cu != NULL);
     if (imf && imu && cf && cu) {
         canvas_set_image_smoothing_enabled(cf, false);  // -> sample_src_nearest_f16
@@ -221,8 +221,8 @@ static void f16_cubic_magnify(void) {
     fill_column4(b8, f16);
     struct canvas_image *__single imf = canvas_image_f16(CANVAS_CS_SRGB, f16, 4, 4, CANVAS_ALPHA_UNPREMUL);
     struct canvas_image *__single imu = canvas_image_unorm8(CANVAS_CS_SRGB, b8, 4, 4, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single cf = canvas(N, N);
-    struct canvas *__single cu = canvas(N, N);
+    struct canvas *__single cf = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas *__single cu = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(imf != NULL && imu != NULL && cf != NULL && cu != NULL);
     if (imf && imu && cf && cu) {
         canvas_set_image_smoothing_quality(cf, CANVAS_SMOOTHING_HIGH);  // -> cubic_f16
@@ -259,7 +259,7 @@ static void premul_unorm8_cubic(void) {
         src[ro + 0] = 0; src[ro + 1] = 0; src[ro + 2] = 255; src[ro + 3] = 255;
     }
     struct canvas_image *__single im = canvas_image_unorm8(CANVAS_CS_SRGB, src, 2, 2, CANVAS_ALPHA_PREMUL);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(im != NULL && cv != NULL);
     if (im && cv) {
         canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);

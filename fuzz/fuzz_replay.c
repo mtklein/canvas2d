@@ -12,7 +12,7 @@
 #include <stddef.h>
 
 int LLVMFuzzerTestOneInput(uint8_t const *data, size_t size) {
-    struct canvas *cv = canvas(64, 48);
+    struct canvas *cv = canvas(64, 48, CANVAS_CS_SRGB);
     if (!cv) {
         return 0;
     }

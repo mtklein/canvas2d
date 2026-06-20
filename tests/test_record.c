@@ -253,7 +253,7 @@ static bool has_no_substr_n(char const *__counted_by(n) hay, int n,
 // against line by line.
 static void record_colors(char const *__null_terminated path,
                           enum canvas_color_space space) {
-    struct canvas *__single cv = canvas(16, 16);
+    struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     CHECK(canvas_record_to(cv, path));
     canvas_set_fill_rgba(cv, space, 0.25f, 0.5f, 0.75f, 1.0f);
@@ -279,7 +279,7 @@ int main(void) {
 
     // Opening an unwritable path records nothing and reports failure.
     {
-        struct canvas *__single bad = canvas(W, H);
+        struct canvas *__single bad = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(bad != NULL);
         CHECK(!canvas_record_to(bad, "build/no_such_dir_xyzzy/out.canvas"));
         canvas_free(bad);
@@ -288,7 +288,7 @@ int main(void) {
     // 1. Record a program to p1, capturing its pixels before destroy closes p1.
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p1));
         draw_program(cv);
@@ -307,7 +307,7 @@ int main(void) {
 
     // 2. Pixel identity: replay p1 onto a fresh canvas; bitmaps match exactly.
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, p1));
         uint8_t replayed_px[NPX];
@@ -319,7 +319,7 @@ int main(void) {
     // 3. Text idempotence: replay p1 while recording into p2; p1 == p2 byte-for-
     // byte, proving record/replay are inverse on the canonical text form.
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, p2));
         CHECK(canvas_replay_from(cv, p1));
@@ -338,16 +338,17 @@ int main(void) {
     }
 
     // 4. The working-space line: the same program on a LINEAR canvas records a
-    // leading `working_space linear` line (an sRGB program records none, proven
-    // above where p1 carries no such line), replays to a linear canvas with
-    // pixel identity, and round-trips byte-for-byte through replay-while-
-    // recording -- including across the program's own reset/resize, which leave
-    // the immutable space untouched.
+    // leading `working_space linear` line (an sRGB program leads with
+    // `working_space srgb`, asserted in chunk 5a -- the line is written
+    // unconditionally), replays to a linear canvas with pixel identity, and
+    // round-trips byte-for-byte through replay-while-recording -- including
+    // across the program's own reset/resize, which leave the immutable space
+    // untouched.
     char const *__null_terminated lp1 = "build/test_record_lin_a.canvas";
     char const *__null_terminated lp2 = "build/test_record_lin_b.canvas";
     uint8_t lin_px[NPX];
     {
-        struct canvas *__single cv = canvas_in_space(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, lp1));
         draw_program(cv);
@@ -366,7 +367,7 @@ int main(void) {
     {
         // Pixel identity: a fresh sRGB canvas, replay flips it to linear via the
         // leading line, and the bitmap matches the recorded linear render.
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, lp1));
         uint8_t replayed[NPX];
@@ -376,7 +377,7 @@ int main(void) {
     }
     {
         // Byte idempotence: replay lp1 while recording lp2; lp1 == lp2.
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, lp2));
         CHECK(canvas_replay_from(cv, lp1));
@@ -404,13 +405,16 @@ int main(void) {
 
     {
         // (a) Untagged sRGB: every colour op line is exactly the floats, no
-        // trailing token -- the existing-format bytes, unchanged.  put_image_data
-        // carries its space on the image BLOCK, so an sRGB block emits no token
-        // either (the block line stays `... <zlen> <nlines>`).
+        // trailing token -- so a colour op stays byte-identical whether or not
+        // the working space is sRGB.  put_image_data carries its space on the
+        // image BLOCK, so an sRGB block emits no token either (the block line
+        // stays `... <zlen> <nlines>`).  The file leads with the unconditional
+        // working-space line, naming srgb here.
         record_colors(cp_srgb, CANVAS_CS_SRGB);
         char buf[1 << 13];
         int const n = slurp(cp_srgb, buf, (int)sizeof buf);
         CHECK(n > 0 && n < (int)sizeof buf);
+        CHECK(n >= 19 && memcmp(buf, "working_space srgb\n", 19) == 0);
         CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.25 0.5 0.75 1\n"));
         CHECK(HAS_LINE(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5\n"));
         CHECK(HAS_LINE(buf, n, "set_shadow_color_rgba 0.5 0.5 0.5 0.25\n"));
@@ -420,18 +424,18 @@ int main(void) {
         // No colour-op line carries a trailing space token: a tagged form of any
         // of them must be absent.  (The bare names "srgb"/"linear"/"oklab" can't
         // be probed directly here -- set_fill_linear_gradient legitimately spells
-        // "linear" -- so assert the absence of the actual tagged op lines.)
+        // "linear", and the leading working_space line legitimately ends ` srgb` --
+        // so assert the absence of the actual tagged op lines.)
         CHECK(HAS_NO_SUBSTR(buf, n, "set_fill_rgba 0.25 0.5 0.75 1 "));
         CHECK(HAS_NO_SUBSTR(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5 "));
         CHECK(HAS_NO_SUBSTR(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 "));
-        // And no line ends with a colour-space token (the put_image_data block
-        // line ends right after its <nlines> count; the op lines after their
-        // floats).
-        CHECK(HAS_NO_SUBSTR(buf, n, " srgb\n"));
+        // No colour op ends with a non-sRGB token (the working_space line names
+        // srgb, the put_image_data block line ends after its <nlines> count, the
+        // op lines after their floats).
         CHECK(HAS_NO_SUBSTR(buf, n, " linear\n"));
         CHECK(HAS_NO_SUBSTR(buf, n, " oklab\n"));
         // It replays without error onto a fresh canvas.
-        struct canvas *__single cv = canvas(16, 16);
+        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_replay_from(cv, cp_srgb));
         canvas_free(cv);
@@ -472,7 +476,7 @@ int main(void) {
 
         // Byte idempotence: replay while recording reproduces the file exactly,
         // so record and replay agree on the token's spelling and placement.
-        struct canvas *__single cv = canvas(16, 16);
+        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, cp_re));
         CHECK(canvas_replay_from(cv, cp_lin));
@@ -489,7 +493,7 @@ int main(void) {
         // (b') Tagged Oklab on the op-line colour ops (Oklab is a valid input
         // space; put_image_data, which only carries the working-space-like block
         // tag, is exercised by the linear case above).
-        struct canvas *__single cv = canvas(16, 16);
+        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, cp_okl));
         canvas_set_fill_rgba(cv, CANVAS_CS_OKLAB, 0.5f, 0.25f, 0.75f, 1.0f);
@@ -502,7 +506,7 @@ int main(void) {
         CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.5 0.25 0.75 1 oklab\n"));
         CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1 oklab\n"));
         // Round-trips byte-identically.
-        struct canvas *__single cv2 = canvas(16, 16);
+        struct canvas *__single cv2 = canvas(16, 16, CANVAS_CS_SRGB);
         CHECK(cv2 != NULL);
         CHECK(canvas_record_to(cv2, cp_re));
         CHECK(canvas_replay_from(cv2, cp_okl));
@@ -526,7 +530,7 @@ int main(void) {
         // Helper: record one drawing closure to sp via a tiny inline scope.
         // arc -> records `arc`, swallows the canvas_ellipse it expands to.
         {
-            struct canvas *__single cv = canvas(W, H);
+            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
             CHECK(cv != NULL);
             CHECK(canvas_record_to(cv, sp));
             canvas_begin_path(cv);
@@ -540,7 +544,7 @@ int main(void) {
         }
         // round_rect -> records `round_rect`, swallows move_to/arc/close_path.
         {
-            struct canvas *__single cv = canvas(W, H);
+            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
             CHECK(cv != NULL);
             CHECK(canvas_record_to(cv, sp));
             canvas_begin_path(cv);
@@ -556,7 +560,7 @@ int main(void) {
         }
         // round_rect_radii -> records itself, swallows its arc_to expansion.
         {
-            struct canvas *__single cv = canvas(W, H);
+            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
             CHECK(cv != NULL);
             CHECK(canvas_record_to(cv, sp));
             canvas_begin_path(cv);
@@ -573,7 +577,7 @@ int main(void) {
         }
         // arc_to -> records `arc_to`, swallows the line_to/arc its impl issues.
         {
-            struct canvas *__single cv = canvas(W, H);
+            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
             CHECK(cv != NULL);
             CHECK(canvas_record_to(cv, sp));
             canvas_begin_path(cv);
@@ -591,7 +595,7 @@ int main(void) {
         // fill_path -> records `path` block + `fill_path`, swallows p2d_replay's
         // path methods AND the nested current-path build.
         {
-            struct canvas *__single cv = canvas(W, H);
+            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
             CHECK(cv != NULL);
             CHECK(canvas_record_to(cv, sp));
             struct canvas_path2d *__single p = canvas_path2d();
@@ -618,7 +622,7 @@ int main(void) {
         }
         // resize -> records `resize`, swallows the reset it expands to.
         {
-            struct canvas *__single cv = canvas(W, H);
+            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
             CHECK(cv != NULL);
             CHECK(canvas_record_to(cv, sp));
             canvas_resize(cv, W, H);
@@ -636,7 +640,7 @@ int main(void) {
     // A well-formed leading subset already applied; the canvas stays valid.
 #define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
     {
-        struct canvas *__single cv = canvas(16, 16);
+        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         // The valid tokens parse.
         CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1\n"));          // untagged sRGB

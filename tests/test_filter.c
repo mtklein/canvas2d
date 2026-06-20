@@ -127,7 +127,7 @@ static void blur_matches_reference(void) {
     int const nf = N * N * 4;
     float *__counted_by(nf) want = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && want != NULL && tmp != NULL && cv != NULL);
     if (px && want && tmp && cv) {
         canvas_add_filter_blur(cv, 3.0f);  // stdDev 3 -> box radius 3
@@ -161,7 +161,7 @@ static void blur_noop_amounts(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_blur(cv, 0.0f);
@@ -188,7 +188,7 @@ static void blur_expands_bbox(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_blur(cv, 4.0f);  // box radius 4: spread 12
@@ -226,7 +226,7 @@ static void blur_order_visible(void) {
     int const nf = N * N * 4;
     float *__counted_by(nf) want = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(pxa != NULL && pxb != NULL && want != NULL && tmp != NULL && cv != NULL);
     if (pxa && pxb && want && tmp && cv) {
         for (int order = 0; order < 2; order++) {
@@ -289,7 +289,7 @@ static void blur_translucent_consistent(void) {
     enum { N = 40 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_blur(cv, 2.0f);
@@ -324,7 +324,7 @@ static void blur_clipped(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_begin_path(cv);
@@ -385,7 +385,7 @@ static void drop_shadow_hard_offset(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 4.0f, 4.0f, 0.0f,
@@ -414,7 +414,7 @@ static void drop_shadow_subpixel_offset(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 4.5f, 4.0f, 0.0f,
@@ -445,7 +445,7 @@ static void drop_shadow_matches_reference(void) {
     float *__counted_by(nf) want = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) sh = calloc((size_t)nf, sizeof(float));
     float *__counted_by(nf) tmp = calloc((size_t)nf, sizeof(float));
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && want != NULL && sh != NULL && tmp != NULL && cv != NULL);
     if (px && want && sh && tmp && cv) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 5.0f, 3.0f, 2.0f,
@@ -481,7 +481,7 @@ static void drop_shadow_tint_translucent(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 8.0f, 0.0f, 0.0f,
@@ -505,7 +505,7 @@ static void drop_shadow_translucent_source(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 6.0f, 0.0f, 0.0f,
@@ -534,7 +534,7 @@ static void drop_shadow_order_visible(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         // drop-shadow then grayscale: the pure-green shadow lands on its
@@ -574,7 +574,7 @@ static void drop_shadow_margin(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         // Square [8,16); shadow square [14,22), blurred skirt reaching [8,28).
@@ -607,7 +607,7 @@ static void drop_shadow_with_canvas_shadow(void) {
     enum { N = 48 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
@@ -637,7 +637,7 @@ static void drop_shadow_clamps(void) {
     enum { N = 32 };
     int const len = N * N * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
-    struct canvas *__single cv = canvas(N, N);
+    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
     CHECK(px != NULL && cv != NULL);
     if (px && cv) {
         canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, NAN, 4.0f, 0.0f, 1, 0, 0, 1);
@@ -685,7 +685,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas(W, W);
+    struct canvas *__single cv = canvas(W, W, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -890,7 +890,7 @@ int main(void) {
     enum { TW = 32 };
     int const tlen = TW * TW * 4;
     uint8_t *__counted_by(tlen) tpx = malloc((size_t)tlen);
-    struct canvas *__single tcv = canvas(TW, TW);
+    struct canvas *__single tcv = canvas(TW, TW, CANVAS_CS_SRGB);
     CHECK(tpx != NULL && tcv != NULL);
     if (tpx && tcv) {
         canvas_add_filter_grayscale(tcv, 1.0f);
