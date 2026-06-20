@@ -250,22 +250,18 @@ static bool at_eol(char const *__counted_by(le) data, size_t le, size_t j) {
     return j >= le || data[j] == '#';
 }
 
-// A colour op line's OPTIONAL trailing colour-space token, read after its
-// floats: absent (end of line) -> CANVAS_CS_SRGB, the sRGB default, so a legacy
-// untagged colour line parses byte-identically; present -> one of the three
-// colour-space names (the same emit-when-non-sRGB token cnvs_rec_floats_cs
-// writes).  Strict: any other trailing token (or anything after the token) is
-// malformed and stops replay, matching the format's posture for every other
-// trailing enum.  *jp is advanced past the token (or left at end of line).
-static bool read_opt_cs(char const *__counted_by(le) data, size_t le,
-                        size_t *__single jp, enum canvas_color_space *__single out) {
-    *out = CANVAS_CS_SRGB;
-    if (at_eol(data, le, *jp)) {
-        return true;  // no token: the sRGB default
-    }
+// A colour op line's REQUIRED trailing colour-space token, read after its
+// floats: one of the three colour-space names (the same token cnvs_rec_floats_cs
+// writes unconditionally).  sRGB, linear-sRGB, and Oklab are equal peers, so the
+// token is mandatory -- a missing token (end of line) is a malformed file, not
+// an sRGB default.  Strict: any other token, no token at all, or anything after
+// the token is malformed and stops replay, matching the format's posture for
+// every named enum.  *jp is advanced past the token.
+static bool read_cs(char const *__counted_by(le) data, size_t le,
+                    size_t *__single jp, enum canvas_color_space *__single out) {
     size_t ts, tl;
     if (!read_token(data, le, jp, &ts, &tl)) {
-        return false;
+        return false;  // no token: the space is required
     }
     if      (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
         *out = CANVAS_CS_SRGB;
@@ -359,8 +355,7 @@ struct replay_image {
     int w, h;
     enum canvas_color_type ct;  // the block's colour type, read by name...
     enum canvas_alpha_type at;  // ...and its alpha type, likewise
-    enum canvas_color_space cs; // ...and its colour-space tag (optional token,
-                                // absent == sRGB)
+    enum canvas_color_space cs; // ...and its colour-space tag, likewise
     bool mips;    // an `image_mips` line ran: draws carry mip-chain semantics
 };
 
@@ -396,7 +391,7 @@ struct replay_blocks {
     int bm_img;     // image-table id for an `image` block's insert, or -1
     enum canvas_color_type bm_ct;  // the pending image block's colour type
     enum canvas_alpha_type bm_at;  // ...and its alpha type
-    enum canvas_color_space bm_cs; // ...and its colour-space tag (absent==sRGB)
+    enum canvas_color_space bm_cs; // ...and its colour-space tag
     long bm_gid;
     int bm_w, bm_h;
     float bm_ink[4];  // capture-px ink box x0 y0 x1 y1
@@ -471,13 +466,11 @@ static void blocks_finish_shaping(struct canvas *__single cv,
     cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->size_px, b->rtl,
                               b->ls, b->ws, b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
-    // Set the canvas's spacing from the block: a fill_text/stroke_text op carries
-    // no spacing of its own and the recorder writes no spacing setters, so the
-    // shaping block that precedes the op is what restores the spacing its lookup
-    // must key against (the recorder re-emits the block whenever this context
-    // would otherwise be stale).
-    canvas_set_letter_spacing(cv, b->ls);
-    canvas_set_word_spacing(cv, b->ws);
+    // The block's ls/ws are only its cache key.  The canvas's spacing state --
+    // the value a following fill_text/stroke_text keys its lookup by -- is owned
+    // by the set_letter_spacing/set_word_spacing ops, recorded alongside the
+    // block exactly as set_font_size is, so this block sets no spacing of its
+    // own.
     blocks_drop(b);
 }
 
@@ -721,27 +714,14 @@ static bool replay_image(struct replay_blocks *__single b,
     if (!read_uint(data, le, &j, (zlen + 2) / 3, &nlines) || nlines < 1) {
         return false;
     }
-    // The colour-space tag is the OPTIONAL trailing token (the sampler converts
-    // the resolved sample to the working space on deposit): absent == sRGB, so a
-    // legacy (no-token) block parses as sRGB and stays byte-identical.  Only
-    // the three colour-space names are valid here; anything else is malformed.
+    // The colour-space tag is the REQUIRED trailing token (the sampler converts
+    // the resolved sample to the working space on deposit): sRGB, linear-sRGB,
+    // and Oklab are equal peers, so every block carries its space by name -- a
+    // missing token is a malformed file, not an sRGB default.  read_cs accepts
+    // only the three colour-space names and requires the line to end after.
     enum canvas_color_space cs = CANVAS_CS_SRGB;
-    if (!at_eol(data, le, j)) {
-        if (!read_token(data, le, &j, &ts, &tl)) {
-            return false;
-        }
-        if      (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
-            cs = CANVAS_CS_SRGB;
-        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_LINEAR_SRGB])) {
-            cs = CANVAS_CS_LINEAR_SRGB;
-        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_OKLAB])) {
-            cs = CANVAS_CS_OKLAB;
-        } else {
-            return false;
-        }
-        if (!at_eol(data, le, j)) {
-            return false;
-        }
+    if (!read_cs(data, le, &j, &cs)) {
+        return false;
     }
     uint8_t *zs = malloc((size_t)zlen);
     if (!zs) {
@@ -1278,6 +1258,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "set_miter_limit"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_miter_limit(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_line_dash_offset"))  { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_line_dash_offset(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_font_size"))         { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_font_size(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_letter_spacing"))    { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_letter_spacing(cv, f[0]); }
+    else if (tok_eq(data, le, cs, cl, "set_word_spacing"))      { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_word_spacing(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_shadow_blur"))       { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_blur(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_shadow_offset_x"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_x(cv, f[0]); }
     else if (tok_eq(data, le, cs, cl, "set_shadow_offset_y"))   { if (!read_floats(data, le, &j, f, 1)) return false; canvas_set_shadow_offset_y(cv, f[0]); }
@@ -1305,9 +1287,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "clear_rect"))                 { if (!read_floats(data, le, &j, f, 4)) return false; canvas_clear_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "fill_rect"))                  { if (!read_floats(data, le, &j, f, 4)) return false; canvas_fill_rect(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "stroke_rect"))                { if (!read_floats(data, le, &j, f, 4)) return false; canvas_stroke_rect(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))              { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_fill_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
-    else if (tok_eq(data, le, cs, cl, "set_stroke_rgba"))            { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_stroke_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
-    else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba"))      { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_shadow_color_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
+    else if (tok_eq(data, le, cs, cl, "set_fill_rgba"))              { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_cs(data, le, &j, &sp)) return false; canvas_set_fill_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_rgba"))            { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_cs(data, le, &j, &sp)) return false; canvas_set_stroke_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
+    else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba"))      { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_cs(data, le, &j, &sp)) return false; canvas_set_shadow_color_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
     else if (tok_eq(data, le, cs, cl, "quadratic_curve_to"))         { if (!read_floats(data, le, &j, f, 4)) return false; canvas_quadratic_curve_to(cv, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_fill_linear_gradient"))   { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_linear_gradient(cv, sp, al, f[0], f[1], f[2], f[3]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_linear_gradient")) { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_linear_gradient(cv, sp, al, f[0], f[1], f[2], f[3]); }
@@ -1315,8 +1297,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     // --- 5 float ---
     else if (tok_eq(data, le, cs, cl, "round_rect"))            { if (!read_floats(data, le, &j, f, 5)) return false; canvas_round_rect(cv, f[0], f[1], f[2], f[3], f[4]); }
     else if (tok_eq(data, le, cs, cl, "arc_to"))                { if (!read_floats(data, le, &j, f, 5)) return false; canvas_arc_to(cv, f[0], f[1], f[2], f[3], f[4]); }
-    else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))   { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_add_fill_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
-    else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")) { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_add_stroke_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
+    else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))   { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_cs(data, le, &j, &sp)) return false; canvas_add_fill_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
+    else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")) { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_cs(data, le, &j, &sp)) return false; canvas_add_stroke_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
 
     // --- 6 float ---
     else if (tok_eq(data, le, cs, cl, "transform"))                  { if (!read_floats(data, le, &j, f, 6)) return false; canvas_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
@@ -1328,7 +1310,7 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     // --- 7 float ---
     else if (tok_eq(data, le, cs, cl, "add_filter_drop_shadow")) {
         enum canvas_color_space sp;
-        if (!read_floats(data, le, &j, f, 7) || !read_opt_cs(data, le, &j, &sp)) return false;
+        if (!read_floats(data, le, &j, f, 7) || !read_cs(data, le, &j, &sp)) return false;
         canvas_add_filter_drop_shadow(cv, sp, f[0], f[1], f[2], f[3], f[4], f[5], f[6]);
         return true;
     }
@@ -1515,11 +1497,10 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
             !read_ints(data, le, &j, INT_MAX, v, 2)) return false;
         // putImageData is straight (unpremultiplied) by contract; the colour
         // TYPE on the block picks the API.  The input's colour space rode the
-        // block's optional colour-space tag (absent == sRGB), so replay
-        // re-applies whatever the block declared -- an untagged sRGB unorm8 put
-        // stays byte-identical, a tagged or f16 one round-trips.  An alpha type
-        // other than UNPREMUL, or a colour type that is neither flavour, is a
-        // malformed file.
+        // block's colour-space tag, so replay re-applies whatever the block
+        // declared -- every space round-trips.  An alpha type other than
+        // UNPREMUL, or a colour type that is neither flavour, is a malformed
+        // file.
         struct replay_image const im = blk->img[id];
         if (im.at != CANVAS_ALPHA_UNPREMUL) return false;
         if (im.ct == CANVAS_COLOR_UNORM8) {
@@ -1537,7 +1518,7 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_ints(data, le, &j, INT_MAX, v, 6)) return false;
         // The colour type picks the API and the colour space rode the block's
-        // optional tag, exactly as for put_image_data above.
+        // tag, exactly as for put_image_data above.
         struct replay_image const im = blk->img[id];
         if (im.at != CANVAS_ALPHA_UNPREMUL) return false;
         if (im.ct == CANVAS_COLOR_UNORM8) {

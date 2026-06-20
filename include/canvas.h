@@ -74,26 +74,29 @@ enum canvas_composite_op {
 //   CANVAS_CS_OKLAB       -- Oklab; a perceptual interpolation space, not a
 //                            compositing space.
 //
-// The canvas's WORKING COLOUR SPACE (canvas): the space untagged (encoded sRGB)
-// colours are converted INTO for compositing.  Chosen at creation and immutable
-// -- it lives on the canvas, not the save/restore drawing state, and
-// reset/resize leave it alone.  The two sRGB-primaried spaces are equal peer
-// choices here (Oklab is not a compositing space):
-//   CANVAS_CS_SRGB        -- encoded sRGB.  NO transfer ever runs: entry,
-//                            compositing, and exit are a literal bypass of the
-//                            transfer path.
+// The canvas's WORKING COLOUR SPACE (canvas): the space boundary colours are
+// converted INTO for compositing.  Chosen at creation and immutable -- it lives
+// on the canvas, not the save/restore drawing state, and reset/resize leave it
+// alone.  The two sRGB-primaried spaces are equal peer choices here (Oklab is
+// not a compositing space):
+//   CANVAS_CS_SRGB        -- encoded sRGB.  Compositing happens directly on the
+//                            encoded bytes: no transfer runs at entry,
+//                            compositing, or exit, so an encoded-sRGB colour or
+//                            pixel passes through as-is.
 //   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB; translucent overlaps
 //                            composite in linear light (they stay bright rather
-//                            than going muddy).  Untagged colours decode
-//                            sRGB->linear on the way in and encode
+//                            than going muddy).  Encoded-sRGB boundary colours
+//                            decode sRGB->linear on the way in and encode
 //                            linear->sRGB on the way out; the only clamp is the
 //                            output quantize, so extended (out-of-[0,1]) values
 //                            propagate through compositing.
-// Untagged colours are canonically ENCODED sRGB at every public boundary, in
-// both spaces -- input (set_fill_rgba and siblings, gradient stops, shadow and
-// drop-shadow colours, putImageData/bitmap/image pixels) and output (read_rgba,
-// get_image_data).  The space changes only what they convert into internally,
-// never how they are spelled at the boundary.  (write_png is separate: it has no
+// The boundary SPELLING is fixed independently of the working space: a colour or
+// pixel given as CANVAS_CS_SRGB is encoded sRGB, as CANVAS_CS_LINEAR_SRGB linear
+// sRGB, as CANVAS_CS_OKLAB Oklab, at every public boundary -- input
+// (set_fill_rgba and siblings, gradient stops, shadow and drop-shadow colours,
+// putImageData/bitmap/image pixels) and output (read_rgba, get_image_data).  The
+// working space changes only what those values convert into internally, never
+// how they are spelled at the boundary.  (write_png is separate: it has no
 // colour parameter and emits 16-bit Rec.2020/PQ regardless -- see write_png.)
 //
 // A gradient's INTERPOLATION SPACE: the colour space its stop colours blend in
@@ -163,12 +166,12 @@ void canvas_reset_transform(struct canvas *__single cv);
 canvas_matrix canvas_get_transform(struct canvas *__single cv);
 
 // Solid fill paint.  `space` names the colour space the (r,g,b) are given in
-// (the alpha is plain coverage, space-agnostic).  CANVAS_CS_SRGB -- encoded
-// sRGB, today's behaviour byte for byte -- is the common case; CANVAS_CS_LINEAR_SRGB
-// and CANVAS_CS_OKLAB let a caller speak linear or perceptual colour directly.
-// Whatever the space, the colour is converted into the canvas's working space on
-// the way in (see canvas_color_space); the boundary spelling is the only thing
-// the space changes, never the stored result's meaning.
+// (the alpha is plain coverage, space-agnostic).  The three spaces are peers:
+// CANVAS_CS_SRGB takes encoded sRGB, CANVAS_CS_LINEAR_SRGB linear-light sRGB,
+// and CANVAS_CS_OKLAB perceptual Oklab.  Whatever the space, the colour is
+// converted into the canvas's working space on the way in (see
+// canvas_color_space); the boundary spelling is the only thing the space
+// changes, never the stored result's meaning.
 void canvas_set_fill_rgba(struct canvas *__single cv, enum canvas_color_space space,
                           float r, float g, float b, float a);
 void canvas_set_global_alpha(struct canvas *__single cv, float alpha);
@@ -613,9 +616,9 @@ void canvas_stroke_text_max_n(struct canvas *__single cv,
                               int len, float x, float y, float max_width);
 
 // Tightly packed RGBA8, top row first; len must be width*height*4.  `space` names
-// the OUTPUT colour space (see canvas_color_space): CANVAS_CS_SRGB is today's
-// behaviour byte for byte (and the common case); CANVAS_CS_LINEAR_SRGB emits
-// linear-sRGB bytes and CANVAS_CS_OKLAB emits Oklab (L,a,b) bytes.
+// the OUTPUT colour space (see canvas_color_space): CANVAS_CS_SRGB emits encoded
+// sRGB bytes, CANVAS_CS_LINEAR_SRGB linear-sRGB bytes, and CANVAS_CS_OKLAB Oklab
+// (L,a,b) bytes.
 void canvas_read_rgba(struct canvas *__single cv, enum canvas_color_space space,
                       uint8_t *__counted_by(len) out, int len);
 // canvas_write_png emits a BT.2100 PNG: 16-bit, Rec.2020 primaries, PQ (ST 2084)
@@ -635,7 +638,7 @@ canvas_encode_png(struct canvas *__single cv, int *__single outlen);
 // put: overwrites (no blending), clipped to the canvas.
 // `space` (see canvas_color_space) is the space the bytes are in: for get, the
 // OUTPUT space (routed through read_rgba); for put, the space the INCOMING bytes
-// are interpreted in.  CANVAS_CS_SRGB is today's behaviour byte for byte.
+// are interpreted in.  The three colour spaces are peers.
 void canvas_get_image_data(struct canvas *__single cv,
                            enum canvas_color_space space,
                            int x, int y, int w, int h,
@@ -685,7 +688,7 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // above.  One command per line (UTF-8): each command is exactly the canvas_*
 // function name *without* the `canvas_` prefix, followed by its whitespace-
 // separated arguments, e.g.:
-//     set_fill_rgba 0.8 0.2 0.2 1
+//     set_fill_rgba 0.8 0.2 0.2 1 srgb
 //     move_to 10 20
 //     set_global_composite_operation multiply
 //     fill_text 12 30 Hello
@@ -704,18 +707,16 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // is `#` are ignored.
 //
 // Colour ops -- set_fill_rgba, set_stroke_rgba, set_shadow_color_rgba,
-// add_fill_color_stop, add_stroke_color_stop, add_filter_drop_shadow -- carry
-// an OPTIONAL trailing colour-space token (srgb|linear|oklab) after their
-// floats, the space the (r,g,b[,a]) are given in (see canvas_color_space).  It
-// is emitted ONLY when the space is non-sRGB; absence means sRGB, so an sRGB
-// colour records exactly as it always has and every existing .canvas stays
-// byte-identical:
-//     set_fill_rgba 0.8 0.2 0.2 1            # sRGB (no token)
-//     set_fill_rgba 0.8 0.2 0.2 1 oklab      # tagged
-// put_image_data / put_image_data_dirty carry their input's space the same
-// emit-when-non-sRGB way, but on the image BLOCK's optional <space> tag (see
-// below), not the op line, since their pixels ride a block.  An unknown
-// trailing token is rejected (strict parsing, below).
+// add_fill_color_stop, add_stroke_color_stop, add_filter_drop_shadow -- carry a
+// REQUIRED trailing colour-space token (srgb|linear|oklab) after their floats,
+// the space the (r,g,b[,a]) are given in (see canvas_color_space).  The three
+// spaces are peers, so the token is always written and always read; a missing
+// or unknown token is a malformed file:
+//     set_fill_rgba 0.8 0.2 0.2 1 srgb
+//     set_fill_rgba 0.8 0.2 0.2 1 oklab
+// put_image_data / put_image_data_dirty carry their input's space the same way,
+// but on the image BLOCK's required <space> tag (see below), not the op line,
+// since their pixels ride a block.
 //
 // Text-block lines make a recorded program self-contained (no fonts needed to
 // replay): the recorder writes, ahead of each text op that first needs them,
@@ -742,14 +743,17 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // the letterSpacing/wordSpacing -- all parts of the cache key, since the same
 // bytes shape and space differently under each.  ls/ws are always written, even
 // when 0; the spacing is already baked into the run advances, so they only key
-// the rebuilt line).  Replaying the blocks pre-populates the canvas's text cache, so the text ops
+// the rebuilt line.  The canvas's spacing STATE -- the value a fill_text keys
+// its lookup by -- rides set_letter_spacing/set_word_spacing ordinary state ops,
+// recorded like set_font_size/set_direction).  Replaying the blocks pre-populates
+// the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,
 // emoji included, replays byte-identically on machines without the recording
 // machine's fonts.
 //
 // Image-block lines carry the RGBA8 sources the image ops need, the capture
 // machinery reused wholesale:
-//     image <id> <unorm8|f16> <unpremul|premul> <w> <h> <zlen> <nlines> [<space>]
+//     image <id> <unorm8|f16> <unpremul|premul> <w> <h> <zlen> <nlines> <space>
 //     bits <base64...>                            (exactly nlines of these)
 // declares file-local numbered image <id>, its colour and alpha types named
 // on the line like every other enum in the format -- the four combinations
@@ -757,11 +761,10 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // `f16 premul`, bit-lossless in the file too) -- w x h x 4 channels,
 // deflated and base64-chunked exactly like a capture, content-deduplicated
 // by the recorder so one buffer used many ways costs one block.  The trailing
-// <space> (srgb|linear|oklab) is the source's colour-space tag -- OPTIONAL,
-// emitted only when non-sRGB; absence means sRGB, so every legacy image block
-// stays byte-identical.  (The tag is honoured on replay: the source is sampled
-// in that space and the resolved sample converts to the working space on
-// deposit.)  An optional
+// <space> (srgb|linear|oklab) is the source's colour-space tag -- REQUIRED, like
+// the colour-op token, since the spaces are peers; a missing token is malformed.
+// (The tag is honoured on replay: the source is sampled in that space and the
+// resolved sample converts to the working space on deposit.)  An optional
 //     image_mips <id>
 // line marks the block's draws as carrying mip-chain semantics: the bitmap
 // entry points (per-draw chain rebuild) emit it as soon as their block is
@@ -802,9 +805,9 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //     stroke_path <id>
 //     clip_path <id> <nonzero|evenodd>
 //
-// Parsing is strict: an unknown command, a bad argument, an unknown trailing
-// colour-space token on a colour op or image block, an over-long line, or
-// a malformed block (an undeclared font id, a bad verb token, a cluster index
+// Parsing is strict: an unknown command, a bad argument, a missing or unknown
+// trailing colour-space token on a colour op or image block, an over-long line,
+// or a malformed block (an undeclared font id, a bad verb token, a cluster index
 // past the text length, a non-finite number where the recorder writes finite
 // ones, a bitmap whose bits lines are miscounted, mis-padded, or decode to
 // anything but exactly zlen bytes, or whose declared stream is no zlib at all

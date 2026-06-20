@@ -149,9 +149,9 @@ static void check_replay(void) {
             return;
         }
         CHECK(REPLAY(cv,
-            "set_fill_rgba 1 1 1 1\n"
+            "set_fill_rgba 1 1 1 1 srgb\n"
             "fill_rect 0 0 160 60\n"
-            "set_fill_rgba 0 0 0 1\n"
+            "set_fill_rgba 0 0 0 1 srgb\n"
             "set_font_size 24\n"
             "set_direction rtl\n"
             "set_text_align start\n"
