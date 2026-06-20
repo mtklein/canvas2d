@@ -286,6 +286,14 @@ white. The wide-gamut and brighter-than-white rows need a wide-gamut HDR display
 
 ![extendedrange](gallery/extendedrange.png)
 
+`rgba-float16` ImageData — a 0×–6× HDR grey ramp on a linear canvas deposited
+three ways: RGBA8 `putImageData` (clamps everything past linear 1.0 to flat
+white), float16 `putImageData` (the ramp keeps brightening), and a float16
+`getImageData` → `putImageData` round trip of it (lossless). The float16 rows
+need a wide-gamut HDR display to separate from the clamped one:
+
+![imagedataf16](gallery/imagedataf16.png)
+
 ## Quick start
 
 ```sh
