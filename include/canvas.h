@@ -588,6 +588,35 @@ typedef struct {
 
 canvas_text_metrics canvas_measure_text_full(struct canvas *__single cv,
                                              char const *__null_terminated text);
+
+// Shaped-line selection/caret queries: a non-spec extension (the canvas 2D spec
+// has no selection API) for building text editing and selection on top of the
+// canvas.  They shape `text` exactly as canvas_measure_text does -- honouring the
+// current font size, direction, and letterSpacing/wordSpacing -- and report
+// visual x positions in user px from the text's START, the same origin
+// canvas_measure_text measures from: BEFORE textAlign, textBaseline, and the
+// transform are applied (the caller maps between canvas coordinates and this
+// text-line space).  Indices are logical UTF-16 offsets into the source.  Like
+// measure_text / is_point_in_* / get_image_data / read_rgba, these are pure
+// read-only queries: they move no pixels and record nothing.
+//
+// A visual x range in user px from the text's start.
+typedef struct { float x0, x1; } canvas_text_span;
+// Map a visual x (user px from the text's start) to the logical UTF-16 index it
+// falls on, or -1.
+int canvas_text_index_at_x(struct canvas *__single cv, char const *__null_terminated text,
+                           float x);
+// The caret x (user px from the text's start) for a logical UTF-16 index.  An
+// index inside a cluster snaps to that cluster's leading edge; an index at or
+// past the source's end is the line's advance width (== canvas_measure_text).
+float canvas_text_x_at_index(struct canvas *__single cv, char const *__null_terminated text,
+                             int index);
+// Visual x-spans covering the logical range [lo, hi); a bidi range maps to
+// non-contiguous visual positions and splits into several spans.  Writes up to
+// `max` spans into `out` and returns the count (0 when max <= 0 or out is NULL).
+int canvas_text_selection(struct canvas *__single cv, char const *__null_terminated text,
+                          int lo, int hi, canvas_text_span *__counted_by(max) out, int max);
+
 void canvas_fill_text(struct canvas *__single cv, char const *__null_terminated text,
                       float x, float y);
 void canvas_stroke_text(struct canvas *__single cv, char const *__null_terminated text,
@@ -815,8 +844,9 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // false (commands before the faulty line have already been applied; the canvas
 // remains valid and drawable).  Numbers are
 // written with %.9g and reparse to the identical float32.  The pure queries
-// (measure_text, is_point_in_*, get_image_data, read_rgba, write_png) move no
-// pixels and are not part of the text format.
+// (measure_text, is_point_in_*, text_index_at_x/x_at_index/selection,
+// get_image_data, read_rgba, write_png) move no pixels and are not part of the
+// text format.
 bool canvas_replay_from(struct canvas *__single cv, char const *__null_terminated path);
 
 // Begin recording subsequent drawing calls to `path` as a text canvas-program in
@@ -855,9 +885,9 @@ bool canvas_replay_from(struct canvas *__single cv, char const *__null_terminate
 // (arc/round_rect/round_rect_radii/arc_to) are written as themselves, not
 // their expansion; a setter that ignores its call per spec (a non-finite
 // shadow offset or filter amount, an invalid resize) records nothing for it;
-// and the pure queries (measure_text, is_point_in_*, get_image_data,
-// read_rgba, write_png, get_transform, get_line_dash) move no pixels and are
-// not part of the format.
+// and the pure queries (measure_text, is_point_in_*,
+// text_index_at_x/x_at_index/selection, get_image_data, read_rgba, write_png,
+// get_transform, get_line_dash) move no pixels and are not part of the format.
 bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated path);
 
 // createImageData: allocate a blank (transparent black) RGBA8 image of sw*sh
