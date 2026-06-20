@@ -1,6 +1,6 @@
 // The capstone of the record/replay arc: each committed gallery/<scene>.canvas
 // program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls -- all 49 scenes, the format's whole surface.
+// ZERO Core Text boundary calls -- all 48 scenes, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
 // (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
@@ -44,7 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// All 49 scenes, each a (program, image) pair of committed artifacts; `text`
+// All 48 scenes, each a (program, image) pair of committed artifacts; `text`
 // marks the sixteen text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
 // test_pngread.c lists its corpus rather than assembling paths from dirent
