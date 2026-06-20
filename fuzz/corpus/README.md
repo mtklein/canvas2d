@@ -23,8 +23,16 @@ libFuzzer-free regression — no Homebrew clang or `sudo` needed.
 
 ## Adding a regression
 
-When the live fuzzer (built by `ninja fuzzers`) finds a crasher, minimize it and drop
-the input here:
+When the live fuzzer (built by `ninja fuzzers`) finds a crasher, prefer to pin it
+down with a **unit test** that reproduces the case through the public API and
+asserts the fixed behaviour -- a clear, self-documenting regression (e.g.
+`tests/test_sampling.c`'s `subrect_infinite_extent`, translated from a former
+fuzz seed). A unit test states the bug far more clearly than an opaque input
+blob, and runs everywhere without the fuzz toolchain.
+
+Reserve a committed corpus `.bin` for the case a unit test cannot express
+cleanly -- when the exact harness byte-path (the total decoder, raw-float
+coordinates) is itself the point. Then minimize and drop the input here:
 
 ```sh
 ./build/fuzz/fuzz_api -minimize_crash=1 -runs=100000 <crash-file>   # reduce

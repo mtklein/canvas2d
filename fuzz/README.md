@@ -121,10 +121,10 @@ for the OOB-write classes.
   rendering/lang/variant/stretch), `image`/`bitmap` blocks including float16
   ImageData (base64 `bits` lines over a deflated stream — the zlib seam), a
   Path2D `path` block, gradient/pattern/colour ops with their unconditional
-  space tokens, and an rtl-direction program — plus a reduced crasher regression
-  (`subrect_saturated_sample.canvas`: a huge `draw_image_subrect` source rect
-  whose saturated bilinear tap once overflowed `int`):
-  `./build/fuzz/fuzz_replay -max_len=65536 fuzz/seeds_replay`.
+  space tokens, and an rtl-direction program:
+  `./build/fuzz/fuzz_replay -max_len=65536 fuzz/seeds_replay`.  Specific past
+  crashers live as unit tests, not seeds (e.g. the infinite `draw_image_subrect`
+  source-rect overflow is `tests/test_sampling.c`'s `subrect_infinite_extent`).
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
 `-fsanitize-address-use-after-return=always`, matching the debug variant.
@@ -140,8 +140,7 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
 - `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`: mostly
   current-format gallery programs covering the font/glyph/shape, image/bitmap
-  (incl. float16), path, gradient, pattern, and colour-op parser paths, plus a
-  reduced sampler-overflow crasher.
+  (incl. float16), path, gradient, pattern, and colour-op parser paths.
 - `seeds_zlib/` — committed zlib streams for `fuzz_inflate` and
   `fuzz_zlib_diff`: minimal/stored/dynamic shapes plus a trailing-garbage
   stream that lands in the differential harness's one allowed asymmetry.

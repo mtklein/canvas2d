@@ -8,6 +8,7 @@
 #include "test_pixels.h"
 #include "test_util.h"
 
+#include <math.h>
 #include <ptrcheck.h>
 #include <stdlib.h>
 
@@ -273,6 +274,34 @@ static void premul_unorm8_cubic(void) {
     if (cv) { canvas_free(cv); }
 }
 
+// Regression (translated from the subrect_saturated_sample fuzz seed): a
+// draw_image_subrect with an infinite source-rect extent drove the bilinear
+// tap's float->int index cast past INT_MAX, which once overflowed.  cnvs_f2i now
+// saturates (inf/huge -> INT_MAX, NaN -> 0), so the draw is bounded.  Under the
+// debug sanitizers (ASan + UBSan over the -fbounds-safety core) this asserts no
+// integer-overflow UB and no out-of-bounds tap; on a linear canvas, matching the
+// original crasher's working space.  (The seed's 122399e998 token parsed to +inf.)
+static void subrect_infinite_extent(void) {
+    uint8_t const px[4] = { 200, 100, 50, 255 };  // a 1x1 source
+    struct canvas *__single cv = canvas(8, 8, CANVAS_CS_LINEAR_SRGB);
+    CHECK(cv != NULL);
+    if (!cv) {
+        return;
+    }
+    struct canvas_image *__single img =
+        canvas_image_unorm8(CANVAS_CS_SRGB, px, 1, 1, CANVAS_ALPHA_UNPREMUL);
+    CHECK(img != NULL);
+    if (img) {
+        // sww = 1, shh = +inf: the reduced crasher's source rect.  Must not trap.
+        canvas_draw_image_subrect(cv, img, 0.0f, 0.0f, 1.0f, INFINITY,
+                                  0.0f, 3.0f, 2.832f, 1.0f);
+        canvas_image_free(img);
+    }
+    uint8_t out[8 * 8 * 4];
+    canvas_read_rgba(cv, CANVAS_CS_SRGB, out, (int)sizeof out);  // ran to completion
+    canvas_free(cv);
+}
+
 int main(void) {
     flat_exact();
     stripes_average();
@@ -281,5 +310,6 @@ int main(void) {
     f16_nearest_matches_unorm8();
     f16_cubic_magnify();
     premul_unorm8_cubic();
+    subrect_infinite_extent();
     return TEST_REPORT();
 }
