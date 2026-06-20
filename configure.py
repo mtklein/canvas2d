@@ -235,7 +235,7 @@ def main():
         "nestedclip", "path2d", "paths", "pattern",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",
-        "textmaxwidth", "textmetrics", "winding",
+        "textmaxwidth", "textmetrics", "textspacing", "winding",
     ]
     gallery_pngs = [f"gallery/{name}.png" for name in gallery_scenes]
     # EVERY scene also records a self-contained .canvas program alongside its

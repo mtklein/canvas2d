@@ -21,6 +21,109 @@ float cnvs_shaped_width(struct cnvs_shaped const *__single s) {
     return w;
 }
 
+// Decode one UTF-8 code point starting at byte `i` of `text` (len bytes): the
+// code point comes back in *cp, the byte length of the sequence is the return
+// value.  A malformed lead or truncated/continuation byte decodes as the single
+// byte at `i` (cp = that byte, length 1) -- enough to keep the UTF-16 index walk
+// in step; the only code point spacing inspects is U+0020 SPACE, which is plain
+// ASCII, so a mis-decode never spuriously matches it.
+static int utf8_decode(char const *__counted_by(len) text, int len, int i,
+                       uint32_t *__single cp) {
+    unsigned char const b0 = (unsigned char)text[i];
+    if (b0 < 0x80) {
+        *cp = b0;
+        return 1;
+    }
+    int n;
+    uint32_t c;
+    if ((b0 & 0xE0u) == 0xC0u)      { n = 2; c = b0 & 0x1Fu; }
+    else if ((b0 & 0xF0u) == 0xE0u) { n = 3; c = b0 & 0x0Fu; }
+    else if ((b0 & 0xF8u) == 0xF0u) { n = 4; c = b0 & 0x07u; }
+    else { *cp = b0; return 1; }  // a stray continuation/illegal lead byte
+    if (i + n > len) {
+        *cp = b0;
+        return 1;  // truncated: step one byte
+    }
+    for (int k = 1; k < n; k++) {
+        unsigned char const bk = (unsigned char)text[i + k];
+        if ((bk & 0xC0u) != 0x80u) {
+            *cp = b0;
+            return 1;  // not a continuation byte: step one byte
+        }
+        c = (c << 6) | (bk & 0x3Fu);
+    }
+    *cp = c;
+    return n;
+}
+
+// Add per-cluster letterSpacing and per-space wordSpacing into a Core-Text-shaped
+// line's advances, in place, before it is interned in the cache.  A cluster is a
+// maximal run of glyphs sharing one cluster[] value; the spacing rides the LAST
+// glyph of each cluster (so a measure/draw sweep accumulates it once per
+// cluster, at the cluster's trailing edge), matching browser measureText.
+// letterSpacing adds `ls` to every cluster (the final cluster included);
+// wordSpacing adds `ws` to a cluster whose source character is U+0020 SPACE.
+// Advances stay positive in both ltr and rtl runs, so the same addition applies
+// regardless of direction.  ls == 0 && ws == 0 is a pure no-op: it touches no
+// advance and leaves the bits identical.  The word test maps a cluster's UTF-16
+// index (cluster[i]) to the source code point via a UTF-8<->UTF-16 walk over
+// `text`: one pass builds, for each UTF-16 unit, whether the code point that
+// unit begins is a SPACE (a non-leading unit -- a surrogate pair's low half --
+// is never a SPACE since SPACE is one UTF-16 unit), then each cluster reads that
+// flag at its cluster[] value.
+void cnvs_shaped_apply_spacing(struct cnvs_shaped *__single s,
+                               char const *__counted_by(text_len) text, int text_len,
+                               float ls, float ws) {
+    if (!s || (ls == 0.0f && ws == 0.0f)) {
+        return;  // no-op: leave every advance bit-identical
+    }
+    // is_space[u] == true iff the code point beginning at UTF-16 unit u is
+    // U+0020.  Built from one UTF-8 walk over `text`; its length (sp_n) is 0
+    // until the allocation lands, so the __counted_by pointer never holds NULL
+    // with a positive count.  Word spacing needs it; letter spacing alone skips
+    // it (sp_n stays 0).
+    int sp_n = 0;
+    bool *__counted_by(sp_n) is_space = NULL;
+    if (ws != 0.0f && s->utf16s > 0) {
+        bool *tmp = calloc((size_t)s->utf16s, sizeof *tmp);
+        if (tmp) {
+            int u = 0;  // running UTF-16 index, in step with the byte walk
+            for (int i = 0; i < text_len && u < s->utf16s;) {
+                uint32_t cp = 0;
+                int const nb = utf8_decode(text, text_len, i, &cp);
+                int const nu = cp >= 0x10000u ? 2 : 1;  // UTF-16 units this cp costs
+                if (cp == 0x20u) {
+                    tmp[u] = true;
+                }
+                i += nb;
+                u += nu;
+            }
+            is_space = tmp;
+            sp_n = s->utf16s;  // publish the count only with the pointer set
+        }
+    }
+    for (int r = 0; r < s->nruns; r++) {
+        struct cnvs_glyph_run *__single run = &s->run[r];
+        int i = 0;
+        while (i < run->count) {
+            int32_t const cl = run->cluster[i];
+            int j = i + 1;
+            while (j < run->count && run->cluster[j] == cl) {
+                j++;  // extend over every glyph sharing this cluster value
+            }
+            int const last = j - 1;  // the cluster's trailing glyph
+            if (ls != 0.0f) {
+                run->xadv[last] += ls;
+            }
+            if (cl >= 0 && cl < sp_n && is_space[cl]) {
+                run->xadv[last] += ws;
+            }
+            i = j;
+        }
+    }
+    free(is_space);
+}
+
 int cnvs_shaped_index_at_x(struct cnvs_shaped const *__single s, float x) {
     if (!s) {
         return -1;
@@ -217,9 +320,9 @@ static struct cnvs_shaping_slot *__single shaping_lru_victim(struct cnvs_text_ca
 
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, char const *__counted_by(len) text, int len) {
+        bool rtl, float ls, float ws, char const *__counted_by(len) text, int len) {
     struct cnvs_shaping_slot *__single hit = cnvs_text_cache_shaping_slot(c, size_px, rtl,
-                                                               text, len);
+                                                               ls, ws, text, len);
     if (hit) {
         hit->last_use = ++c->tick;
         c->shaping_hits++;
@@ -240,11 +343,17 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
         free(copy);
         return NULL;  // boundary failure: nothing to cache, nothing to draw
     }
+    // Bake letterSpacing/wordSpacing into the advances before the line is
+    // interned, so a cache hit (live or replayed) carries them and measureText
+    // and the draw walk both reflect them.  A no-op when both are 0.
+    cnvs_shaped_apply_spacing(s, text, len, ls, ws);
     // Insert into an empty slot, else evict the least-recently-used one.  This
     // cannot invalidate a borrowed line: call sites take one lookup per op and
     // never nest, so no borrow is alive across an insert.
-    uint32_t size_bits = 0;
+    uint32_t size_bits = 0, ls_bits = 0, ws_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
+    memcpy(&ls_bits, &ls, sizeof ls_bits);
+    memcpy(&ws_bits, &ws, sizeof ws_bits);
     struct cnvs_shaping_slot *victim = shaping_lru_victim(c);
     if (victim->s) {
         cnvs_shaped_free(victim->s);
@@ -253,6 +362,8 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
     victim->text = copy;
     victim->len = len;
     victim->size_bits = size_bits;
+    victim->ls_bits = ls_bits;
+    victim->ws_bits = ws_bits;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;
@@ -735,15 +846,19 @@ float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint
 }
 
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
-        float size_px, bool rtl, char const *__counted_by(len) text, int len) {
+        float size_px, bool rtl, float ls, float ws,
+        char const *__counted_by(len) text, int len) {
     if (!c || len < 0) {
         return NULL;
     }
-    uint32_t size_bits = 0;
+    uint32_t size_bits = 0, ls_bits = 0, ws_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
+    memcpy(&ls_bits, &ls, sizeof ls_bits);
+    memcpy(&ws_bits, &ws, sizeof ws_bits);
     for (int i = 0; i < CNVS_SHAPING_CACHE_N; i++) {
         struct cnvs_shaping_slot *slot = &c->shaping[i];
         if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
+            slot->ls_bits == ls_bits && slot->ws_bits == ws_bits &&
             slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
             return slot;
         }
@@ -752,7 +867,7 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
 }
 
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c, float size_px,
-        bool rtl, char const *__counted_by(len) text, int len,
+        bool rtl, float ls, float ws, char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s) {
     if (!c || !s || len < 0) {
         cnvs_shaped_free(s);
@@ -768,8 +883,8 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c, float size_
     // Replace an existing entry for the key (a re-recorded shape block after
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.
-    struct cnvs_shaping_slot *victim = cnvs_text_cache_shaping_slot(c, size_px, rtl, text,
-                                                         len);
+    struct cnvs_shaping_slot *victim = cnvs_text_cache_shaping_slot(c, size_px, rtl, ls, ws,
+                                                         text, len);
     if (!victim) {
         victim = shaping_lru_victim(c);
     }
@@ -777,11 +892,15 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c, float size_
         cnvs_shaped_free(victim->s);
         free(victim->text);
     }
-    uint32_t size_bits = 0;
+    uint32_t size_bits = 0, ls_bits = 0, ws_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
+    memcpy(&ls_bits, &ls, sizeof ls_bits);
+    memcpy(&ws_bits, &ws, sizeof ws_bits);
     victim->text = copy;
     victim->len = len;
     victim->size_bits = size_bits;
+    victim->ls_bits = ls_bits;
+    victim->ws_bits = ws_bits;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;

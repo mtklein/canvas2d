@@ -337,7 +337,8 @@ struct replay_blocks {
                                     // until its last `run` line inserts it)
     int runs_done;
     float size_px;                  // the pending shape's cache key...
-    bool rtl;                       // ...with its paragraph-direction half
+    bool rtl;                       // ...its paragraph-direction half...
+    float ls, ws;                   // ...and its letter/word spacing halves
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
     int text_len;
     // The bitmap/image block under construction (owned until its last `bits`
@@ -433,8 +434,15 @@ static void paths_drop(struct replay_blocks *__single b) {
 static void blocks_finish_shaping(struct canvas *__single cv,
                                 struct replay_blocks *__single b) {
     cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->size_px, b->rtl,
-                              b->text, b->text_len, b->s);
+                              b->ls, b->ws, b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
+    // Set the canvas's spacing from the block: a fill_text/stroke_text op carries
+    // no spacing of its own and the recorder writes no spacing setters, so the
+    // shaping block that precedes the op is what restores the spacing its lookup
+    // must key against (the recorder re-emits the block whenever this context
+    // would otherwise be stale).
+    canvas_set_letter_spacing(cv, b->ls);
+    canvas_set_word_spacing(cv, b->ws);
     blocks_drop(b);
 }
 
@@ -933,23 +941,30 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
     return true;
 }
 
-// shaping <size_px> <rtl 0|1> <utf16-len> <nruns> <byte-len> <text...> -- begin
-// one shaped line; its `run` lines must follow immediately.  rtl is the
-// paragraph direction the line was shaped under -- the other half of the cache
-// key, since the same bytes shape differently under ltr and rtl.  The text is
-// exactly byte-len raw bytes after a single separating space (it is the cache
-// key, byte for byte).  Strict: finite size, utf16-len <= byte-len (every
+// shaping <size_px> <rtl 0|1> <ls> <ws> <utf16-len> <nruns> <byte-len>
+// <text...> -- begin one shaped line; its `run` lines must follow immediately.
+// rtl is the paragraph direction the line was shaped under, ls/ws the
+// letterSpacing/wordSpacing -- the other three halves of the cache key, since
+// the same bytes shape (and space) differently under each.  ls/ws are always
+// present (the recorder writes them even when 0); the spacing is already baked
+// into the run advances, so they serve only to key the rebuilt line.  The text
+// is exactly byte-len raw bytes after a single separating space (it is the cache
+// key, byte for byte).  Strict: finite size/ls/ws, utf16-len <= byte-len (every
 // UTF-16 unit costs at least one UTF-8 byte), and the byte count exactly fills
 // the line.
 static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
-    float size = 0.0f;
+    float size = 0.0f, ls = 0.0f, ws = 0.0f;
     bool rtl = false;
     long t16 = 0, nruns = 0, blen = 0;
     if (!read_float(data, le, &j, &size) || !isfinite(size) || size < 0.0f) {
         return false;
     }
     if (!read_bool(data, le, &j, &rtl)) {
+        return false;
+    }
+    if (!read_float(data, le, &j, &ls) || !isfinite(ls) ||
+        !read_float(data, le, &j, &ws) || !isfinite(ws)) {
         return false;
     }
     if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &t16) ||
@@ -988,6 +1003,8 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     b->runs_done = 0;
     b->size_px = size;
     b->rtl = rtl;
+    b->ls = ls;
+    b->ws = ws;
     b->text = txt;
     b->text_len = (int)blen;
     if (nruns == 0) {

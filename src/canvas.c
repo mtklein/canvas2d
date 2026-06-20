@@ -94,6 +94,8 @@ struct canvas_state {
     int dash_count;
     float dash_offset;
     float font_size;  // text size in user px (Canvas default 10px)
+    float letter_spacing;  // extra advance after each cluster, user px (default 0)
+    float word_spacing;    // extra advance at each U+0020 SPACE, user px (default 0)
     enum canvas_text_align text_align;
     enum canvas_text_baseline text_baseline;
     enum canvas_direction direction;  // paragraph direction: resolves start/end and
@@ -230,6 +232,8 @@ static void state_defaults(struct canvas_state *s) {
     s->dash_count = 0;
     s->dash_offset = 0.0f;
     s->font_size = 10.0f;
+    s->letter_spacing = 0.0f;
+    s->word_spacing = 0.0f;
     s->text_align = CANVAS_ALIGN_START;
     s->text_baseline = CANVAS_BASELINE_ALPHABETIC;
     s->direction = CANVAS_DIRECTION_LTR;
@@ -3005,6 +3009,18 @@ void canvas_set_font_size(struct canvas *__single cv, float px) {
     cv->cur.font_size = px > 0.0f ? px : 0.0f;
 }
 
+// letterSpacing/wordSpacing record NOTHING of their own: the spacing is baked
+// into the shaped line's advances and keyed in the cache, so a fill_text's shape
+// block already carries it -- replay reproduces it from that block alone, with
+// no source text to re-identify spaces against.
+void canvas_set_letter_spacing(struct canvas *__single cv, float px) {
+    cv->cur.letter_spacing = isfinite(px) ? px : 0.0f;  // NaN/inf -> 0
+}
+
+void canvas_set_word_spacing(struct canvas *__single cv, float px) {
+    cv->cur.word_spacing = isfinite(px) ? px : 0.0f;  // NaN/inf -> 0
+}
+
 void canvas_set_text_align(struct canvas *__single cv, enum canvas_text_align align) {
     switch (align) {
         case CANVAS_ALIGN_START:
@@ -3096,6 +3112,7 @@ static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                  (int)sizeof k_font_family - 1,
                                  cv->cur.font_size,
                                  cv->cur.direction == CANVAS_DIRECTION_RTL,
+                                 cv->cur.letter_spacing, cv->cur.word_spacing,
                                  text, len);
 }
 
@@ -3323,7 +3340,8 @@ static void record_text_blocks(struct canvas *__single cv,
     (void)canvas_vmetrics(cv, &a, &d);  // intern the family + its vmetrics
     (void)shape_text(cv, text, len);    // ensure the line is cached
     cnvs_rec_text_blocks(cv->rec, &cv->text_cache, cv->cur.font_size,
-                         cv->cur.direction == CANVAS_DIRECTION_RTL, text, len);
+                         cv->cur.direction == CANVAS_DIRECTION_RTL,
+                         cv->cur.letter_spacing, cv->cur.word_spacing, text, len);
 }
 
 void canvas_fill_text_n(struct canvas *__single cv, char const *__counted_by(len) text,

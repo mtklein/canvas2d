@@ -370,14 +370,14 @@ static void check_strict(void) {
         "font 1 1.05 0.33 STLibianTC-Regular\n"
         "glyph 1 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
         "glyph 1 3 0 0 0 0 0\n"
-        "shaping 12 0 2 1 2 H \n"
+        "shaping 12 0 0 0 2 1 2 H \n"
         "run 1 0 0 2 43 7.224 0 3 2.8 1\n"
         "fill_text 4 20 H \n"));
 
     // An rtl-shaped block parses too, and its op draws under the direction the
     // line was shaped at.
     CHECK(REPLAY(cv,
-        "shaping 12 1 1 1 1 W\n"
+        "shaping 12 1 0 0 1 1 1 W\n"
         "run -1 1 0 1 7 5.5 0\n"
         "set_direction rtl\n"
         "fill_text 4 40 W\n"));
@@ -394,25 +394,26 @@ static void check_strict(void) {
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 1e999 0 0 1 1 z\n"));    // inf upem
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 0 0 0 0 0 m 1 2\n"));    // blank w/ curves
     CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 -1 0 0 1 1 z\n"));       // negative upem
-    CHECK(!REPLAY(cv, "shaping 12 2 1 2 H \n"));                 // the pre-direction
-                                                               // header: "2" is no
+    CHECK(!REPLAY(cv, "shaping 12 2 0 0 1 2 H \n"));             // "2" is no
                                                                // direction bit
-    CHECK(!REPLAY(cv, "shaping 12 x 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
-    CHECK(!REPLAY(cv, "shaping 12 0 1 1 3 A\n"));                // byte-len mismatch
-    CHECK(!REPLAY(cv, "shaping 12 0 4 1 2 Hi\n"));               // utf16 len > bytes
-    CHECK(!REPLAY(cv, "shaping 12 0 1 1 1 A\n"));                // truncated: no run line
-    CHECK(!REPLAY(cv, "shaping 12 0 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
-    CHECK(!REPLAY(cv, "shaping 12 0 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
+    CHECK(!REPLAY(cv, "shaping 12 x 0 0 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
+    CHECK(!REPLAY(cv, "shaping 12 0 x 0 1 1 1 A\n"));            // non-finite ls
+    CHECK(!REPLAY(cv, "shaping 12 0 0 1e999 1 1 1 A\n"));        // non-finite ws
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 1 1 3 A\n"));            // byte-len mismatch
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 4 1 2 Hi\n"));           // utf16 len > bytes
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 1 1 1 A\n"));            // truncated: no run line
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
     CHECK(!REPLAY(cv, "run 0 0 0 0\n"));                     // run with no shape
     CHECK(!REPLAY(cv,
         "font 0 1 0.2 A\n"
-        "shaping 12 0 1 1 1 A\n"
+        "shaping 12 0 0 0 1 1 1 A\n"
         "run 0 0 0 1 10 5 1\n"));                            // cluster >= utf16 len
     CHECK(!REPLAY(cv,
-        "shaping 12 0 1 1 1 A\n"
+        "shaping 12 0 0 0 1 1 1 A\n"
         "run 3 0 0 1 10 5 0\n"));                            // undeclared run font
     CHECK(!REPLAY(cv,
-        "shaping 12 0 1 1 1 A\n"
+        "shaping 12 0 0 0 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
     // Bitmap blocks carry the capture DEFLATED under the base64, so the
@@ -705,7 +706,7 @@ static void check_new_ops(void) {
     CHECK(REPLAY(cv,
         "font 0 1.05 0.33 Libian TC\n"
         "glyph 0 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
-        "shaping 12 0 1 1 1 H\n"
+        "shaping 12 0 0 0 1 1 1 H\n"
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
