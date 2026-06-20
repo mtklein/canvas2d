@@ -831,8 +831,10 @@ void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_spa
 }
 
 void canvas_set_global_alpha(struct canvas *__single cv, float alpha) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_global_alpha", (float[]){ alpha }, 1); }
-    cv->cur.global_alpha = cnvs_clamp01(alpha);
+    cv->cur.global_alpha = cnvs_clamp01(alpha);  // NaN/out-of-range -> [0,1]
+    // Record the stored (sanitized, finite) value, not the raw argument, so the
+    // recorded op always replays and matches the applied state.
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_global_alpha", (float[]){ cv->cur.global_alpha }, 1); }
 }
 
 void canvas_set_global_composite_operation(struct canvas *__single cv,
@@ -2723,8 +2725,10 @@ void canvas_set_stroke_rgba(struct canvas *__single cv, enum canvas_color_space 
 }
 
 void canvas_set_line_width(struct canvas *__single cv, float width) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_width", (float[]){ width }, 1); }
-    cv->cur.line_width = width;
+    if (isfinite(width)) {  // a non-finite width would not reparse; ignore it
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_width", (float[]){ width }, 1); }
+        cv->cur.line_width = width;
+    }
 }
 
 void canvas_set_line_join(struct canvas *__single cv, enum canvas_line_join join) {
@@ -2746,12 +2750,20 @@ void canvas_set_line_cap(struct canvas *__single cv, enum canvas_line_cap cap) {
 }
 
 void canvas_set_miter_limit(struct canvas *__single cv, float limit) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_miter_limit", (float[]){ limit }, 1); }
-    cv->cur.miter_limit = limit;
+    if (isfinite(limit)) {  // a non-finite limit would not reparse; ignore it
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "set_miter_limit", (float[]){ limit }, 1); }
+        cv->cur.miter_limit = limit;
+    }
 }
 
 void canvas_set_line_dash(struct canvas *__single cv,
                           float const *__counted_by(count) pattern, int count) {
+    // A non-finite dash length would not reparse, so ignore the whole call.
+    for (int i = 0; i < count; i++) {
+        if (!isfinite(pattern[i])) {
+            return;
+        }
+    }
     // Clamp into a separate variable: mutating `count` would desync the
     // __counted_by(count) bound on `pattern`.
     int m = count < 0 ? 0 : count;
@@ -2780,8 +2792,10 @@ int canvas_get_line_dash(struct canvas *__single cv,
 }
 
 void canvas_set_line_dash_offset(struct canvas *__single cv, float offset) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_dash_offset", (float[]){ offset }, 1); }
-    cv->cur.dash_offset = offset;
+    if (isfinite(offset)) {  // a non-finite offset would not reparse; ignore it
+        if (cv->rec) { cnvs_rec_floats(cv->rec, "set_line_dash_offset", (float[]){ offset }, 1); }
+        cv->cur.dash_offset = offset;
+    }
 }
 
 // Build the stroke triangles for `p` into cv->scratch_verts under the current
@@ -2978,8 +2992,9 @@ static bool canvas_vmetrics(struct canvas *__single cv, float *__single ascent,
 }
 
 void canvas_set_font_size(struct canvas *__single cv, float px) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_font_size", (float[]){ px }, 1); }
-    cv->cur.font_size = px > 0.0f ? px : 0.0f;
+    cv->cur.font_size = px > 0.0f ? px : 0.0f;  // non-positive / NaN -> 0
+    // Record the stored (sanitized, finite) value, not the raw argument.
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_font_size", (float[]){ cv->cur.font_size }, 1); }
 }
 
 // letterSpacing/wordSpacing are canvas state, recorded as ordinary state ops
