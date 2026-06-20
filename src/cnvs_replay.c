@@ -369,6 +369,8 @@ struct replay_blocks {
     float size_px;                  // the pending shape's cache key...
     bool rtl;                       // ...its paragraph-direction half...
     float ls, ws;                   // ...and its letter/word spacing halves
+    char *__counted_by(fam_len) fam;  // ...the requested family (the key's family
+    int fam_len;                      // part; owned copy of the bytes)...
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
     int text_len;
     // The bitmap/image block under construction (owned until its last `bits`
@@ -424,6 +426,9 @@ static void blocks_drop(struct replay_blocks *__single b) {
     free(b->text);
     b->text_len = 0;
     b->text = NULL;
+    free(b->fam);
+    b->fam_len = 0;
+    b->fam = NULL;
 }
 
 // Free the pending bitmap/image state (a block whose `bits` lines never
@@ -458,12 +463,14 @@ static void paths_drop(struct replay_blocks *__single b) {
 }
 
 // The pending shape's last run line landed: hand it to the cache, which takes
-// ownership, under its (size_px, rtl, text) key -- exactly the key a live
-// lookup uses, so the fill_text/stroke_text op that follows hits (and an ltr
-// and an rtl shaping of the same bytes land in distinct slots, never aliased).
+// ownership, under its (family, size_px, rtl, ls, ws, text) key -- exactly the
+// key a live lookup uses, so the fill_text/stroke_text op that follows hits (and
+// two families, or an ltr and an rtl shaping, of the same bytes land in distinct
+// slots, never aliased).
 static void blocks_finish_shaping(struct canvas *__single cv,
                                 struct replay_blocks *__single b) {
-    cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->size_px, b->rtl,
+    cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->fam, b->fam_len,
+                              b->size_px, b->rtl,
                               b->ls, b->ws, b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
     // The block's ls/ws are only its cache key.  The canvas's spacing state --
@@ -956,22 +963,24 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
     return true;
 }
 
-// shaping <size_px> <rtl 0|1> <ls> <ws> <utf16-len> <nruns> <byte-len>
-// <text...> -- begin one shaped line; its `run` lines must follow immediately.
-// rtl is the paragraph direction the line was shaped under, ls/ws the
-// letterSpacing/wordSpacing -- the other three halves of the cache key, since
-// the same bytes shape (and space) differently under each.  ls/ws are always
-// present (the recorder writes them even when 0); the spacing is already baked
-// into the run advances, so they serve only to key the rebuilt line.  The text
-// is exactly byte-len raw bytes after a single separating space (it is the cache
-// key, byte for byte).  Strict: finite size/ls/ws, utf16-len <= byte-len (every
-// UTF-16 unit costs at least one UTF-8 byte), and the byte count exactly fills
-// the line.
+// shaping <size_px> <rtl 0|1> <ls> <ws> <fam-len> <fam...> <utf16-len> <nruns>
+// <byte-len> <text...> -- begin one shaped line; its `run` lines must follow
+// immediately.  fam is the requested family (the cache key's family part, always
+// present even for the default), length-prefixed raw bytes after a single
+// separating space.  rtl is the paragraph direction the line was shaped under,
+// ls/ws the letterSpacing/wordSpacing -- the other halves of the cache key,
+// since the same bytes shape (and space) differently under each.  ls/ws are
+// always present (the recorder writes them even when 0); the spacing is already
+// baked into the run advances, so they serve only to key the rebuilt line.  The
+// text is exactly byte-len raw bytes after a single separating space (it is the
+// cache key, byte for byte).  Strict: finite size/ls/ws, fam-len bytes present,
+// utf16-len <= byte-len (every UTF-16 unit costs at least one UTF-8 byte), and
+// the byte count exactly fills the line.
 static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
     float size = 0.0f, ls = 0.0f, ws = 0.0f;
     bool rtl = false;
-    long t16 = 0, nruns = 0, blen = 0;
+    long famlen = 0, t16 = 0, nruns = 0, blen = 0;
     if (!read_float(data, le, &j, &size) || !isfinite(size) || size < 0.0f) {
         return false;
     }
@@ -982,6 +991,18 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
         !read_float(data, le, &j, &ws) || !isfinite(ws)) {
         return false;
     }
+    // The family: a length, then a single separator space, then exactly famlen
+    // raw bytes (the name can contain spaces, so it is length-prefixed, not a
+    // token).  Bounded by REPLAY_LINE_MAX like the other counts.
+    if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &famlen)) {
+        return false;
+    }
+    if (j < le && data[j] == ' ') { j++; }  // the single separator before the family
+    if ((size_t)famlen > le - j) {
+        return false;  // family bytes don't fit the remaining line
+    }
+    size_t const fam_start = j;
+    j += (size_t)famlen;
     if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &t16) ||
         !read_uint(data, le, &j, REPLAY_RUNS_MAX, &nruns) ||
         !read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &blen)) {
@@ -1006,10 +1027,16 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
         s->run = runs;
         s->nruns = (int)nruns;
     }
+    char *fam = malloc((size_t)famlen > 0 ? (size_t)famlen : 1);
     char *txt = malloc((size_t)blen > 0 ? (size_t)blen : 1);
-    if (!txt) {
+    if (!fam || !txt) {
+        free(fam);
+        free(txt);
         cnvs_shaped_free(s);
         return false;
+    }
+    if (famlen > 0) {
+        memcpy(fam, data + fam_start, (size_t)famlen);
     }
     if (blen > 0) {
         memcpy(txt, data + j, (size_t)blen);
@@ -1020,6 +1047,8 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     b->rtl = rtl;
     b->ls = ls;
     b->ws = ws;
+    b->fam = fam;
+    b->fam_len = (int)famlen;
     b->text = txt;
     b->text_len = (int)blen;
     if (nruns == 0) {
@@ -1392,6 +1421,17 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (tok_eq(data, le, ts, tl, "ltr"))      canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
         else if (tok_eq(data, le, ts, tl, "rtl")) canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_font_family")) {
+        // <len> <bytes> -- a length-prefixed name (it can contain spaces), the
+        // bytes filling exactly to end of line.  Length-counted into the setter,
+        // so the parser keeps no __null_terminated seam.
+        long fl = 0;
+        if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &fl)) return false;
+        if (j < le && data[j] == ' ') { j++; }  // the single separator before the name
+        if ((size_t)fl != le - j) return false;  // name fills the rest of the line
+        canvas_set_font_family_n(cv, data + j, (int)fl);
+        return true;  // the name consumed the rest of the line
     }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;

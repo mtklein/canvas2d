@@ -539,12 +539,24 @@ void canvas_draw_image_subrect(struct canvas *__single cv,
                                float sx, float sy, float sww, float shh,
                                float dx, float dy, float dw, float dh);
 
-// Text.  The typeface is fixed to Libian TC (clerical-script 隸書), which carries
-// both Latin and Chinese.  Size is user-space px (default 10).  fill_text and
-// stroke_text lay out `text` (UTF-8) with its baseline origin at (x, y), advance
-// +x, and paint the glyph outlines like fill()/stroke(): transform, clip, gradient
-// and global alpha all apply.  measure_text returns the advance width in user px.
+// Text.  The default typeface is Libian TC (clerical-script 隸書), which carries
+// both Latin and Chinese; canvas_set_font_family chooses another.  Size is
+// user-space px (default 10).  fill_text and stroke_text lay out `text` (UTF-8)
+// with its baseline origin at (x, y), advance +x, and paint the glyph outlines
+// like fill()/stroke(): transform, clip, gradient and global alpha all apply.
+// measure_text returns the advance width in user px.
 void canvas_set_font_size(struct canvas *__single cv, float px);
+// fontFamily: the typeface used by fill_text/stroke_text, measure_text, and the
+// text queries (default "Libian TC").  `name` is copied in (truncated if it
+// exceeds the internal capacity); a NULL or empty name is ignored, keeping the
+// current family.  An unavailable family falls back through Core Text's font
+// cascade and records as the resolved font.  Part of the drawing state:
+// save/restore brackets it, reset/resize restore the default.
+void canvas_set_font_family(struct canvas *__single cv, char const *__null_terminated name);
+// The length-counted form (the name need not be NUL-terminated), like
+// canvas_fill_text_n beside canvas_fill_text; len <= 0 is ignored.
+void canvas_set_font_family_n(struct canvas *__single cv,
+                              char const *__counted_by(len) name, int len);
 // letterSpacing: extra advance added after each typographic cluster, in user px
 // (default 0; may be negative).  wordSpacing: extra advance added at each
 // word-separator (U+0020 SPACE), in user px (default 0; may be negative).  Both

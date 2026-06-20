@@ -3086,6 +3086,41 @@ static void nestedclip(void) {
     save(c, "gallery/nestedclip.png");
 }
 
+// fontFamily: the same line drawn in the default Libian TC plus three macOS
+// system fonts.  Each family records its own glyph curves into the program (the
+// Libian model), so the scene replays on a fontless machine; an unavailable
+// family would fall back through Core Text and record under the resolved name.
+static void fontfamily(void) {
+    struct canvas *__single c = canvas(420, 230, CANVAS_CS_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/fontfamily.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 420.0f, 230.0f);
+
+    char const *__null_terminated families[4] = {
+        "Libian TC", "Helvetica", "Georgia", "Menlo",
+    };
+    char const *__null_terminated sample = "Typeface 字體 123";
+
+    for (int i = 0; i < 4; i++) {
+        float const y = 36.0f + (float)i * 50.0f;
+        // The family label, in the default face at a small size.
+        canvas_set_font_family(c, "Libian TC");
+        canvas_set_font_size(c, 12.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.58f, 0.66f, 1.0f);
+        canvas_fill_text(c, families[i], 20.0f, y - 18.0f);
+        // The sample line, in this family.
+        canvas_set_font_family(c, families[i]);
+        canvas_set_font_size(c, 30.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.93f, 0.96f, 1.0f);
+        canvas_fill_text(c, sample, 20.0f, y + 14.0f);
+    }
+
+    save(c, "gallery/fontfamily.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -3131,6 +3166,7 @@ static void render_all(void) {
     colorspaces();
     ellipserot();
     nestedclip();
+    fontfamily();
 }
 
 int main(void) {
