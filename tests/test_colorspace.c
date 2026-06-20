@@ -986,6 +986,62 @@ static void pq_oetf8_matches_scalar(void) {
     CHECK(exact);
 }
 
+// Oklab as an IMAGE SOURCE space: sample_to_working's CANVAS_CS_OKLAB branch --
+// an Oklab-tagged image's taps convert (Oklab -> linear sRGB -> working space) on
+// deposit.  A flat image (one Oklab triple everywhere) so a sampled constant is
+// the constant, isolating the colour conversion from the filter.  The triple is
+// the Oklab of a known sRGB colour, so the deposit reads back as that colour
+// through both the sRGB arm (encode + clamp) and the linear arm (store direct).
+// Also pins the other half of the scope decision: Oklab is not a working space.
+static void oklab_image_sample_deposit(void) {
+    int const w = 8, h = 8, len = w * h * 4;
+    float const cr = 0.60f, cg = 0.30f, cb = 0.80f;  // a known authored sRGB colour
+    cnvs_rgb const lin = { cnvs_srgb_to_linear(cr), cnvs_srgb_to_linear(cg),
+                           cnvs_srgb_to_linear(cb) };
+    cnvs_oklab const ok = cnvs_linear_srgb_to_oklab(lin);
+
+    _Float16 *__counted_by(len) src = malloc((size_t)len * sizeof *src);
+    uint8_t *__counted_by(len) px = malloc((size_t)len);
+    CHECK(src != NULL && px != NULL);
+    if (!src || !px) {
+        free(src);
+        free(px);
+        return;
+    }
+    for (int i = 0; i < w * h; i++) {
+        src[i * 4 + 0] = (_Float16)ok.L;
+        src[i * 4 + 1] = (_Float16)ok.a;
+        src[i * 4 + 2] = (_Float16)ok.b;
+        src[i * 4 + 3] = (_Float16)1.0f;
+    }
+    struct canvas_image *__single img =
+        canvas_image_f16(CANVAS_CS_OKLAB, src, w, h, CANVAS_ALPHA_UNPREMUL);
+    CHECK(img != NULL);
+
+    // Both deposit arms read back (in sRGB) to the authored colour.
+    enum canvas_color_space const spaces[2] = { CANVAS_CS_SRGB, CANVAS_CS_LINEAR_SRGB };
+    for (int s = 0; s < 2 && img; s++) {
+        struct canvas *__single cv = canvas_in_space(w, h, spaces[s]);
+        CHECK(cv != NULL);
+        if (cv) {
+            canvas_draw_image(cv, img, 0.0f, 0.0f);  // 1:1, flat image -> exact
+            canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+            struct rgba const p = pixel_at(px, len, w, w / 2, h / 2);
+            CHECK(abs((int)p.r - (int)(cr * 255.0f + 0.5f)) <= 4);
+            CHECK(abs((int)p.g - (int)(cg * 255.0f + 0.5f)) <= 4);
+            CHECK(abs((int)p.b - (int)(cb * 255.0f + 0.5f)) <= 4);
+            CHECK(p.a == 255);
+            canvas_free(cv);
+        }
+    }
+    canvas_image_free(img);
+    free(src);
+    free(px);
+
+    // Oklab is an authoring space, not a compositing one: no Oklab working space.
+    CHECK(canvas_in_space(w, h, CANVAS_CS_OKLAB) == NULL);
+}
+
 int main(void) {
     space_default_and_persistence();
     extended_fill_survives();
@@ -993,6 +1049,7 @@ int main(void) {
     pq_rec2020_known_answers();
     pq_oetf_accuracy();
     pq_oetf8_matches_scalar();
+    oklab_image_sample_deposit();
     image_sample_space_convert();
     linear_color_round_trip();
     linear_image_data_round_trip();
