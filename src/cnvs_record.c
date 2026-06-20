@@ -15,14 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// A float's raw bits, for exact (bit-for-bit) equality without a -Wfloat-equal
-// `==` -- the same keying rule the text cache uses for size/spacing.
-static uint32_t float_bits(float f) {
-    uint32_t b = 0;
-    memcpy(&b, &f, sizeof b);
-    return b;
-}
-
 // One content-deduped `image` block already in this file: an owned copy of
 // the pixels for the content compare (the caller's buffer is borrowed and may
 // be freed or mutated between the ops that reference it).  The entry's index
@@ -33,8 +25,7 @@ struct rec_image {
     int w, h;
     enum canvas_color_type ct;  // the block's colour type, written by name
     enum canvas_alpha_type at;  // ...and its alpha type, likewise
-    enum canvas_color_space cs; // ...and its colour-space tag (optional token,
-                                // emitted only when non-sRGB)
+    enum canvas_color_space cs; // ...and its colour-space tag, likewise
     bool mips_done;  // an `image_mips` line has been emitted for this id
 };
 
@@ -59,10 +50,9 @@ char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
     "repeat", "repeat-x", "repeat-y", "no-repeat",
 };
 // One table for every colour-space token in the format -- the working_space
-// line and both gradient-interpolation lines draw their names here, indexed by
-// enum value.  The spellings are the on-disk contract: existing .canvas files
-// carry exactly these tokens (working_space `linear`, interpolation `srgb` /
-// `oklab`), so they must not change.
+// line, the colour-op lines, the gradient-interpolation lines, and the image
+// blocks all draw their names here, indexed by enum value.  The spellings are
+// the on-disk contract.
 char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1] = {
     "srgb", "linear", "oklab",
 };
@@ -85,16 +75,6 @@ struct cnvs_recorder {
     // line is flushed (once) the instant any other op is recorded.
     enum canvas_color_space pending_space;
     bool wrote_ws;  // the `working_space` line has been flushed for this file
-    // The spacing the most recently emitted `shaping` block carried.  Replay
-    // sets its canvas spacing from each shaping block, so a text op whose
-    // spacing matches the last block's needs no fresh block (the deduped one
-    // already left replay's spacing right); a text op whose spacing differs --
-    // a repeat of an already-emitted line after an intervening different-spacing
-    // line moved replay's context -- forces a fresh shaping+run pair so replay's
-    // spacing is restored before the op.  have_spacing latches on the first
-    // shaping block.
-    float last_ls, last_ws;
-    bool have_spacing;
     struct rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
     int nimg;
     struct rec_path path[CNVS_REC_PATHS_MAX];   // [0, npath) are its path blocks
@@ -201,28 +181,28 @@ void cnvs_rec_floats_bool(struct cnvs_recorder *__single r, char const *__null_t
     fputc('\n', r->f);
 }
 
-// A colour op line -- the n channel/offset floats, then an OPTIONAL trailing
-// colour-space token, emitted ONLY when the space is non-sRGB (and nameable).
-// sRGB records exactly as cnvs_rec_floats would (no token), so every existing
-// .canvas byte stays identical; absence on replay is the sRGB default.  The
-// token rides the line by name through the shared colour-space table, the lone
-// optional field after the floats -- the same emit-when-non-default posture the
-// image block's colour-space tag uses (cnvs_rec_image).
+// A colour op line -- the n channel/offset floats, then the colour-space token,
+// written unconditionally: sRGB, linear-sRGB, and Oklab are equal peers, so
+// every colour line carries its space by name rather than leaning on an
+// "absent == sRGB" convention.  The token rides the line by name through the
+// shared colour-space table.  An unnameable enum cannot round-trip -- skip the
+// whole line rather than write a token the strict parser would reject (no
+// caller produces one).
 void cnvs_rec_floats_cs(struct cnvs_recorder *__single r, char const *__null_terminated name,
                         float const *__counted_by(n) v, int n,
                         enum canvas_color_space space) {
     if (!r || r->suspend != 0) {
         return;
     }
+    unsigned const i = (unsigned)space;
+    if (i >= sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
+        return;
+    }
     cnvs_rec_flush_ws(r);
     fputs(name, r->f);
     put_floats(r->f, v, n);
-    unsigned const i = (unsigned)space;
-    if (space != CANVAS_CS_SRGB &&
-        i < sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
-        fputc(' ', r->f);
-        fputs(canvas_color_space_name[i], r->f);
-    }
+    fputc(' ', r->f);
+    fputs(canvas_color_space_name[i], r->f);
     fputc('\n', r->f);
 }
 
@@ -320,10 +300,12 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
 // the cache key -- the same bytes shape differently under ltr and rtl, so replay
 // must key its insert with it or the two would alias.  ls/ws are the
 // letterSpacing/wordSpacing keys (written unconditionally, even when 0): the
-// spacing is already baked into the run advances, so replay needs them to key
-// the rebuilt line under the same (size, rtl, ls, ws, text) tuple a live lookup
-// uses AND to set its spacing context for the op that follows.  The text is
-// length-prefixed raw bytes to end of line (the key, byte for byte).
+// spacing is already baked into the run advances, so replay needs them only to
+// key the rebuilt line under the same (size, rtl, ls, ws, text) tuple a live
+// lookup uses.  The canvas's spacing state -- the value a fill_text keys its
+// lookup by -- is carried by the set_letter_spacing/set_word_spacing ops, not
+// by this block.  The text is length-prefixed raw bytes to end of line (the
+// key, byte for byte).
 static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
                                   struct cnvs_text_cache *__single c,
                                   struct cnvs_shaped const *__single s,
@@ -360,27 +342,8 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
         return;  // not cached (shaping failed: nothing to carry)
     }
     struct cnvs_shaped const *__single s = slot->s;
-    // Whether replay's spacing context (set from the last shaping block it saw)
-    // would already be this op's spacing.  If not, a fresh shaping+run pair must
-    // precede the op even when its blocks are already emitted -- otherwise the
-    // op would key its lookup against the stale context and miss the line.
-    // Compared by exact float bits (the cache keying rule), not value, so a
-    // -0.0/+0.0 pair never reads "current" against itself wrongly.
-    bool const spacing_current = r->have_spacing &&
-        float_bits(r->last_ls) == float_bits(ls) &&
-        float_bits(r->last_ws) == float_bits(ws);
     if (slot->emitted) {
-        if (spacing_current) {
-            return;  // blocks present and replay's spacing already matches
-        }
-        // Re-emit only the shaping+run pair: the font/glyph/bitmap blocks are
-        // already in the file (their `emitted` marks stand), and the shaping
-        // block restores replay's spacing context for the op that follows.
-        cnvs_rec_shaping_line(r, c, s, size_px, rtl, ls, ws, text, len);
-        r->last_ls = ls;
-        r->last_ws = ws;
-        r->have_spacing = true;
-        return;
+        return;  // this shaping block is already in the file
     }
     // Intern every run's font first, so the font blocks land (in id order,
     // which is intern order: declared before use) ahead of any glyph or run
@@ -494,9 +457,6 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // The shaped line itself (and its run lines), keyed by the spacing it bakes.
     cnvs_rec_shaping_line(r, c, s, size_px, rtl, ls, ws, text, len);
     slot->emitted = true;
-    r->last_ls = ls;  // replay will set its spacing context from this block
-    r->last_ws = ws;
-    r->have_spacing = true;
 }
 
 int cnvs_rec_image(struct cnvs_recorder *__single r,
@@ -550,23 +510,25 @@ int cnvs_rec_image(struct cnvs_recorder *__single r,
     int const nlines = (zn + CNVS_REC_BITS_PER_LINE - 1) / CNVS_REC_BITS_PER_LINE;
     // The format axes ride the line by name, like every other enum in the
     // format -- all four ct/at combinations are peers, none the unmarked
-    // default.  The colour-space tag is the lone OPTIONAL token: emitted only
-    // when non-sRGB (and nameable), appended after the bits-line count so a
-    // legacy parser's positional read of the leading fields is undisturbed.
-    // Absence == sRGB, so every existing sRGB block stays byte-identical.
+    // default.  The colour-space tag is written the same way, unconditionally:
+    // sRGB, linear-sRGB, and Oklab are equal peers, so every block carries its
+    // space by name (appended after the bits-line count).  An unnameable enum
+    // cannot round-trip -- this never happens (every block carries a real
+    // space), but the guard keeps a token the strict parser would reject off
+    // disk.
     unsigned const csi = (unsigned)cs;
-    bool const emit_cs =
-        cs != CANVAS_CS_SRGB &&
-        csi < sizeof canvas_color_space_name / sizeof canvas_color_space_name[0];
+    if (csi >= sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
+        free(z);
+        free(copy);
+        return -1;
+    }
     cnvs_rec_flush_ws(r);  // the working_space line leads the file, ahead of any block
     fprintf(r->f, "image %d %s %s %d %d %d %d", id,
             ct == CANVAS_COLOR_F16 ? "f16" : "unorm8",
             at == CANVAS_ALPHA_PREMUL ? "premul" : "unpremul",
             w, h, zn, nlines);
-    if (emit_cs) {
-        fputc(' ', r->f);
-        fputs(canvas_color_space_name[csi], r->f);
-    }
+    fputc(' ', r->f);
+    fputs(canvas_color_space_name[csi], r->f);
     fputc('\n', r->f);
     for (int off = 0; off < zn; off += CNVS_REC_BITS_PER_LINE) {
         int const rem = zn - off;

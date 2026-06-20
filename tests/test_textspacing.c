@@ -112,8 +112,11 @@ int main(void) {
     canvas_free(cv);
 
     // Record -> replay round trip WITH non-zero spacing reproduces the surface
-    // byte-for-byte: the spacing rides the shape block (baked advances + key),
-    // so a fontless replay reconstructs the spaced line from the block alone.
+    // byte-for-byte: letterSpacing/wordSpacing record as ordinary state ops
+    // (set_letter_spacing/set_word_spacing, like set_font_size), and the shaped
+    // line's baked advances ride its shape block keyed by (size, rtl, ls, ws,
+    // text) -- so a fontless replay restores the spacing state from the ops and
+    // reconstructs the spaced line from its block.
     enum { W = 160, H = 48, NPX = W * H * 4 };
     char const *__null_terminated path = "build/test_textspacing.canvas";
     uint8_t recorded_px[NPX];
@@ -147,6 +150,44 @@ int main(void) {
             uint8_t replayed_px[NPX];
             canvas_read_rgba(pc, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
             CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
+            canvas_free(pc);
+        }
+    }
+
+    // Spacing set, CHANGED, then RE-USED: the same text drawn under spacing A,
+    // then under spacing B, then under A again.  The third draw's shape block is
+    // already in the file (keyed under A), so the recorder re-emits nothing for
+    // it -- the set_letter_spacing op recorded before it is what restores the
+    // canvas's spacing state so the op keys the right block.  This is the
+    // ordering the removed re-emit hack existed for; it must still round-trip
+    // byte-for-byte.
+    char const *__null_terminated path2 = "build/test_textspacing_reuse.canvas";
+    uint8_t reuse_px[NPX];
+    {
+        struct canvas *__single rc = canvas(W, H, CANVAS_CS_SRGB);
+        CHECK(rc != NULL);
+        if (rc) {
+            CHECK(canvas_record_to(rc, path2));
+            canvas_set_font_size(rc, 18.0f);
+            canvas_set_fill_rgba(rc, CANVAS_CS_SRGB, 0.9f, 0.9f, 0.95f, 1.0f);
+            canvas_set_letter_spacing(rc, 2.0f);   // spacing A
+            canvas_fill_text(rc, "x y z", 4.0f, 20.0f);
+            canvas_set_letter_spacing(rc, 6.0f);   // spacing B
+            canvas_fill_text(rc, "x y z", 4.0f, 32.0f);
+            canvas_set_letter_spacing(rc, 2.0f);   // back to A -- reuses A's block
+            canvas_fill_text(rc, "x y z", 4.0f, 44.0f);
+            canvas_read_rgba(rc, CANVAS_CS_SRGB, reuse_px, (int)sizeof reuse_px);
+            canvas_free(rc);
+        }
+    }
+    {
+        struct canvas *__single pc = canvas(W, H, CANVAS_CS_SRGB);
+        CHECK(pc != NULL);
+        if (pc) {
+            CHECK(canvas_replay_from(pc, path2));
+            uint8_t replayed_px[NPX];
+            canvas_read_rgba(pc, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+            CHECK(memcmp(reuse_px, replayed_px, sizeof reuse_px) == 0);
             canvas_free(pc);
         }
     }

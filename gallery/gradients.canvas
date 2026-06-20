@@ -1,31 +1,31 @@
 working_space srgb
-set_fill_rgba 0.100000001 0.109999999 0.140000001 1
+set_fill_rgba 0.100000001 0.109999999 0.140000001 1 srgb
 fill_rect 0 0 300 120
 set_fill_linear_gradient srgb unpremul 20 20 100 100
-add_fill_color_stop 0 0.99000001 0.800000012 0.25999999 1
-add_fill_color_stop 1 0.899999976 0.219999999 0.419999987 1
+add_fill_color_stop 0 0.99000001 0.800000012 0.25999999 1 srgb
+add_fill_color_stop 1 0.899999976 0.219999999 0.419999987 1 srgb
 begin_path
 round_rect 20 20 80 80 16
 fill nonzero
 set_stroke_linear_gradient srgb unpremul 20 20 100 100
-add_stroke_color_stop 0 0.200000003 0.899999976 0.949999988 1
-add_stroke_color_stop 1 0.949999988 0.949999988 0.200000003 1
+add_stroke_color_stop 0 0.200000003 0.899999976 0.949999988 1 srgb
+add_stroke_color_stop 1 0.949999988 0.949999988 0.200000003 1 srgb
 set_line_width 5
 begin_path
 round_rect 20 20 80 80 16
 stroke
 set_fill_radial_gradient srgb unpremul 140 46 3 150 60 44
-add_fill_color_stop 0 1 1 1 1
-add_fill_color_stop 0.400000006 0.300000012 0.649999976 0.949999988 1
-add_fill_color_stop 1 0.0500000007 0.100000001 0.349999994 1
+add_fill_color_stop 0 1 1 1 1 srgb
+add_fill_color_stop 0.400000006 0.300000012 0.649999976 0.949999988 1 srgb
+add_fill_color_stop 1 0.0500000007 0.100000001 0.349999994 1 srgb
 begin_path
 arc 150 60 44 0 6.28318548 0
 fill nonzero
 set_fill_linear_gradient srgb unpremul 205 0 285 0
-add_fill_color_stop 0 0.899999976 0.200000003 0.25 1
-add_fill_color_stop 0.330000013 0.949999988 0.800000012 0.25 1
-add_fill_color_stop 0.660000026 0.300000012 0.800000012 0.449999988 1
-add_fill_color_stop 1 0.300000012 0.449999988 0.949999988 1
+add_fill_color_stop 0 0.899999976 0.200000003 0.25 1 srgb
+add_fill_color_stop 0.330000013 0.949999988 0.800000012 0.25 1 srgb
+add_fill_color_stop 0.660000026 0.300000012 0.800000012 0.449999988 1 srgb
+add_fill_color_stop 1 0.300000012 0.449999988 0.949999988 1 srgb
 begin_path
 round_rect 205 25 75 70 12
 fill nonzero

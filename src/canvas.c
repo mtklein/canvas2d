@@ -121,11 +121,11 @@ struct canvas_state {
 struct canvas {
     int width;
     int height;
-    // The working colour space (canvas.h): CANVAS_CS_SRGB is the legacy bypass
-    // (no transfer ever runs, byte-identical to before this field existed);
-    // CANVAS_CS_LINEAR_SRGB composites in extended linear sRGB.  Chosen at
-    // creation, immutable -- it is NOT in struct canvas_state, so save/restore
-    // never touch it, and reset/resize leave it as the constructor set it.
+    // The working colour space (canvas.h): CANVAS_CS_SRGB composites directly on
+    // the encoded bytes (no transfer ever runs); CANVAS_CS_LINEAR_SRGB
+    // composites in extended linear sRGB.  Chosen at creation, immutable -- it is
+    // NOT in struct canvas_state, so save/restore never touch it, and
+    // reset/resize leave it as the constructor set it.
     enum canvas_color_space space;
     cnvs_premul *__counted_by(target_len) target;  // premultiplied; all-zero == transparent
     int target_len;                                // == width * height
@@ -539,19 +539,19 @@ canvas_matrix canvas_get_transform(struct canvas *__single cv) {
                             .d = m.d, .e = m.e, .f = m.f };
 }
 
-// Intern one untagged (encoded sRGB) colour into the canvas's working space --
-// the single entry-side transfer gate every colour the API takes flows through
-// (fill/stroke/shadow/drop-shadow colours and gradient stops; image and pattern
-// pixels intern at their own seams).  `space` names the space the INPUT (r,g,b)
-// are given in; the result lands in the canvas's WORKING space, in that space's
-// native encoding.  alpha is a coverage coordinate, never a colour, so it clamps
-// to [0,1] on every path (the premultiply and readback both assume it in range).
+// Intern one boundary colour into the canvas's working space -- the single
+// entry-side transfer gate every colour the API takes flows through (fill/stroke/
+// shadow/drop-shadow colours and gradient stops; image and pattern pixels intern
+// at their own seams).  `space` names the space the INPUT (r,g,b) are given in;
+// the result lands in the canvas's WORKING space, in that space's native
+// encoding.  alpha is a coverage coordinate, never a colour, so it clamps to
+// [0,1] on every path (the premultiply and readback both assume it in range).
 //
-//   CANVAS_CS_SRGB -- the byte-identity path, exactly the legacy body.  On an
-//   sRGB canvas it is a literal bypass: clamp01 each channel, no transfer.  On a
-//   linear canvas the RGB decode sRGB->linear (cnvs_srgb_to_linear, the odd
-//   extension, total over R) with NO [0,1] clamp -- an extended (out-of-gamut)
-//   input must propagate, and the clamp would crush it.
+//   CANVAS_CS_SRGB -- the (r,g,b) ARE encoded sRGB.  On an sRGB canvas it is a
+//   literal pass-through: clamp01 each channel, no transfer.  On a linear canvas
+//   the RGB decode sRGB->linear (cnvs_srgb_to_linear, the odd extension, total
+//   over R) with NO [0,1] clamp -- an extended (out-of-gamut) input must
+//   propagate, and the clamp would crush it.
 //
 //   CANVAS_CS_LINEAR_SRGB -- the (r,g,b) ARE linear sRGB.  To a linear canvas,
 //   stored as-is (no rgb clamp, extended values propagate).  To an sRGB canvas,
@@ -562,13 +562,13 @@ canvas_matrix canvas_get_transform(struct canvas *__single cv) {
 //
 // The transfer / Oklab math runs in f32 (the cnvs_color kernels) and narrows
 // once at cnvs_unpremul_of.  The recorder logs the RAW input floats upstream of
-// this and emits no space token for CANVAS_CS_SRGB, so a legacy (SRGB) program
-// records byte-identically; replay re-interns through the same gate.
+// this with their space token; replay re-interns through the same gate.
 static cnvs_unpremul intern_color(struct canvas *__single cv,
                                   enum canvas_color_space space,
                                   float r, float g, float b, float a) {
     if (space == CANVAS_CS_SRGB) {
-        // The legacy body, unchanged -- this is the byte-identity path.
+        // Encoded-sRGB input: a pass-through on an sRGB canvas, a decode on a
+        // linear one.
         if (cv->space == CANVAS_CS_LINEAR_SRGB) {
             return cnvs_unpremul_of(cnvs_srgb_to_linear(r), cnvs_srgb_to_linear(g),
                                     cnvs_srgb_to_linear(b), cnvs_clamp01(a));
@@ -958,9 +958,8 @@ void canvas_add_filter_drop_shadow(struct canvas *__single cv,
     shadow_offset_split(dx, &dxw, &dxk);
     shadow_offset_split(dy, &dyw, &dyk);
     // The shadow tint composites into the tile in the working space, so it
-    // interns through the same gate as every other untagged colour: bypass on
-    // sRGB (the clamped values land identically), decode sRGB->linear on a
-    // linear canvas.  The recorder above logged the raw input.
+    // interns through the same gate as every other boundary colour, in whatever
+    // space the caller named.  The recorder above logged the raw input.
     cnvs_unpremul const tint = intern_color(cv, space, r, g, b, a);
     filter_append(cv, cnvs_filter_drop_shadow(
                           dxw, dxk, dyw, dyk,
@@ -1459,9 +1458,9 @@ static cnvs_px8 px8_transfer(cnvs_px8 p, chan_xfer xf_chan) {
 
 // Source-over for one planar slab: co = s + (1-sa)*d, ao = sa + (1-sa)*da --
 // the same fold over every channel plane, alpha included.  `lin` picks the
-// linear no-upper-clamp finish; an sRGB canvas keeps the legacy [0,ao] clamp,
-// byte for byte.  Source-over is range-preserving, so on a linear canvas the
-// fold runs directly on the linear slabs -- no encode wrapper.
+// linear no-upper-clamp finish; an sRGB canvas clamps each channel to [0,ao]
+// (its encoded values live in [0,1]).  Source-over is range-preserving, so on a
+// linear canvas the fold runs directly on the linear slabs -- no encode wrapper.
 static cnvs_px8 src_over8(cnvs_px8 s, cnvs_px8 d, bool lin) {
     half8 const fb = (half8)(_Float16)1.0f - s.a;
     cnvs_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
@@ -1639,7 +1638,7 @@ static cnvs_px8 cov_lerp8(cnvs_px8 d, cnvs_px8 co, half8 cov, bool lin) {
                    co.b * cov + d.b * icov, co.a * cov + d.a * icov };
     // Coverage is a geometric fraction (antialiasing), so the lerp between two
     // working-space premul colours is range-preserving: the linear no-upper
-    // clamp on a linear canvas, the legacy [0,ao] clamp on an sRGB one.
+    // clamp on a linear canvas, the [0,ao] clamp on an sRGB one.
     return lin ? cnvs_px8_clamp_premul_lin(o) : cnvs_px8_clamp_premul(o);
 }
 
@@ -1660,7 +1659,7 @@ static void blend_region(struct canvas *__single cv, int x, int y, int w, int h,
     (void)clip_len;
     bool const folds = coverage_folds(mode);
     bool const atten = cov || clip;  // any coverage to apply?
-    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;  // false -> legacy bypass
+    bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;  // false -> sRGB bypass
     _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
     half8 const one = (half8)(_Float16)1.0f;
     for (int row = 0; row < h; row++) {
@@ -1745,8 +1744,8 @@ void cnvs_blend(struct canvas *__single cv, int x, int y, int w, int h,
         // The fast path.  Source-over folds: op coverage (normally already
         // folded by the shade stage, so cov is NULL here) and clip
         // attenuation both scale the premultiplied source, in f16.  Source-over
-        // is range-preserving, so `lin` only swaps src_over8's final clamp; an
-        // sRGB canvas (lin == false) runs the identical legacy code.
+        // is range-preserving, so `lin` only swaps src_over8's final clamp; the
+        // sRGB and linear paths share the identical fold (lin == false on sRGB).
         bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
         _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
         for (int row = 0; row < h; row++) {
@@ -2983,16 +2982,21 @@ void canvas_set_font_size(struct canvas *__single cv, float px) {
     cv->cur.font_size = px > 0.0f ? px : 0.0f;
 }
 
-// letterSpacing/wordSpacing record NOTHING of their own: the spacing is baked
-// into the shaped line's advances and keyed in the cache, so a fill_text's shape
-// block already carries it -- replay reproduces it from that block alone, with
-// no source text to re-identify spaces against.
+// letterSpacing/wordSpacing are canvas state, recorded as ordinary state ops
+// exactly like font_size and direction.  The spacing is also baked into a shaped
+// line's advances and is part of the cache key, so the shaping block a fill_text
+// emits carries ls/ws too -- but the canvas's spacing state, the value a
+// fill_text keys its lookup by, is owned by these ops.
 void canvas_set_letter_spacing(struct canvas *__single cv, float px) {
     cv->cur.letter_spacing = isfinite(px) ? px : 0.0f;  // NaN/inf -> 0
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_letter_spacing",
+                                   (float[]){ cv->cur.letter_spacing }, 1); }
 }
 
 void canvas_set_word_spacing(struct canvas *__single cv, float px) {
     cv->cur.word_spacing = isfinite(px) ? px : 0.0f;  // NaN/inf -> 0
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_word_spacing",
+                                   (float[]){ cv->cur.word_spacing }, 1); }
 }
 
 void canvas_set_text_align(struct canvas *__single cv, enum canvas_text_align align) {
@@ -4467,11 +4471,11 @@ static cnvs_px8 unpremul_to_linear_unorm8(cnvs_px8 p, bool linear_canvas) {
     return o;
 }
 
-// Per-canvas, per-output-space readback.  CANVAS_CS_SRGB is the byte-identity
-// path, EXACTLY the legacy two-way switch (sRGB-canvas SIMD bypass, linear-canvas
-// scalar encode) -- not a linear round-trip, so every existing caller stays byte
-// for byte.  The LINEAR_SRGB and OKLAB branches are the new outputs, scalar (the
-// transfer/Oklab math has no half8 spelling).
+// Per-canvas, per-output-space readback.  CANVAS_CS_SRGB off an sRGB canvas is a
+// direct SIMD bypass (no transfer; the stored encoded bytes quantize as-is);
+// off a linear canvas it encodes linear->sRGB scalar.  Either way it is NOT a
+// linear round-trip.  The LINEAR_SRGB and OKLAB branches run scalar too -- the
+// transfer/Oklab math is transcendental and has no half8 spelling.
 static cnvs_px8 read_unorm8(struct canvas *__single cv,
                             enum canvas_color_space space, cnvs_px8 p) {
     bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
@@ -4481,8 +4485,8 @@ static cnvs_px8 read_unorm8(struct canvas *__single cv,
     if (space == CANVAS_CS_OKLAB) {
         return unpremul_to_oklab_unorm8(p, lin);
     }
-    // CANVAS_CS_SRGB (and any out-of-range value): the legacy path verbatim --
-    // never a decode/encode round trip.
+    // CANVAS_CS_SRGB (and any out-of-range value): never a decode/encode round
+    // trip.
     return lin ? unpremul_encode_to_unorm8(p) : unpremul_to_unorm8(p);
 }
 
@@ -4491,15 +4495,14 @@ static cnvs_px8 read_unorm8(struct canvas *__single cv,
 // quantize happen here, eight pixels per step over channel planes with st4
 // re-interleaving at the RGBA8 seam (cnvs_planar.h); the n%8 tail runs the same
 // slab gathered.  `space` names the space the OUTPUT bytes are encoded in:
-//   CANVAS_CS_SRGB        -- encoded sRGB, today's behaviour byte for byte (an
-//                            sRGB canvas is the SIMD bypass, a linear canvas
-//                            encodes linear->sRGB).  NOT a linear round trip.
+//   CANVAS_CS_SRGB        -- encoded sRGB (an sRGB canvas is the SIMD bypass, a
+//                            linear canvas encodes linear->sRGB).  NOT a linear
+//                            round trip.
 //   CANVAS_CS_LINEAR_SRGB -- linear-sRGB bytes (linear canvas: the stored values
 //                            quantized directly; sRGB canvas: decode then quantize).
 //   CANVAS_CS_OKLAB       -- Oklab (L,a,b) bytes (working->linear->Oklab).
-// get_image_data reads back through this same entry point (with CANVAS_CS_SRGB
-// by default -- the get/put round trip stays sRGB by convention).  write_png does
-// NOT route here: it goes through canvas_encode_png -> surface_to_pq16 (16-bit
+// get_image_data reads back through this same entry point.  write_png does NOT
+// route here: it goes through canvas_encode_png -> surface_to_pq16 (16-bit
 // Rec.2020/PQ), a separate output pipeline.
 void canvas_read_rgba(struct canvas *__single cv, enum canvas_color_space space,
                       uint8_t *__counted_by(len) out, int len) {
@@ -4916,9 +4919,9 @@ static cnvs_px8 px8_in_oklab(cnvs_px8 p, bool linear_canvas) {
 }
 
 // Route a [0,1]-normalized straight slab from the INPUT space `space` into the
-// working space (alpha already in [0,1] off the /255 divide).  CANVAS_CS_SRGB
-// is the byte-identity path: on a linear canvas it is exactly px8_decode_rgb, on
-// an sRGB canvas it is a literal pass-through -- the legacy behaviour, verbatim.
+// working space (alpha already in [0,1] off the /255 divide).  Encoded-sRGB
+// input: on a linear canvas it is exactly px8_decode_rgb, on an sRGB canvas a
+// literal pass-through.
 static cnvs_px8 put_to_working(cnvs_px8 p, enum canvas_color_space space,
                                bool linear_canvas) {
     if (space == CANVAS_CS_LINEAR_SRGB) {
@@ -4927,8 +4930,8 @@ static cnvs_px8 put_to_working(cnvs_px8 p, enum canvas_color_space space,
     if (space == CANVAS_CS_OKLAB) {
         return px8_in_oklab(p, linear_canvas);
     }
-    // CANVAS_CS_SRGB (and any out-of-range value): the byte-identity path --
-    // px8_decode_rgb on a linear canvas, a literal pass-through on an sRGB one.
+    // CANVAS_CS_SRGB (and any out-of-range value): px8_decode_rgb on a linear
+    // canvas, a literal pass-through on an sRGB one.
     return linear_canvas ? px8_decode_rgb(p) : p;
 }
 
@@ -4993,9 +4996,9 @@ static void put_image_sub(struct canvas *__single cv,
     // and the planar premultiply writes finished tile pixels through st4.
     int const col0 = (int)(cx0 - dx);
     int const row0 = (int)(cy0 - dy);
-    // The working space, and whether this input space needs any transfer.  On the
-    // byte-identity path (CANVAS_CS_SRGB) put_to_working is px8_decode_rgb on a
-    // linear canvas and a no-op on an sRGB canvas -- exactly the legacy behaviour.
+    // The working space, and whether this input space needs any transfer.  For
+    // encoded-sRGB input (CANVAS_CS_SRGB) put_to_working is px8_decode_rgb on a
+    // linear canvas and a no-op on an sRGB canvas.
     bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
     _Float16 const k255 = (_Float16)255.0f;
     for (int py = 0; py < rh; py++) {
@@ -5085,10 +5088,9 @@ void canvas_put_image_data(struct canvas *__single cv,
     if (cv->rec) {
         // Exactly the w*h*4 pixels the op reads ride the block; the int-typed
         // placement rides the op line.  The input's colour space rides the
-        // BLOCK's optional colour-space tag (cnvs_rec_image): emitted only when
-        // non-sRGB, so an sRGB put_image_data records byte-identically, while a
-        // non-sRGB one now round-trips through the tag (replay reads it back off
-        // the block).
+        // BLOCK's colour-space tag (cnvs_rec_image), written for every space, so
+        // every put_image_data round-trips through the tag (replay reads it back
+        // off the block).
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
                                       CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
                                       space);
@@ -5112,8 +5114,8 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
     if (cv->rec) {
         // The raw dirty args ride the op line; replay re-normalises them
         // through this very function, so the recorded form stays the call.
-        // The input's colour space rides the block's optional tag, as for
-        // put_image_data above: emit-when-non-sRGB, byte-identical otherwise.
+        // The input's colour space rides the block's tag, as for put_image_data
+        // above: written for every space.
         int const id = cnvs_rec_image(cv->rec, data, w * h * 4, w, h,
                                       CANVAS_COLOR_UNORM8, CANVAS_ALPHA_UNPREMUL,
                                       space);
@@ -5155,8 +5157,8 @@ void canvas_put_image_data_f16(struct canvas *__single cv,
     if (cv->rec) {
         // The block carries w*h*4 _Float16 (== w*h*8 bytes) as CANVAS_COLOR_F16;
         // the int-typed placement rides the op line, the colour space rides the
-        // block's optional tag.  Same op spelling as the u8 put -- the colour
-        // type on the block tells replay which API to call.
+        // block's tag.  Same op spelling as the u8 put -- the colour type on the
+        // block tells replay which API to call.
         int const id = cnvs_rec_image(cv->rec, (uint8_t const *)data,
                                       w * h * 4 * (int)sizeof(_Float16), w, h,
                                       CANVAS_COLOR_F16, CANVAS_ALPHA_UNPREMUL,

@@ -37,10 +37,9 @@ void cnvs_rec_floats(struct cnvs_recorder *__single r, char const *__null_termin
 void cnvs_rec_floats_bool(struct cnvs_recorder *__single r, char const *__null_terminated name,
                           float const *__counted_by(n) v, int n, bool flag);
 // A colour op line (set_fill_rgba and its siblings, gradient stops, drop
-// shadow): the n floats, then an OPTIONAL trailing colour-space token, emitted
-// ONLY when `space` is non-sRGB -- absence == sRGB, so an sRGB colour records
-// exactly as cnvs_rec_floats would and every existing .canvas stays byte-
-// identical.  Mirrors the image block's optional colour-space tag.
+// shadow): the n floats, then a REQUIRED trailing colour-space token naming
+// `space`.  The three spaces are peers, so the token is always written.  Mirrors
+// the image block's colour-space tag.
 void cnvs_rec_floats_cs(struct cnvs_recorder *__single r, char const *__null_terminated name,
                         float const *__counted_by(n) v, int n,
                         enum canvas_color_space space);
@@ -70,11 +69,10 @@ extern char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1];
 // names its alpha type through); both record and replay name through it.
 extern char const *const cnvs_alpha_type_name[CANVAS_ALPHA_PREMUL + 1];
 
-// `working_space <name>` -- emitted at record start ONLY for a non-sRGB working
-// space, so every existing (sRGB) .canvas file stays byte-identical (absence
-// means sRGB).  Written before any drawing op; the replay parser applies it to
-// the fresh canvas before the first colour interns.  A no-op on NULL/suspend or
-// for CANVAS_CS_SRGB.
+// `working_space <name>` -- written unconditionally at record start (sRGB and
+// linear are peers, so every .canvas leads with its space), before any drawing
+// op; the replay parser applies it to the fresh canvas before the first colour
+// interns.  A no-op on NULL/suspend.
 
 // File-local numbered-object id spaces, shared with the replay parser: the
 // recorder never emits an id at or past the cap, and the parser rejects one.
@@ -97,8 +95,8 @@ enum {
 // base64-chunked into `bits` lines exactly like an emoji capture, returning
 // its file-local id.  `cs` is the source's colour-space tag (honoured on draw:
 // the resolved sample converts to the working space on deposit): it rides the
-// line as an OPTIONAL trailing token, emitted ONLY when non-sRGB (absence == sRGB), so
-// every existing sRGB image block stays byte-identical.  Deduplicated by
+// line as a REQUIRED trailing token, written for every space (the spaces are
+// peers).  Deduplicated by
 // CONTENT + the format (ct, at, cs) within the recording (the recorder keeps
 // its own copy of each emitted image; the caller's buffer is borrowed and may
 // be freed or mutated between ops), so a pattern plus several draw_image of

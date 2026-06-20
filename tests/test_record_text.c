@@ -763,10 +763,10 @@ static void check_shadow_ops(void) {
     if (!cv) {
         return;
     }
-    CHECK(REPLAY(cv, "set_shadow_color_rgba 0 0 0 0.5\n"));
+    CHECK(REPLAY(cv, "set_shadow_color_rgba 0 0 0 0.5 srgb\n"));
     CHECK(REPLAY(cv, "set_shadow_blur 4\n"));
     CHECK(REPLAY(cv, "set_shadow_offset_x 3\nset_shadow_offset_y -2\n"));
-    CHECK(!REPLAY(cv, "set_shadow_color_rgba 0 0 0\n"));    // too few floats
+    CHECK(!REPLAY(cv, "set_shadow_color_rgba 0 0 0 srgb\n"));  // too few floats
     CHECK(!REPLAY(cv, "set_shadow_blur\n"));                // missing float
     CHECK(!REPLAY(cv, "set_shadow_offset_x 3 4\n"));        // trailing junk
     canvas_free(cv);

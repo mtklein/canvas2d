@@ -264,7 +264,7 @@ static void record_colors(char const *__null_terminated path,
     canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 0.0f);
     canvas_add_stroke_color_stop(cv, space, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_add_filter_drop_shadow(cv, space, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
-    // put_image_data: its colour space rides the BLOCK's optional tag.
+    // put_image_data: its colour space rides the BLOCK's tag.
     uint8_t img[2 * 2 * 4];
     for (int i = 0; i < (int)sizeof img; i++) { img[i] = (uint8_t)(i * 9); }
     canvas_put_image_data(cv, space, img, (int)sizeof img, 2, 2, 1, 1);
@@ -393,45 +393,57 @@ int main(void) {
         }
     }
 
-    // 5. The optional per-color space token.  Per color op, BOTH ways:
-    //   (a) untagged: an sRGB colour records with NO trailing token (byte-
-    //       identical to before this chunk) and replays back to sRGB; and
-    //   (b) tagged: a non-sRGB colour emits the token, round-trips, and is
-    //       byte-idempotent under record -> replay -> re-record.
+    // 5. The per-color space token, written unconditionally (the spaces are
+    // peers).  Per color op, all three ways:
+    //   (a) sRGB: every colour op (and the image block) carries the ` srgb`
+    //       token, and replays back to sRGB; and
+    //   (b) tagged linear / (b') tagged oklab: the colour emits its token,
+    //       round-trips, and is byte-idempotent under record -> replay ->
+    //       re-record.
     char const *__null_terminated cp_srgb = "build/test_record_cs_srgb.canvas";
     char const *__null_terminated cp_lin  = "build/test_record_cs_lin.canvas";
     char const *__null_terminated cp_okl  = "build/test_record_cs_okl.canvas";
     char const *__null_terminated cp_re   = "build/test_record_cs_re.canvas";
 
     {
-        // (a) Untagged sRGB: every colour op line is exactly the floats, no
-        // trailing token -- so a colour op stays byte-identical whether or not
-        // the working space is sRGB.  put_image_data carries its space on the
-        // image BLOCK, so an sRGB block emits no token either (the block line
-        // stays `... <zlen> <nlines>`).  The file leads with the unconditional
+        // (a) sRGB: every colour op line ends with the ` srgb` token, and the
+        // put_image_data image block carries it too (the block line ends
+        // `... <nlines> srgb`).  The file leads with the unconditional
         // working-space line, naming srgb here.
         record_colors(cp_srgb, CANVAS_CS_SRGB);
         char buf[1 << 13];
         int const n = slurp(cp_srgb, buf, (int)sizeof buf);
         CHECK(n > 0 && n < (int)sizeof buf);
         CHECK(n >= 19 && memcmp(buf, "working_space srgb\n", 19) == 0);
-        CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.25 0.5 0.75 1\n"));
-        CHECK(HAS_LINE(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5\n"));
-        CHECK(HAS_LINE(buf, n, "set_shadow_color_rgba 0.5 0.5 0.5 0.25\n"));
-        CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1\n"));
-        CHECK(HAS_LINE(buf, n, "add_stroke_color_stop 1 0 1 0 1\n"));
-        CHECK(HAS_LINE(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5\n"));
-        // No colour-op line carries a trailing space token: a tagged form of any
-        // of them must be absent.  (The bare names "srgb"/"linear"/"oklab" can't
-        // be probed directly here -- set_fill_linear_gradient legitimately spells
-        // "linear", and the leading working_space line legitimately ends ` srgb` --
-        // so assert the absence of the actual tagged op lines.)
-        CHECK(HAS_NO_SUBSTR(buf, n, "set_fill_rgba 0.25 0.5 0.75 1 "));
-        CHECK(HAS_NO_SUBSTR(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5 "));
-        CHECK(HAS_NO_SUBSTR(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 "));
-        // No colour op ends with a non-sRGB token (the working_space line names
-        // srgb, the put_image_data block line ends after its <nlines> count, the
-        // op lines after their floats).
+        CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.25 0.5 0.75 1 srgb\n"));
+        CHECK(HAS_LINE(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5 srgb\n"));
+        CHECK(HAS_LINE(buf, n, "set_shadow_color_rgba 0.5 0.5 0.5 0.25 srgb\n"));
+        CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1 srgb\n"));
+        CHECK(HAS_LINE(buf, n, "add_stroke_color_stop 1 0 1 0 1 srgb\n"));
+        CHECK(HAS_LINE(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 srgb\n"));
+        // The token is always present, so the untagged (no-trailing-token) form
+        // of any colour op must be absent.
+        CHECK(HAS_NO_SUBSTR(buf, n, "set_fill_rgba 0.25 0.5 0.75 1\n"));
+        CHECK(HAS_NO_SUBSTR(buf, n, "set_stroke_rgba 0.125 0.25 0.375 0.5\n"));
+        CHECK(HAS_NO_SUBSTR(buf, n, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5\n"));
+        // The sRGB block names its space too: match the block prefix, walk to end
+        // of line, and assert it ends with the ` srgb` tag.
+        {
+            char const pfx[] = "image 0 unorm8 unpremul 2 2 ";
+            char const tag[] = " srgb";
+            int const pm = (int)sizeof pfx - 1, tm = (int)sizeof tag - 1;
+            bool found = false;
+            for (int i = 0; i + pm <= n; i++) {
+                if ((i == 0 || buf[i - 1] == '\n') && eq_at(buf, n, i, pfx, pm)) {
+                    int e = i;
+                    while (e < n && buf[e] != '\n') { e++; }
+                    found = eq_at(buf, n, e - tm, tag, tm);
+                    break;
+                }
+            }
+            CHECK(found);
+        }
+        // No colour op carries a non-sRGB token here.
         CHECK(HAS_NO_SUBSTR(buf, n, " linear\n"));
         CHECK(HAS_NO_SUBSTR(buf, n, " oklab\n"));
         // It replays without error onto a fresh canvas.
@@ -635,19 +647,27 @@ int main(void) {
         }
     }
 
-    // 6. Strict parsing: an unknown trailing colour-space token on a colour op
-    // line is rejected (replay returns false), like every other bad enum token.
-    // A well-formed leading subset already applied; the canvas stays valid.
+    // 6. Strict parsing: the colour-space token is REQUIRED on every colour op
+    // line (the spaces are peers), so a missing token is malformed (replay
+    // returns false) just like an unknown one.  A well-formed leading subset
+    // already applied; the canvas stays valid.
 #define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
     {
         struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         // The valid tokens parse.
-        CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1\n"));          // untagged sRGB
+        CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 srgb\n"));     // tagged sRGB
         CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 linear\n"));   // tagged linear
         CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 oklab\n"));    // tagged oklab
         CHECK(REPLAY(cv, "add_stroke_color_stop 1 0 1 0 1 linear\n"));
         CHECK(REPLAY(cv, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 oklab\n"));
+        // A MISSING token is now malformed (no implicit sRGB default).
+        CHECK(!REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1\n"));
+        CHECK(!REPLAY(cv, "set_stroke_rgba 0.125 0.25 0.375 0.5\n"));
+        CHECK(!REPLAY(cv, "set_shadow_color_rgba 0.5 0.5 0.5 0.25\n"));
+        CHECK(!REPLAY(cv, "add_fill_color_stop 0 1 0 0 1\n"));
+        CHECK(!REPLAY(cv, "add_stroke_color_stop 1 0 1 0 1\n"));
+        CHECK(!REPLAY(cv, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5\n"));
         // An unknown trailing token is malformed.
         CHECK(!REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 rec709\n"));  // bad space name
         CHECK(!REPLAY(cv, "set_stroke_rgba 0 0 0 1 sideways\n"));
@@ -656,6 +676,8 @@ int main(void) {
         CHECK(!REPLAY(cv, "add_filter_drop_shadow 2 2 1 0.25 0.5 0.75 0.5 xyz\n"));
         // A valid token followed by junk is malformed too.
         CHECK(!REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 linear extra\n"));
+        // An image block missing its required colour-space token is malformed.
+        CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 8 1\nbits eJxjYGD4DwABBAEB\n"));
         canvas_free(cv);
     }
 #undef REPLAY

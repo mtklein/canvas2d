@@ -1,36 +1,36 @@
 working_space srgb
-set_fill_rgba 0.119999997 0.119999997 0.159999996 1
+set_fill_rgba 0.119999997 0.119999997 0.159999996 1 srgb
 fill_rect 0 0 240 180
-set_fill_rgba 0.899999976 0.25 0.25 1
+set_fill_rgba 0.899999976 0.25 0.25 1 srgb
 fill_rect 20 20 55 55
 save
 translate 150 52
 rotate 0.5
-set_fill_rgba 0.25 0.800000012 0.349999994 1
+set_fill_rgba 0.25 0.800000012 0.349999994 1 srgb
 fill_rect -28 -28 56 56
 restore
 set_global_alpha 0.5
-set_fill_rgba 0.25 0.449999988 0.949999988 1
+set_fill_rgba 0.25 0.449999988 0.949999988 1 srgb
 fill_rect 55 95 110 65
 set_global_alpha 1
-set_fill_rgba 0.300000012 0.850000024 0.850000024 1
+set_fill_rgba 0.300000012 0.850000024 0.850000024 1 srgb
 begin_path
 move_to 100 28
 bezier_curve_to 150 8 150 88 100 68
 bezier_curve_to 70 58 70 38 100 28
 close_path
 fill nonzero
-set_fill_rgba 0.850000024 0.300000012 0.75 1
+set_fill_rgba 0.850000024 0.300000012 0.75 1 srgb
 begin_path
 arc 198 135 28 0 6.28318548 0
 fill nonzero
-set_stroke_rgba 1 0.600000024 0.100000001 1
+set_stroke_rgba 1 0.600000024 0.100000001 1 srgb
 set_line_width 4
 begin_path
 arc 198 135 28 0 6.28318548 0
 close_path
 stroke
-set_stroke_rgba 0.949999988 0.949999988 0.980000019 1
+set_stroke_rgba 0.949999988 0.949999988 0.980000019 1 srgb
 set_line_width 5
 begin_path
 move_to 20 125

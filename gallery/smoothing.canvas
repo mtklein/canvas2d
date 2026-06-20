@@ -1,15 +1,15 @@
 working_space srgb
-set_fill_rgba 0.100000001 0.109999999 0.140000001 1
+set_fill_rgba 0.100000001 0.109999999 0.140000001 1 srgb
 fill_rect 0 0 440 210
 set_image_smoothing_enabled 0
-image 0 unorm8 unpremul 16 16 88 1
+image 0 unorm8 unpremul 16 16 88 1 srgb
 bits eAFjoCKYKaL5H4bRpfHJweRfW/jCMbI6fHLo8n9WbEBRh64Xn/kgvcj68WFc+onRS8h/pNpPqhnExgEx9pJiBi57iTGDWL3YzCBVL7IZ5OodKjQAbpAFzg==
 image_mips 0
 draw_image_scaled 0 24 62 64 64
 draw_image_scaled 0 120 24 140 140
 set_image_smoothing_enabled 1
 draw_image_scaled 0 276 24 140 140
-set_fill_rgba 0.800000012 0.829999983 0.899999976 1
+set_fill_rgba 0.800000012 0.829999983 0.899999976 1 srgb
 set_font_size 14
 set_text_align center
 font 0 1.05999756 0.339996338 Libian TC
