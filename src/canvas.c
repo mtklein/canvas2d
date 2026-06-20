@@ -3421,76 +3421,6 @@ static void sample_src(uint8_t const *__counted_by(slen) src, int slen,
     }
 }
 
-// Saturating float8 → int8 conversion: lane-for-lane matches cnvs_f2i.
-// NaN → 0, ≥ (float)INT_MAX → INT_MAX, ≤ (float)INT_MIN → INT_MIN.
-static inline int8 cnvs_f2i8(float8 v) {
-    int8 r = (int8)0;
-    for (int l = 0; l < 8; l++) {
-        float x = v[l];
-        if (x != x)                  { r[l] = 0;       }
-        else if (x >= (float)INT_MAX) { r[l] = INT_MAX; }
-        else if (x <= (float)INT_MIN) { r[l] = INT_MIN; }
-        else                          { r[l] = (int)x;  }
-    }
-    return r;
-}
-
-// 8-wide bilinear sample of an RGBA8 source.  Tap addresses are data-dependent
-// so the four loads per lane stay scalar; the weight math and lerp run in
-// float8.  Expression order is lane-for-lane identical to sample_src so the
-// FP contraction pattern matches and results are bit-exact.
-// Zero-coverage lanes (cov[l] == 0) are skipped; their output lanes are left
-// at the caller's initial (float8)0.0f.  k is the active lane count (1..8).
-static void sample_src_8wide(uint8_t const *__counted_by(slen) src, int slen,
-                             int sw, int sh,
-                             float8 fsx, float8 fsy,
-                             uint8_t const *__counted_by(k) cov, int k,
-                             float8 *__single sr, float8 *__single sg,
-                             float8 *__single sb, float8 *__single sa) {
-    (void)slen;
-    float8 const gx  = fsx - 0.5f, gy  = fsy - 0.5f;
-    float8 const fxx = __builtin_elementwise_floor(gx);
-    float8 const fyy = __builtin_elementwise_floor(gy);
-    // cnvs_f2i-saturating integer bases (matches sample_src exactly per lane).
-    int8 const bx0 = cnvs_f2i8(fxx), by0 = cnvs_f2i8(fyy);
-    // x1/y1: saturate the +1 (mirrors scalar x1 = x0 < INT_MAX ? x0 + 1 : x0).
-    // Bitwise lane-select: mask is -1 where condition is true, 0 otherwise.
-    int8 const mx1 = bx0 < INT_MAX, my1 = by0 < INT_MAX;
-    int8 const bx1 = ((bx0 + 1) & mx1) | (bx0 & ~mx1);
-    int8 const by1 = ((by0 + 1) & my1) | (by0 & ~my1);
-    // Fractional weights.
-    float8 const tx = gx - fxx, ty = gy - fyy;
-    int const sw1 = sw - 1, sh1 = sh - 1;
-    for (int l = 0; l < k; l++) {
-        if (cov[l] == 0) { continue; }
-        int x0 = bx0[l], x1 = bx1[l];
-        int y0 = by0[l], y1 = by1[l];
-        if (x0 < 0) { x0 = 0; } else if (x0 > sw1) { x0 = sw1; }
-        if (x1 < 0) { x1 = 0; } else if (x1 > sw1) { x1 = sw1; }
-        if (y0 < 0) { y0 = 0; } else if (y0 > sh1) { y0 = sh1; }
-        if (y1 < 0) { y1 = 0; } else if (y1 > sh1) { y1 = sh1; }
-        int const o00 = (y0 * sw + x0) * 4;
-        int const o10 = (y0 * sw + x1) * 4;
-        int const o01 = (y1 * sw + x0) * 4;
-        int const o11 = (y1 * sw + x1) * 4;
-        for (int c = 0; c < 4; c++) {
-            float const c00 = (float)src[o00 + c];
-            float const c10 = (float)src[o10 + c];
-            float const c01 = (float)src[o01 + c];
-            float const c11 = (float)src[o11 + c];
-            float const top = c00 + (c10 - c00) * tx[l];
-            float const bot = c01 + (c11 - c01) * tx[l];
-            float const v   = (top + (bot - top) * ty[l]) / 255.0f;
-            switch (c) {
-                case 0: (*sr)[l] = v; break;
-                case 1: (*sg)[l] = v; break;
-                case 2: (*sb)[l] = v; break;
-                case 3: (*sa)[l] = v; break;
-            }
-        }
-    }
-}
-
 // Nearest-neighbour sample of an RGBA8 source at source-pixel (fx, fy),
 // unpremultiplied, clamp-to-edge: pick the pixel whose cell contains the point.
 static void sample_src_nearest(uint8_t const *__counted_by(slen) src, int slen,
@@ -4131,92 +4061,64 @@ static void draw_image_quad(struct canvas *__single cv,
             float8 const fsy = sy + ((u.y - dy) / dh) * shh;
             float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
                    sa = (float8)0.0f;
-            bool const f16 = src_ct == CANVAS_COLOR_F16;
-            // SAMP_BILINEAR with an RGBA8 source is the hot path.  Hoist the
-            // bilinear weight math and lerp 8-wide; only the four tap loads per
-            // lane stay scalar (data-dependent addresses, no gather).
-            // sample_to_working is nonlinear, so it runs per-lane below.
-            if (samp == SAMP_BILINEAR && !f16) {
-                sample_src_8wide(src, slen, sw, sh, fsx, fsy,
-                                 cv->cov + i, k, &sr, &sg, &sb, &sa);
+            for (int l = 0; l < k; l++) {
+                if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
+                    continue;
+                }
+                float s[4];
+                bool const f16 = src_ct == CANVAS_COLOR_F16;
+                switch (samp) {
+                    case SAMP_NEAREST:
+                        (f16 ? sample_src_nearest_f16 : sample_src_nearest)(
+                            src, slen, sw, sh, fsx[l], fsy[l], s);
+                        break;
+                    case SAMP_BILINEAR:
+                        (f16 ? sample_src_f16 : sample_src)(
+                            src, slen, sw, sh, fsx[l], fsy[l], s);
+                        break;
+                    case SAMP_CUBIC:
+                        (f16 ? sample_src_cubic_f16 : sample_src_cubic)(
+                            src, slen, sw, sh, fsx[l], fsy[l], premul_src, s);
+                        break;
+                    case SAMP_TRILINEAR:
+                        (f16 ? sample_src_f16 : sample_src)(
+                            hi.px, hi.len, hi.w, hi.h,
+                            fsx[l] * lax, fsy[l] * lay, s);
+                        if (lt > 0.0f) {
+                            float s2[4];
+                            (f16 ? sample_src_f16 : sample_src)(
+                                lo.px, lo.len, lo.w, lo.h,
+                                fsx[l] * lbx, fsy[l] * lby, s2);
+                            for (int c = 0; c < 4; c++) {
+                                s[c] += (s2[c] - s[c]) * lt;
+                            }
+                        }
+                        break;
+                }
+                // Sampled in the source's space; convert the resolved sample to
+                // the working space before it composites.  Skipped (bit-exact)
+                // when the spaces match.  The transfer is nonlinear, so a
+                // premultiplied sample unpremultiplies around the convert.
                 if (src_space != cv->space) {
-                    for (int l = 0; l < k; l++) {
-                        if (cv->cov[i + l] == 0) { continue; }
-                        float s[4] = { sr[l], sg[l], sb[l], sa[l] };
-                        if (premul_data) {
-                            float const a = s[3];
-                            if (a > 0.0f) {
-                                s[0] /= a; s[1] /= a; s[2] /= a;
-                                sample_to_working(cv, src_space, s);
-                                s[0] *= a; s[1] *= a; s[2] *= a;
-                            }
-                        } else {
+                    if (premul_data) {
+                        float const a = s[3];
+                        if (a > 0.0f) {
+                            s[0] /= a;
+                            s[1] /= a;
+                            s[2] /= a;
                             sample_to_working(cv, src_space, s);
-                        }
-                        sr[l] = s[0]; sg[l] = s[1];
-                        sb[l] = s[2]; sa[l] = s[3];
+                            s[0] *= a;
+                            s[1] *= a;
+                            s[2] *= a;
+                        }  // a == 0: every channel is already 0
+                    } else {
+                        sample_to_working(cv, src_space, s);
                     }
                 }
-            } else {
-                for (int l = 0; l < k; l++) {
-                    if (cv->cov[i + l] == 0) {  // zero-coverage lane skips its taps
-                        continue;
-                    }
-                    float s[4];
-                    switch (samp) {
-                        case SAMP_NEAREST:
-                            (f16 ? sample_src_nearest_f16 : sample_src_nearest)(
-                                src, slen, sw, sh, fsx[l], fsy[l], s);
-                            break;
-                        case SAMP_BILINEAR:
-                            (f16 ? sample_src_f16 : sample_src)(
-                                src, slen, sw, sh, fsx[l], fsy[l], s);
-                            break;
-                        case SAMP_CUBIC:
-                            (f16 ? sample_src_cubic_f16 : sample_src_cubic)(
-                                src, slen, sw, sh, fsx[l], fsy[l], premul_src, s);
-                            break;
-                        case SAMP_TRILINEAR:
-                            (f16 ? sample_src_f16 : sample_src)(
-                                hi.px, hi.len, hi.w, hi.h,
-                                fsx[l] * lax, fsy[l] * lay, s);
-                            if (lt > 0.0f) {
-                                float s2[4];
-                                (f16 ? sample_src_f16 : sample_src)(
-                                    lo.px, lo.len, lo.w, lo.h,
-                                    fsx[l] * lbx, fsy[l] * lby, s2);
-                                for (int c = 0; c < 4; c++) {
-                                    s[c] += (s2[c] - s[c]) * lt;
-                                }
-                            }
-                            break;
-                    }
-                    // Sampled in the source's space; convert the resolved sample
-                    // to the working space before it composites.  Skipped
-                    // (bit-exact) when the spaces match.  The transfer is
-                    // nonlinear, so a premultiplied sample unpremultiplies around
-                    // the convert.
-                    if (src_space != cv->space) {
-                        if (premul_data) {
-                            float const a = s[3];
-                            if (a > 0.0f) {
-                                s[0] /= a;
-                                s[1] /= a;
-                                s[2] /= a;
-                                sample_to_working(cv, src_space, s);
-                                s[0] *= a;
-                                s[1] *= a;
-                                s[2] *= a;
-                            }  // a == 0: every channel is already 0
-                        } else {
-                            sample_to_working(cv, src_space, s);
-                        }
-                    }
-                    sr[l] = s[0];
-                    sg[l] = s[1];
-                    sb[l] = s[2];
-                    sa[l] = s[3];
-                }
+                sr[l] = s[0];
+                sg[l] = s[1];
+                sb[l] = s[2];
+                sa[l] = s[3];
             }
             half8 const covh = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
                                              : cover8(cv->cov + i))
