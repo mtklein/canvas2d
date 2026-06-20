@@ -480,23 +480,25 @@ ninja profile      # sample(1): per-kernel self-time within a phase
 ```
 
 Hot paths are benchmarked in isolation ([bench/](bench/)), plus an end-to-end
-run; all CPU-only. A run on an Apple Silicon laptop:
+run; all CPU-only. A run on an Apple M4 Max (default `BENCH_REPS`):
 
 | Phase | `release` (checked) | `unsafe` | overhead |
 |---|---|---|---|
-| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 71 ms | 71 ms | **1.00×** |
-| `bench_stroke` — stroke expansion: 4-wide segment/join planes, block-staged verts | 26 ms | 26 ms | **1.00×** |
-| `bench_gradient_fill` — gradient fill: 8-wide radial solve + 8-wide exact stop lerp | 14.5 ms | 14.4 ms | **1.01×** |
-| `bench_flatten_real` — cubic flattening, median case (arc / glyph-like curves) | 39 ms | 39 ms | **1.00×** |
-| `bench_flatten` — cubic flattening, worst case (random control points) | 118 ms | 116 ms | **1.01×** |
-| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 9.0 ms | 8.8 ms | **1.02×** |
-| `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15 ms | 14 ms | **1.10×** |
-| `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 34 ms | 30 ms | **1.11×** |
-| `bench` — end-to-end (renders + PNG-encodes each frame; codec-bound) | 42 ms | 38 ms | **1.11×** |
-| `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 30 ms | 26 ms | **1.14×** |
-| `bench_render_large` — a full gallery-scale scene, planar f16 compositing | 179 ms | 147 ms | **1.22×** |
-| `bench_render` — the same at default size | 18 ms | 15 ms | **1.23×** |
-| `bench_png` — PNG encode, synthetic run-heavy 256×256 (long-match stress) | 14 ms | 9.6 ms | **1.40×** |
+| `bench_flatten` — cubic flattening, worst case (random control points) | 119 ms | 121 ms | **1.00×** |
+| `bench_gradient` — gradient eval, per-pixel stop scan (radial solve + colour lerp) | 78 ms | 78 ms | **1.01×** |
+| `bench_gradient_fill` — gradient fill: 8-wide radial solve + 8-wide exact stop lerp | 13.7 ms | 13.5 ms | **1.01×** |
+| `bench_stroke` — stroke expansion: 4-wide segment/join planes, block-staged verts | 27 ms | 27 ms | **1.01×** |
+| `bench_blit` — clipped 2D RGBA8 blit (getImageData copy) | 8.7 ms | 8.6 ms | **1.01×** |
+| `bench_flatten_real` — cubic flattening, median case (arc / glyph-like curves) | 41 ms | 39 ms | **1.04×** |
+| `bench_drawimage` — bilinear image draws, the u8 sampler taps | 56 ms | 52 ms | **1.08×** |
+| `bench_fill` — analytic coverage fill (8-wide accumulate + resolve) | 31 ms | 28 ms | **1.11×** |
+| `bench_blur_h` — box blur, horizontal pass (8-wide windows) | 33 ms | 30 ms | **1.11×** |
+| `bench` — end-to-end (renders + PNG-encodes each frame; codec-bound) | 51 ms | 45 ms | **1.14×** |
+| `bench_render_large` — a full gallery-scale scene, planar f16 compositing | 94 ms | 80 ms | **1.18×** |
+| `bench_blur_v` — box blur, vertical pass (8 columns per step) | 15.8 ms | 13.3 ms | **1.19×** |
+| `bench_pngencode` — canvas → BT.2100 PNG encode (8-wide PQ OETF + Rec.2020, then deflate) | 47 ms | 38 ms | **1.22×** |
+| `bench_render` — the same at default size | 11.1 ms | 9.1 ms | **1.22×** |
+| `bench_png` — PNG encode, synthetic run-heavy 16-bit 256×256 (deflate long-match stress) | 28 ms | 18 ms | **1.57×** |
 
 Per-element bounds checks are the cost, so a kernel's overhead tracks how much
 it indexes versus computes; 8-wide kernels amortize the checks toward 1.0×.

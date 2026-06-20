@@ -21,7 +21,7 @@
 // fonts -- the CI runner has no Libian TC, it is download-on-demand -- that
 // fallback would also have produced different, wrong, or blank glyphs, which
 // the byte compare independently catches).  Scenes that draw no text pass (d)
-// trivially; the ten TEXT scenes additionally assert the cache saw real
+// trivially; the eleven TEXT scenes additionally assert the cache saw real
 // traffic (shape/glyph hits > 0), so the zero-miss claim can't pass vacuously
 // where it matters.  Run on the fontless runner via bare ninja, this is what
 // proves replay used the embedded data, not the host's fonts; locally (where
