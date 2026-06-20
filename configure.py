@@ -231,7 +231,7 @@ def main():
         "drawimage", "ellipserot", "emoji", "emojiscale", "extendedrange", "filters",
         "gradients", "gradinterp",
         "hittest",
-        "imagecolorspace", "imagedata", "imagescale", "joins", "linearlight", "miterdash",
+        "imagecolorspace", "imagedata", "imagedataf16", "imagescale", "joins", "linearlight", "miterdash",
         "nestedclip", "path2d", "paths", "pattern",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",

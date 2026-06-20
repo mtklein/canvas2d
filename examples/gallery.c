@@ -2027,6 +2027,64 @@ static void extendedrange(void) {
     save(c, "gallery/extendedrange.png");
 }
 
+// rgba-float16 ImageData: the float16 get/put twins carry the extended range an
+// RGBA8 ImageData cannot.  The same 0..6x HDR grey ramp is deposited three ways on
+// a linear canvas -- RGBA8 putImageData (top, clamped: everything past linear 1.0
+// saturates to flat white), float16 putImageData (middle, the ramp keeps
+// brightening, PQ-encoded as HDR highlights), and a float16 getImageData ->
+// putImageData round trip of the middle row (bottom, lossless: identical to it).
+static void imagedataf16(void) {
+    int const w = 480, h = 284;
+    struct canvas *__single c = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/imagedataf16.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)w, (float)h);
+    canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
+    canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
+    canvas_set_font_size(c, 13.0f);
+
+    int const iw = 440, ih = 48, ix = 20;
+    int const flen = iw * ih * 4;       // RGBA element count (u8 bytes == f16 elements)
+    float const peak = 6.0f;            // the ramp runs 0 .. 6x linear (1.0 == ref white)
+
+    _Float16 *__counted_by(flen) f16 = malloc((size_t)flen * sizeof *f16);
+    uint8_t  *__counted_by(flen) u8  = malloc((size_t)flen);
+    _Float16 *__counted_by(flen) rt  = malloc((size_t)flen * sizeof *rt);
+    if (f16 && u8 && rt) {
+        for (int x = 0; x < iw; x++) {
+            float const v = peak * (float)x / (float)(iw - 1);             // 0 .. peak
+            _Float16 const hv = (_Float16)v;
+            uint8_t const bv = (uint8_t)(cnvs_clamp01(v) * 255.0f + 0.5f);  // u8 clamps >1
+            for (int y = 0; y < ih; y++) {
+                int const o = (y * iw + x) * 4;
+                f16[o + 0] = hv; f16[o + 1] = hv; f16[o + 2] = hv; f16[o + 3] = (_Float16)1.0f;
+                u8[o + 0] = bv;  u8[o + 1] = bv;  u8[o + 2] = bv;  u8[o + 3] = 255;
+            }
+        }
+
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+        canvas_fill_text(c, "RGBA8 putImageData: HDR clamps to flat white", (float)ix, 28.0f);
+        canvas_put_image_data(c, CANVAS_CS_LINEAR_SRGB, u8, flen, iw, ih, ix, 40);
+
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+        canvas_fill_text(c, "float16 putImageData: HDR preserved (0..6x)", (float)ix, 122.0f);
+        canvas_put_image_data_f16(c, CANVAS_CS_LINEAR_SRGB, f16, flen, iw, ih, ix, 134);
+
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
+        canvas_fill_text(c, "float16 getImageData -> putImageData: lossless round trip",
+                         (float)ix, 216.0f);
+        canvas_get_image_data_f16(c, CANVAS_CS_LINEAR_SRGB, ix, 134, iw, ih, rt, flen);
+        canvas_put_image_data_f16(c, CANVAS_CS_LINEAR_SRGB, rt, flen, iw, ih, ix, 228);
+    }
+    free(f16);
+    free(u8);
+    free(rt);
+    save(c, "gallery/imagedataf16.png");
+}
+
 // Image colour-space conversion on a linear-working-space canvas, shown as a
 // difference: a mid-tone-rich sRGB test card -- a grayscale ramp, per-channel
 // ramps, and mid-tone colour swatches, where the sRGB transfer curves most --
@@ -3027,6 +3085,7 @@ static void render_all(void) {
     emoji();
     emojiscale();
     extendedrange();
+    imagedataf16();
     imagecolorspace();
     imagescale();
     shaping();
