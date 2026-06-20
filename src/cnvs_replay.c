@@ -1087,6 +1087,41 @@ static bool read_image_id(struct replay_blocks *__single b,
     return true;
 }
 
+// An f16 image block is carried as bytes (the format's image buffers are all
+// byte buffers, read element-by-element); the f16 putImageData API speaks
+// aligned _Float16.  These copy the block's w*h*4*2 bytes into an aligned
+// _Float16 buffer (element count len == bytes/2) and call the API, the byte
+// buffer never reinterpret-cast.  False on OOM (replay stops, the canvas stays
+// valid -- the recorder's caps bound the block at CNVS_REC_IMAGE_BYTES_MAX).
+static bool replay_put_f16(struct canvas *__single cv, struct replay_image const *__single im,
+                           int dx, int dy) {
+    int const len = im->len / (int)sizeof(_Float16);
+    _Float16 *__counted_by_or_null(len) px = malloc((size_t)im->len);
+    if (!px) {
+        return false;
+    }
+    memcpy(px, im->px, (size_t)im->len);
+    canvas_put_image_data_f16(cv, im->cs, px, len, im->w, im->h, dx, dy);
+    free(px);
+    return true;
+}
+
+static bool replay_put_dirty_f16(struct canvas *__single cv,
+                                 struct replay_image const *__single im,
+                                 int dx, int dy,
+                                 int dirty_x, int dirty_y, int dirty_w, int dirty_h) {
+    int const len = im->len / (int)sizeof(_Float16);
+    _Float16 *__counted_by_or_null(len) px = malloc((size_t)im->len);
+    if (!px) {
+        return false;
+    }
+    memcpy(px, im->px, (size_t)im->len);
+    canvas_put_image_data_dirty_f16(cv, im->cs, px, len, im->w, im->h, dx, dy,
+                                    dirty_x, dirty_y, dirty_w, dirty_h);
+    free(px);
+    return true;
+}
+
 static bool replay_line(struct canvas *__single cv, struct replay_blocks *__single blk,
                         char const *__counted_by(le) data, size_t ls, size_t le) {
     size_t j = ls;
@@ -1451,30 +1486,44 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         long v[2];
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_ints(data, le, &j, INT_MAX, v, 2)) return false;
-        // put_image_data is straight unorm8 by contract; the recorder never
-        // points it at another flavour, so a file that does is malformed.
-        if (blk->img[id].ct != CANVAS_COLOR_UNORM8 ||
-            blk->img[id].at != CANVAS_ALPHA_UNPREMUL) return false;
-        // The input's colour space rode the block's optional colour-space tag
-        // (absent == sRGB), so replay re-applies whatever the block declared --
-        // an untagged sRGB put_image_data stays byte-identical, a tagged one
-        // round-trips.
-        canvas_put_image_data(cv, blk->img[id].cs, blk->img[id].px, blk->img[id].len,
-                              blk->img[id].w, blk->img[id].h,
-                              (int)v[0], (int)v[1]);
+        // putImageData is straight (unpremultiplied) by contract; the colour
+        // TYPE on the block picks the API.  The input's colour space rode the
+        // block's optional colour-space tag (absent == sRGB), so replay
+        // re-applies whatever the block declared -- an untagged sRGB unorm8 put
+        // stays byte-identical, a tagged or f16 one round-trips.  An alpha type
+        // other than UNPREMUL, or a colour type that is neither flavour, is a
+        // malformed file.
+        struct replay_image const im = blk->img[id];
+        if (im.at != CANVAS_ALPHA_UNPREMUL) return false;
+        if (im.ct == CANVAS_COLOR_UNORM8) {
+            canvas_put_image_data(cv, im.cs, im.px, im.len, im.w, im.h,
+                                  (int)v[0], (int)v[1]);
+        } else if (im.ct == CANVAS_COLOR_F16) {
+            if (!replay_put_f16(cv, &blk->img[id], (int)v[0], (int)v[1])) return false;
+        } else {
+            return false;
+        }
     }
     else if (tok_eq(data, le, cs, cl, "put_image_data_dirty")) {
         int id;
         long v[6];
         if (!read_image_id(blk, data, le, &j, &id) ||
             !read_ints(data, le, &j, INT_MAX, v, 6)) return false;
-        // The input's colour space rode the block's optional tag (absent ==
-        // sRGB), as for put_image_data above.
-        canvas_put_image_data_dirty(cv, blk->img[id].cs,
-                                    blk->img[id].px, blk->img[id].len,
-                                    blk->img[id].w, blk->img[id].h,
-                                    (int)v[0], (int)v[1], (int)v[2], (int)v[3],
-                                    (int)v[4], (int)v[5]);
+        // The colour type picks the API and the colour space rode the block's
+        // optional tag, exactly as for put_image_data above.
+        struct replay_image const im = blk->img[id];
+        if (im.at != CANVAS_ALPHA_UNPREMUL) return false;
+        if (im.ct == CANVAS_COLOR_UNORM8) {
+            canvas_put_image_data_dirty(cv, im.cs, im.px, im.len, im.w, im.h,
+                                        (int)v[0], (int)v[1], (int)v[2], (int)v[3],
+                                        (int)v[4], (int)v[5]);
+        } else if (im.ct == CANVAS_COLOR_F16) {
+            if (!replay_put_dirty_f16(cv, &blk->img[id], (int)v[0], (int)v[1],
+                                      (int)v[2], (int)v[3], (int)v[4], (int)v[5]))
+                return false;
+        } else {
+            return false;
+        }
     }
     else if (tok_eq(data, le, cs, cl, "set_fill_pattern") ||
              tok_eq(data, le, cs, cl, "set_stroke_pattern")) {

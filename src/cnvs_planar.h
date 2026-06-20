@@ -152,6 +152,25 @@ static inline cnvs_px8 cnvs_px8_load_unpremul_k(cnvs_unpremul const *__counted_b
     return o;
 }
 
+// The store twin of cnvs_px8_load_unpremul: re-interleave eight straight RGBA
+// colours back to contiguous cnvs_unpremul, st4 at the seam.  Structurally
+// cnvs_px8_store to a cnvs_unpremul rather than a cnvs_premul; values pass
+// through unbounded (the f16 readback emits extended colour).
+static inline void cnvs_px8_store_unpremul(cnvs_unpremul *__counted_by(8) p,
+                                           cnvs_px8 px) {
+    float16x8x4_t v = { { (float16x8_t)px.r, (float16x8_t)px.g,
+                          (float16x8_t)px.b, (float16x8_t)px.a } };
+    vst4q_f16((float16_t *)p, v);
+}
+
+static inline void cnvs_px8_store_unpremul_k(cnvs_unpremul *__counted_by(k) p, int k,
+                                             cnvs_px8 px) {
+    for (int i = 0; i < k && i < 8; i++) {
+        half4 q = { px.r[i], px.g[i], px.b[i], px.a[i] };
+        memcpy(&p[i], &q, sizeof q);
+    }
+}
+
 // --- the coverage seam (one contiguous byte per pixel; no deinterleave) -----
 
 static inline half8 half8_from_u8(uint8_t const *__counted_by(8) p) {
@@ -186,6 +205,18 @@ static inline cnvs_px8 cnvs_px8_premultiply(cnvs_px8 p) {
     o.b = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.b));
     o.a = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.a));
     return o;
+}
+
+// Planar premultiply that keeps extended colour: scale the rgb planes by the
+// alpha plane and clamp ONLY alpha into [0,1] (the surface-alpha invariant),
+// leaving the colour planes unbounded in both directions.  The f16 putImageData
+// deposit's premultiply, where HDR (>1) and wide-gamut (negative) colour must
+// survive into the COPY blend.  A peer of cnvs_px8_premultiply (which clamps
+// every plane to [0,1]); kept separate so the u8 path's clamp stays untouched.
+static inline cnvs_px8 cnvs_px8_premultiply_unclamped(cnvs_px8 p) {
+    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    half8 const a = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, p.a));
+    return (cnvs_px8){ p.r * a, p.g * a, p.b * a, a };  // colour planes unbounded
 }
 
 // The blend stage's output clamp: ao = min(a, 1) ('lighter' can exceed 1), and
