@@ -95,6 +95,7 @@ static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
 #endif
 
 typedef uint8_t pngu8x16 __attribute__((ext_vector_type(16)));
+typedef uint16_t pngu16x8 __attribute__((ext_vector_type(8)));
 
 // Up-filter one row: out[i] = cur[i] - prev[i] mod 256.  Whole-vector ops via
 // the memcpy idiom -- one bounds check per 16-byte block (the struct cnvs_cover
@@ -149,9 +150,19 @@ cnvs_png_encode(uint16_t const *__counted_by(width * height * 4) pixels,
             uint16_t const *__counted_by(samples) row =
                 pixels + (size_t)y * (size_t)samples;
             uint8_t *__counted_by(stride) dst = be + (size_t)y * (size_t)stride;
-            for (int x = 0; x < samples; x++) {
+            // Byte-swap eight samples at a time (one bounds check per 16-byte
+            // block, not per byte): a little-endian store of the swapped lanes
+            // lays the bytes down big-endian.  Scalar tail for samples % 8.
+            int x = 0;
+            for (; x + 8 <= samples; x += 8) {
+                pngu16x8 v;
+                memcpy(&v, row + x, sizeof v);       // bounds-checked vector load
+                v = (v << 8) | (v >> 8);             // swap each 16-bit lane
+                memcpy(dst + x * 2, &v, sizeof v);   // bounds-checked vector store
+            }
+            for (; x < samples; x++) {
                 uint16_t const v = row[x];
-                dst[x * 2]     = (uint8_t)(v >> 8);     // big-endian
+                dst[x * 2]     = (uint8_t)(v >> 8);  // big-endian
                 dst[x * 2 + 1] = (uint8_t)(v & 0xffu);
             }
         }
