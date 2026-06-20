@@ -60,8 +60,15 @@ struct cnvs_shaped {
 // `weight` (CSS 100..900) and `italic` build the shaping font through a font
 // descriptor's traits, so the family's nearest real bold/italic face is matched
 // -- or, when it has none, the platform synthesizes one (the requested trait is
-// honoured, never silently dropped to regular).
-// NULL on failure.  Implemented in the unsafe boundary TU.  Both strings cross the
+// honoured, never silently dropped to regular).  `kerning` and `rendering` are
+// the canvas_font_kerning / canvas_text_rendering enums as ints: they set
+// kerning and ligature attributes on the shaped run (kerning NONE or rendering
+// OPTIMIZE_SPEED disables kerning; OPTIMIZE_SPEED also disables ligatures; the
+// other values leave Core Text's defaults).  `lang` is a BCP-47 tag (lang_len
+// bytes, may be empty) set as the run's language for locale-dependent glyph
+// selection; empty sets none.  These are shaping INPUTS (they change advances/
+// glyph choice, baked into the runs), not glyph-outline identity.
+// NULL on failure.  Implemented in the unsafe boundary TU.  All strings cross the
 // boundary as counted (bytes, len) slices -- CFStringCreateWithBytes takes exactly
 // that -- so checked callers hand over the (ptr, len) pairs they already hold: no
 // NUL-terminated copy exists anywhere internal, and the shim cannot over-read a
@@ -69,6 +76,8 @@ struct cnvs_shaped {
 // ergonomics; the strlen happens once at that entry point, in-rules.)
 struct cnvs_shaped *__single cnvs_shape_text(char const *__counted_by(name_len) name, int name_len,
                                  float size_px, bool rtl, int weight, bool italic,
+                                 int kerning, int rendering,
+                                 char const *__counted_by(lang_len) lang, int lang_len,
                                  char const *__counted_by(text_len) text, int text_len);
 void cnvs_shaped_free(struct cnvs_shaped *__single s);
 
@@ -147,7 +156,8 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 // hands back.  Two maps:
 //
 //   - shaped lines, keyed by (font family, size_px bits, paragraph direction,
-//     letterSpacing bits, wordSpacing bits, weight, style, text bytes) -> the
+//     letterSpacing bits, wordSpacing bits, weight, style, kerning, rendering,
+//     lang bytes, text bytes) -> the
 //     struct cnvs_shaped.  The family is IN the key (the REQUESTED name, not the
 //     resolved one): two families of the same bytes/size are two distinct lines.
 //     Direction is IN the key because the same bytes shape
@@ -157,7 +167,11 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 //     advances (cnvs_shaped_apply_spacing) before it is interned, so two
 //     spacings of the same bytes are two distinct lines.  weight and style are
 //     IN the key because they pick a different (real or synthesized) face, so
-//     bold and regular of the same bytes are two distinct lines.  The cache OWNS
+//     bold and regular of the same bytes are two distinct lines.  kerning,
+//     rendering, and lang are IN the key because they are shaping inputs that
+//     change the runs' advances (kerning), ligature formation (rendering), and
+//     glyph selection (lang), so two toggle settings of the same bytes are two
+//     distinct lines.  The cache OWNS
 //     its entries (each run's retained CTFontRef stays alive with them); call
 //     sites borrow.  Fixed CNVS_SHAPING_CACHE_N slots, evicted
 //     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
@@ -216,6 +230,10 @@ struct cnvs_shaping_slot {
     int weight;          // CSS 100..900, the key's weight part
     bool italic;         // fontStyle italic, the key's style part
     bool rtl;            // paragraph direction, the key's third part
+    int kerning;         // canvas_font_kerning, the key's kerning part
+    int rendering;       // canvas_text_rendering, the key's rendering part
+    char *__counted_by(lang_len) lang;  // owned key copy of the BCP-47 lang tag
+    int lang_len;                       // (0 = no language)
     uint64_t last_use;   // tick at last use, the LRU ordering
     struct cnvs_shaped *__single s;  // owned; freed on eviction/clear
     bool emitted;  // already serialized into the active recording (cnvs_record.c)
@@ -304,6 +322,7 @@ void cnvs_text_cache_reset(struct cnvs_text_cache *__single c);  // free entries
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
+        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len);
 
 // Intern `font`'s name under (name, weight, style) (one boundary name fetch per
@@ -418,6 +437,7 @@ float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
+        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s);
 
@@ -428,6 +448,7 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
+        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len);
 
 // Clear every `emitted` mark (font names, glyphs, shaped lines): a new

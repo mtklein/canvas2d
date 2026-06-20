@@ -371,6 +371,10 @@ struct replay_blocks {
     float ls, ws;                   // ...and its letter/word spacing halves
     int weight;                     // ...its weight half...
     bool italic;                    // ...its style half...
+    int kerning;                    // ...its fontKerning half...
+    int rendering;                  // ...its textRendering half...
+    char *__counted_by(lang_len) lang;  // ...its lang tag (owned copy; the key's
+    int lang_len;                       // lang part)...
     char *__counted_by(fam_len) fam;  // ...the requested family (the key's family
     int fam_len;                      // part; owned copy of the bytes)...
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
@@ -431,6 +435,9 @@ static void blocks_drop(struct replay_blocks *__single b) {
     free(b->fam);
     b->fam_len = 0;
     b->fam = NULL;
+    free(b->lang);
+    b->lang_len = 0;
+    b->lang = NULL;
 }
 
 // Free the pending bitmap/image state (a block whose `bits` lines never
@@ -465,15 +472,17 @@ static void paths_drop(struct replay_blocks *__single b) {
 }
 
 // The pending shape's last run line landed: hand it to the cache, which takes
-// ownership, under its (family, size_px, rtl, ls, ws, weight, style, text) key --
-// exactly the key a live lookup uses, so the fill_text/stroke_text op that
-// follows hits (and two families, two weights/styles, or an ltr and an rtl
-// shaping, of the same bytes land in distinct slots, never aliased).
+// ownership, under its (family, size_px, rtl, ls, ws, weight, style, kerning,
+// rendering, lang, text) key -- exactly the key a live lookup uses, so the
+// fill_text/stroke_text op that follows hits (and two families, two
+// weights/styles, two toggle settings, or an ltr and an rtl shaping, of the same
+// bytes land in distinct slots, never aliased).
 static void blocks_finish_shaping(struct canvas *__single cv,
                                 struct replay_blocks *__single b) {
     cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->fam, b->fam_len,
                               b->size_px, b->rtl,
                               b->ls, b->ws, b->weight, b->italic,
+                              b->kerning, b->rendering, b->lang, b->lang_len,
                               b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
     // The block's ls/ws are only its cache key.  The canvas's spacing state --
@@ -973,27 +982,34 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
     return true;
 }
 
-// shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <fam-len> <fam...>
+// shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <kerning 0-2>
+// <rendering 0-3> <lang-len> <lang...> <fam-len> <fam...>
 // <utf16-len> <nruns> <byte-len> <text...> -- begin one shaped line; its `run`
 // lines must follow immediately.  weight/style are the font weight/style halves
 // of the cache key (always present, even at the 400/upright default), so a bold
-// or italic shaping of the same bytes keys distinctly.  fam is the requested
-// family (the cache key's family part, always present even for the default),
-// length-prefixed raw bytes after a single separating space.  rtl is the
-// paragraph direction the line was shaped under, ls/ws the letterSpacing/
+// or italic shaping of the same bytes keys distinctly.  kerning/rendering are the
+// shaping-toggle enums (canvas_font_kerning 0-2 / canvas_text_rendering 0-3,
+// always present even at the AUTO default), and lang is the BCP-47 tag
+// (length-prefixed raw bytes after a single separating space, may be empty) --
+// all halves of the cache key, since they change the runs' advances/glyphs.  fam
+// is the requested family (the cache key's family part, always present even for
+// the default), length-prefixed raw bytes after a single separating space.  rtl
+// is the paragraph direction the line was shaped under, ls/ws the letterSpacing/
 // wordSpacing -- the other halves of the cache key, since the same bytes shape
 // (and space) differently under each.  ls/ws are always present (the recorder
 // writes them even when 0); the spacing is already baked into the run advances,
 // so they serve only to key the rebuilt line.  The text is exactly byte-len raw
 // bytes after a single separating space (it is the cache key, byte for byte).
-// Strict: finite size/ls/ws, weight in CSS [100, 900], style 0/1, fam-len bytes
+// Strict: finite size/ls/ws, weight in CSS [100, 900], style 0/1, kerning 0-2,
+// rendering 0-3, lang-len/fam-len bytes
 // present, utf16-len <= byte-len (every UTF-16 unit costs at least one UTF-8
 // byte), and the byte count exactly fills the line.
 static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
     float size = 0.0f, ls = 0.0f, ws = 0.0f;
     bool rtl = false;
-    long weight = 0, style = 0, famlen = 0, t16 = 0, nruns = 0, blen = 0;
+    long weight = 0, style = 0, kerning = 0, rendering = 0,
+         langlen = 0, famlen = 0, t16 = 0, nruns = 0, blen = 0;
     if (!read_float(data, le, &j, &size) || !isfinite(size) || size < 0.0f) {
         return false;
     }
@@ -1008,6 +1024,24 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
         !read_uint(data, le, &j, 1, &style)) {
         return false;
     }
+    // The shaping toggles: kerning in canvas_font_kerning's [0, 2] and rendering
+    // in canvas_text_rendering's [0, 3], so an out-of-range enum is a malformed
+    // file (the live setter would have ignored it).
+    if (!read_uint(data, le, &j, 2, &kerning) ||
+        !read_uint(data, le, &j, 3, &rendering)) {
+        return false;
+    }
+    // The lang tag: a length, then a single separator space, then exactly
+    // langlen raw bytes (length-prefixed like the family, may be empty).
+    if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &langlen)) {
+        return false;
+    }
+    if (j < le && data[j] == ' ') { j++; }  // the single separator before the lang
+    if ((size_t)langlen > le - j) {
+        return false;  // lang bytes don't fit the remaining line
+    }
+    size_t const lang_start = j;
+    j += (size_t)langlen;
     // The family: a length, then a single separator space, then exactly famlen
     // raw bytes (the name can contain spaces, so it is length-prefixed, not a
     // token).  Bounded by REPLAY_LINE_MAX like the other counts.
@@ -1046,13 +1080,18 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
         s->run = runs;
         s->nruns = (int)nruns;
     }
+    char *langbuf = malloc((size_t)langlen > 0 ? (size_t)langlen : 1);
     char *fam = malloc((size_t)famlen > 0 ? (size_t)famlen : 1);
     char *txt = malloc((size_t)blen > 0 ? (size_t)blen : 1);
-    if (!fam || !txt) {
+    if (!langbuf || !fam || !txt) {
+        free(langbuf);
         free(fam);
         free(txt);
         cnvs_shaped_free(s);
         return false;
+    }
+    if (langlen > 0) {
+        memcpy(langbuf, data + lang_start, (size_t)langlen);
     }
     if (famlen > 0) {
         memcpy(fam, data + fam_start, (size_t)famlen);
@@ -1068,6 +1107,10 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     b->ws = ws;
     b->weight = (int)weight;
     b->italic = style != 0;
+    b->kerning = (int)kerning;
+    b->rendering = (int)rendering;
+    b->lang = langbuf;
+    b->lang_len = (int)langlen;
     b->fam = fam;
     b->fam_len = (int)famlen;
     b->text = txt;
@@ -1467,6 +1510,35 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (tok_eq(data, le, ts, tl, "normal"))      canvas_set_font_style(cv, CANVAS_FONT_STYLE_NORMAL);
         else if (tok_eq(data, le, ts, tl, "italic")) canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
         else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_font_kerning")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "auto"))        canvas_set_font_kerning(cv, CANVAS_FONT_KERNING_AUTO);
+        else if (tok_eq(data, le, ts, tl, "normal")) canvas_set_font_kerning(cv, CANVAS_FONT_KERNING_NORMAL);
+        else if (tok_eq(data, le, ts, tl, "none"))   canvas_set_font_kerning(cv, CANVAS_FONT_KERNING_NONE);
+        else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_text_rendering")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "auto"))                     canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_AUTO);
+        else if (tok_eq(data, le, ts, tl, "optimizeSpeed"))       canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_OPTIMIZE_SPEED);
+        else if (tok_eq(data, le, ts, tl, "optimizeLegibility"))  canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_OPTIMIZE_LEGIBILITY);
+        else if (tok_eq(data, le, ts, tl, "geometricPrecision"))  canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_GEOMETRIC_PRECISION);
+        else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_lang")) {
+        // <len> <bytes> -- a length-prefixed BCP-47 tag (like set_font_family),
+        // the bytes filling exactly to end of line; len 0 clears the language.
+        // Length-counted into the setter, so the parser keeps no
+        // __null_terminated seam.
+        long ll = 0;
+        if (!read_uint(data, le, &j, (long)REPLAY_LINE_MAX, &ll)) return false;
+        if (j < le && data[j] == ' ') { j++; }  // the single separator before the tag
+        if ((size_t)ll != le - j) return false;  // tag fills the rest of the line
+        canvas_set_lang_n(cv, data + j, (int)ll);
+        return true;  // the tag consumed the rest of the line
     }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;

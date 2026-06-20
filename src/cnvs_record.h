@@ -171,7 +171,8 @@ void cnvs_rec_path_rule(struct cnvs_recorder *__single r,
 void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
                           char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
-                          int weight, bool italic,
+                          int weight, bool italic, int kerning, int rendering,
+                          char const *__counted_by(lang_len) lang, int lang_len,
                           char const *__counted_by(len) text, int len);
 
 // `set_font_family <name-len> <name-bytes>` -- the fontFamily setter op (the
@@ -187,6 +188,17 @@ void cnvs_rec_font_family(struct cnvs_recorder *__single r,
 // when the setter is called; the shaping/font blocks carry weight/style
 // regardless (they are the glyph-cache key for synthesized faces).
 void cnvs_rec_font_style(struct cnvs_recorder *__single r, enum canvas_font_style style);
+
+// `set_font_kerning <auto|normal|none>` / `set_text_rendering
+// <auto|optimizeSpeed|optimizeLegibility|geometricPrecision>` -- the shaping-
+// toggle setter ops, written by token like set_font_style.  `set_lang <len>
+// <bytes>` -- the lang setter op, length-prefixed like set_font_family (an empty
+// tag records as len 0).  Recorded only when the setter is called; the `shaping`
+// block lines carry the toggles regardless (they are the shaped-line cache key).
+void cnvs_rec_font_kerning(struct cnvs_recorder *__single r, enum canvas_font_kerning kerning);
+void cnvs_rec_text_rendering(struct cnvs_recorder *__single r, enum canvas_text_rendering rendering);
+void cnvs_rec_lang(struct cnvs_recorder *__single r,
+                   char const *__counted_by(len) tag, int len);
 
 // `name <ints...>` -- the int-typed op lines with no block reference (resize).
 void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminated name,

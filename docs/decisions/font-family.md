@@ -59,7 +59,16 @@ and font-block serialization gain weight/style so bold-A ≠ regular-A; setters 
 ops; gallery bold/italic; tests on differing advances/outlines.
 
 **F3 — the shaping toggles.**  State + setter + recorded op + shaping cache key +
-serialization + the Core Text attribute/feature for each:
+serialization + the Core Text attribute/feature for each.  Split into **F3a**
+(`fontKerning`, `textRendering`, `lang` — the attribute-on-the-run toggles, done)
+and a later **F3b** (`fontVariantCaps`, `fontStretch` — the descriptor/feature
+toggles).  F3a's three join the shaping cache key alone (they change advances and
+glyph selection, not glyph-outline identity, so the glyph/font block is
+untouched); the shaping block line gained `<kerning> <rendering> <lang-len>
+<lang>` tokens, and `set_font_kerning`/`set_text_rendering`/`set_lang` are recorded
+state ops.  textRendering maps pragmatically: optimizeSpeed disables BOTH kerning
+and ligatures (Core Text has no single "speed" attribute), the other values leave
+the defaults; AUTO/AUTO/"" reproduce today's shaping byte-for-byte.
 
 | toggle | Core Text mechanism |
 |---|---|

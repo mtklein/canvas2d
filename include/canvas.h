@@ -34,6 +34,26 @@ enum canvas_text_baseline {
 // to canvas_set_font_style is ignored, keeping the current style.
 enum canvas_font_style { CANVAS_FONT_STYLE_NORMAL, CANVAS_FONT_STYLE_ITALIC };
 
+// fontKerning: whether the shaper applies the font's kerning (the pair-adjusted
+// advances a kerned face carries).  auto (the default) and normal both leave
+// Core Text's default kerning on; none disables it (advances become the
+// unkerned per-glyph defaults).  An unrecognized value passed to
+// canvas_set_font_kerning is ignored, keeping the current setting.
+enum canvas_font_kerning {
+    CANVAS_FONT_KERNING_AUTO, CANVAS_FONT_KERNING_NORMAL, CANVAS_FONT_KERNING_NONE,
+};
+// textRendering: a hint trading shaping richness for speed.  auto (the default),
+// optimizeLegibility, and geometricPrecision all leave Core Text's default
+// kerning and ligatures on; optimizeSpeed disables BOTH (a pragmatic mapping --
+// Core Text exposes no single speed knob, so "speed" is spelled as no kerning
+// and no ligatures).  An unrecognized value is ignored, keeping the current
+// setting.
+enum canvas_text_rendering {
+    CANVAS_TEXT_RENDERING_AUTO, CANVAS_TEXT_RENDERING_OPTIMIZE_SPEED,
+    CANVAS_TEXT_RENDERING_OPTIMIZE_LEGIBILITY,
+    CANVAS_TEXT_RENDERING_GEOMETRIC_PRECISION,
+};
+
 // imageSmoothingQuality (see canvas_set_image_smoothing_quality).
 enum canvas_image_smoothing_quality {
     CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
@@ -571,6 +591,30 @@ void canvas_set_font_family_n(struct canvas *__single cv,
 // 400 / NORMAL defaults.
 void canvas_set_font_weight(struct canvas *__single cv, int weight);
 void canvas_set_font_style(struct canvas *__single cv, enum canvas_font_style style);
+// fontKerning / textRendering / lang: shaping-attribute toggles, drawing state
+// like the font setters above (save/restore brackets each, reset/resize restore
+// the defaults).  They feed Core Text shaping, so they affect the runs' advances
+// (kerning), ligature formation (textRendering optimizeSpeed), and
+// locale-dependent glyph selection (lang) -- and so measure_text/fill_text/
+// stroke_text and the text queries.  The defaults (AUTO / AUTO / "") reproduce
+// exactly what the shaper draws today.
+//   fontKerning: none disables kerning; auto/normal leave the default kerning
+//     (canvas_font_kerning; an unrecognized enum is ignored).
+//   textRendering: optimizeSpeed disables kerning AND ligatures; the others
+//     leave the defaults (canvas_text_rendering; an unrecognized enum is
+//     ignored).
+//   lang: a BCP-47 language tag (e.g. "en", "zh-Hant") set on the shaped run for
+//     locale-dependent glyph selection; "" (the default) sets none.  The tag is
+//     copied in (truncated if it exceeds the internal capacity); a NULL tag is
+//     ignored, keeping the current value (pass "" to clear it).
+void canvas_set_font_kerning(struct canvas *__single cv, enum canvas_font_kerning kerning);
+void canvas_set_text_rendering(struct canvas *__single cv, enum canvas_text_rendering rendering);
+void canvas_set_lang(struct canvas *__single cv, char const *__null_terminated tag);
+// The length-counted form of canvas_set_lang (the tag need not be
+// NUL-terminated), like canvas_set_font_family_n; len < 0 is ignored, len == 0
+// clears the language.
+void canvas_set_lang_n(struct canvas *__single cv,
+                       char const *__counted_by(len) tag, int len);
 // letterSpacing: extra advance added after each typographic cluster, in user px
 // (default 0; may be negative).  wordSpacing: extra advance added at each
 // word-separator (U+0020 SPACE), in user px (default 0; may be negative).  Both
@@ -748,7 +792,8 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //     set_global_composite_operation multiply
 //     fill_text 12 30 Hello
 // Enums (set_global_composite_operation / set_line_join / set_line_cap /
-// set_text_align / set_text_baseline / set_direction /
+// set_text_align / set_text_baseline / set_direction / set_font_style /
+// set_font_kerning / set_text_rendering /
 // set_image_smoothing_quality / the pattern repeat modes) are written by
 // name; fill and clip carry their fill rule by name (`fill nonzero`,
 // `clip evenodd`), like fill_path/clip_path; bool args (arc/ellipse winding,
@@ -779,7 +824,7 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
 //     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-//     shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <fam-len> <fam...> <utf16-len> <nruns> <byte-len> <text...>
+//     shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <kerning 0-2> <rendering 0-3> <lang-len> <lang...> <fam-len> <fam...> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
 // font declares a file-local font id: its name (rest of the line, spaces
 // allowed), vertical metrics at size 1.0, and the weight/style (CSS 100..900;
@@ -797,16 +842,19 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // w*h*4) and base64-chunked, because the raw capture (160x160x4 bytes, ~137 KB
 // encoded) cannot fit one line and the compressed stream is a third to half
 // the bytes.  shaping + its immediately-following run lines carry one
-// shaped line (the family is fam-len raw bytes after one space, then the text is
+// shaped line (the lang tag is lang-len raw bytes after one space, then the
+// family is fam-len raw bytes after one space, then the text is
 // exactly byte-len raw bytes after one space; the
 // rtl token is the paragraph direction the line was shaped under, ls/ws the
-// letterSpacing/wordSpacing, and weight/style the font weight/style -- all parts
+// letterSpacing/wordSpacing, weight/style the font weight/style, and
+// kerning/rendering/lang the shaping toggles -- all parts
 // of the cache key, since the same bytes shape and space differently under each.
-// ls/ws and weight/style are always written, even
+// ls/ws, weight/style, and kerning/rendering/lang are always written, even
 // when default; the spacing is already baked into the run advances, so they only
-// key the rebuilt line.  The canvas's family/weight/style/spacing STATE -- the
-// values a fill_text keys its lookup by -- ride set_font_family/set_font_weight/
-// set_font_style/set_letter_spacing/set_word_spacing ordinary state ops,
+// key the rebuilt line.  The canvas's family/weight/style/spacing/toggle STATE --
+// the values a fill_text keys its lookup by -- ride set_font_family/
+// set_font_weight/set_font_style/set_letter_spacing/set_word_spacing/
+// set_font_kerning/set_text_rendering/set_lang ordinary state ops,
 // recorded like set_font_size/set_direction).  Replaying the blocks pre-populates
 // the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,
