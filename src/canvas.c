@@ -3315,6 +3315,52 @@ canvas_text_metrics canvas_measure_text_full(struct canvas *__single cv,
     return m;
 }
 
+// Selection/caret queries: each shapes through the cache exactly like
+// canvas_measure_text (so it sees the same font size, direction, and
+// letterSpacing/wordSpacing baked into the advances) and forwards to the matching
+// cnvs_shaped_* query.  Read-only: no recording, no pixels.
+int canvas_text_index_at_x(struct canvas *__single cv, char const *__null_terminated text,
+                           float x) {
+    int const len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
+    struct cnvs_shaped const *__single s = shape_text(cv, t, len);
+    if (!s) {
+        return -1;
+    }
+    return cnvs_shaped_index_at_x(s, x);
+}
+
+float canvas_text_x_at_index(struct canvas *__single cv, char const *__null_terminated text,
+                             int index) {
+    int const len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
+    struct cnvs_shaped const *__single s = shape_text(cv, t, len);
+    if (!s) {
+        return 0.0f;
+    }
+    return cnvs_shaped_x_at_index(s, index);
+}
+
+int canvas_text_selection(struct canvas *__single cv, char const *__null_terminated text,
+                          int lo, int hi, canvas_text_span *__counted_by(max) out, int max) {
+    if (!out || max <= 0) {
+        return 0;
+    }
+    int const len = (int)strlen(text);
+    char const *__counted_by(len) t = __null_terminated_to_indexable(text);
+    struct cnvs_shaped const *__single s = shape_text(cv, t, len);
+    if (!s) {
+        return 0;
+    }
+    // The public canvas_text_span and the internal cnvs_xspan are layout-identical
+    // ({float x0, x1;}), so the caller's buffer is reinterpreted in place: same
+    // element size, same `max` count, same byte extent.  The cast feeds the call
+    // directly -- cnvs_shaped_selection's own __counted_by(max) parameter carries
+    // the same bound, so no copy and no allocation, and it writes within `max`
+    // exactly as for an internal cnvs_xspan caller.
+    return cnvs_shaped_selection(s, lo, hi, (cnvs_xspan *)out, max);
+}
+
 // The per-canvas text cache, for tests and stats -- declared in cnvs_text.h so
 // it stays off the public canvas.h surface (tests include internal headers).
 struct cnvs_text_cache *__single cnvs_canvas_text_cache(struct canvas *__single cv) {
