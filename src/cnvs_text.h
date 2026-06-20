@@ -139,9 +139,11 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 // consulted BEFORE Core Text is called, populated live from what the boundary
 // hands back.  Two maps:
 //
-//   - shaped lines, keyed by (size_px bits, paragraph direction,
+//   - shaped lines, keyed by (font family, size_px bits, paragraph direction,
 //     letterSpacing bits, wordSpacing bits, text bytes) -> the struct
-//     cnvs_shaped.  Direction is IN the key because the same bytes shape
+//     cnvs_shaped.  The family is IN the key (the REQUESTED name, not the
+//     resolved one): two families of the same bytes/size are two distinct lines.
+//     Direction is IN the key because the same bytes shape
 //     differently under ltr and rtl paragraphs (run order, neutral
 //     resolution); leaving it out would alias the two.  letterSpacing and
 //     wordSpacing are IN the key because they are baked into the line's
@@ -192,6 +194,8 @@ typedef struct {
 struct cnvs_shaping_slot {
     char *__counted_by(len) text;  // owned key copy of the source bytes
     int len;
+    char *__counted_by(fam_len) fam;  // owned key copy of the requested family
+    int fam_len;                      // (the REQUESTED name, not the resolved one)
     uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
     uint32_t ls_bits;    // letterSpacing's float bits: keyed exact-bits like size
     uint32_t ws_bits;    // wordSpacing's float bits: keyed exact-bits like size
@@ -263,16 +267,16 @@ void cnvs_text_cache_reset(struct cnvs_text_cache *__single c);  // free entries
                                                           // also the destructor (the
                                                           // struct owns no spine)
 
-// The shape lookup: the cached line for (size_px, rtl, ls, ws, text), shaping
-// through the boundary and baking letterSpacing/wordSpacing into the advances
-// (cnvs_shaped_apply_spacing) on a miss before caching.  The result is BORROWED
-// -- the cache owns it; it stays valid until the next lookup can evict it (call
-// sites do one lookup per op and never nest, so a borrow never crosses an
-// insert).  NULL only when the boundary itself fails or the key copy can't be
-// allocated -- the same degradation as the uncached path.  `name` joins the
-// boundary call but NOT the key: the project pins one family ("Libian TC"); a
-// font-family feature must add it to the key.  `c` must be non-NULL (ownership
-// needs somewhere to live).
+// The shape lookup: the cached line for (name, size_px, rtl, ls, ws, text),
+// shaping through the boundary and baking letterSpacing/wordSpacing into the
+// advances (cnvs_shaped_apply_spacing) on a miss before caching.  The result is
+// BORROWED -- the cache owns it; it stays valid until the next lookup can evict
+// it (call sites do one lookup per op and never nest, so a borrow never crosses
+// an insert).  NULL only when the boundary itself fails or the key copy can't be
+// allocated -- the same degradation as the uncached path.  `name` is the
+// requested family: it joins the boundary call AND the cache key (two families
+// of the same bytes cache separately).  `c` must be non-NULL (ownership needs
+// somewhere to live).
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, char const *__counted_by(len) text, int len);
@@ -373,20 +377,23 @@ cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint);
 float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint,
                           cnvs_mip *__single fine, cnvs_mip *__single coarse);
 
-// Insert a rebuilt shaped line for (size_px, rtl, ls, ws, text): the replay
-// path.  The advances arrive already spacing-baked (the recorded `run` lines
-// carry them), so this only keys and inserts -- it does NOT re-apply spacing.
-// Takes ownership of `s` always (freeing it when it can't insert); copies the
-// key bytes; replaces an existing entry for the same key.
-void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c, float size_px,
+// Insert a rebuilt shaped line for (name, size_px, rtl, ls, ws, text): the
+// replay path.  The advances arrive already spacing-baked (the recorded `run`
+// lines carry them), so this only keys and inserts -- it does NOT re-apply
+// spacing.  `name` is the requested family, the key's family part.  Takes
+// ownership of `s` always (freeing it when it can't insert); copies the key
+// bytes; replaces an existing entry for the same key.
+void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
+        char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s);
 
-// The recorder's view of a cached line: the slot holding (size_px, rtl, ls, ws,
-// text), or NULL when it isn't cached.  A peek -- no stats, no LRU bump, no
-// shaping.
+// The recorder's view of a cached line: the slot holding (name, size_px, rtl,
+// ls, ws, text), or NULL when it isn't cached.  `name` is the requested family,
+// the key's family part.  A peek -- no stats, no LRU bump, no shaping.
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
-        float size_px, bool rtl, float ls, float ws,
+        char const *__counted_by(name_len) name, int name_len, float size_px,
+        bool rtl, float ls, float ws,
         char const *__counted_by(len) text, int len);
 
 // Clear every `emitted` mark (font names, glyphs, shaped lines): a new

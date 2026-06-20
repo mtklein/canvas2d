@@ -160,16 +160,26 @@ void cnvs_rec_path_rule(struct cnvs_recorder *__single r,
 // the blocks and never crosses the text boundary, emoji included.
 // Deduplicated against what this recording already wrote via the cache slots'
 // `emitted` marks (canvas_record_to clears them), so a repeated string costs
-// one block set per recording.  `text`/`len`/`size_px`/`rtl`/`ls`/`ws` name the
-// cached shaped line (the live lookup has already run; rtl is the paragraph
+// one block set per recording.  `family`/`text`/`len`/`size_px`/`rtl`/`ls`/`ws`
+// name the cached shaped line (the live lookup has already run; family is the
+// requested typeface, rtl the paragraph
 // direction and ls/ws the letter/word spacing -- all parts of its key); when it
 // isn't cached (shaping failed) nothing is emitted and replay degrades to live
-// shaping.  The `shaping` block line always carries `ls ws` (the baked-in
-// spacing keys the line), so replay reproduces the spaced advances from the
-// block alone.
+// shaping.  The `shaping` block line always carries the family token and `ls ws`
+// (the family and the baked-in spacing key the line), so replay reproduces the
+// spaced advances from the block alone.
 void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
+                          char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
                           char const *__counted_by(len) text, int len);
+
+// `set_font_family <name-len> <name-bytes>` -- the fontFamily setter op (the
+// name length-prefixed, then the raw bytes to end of line).  Recorded only when
+// canvas_set_font_family is called, so a program on the default family records
+// no such op.  The `shaping` block lines still carry the family regardless (it
+// is the cache key).
+void cnvs_rec_font_family(struct cnvs_recorder *__single r,
+                          char const *__counted_by(len) name, int len);
 
 // `name <ints...>` -- the int-typed op lines with no block reference (resize).
 void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminated name,

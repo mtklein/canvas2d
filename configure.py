@@ -229,7 +229,7 @@ def main():
     gallery_scenes = [
         "affine", "batch", "blend", "clip", "colorspaces", "conic", "dashes", "dirtyrect",
         "drawimage", "ellipserot", "emoji", "emojiscale", "extendedrange", "filters",
-        "gradients", "gradinterp",
+        "fontfamily", "gradients", "gradinterp",
         "hittest",
         "imagecolorspace", "imagedata", "imagedataf16", "imagescale", "joins", "linearlight", "miterdash",
         "nestedclip", "path2d", "paths", "pattern",

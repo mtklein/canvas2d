@@ -296,23 +296,31 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
 }
 
 // The shaped line itself: everything struct cnvs_shaped carries, so replay
-// rebuilds it without shaping.  The rtl token is the paragraph direction half of
-// the cache key -- the same bytes shape differently under ltr and rtl, so replay
-// must key its insert with it or the two would alias.  ls/ws are the
+// rebuilds it without shaping.  The family token is the requested typeface, the
+// cache key's family part (length-prefixed bytes, written unconditionally even
+// for the default family): two families of the same bytes are distinct lines, so
+// replay must key its insert with it.  The rtl token is the paragraph direction
+// half of the cache key -- the same bytes shape differently under ltr and rtl,
+// so replay must key its insert with it or the two would alias.  ls/ws are the
 // letterSpacing/wordSpacing keys (written unconditionally, even when 0): the
 // spacing is already baked into the run advances, so replay needs them only to
-// key the rebuilt line under the same (size, rtl, ls, ws, text) tuple a live
-// lookup uses.  The canvas's spacing state -- the value a fill_text keys its
-// lookup by -- is carried by the set_letter_spacing/set_word_spacing ops, not
-// by this block.  The text is length-prefixed raw bytes to end of line (the
-// key, byte for byte).
+// key the rebuilt line under the same (family, size, rtl, ls, ws, text) tuple a
+// live lookup uses.  The canvas's family/spacing state -- the values a fill_text
+// keys its lookup by -- are carried by the set_font_family/set_letter_spacing/
+// set_word_spacing ops, not by this block.  The text is length-prefixed raw
+// bytes to end of line (the key, byte for byte).
 static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
                                   struct cnvs_text_cache *__single c,
                                   struct cnvs_shaped const *__single s,
+                                  char const *__counted_by(fam_len) family, int fam_len,
                                   float size_px, bool rtl, float ls, float ws,
                                   char const *__counted_by(len) text, int len) {
-    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d %d %d ", (double)size_px,
-            rtl ? 1 : 0, (double)ls, (double)ws, s->utf16s, s->nruns, len);
+    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d ", (double)size_px,
+            rtl ? 1 : 0, (double)ls, (double)ws, fam_len);
+    if (fam_len > 0) {
+        fwrite(family, 1, (size_t)fam_len, r->f);
+    }
+    fprintf(r->f, " %d %d %d ", s->utf16s, s->nruns, len);
     if (len > 0) {
         fwrite(text, 1, (size_t)len, r->f);
     }
@@ -330,14 +338,15 @@ static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
 }
 
 void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
+                          char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
                           char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0 || !c) {
         return;
     }
     cnvs_rec_flush_ws(r);
-    struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, size_px, rtl,
-                                                                ls, ws, text, len);
+    struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, family, fam_len,
+                                                                size_px, rtl, ls, ws, text, len);
     if (!slot) {
         return;  // not cached (shaping failed: nothing to carry)
     }
@@ -454,8 +463,9 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
             g->emitted = true;
         }
     }
-    // The shaped line itself (and its run lines), keyed by the spacing it bakes.
-    cnvs_rec_shaping_line(r, c, s, size_px, rtl, ls, ws, text, len);
+    // The shaped line itself (and its run lines), keyed by the family and the
+    // spacing it bakes.
+    cnvs_rec_shaping_line(r, c, s, family, fam_len, size_px, rtl, ls, ws, text, len);
     slot->emitted = true;
 }
 
@@ -829,6 +839,22 @@ void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction 
     cnvs_rec_flush_ws(r);
     fputs("set_direction ", r->f);
     fputs(dir == CANVAS_DIRECTION_RTL ? "rtl" : "ltr", r->f);
+    fputc('\n', r->f);
+}
+
+void cnvs_rec_font_family(struct cnvs_recorder *__single r,
+                          char const *__counted_by(len) name, int len) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    cnvs_rec_flush_ws(r);
+    // Length-prefixed bytes: the name can contain spaces, so a count + a single
+    // separating space frames the raw bytes (the same shape as the shaping
+    // line's family token).  The setter has already sanitized len >= 1.
+    fprintf(r->f, "set_font_family %d ", len);
+    if (len > 0) {
+        fwrite(name, 1, (size_t)len, r->f);
+    }
     fputc('\n', r->f);
 }
 

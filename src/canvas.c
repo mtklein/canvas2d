@@ -30,6 +30,16 @@
 #define CANVAS_FLATTEN_TOL 0.25f
 #define CANVAS_DASH_MAX 16
 
+// Fixed capacity for the font-family name held in the drawing state (bytes; a
+// longer name passed to canvas_set_font_family is truncated to fit).  The state
+// carries the name by value so save()/restore() snapshot it like any other
+// field; a fixed buffer keeps that copy allocation-free.
+#define CNVS_FONT_FAMILY_MAX 128
+
+// The default font family: the typeface a fresh canvas (and reset/resize) draws
+// with until canvas_set_font_family changes it.  Carries both Latin and Chinese.
+static char const k_font_family[] = "Libian TC";
+
 // Cap canvas dimensions so width*height and width*height*4 stay well within a
 // positive int -- the whole pipeline's RGBA8 size math is `int`.  Mirrors the
 // cnvs_png.c clamp.
@@ -94,6 +104,11 @@ struct canvas_state {
     int dash_count;
     float dash_offset;
     float font_size;  // text size in user px (Canvas default 10px)
+    // The typeface for fill_text/stroke_text/measureText, held by value (the
+    // sized model: length + bytes, no NUL).  Default "Libian TC"; an unavailable
+    // family falls back through Core Text and records as the resolved font.
+    char font_family[CNVS_FONT_FAMILY_MAX];
+    int font_family_len;
     float letter_spacing;  // extra advance after each cluster, user px (default 0)
     float word_spacing;    // extra advance at each U+0020 SPACE, user px (default 0)
     enum canvas_text_align text_align;
@@ -135,8 +150,10 @@ struct canvas {
     int stack_cap;
     struct cnvs_path path;
     struct cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
-    struct cnvs_font *__single font;  // cached for cur.font_size; rebuilt when it changes
+    struct cnvs_font *__single font;  // cached for cur.font_size/family; rebuilt when either changes
     float font_built_size;
+    char font_built_family[CNVS_FONT_FAMILY_MAX];  // the family cv->font was built for
+    int font_built_family_len;
     struct cnvs_text_cache text_cache;  // params->derived-data memo of Core Text results:
                                  // shaped lines + canonical glyph curves, checked
                                  // before the boundary is called (cnvs_text.h)
@@ -232,6 +249,8 @@ static void state_defaults(struct canvas_state *s) {
     s->dash_count = 0;
     s->dash_offset = 0.0f;
     s->font_size = 10.0f;
+    s->font_family_len = (int)sizeof k_font_family - 1;  // the default typeface
+    memcpy(s->font_family, k_font_family, (size_t)s->font_family_len);
     s->letter_spacing = 0.0f;
     s->word_spacing = 0.0f;
     s->text_align = CANVAS_ALIGN_START;
@@ -285,6 +304,8 @@ struct canvas *__single canvas(int width, int height,
     cnvs_path_init(&cv->text_path);
     cv->font = NULL;
     cv->font_built_size = 0.0f;
+    cv->font_built_family_len = 0;  // no family built yet; ensure_font's first
+                                    // call always rebuilds (family mismatch)
     cnvs_text_cache_init(&cv->text_cache);
     cv->rec = NULL;
     cv->owned_images = NULL;
@@ -2939,17 +2960,23 @@ void canvas_stroke_rect(struct canvas *__single cv, float x, float y, float w, f
     cnvs_path_free(&rp);
 }
 
-// The pinned font family: shaping, the primary font handle, and the text
-// cache's vmetrics record all key on this one name.
-static char const k_font_family[] = "Libian TC";
-
-// Rebuild the cached font when the requested size changes; NULL on failure.
+// Rebuild the cached font when the requested size OR family changes; NULL on
+// failure.  The family is matched by (length, bytes) -- the sized model -- so a
+// switch between two families of the same size still rebuilds.
 static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
-    if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f) {
+    bool const family_changed =
+        cv->font_built_family_len != cv->cur.font_family_len ||
+        memcmp(cv->font_built_family, cv->cur.font_family,
+               (size_t)cv->cur.font_family_len) != 0;
+    if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f ||
+        family_changed) {
         cnvs_font_free(cv->font);
-        cv->font = cnvs_font(k_font_family, (int)sizeof k_font_family - 1,
+        cv->font = cnvs_font(cv->cur.font_family, cv->cur.font_family_len,
                                     cv->cur.font_size);
         cv->font_built_size = cv->cur.font_size;
+        memcpy(cv->font_built_family, cv->cur.font_family,
+               (size_t)cv->cur.font_family_len);
+        cv->font_built_family_len = cv->cur.font_family_len;
     }
     return cv->font;
 }
@@ -2964,8 +2991,8 @@ static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
 static bool canvas_vmetrics(struct canvas *__single cv, float *__single ascent,
                             float *__single descent) {
     float const size = cv->cur.font_size;
-    int fid = cnvs_text_cache_intern(&cv->text_cache, k_font_family,
-                                     (int)sizeof k_font_family - 1);
+    int fid = cnvs_text_cache_intern(&cv->text_cache, cv->cur.font_family,
+                                     cv->cur.font_family_len);
     float a1 = 0.0f, d1 = 0.0f;
     if (cnvs_text_cache_get_vmetrics(&cv->text_cache, fid, &a1, &d1)) {
         *ascent = a1 * size;
@@ -2995,6 +3022,34 @@ void canvas_set_font_size(struct canvas *__single cv, float px) {
     cv->cur.font_size = px > 0.0f ? px : 0.0f;  // non-positive / NaN -> 0
     // Record the stored (sanitized, finite) value, not the raw argument.
     if (cv->rec) { cnvs_rec_floats(cv->rec, "set_font_size", (float[]){ cv->cur.font_size }, 1); }
+}
+
+// fontFamily is canvas state, like fontSize: it rides save/restore and resets to
+// the default.  The name is copied into the fixed state buffer, truncated to its
+// capacity; an empty name is ignored (the "ignore invalid" setter pattern),
+// keeping the current family.  Recorded as set_font_family with the stored
+// (possibly truncated) bytes, so replay restores the same family.  The
+// length-counted core: the replay parser stays in the indexable world (no
+// __null_terminated seam), exactly as canvas_fill_text_n serves canvas_fill_text.
+void canvas_set_font_family_n(struct canvas *__single cv,
+                              char const *__counted_by(len) name, int len) {
+    if (len <= 0) {
+        return;  // empty/invalid: ignore, keep current
+    }
+    // Truncate to the state buffer's capacity (the copy reads only `keep` bytes,
+    // which `len` still bounds).
+    int const keep = len > CNVS_FONT_FAMILY_MAX ? CNVS_FONT_FAMILY_MAX : len;
+    memcpy(cv->cur.font_family, name, (size_t)keep);
+    cv->cur.font_family_len = keep;
+    if (cv->rec) { cnvs_rec_font_family(cv->rec, cv->cur.font_family, keep); }
+}
+
+void canvas_set_font_family(struct canvas *__single cv, char const *__null_terminated name) {
+    if (!name) {
+        return;  // NULL: ignore, keep current
+    }
+    int const len = (int)strlen(name);
+    canvas_set_font_family_n(cv, __null_terminated_to_indexable(name), len);
 }
 
 // letterSpacing/wordSpacing are canvas state, recorded as ordinary state ops
@@ -3101,8 +3156,8 @@ static float text_baseline_offset(struct canvas *__single cv) {
 static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                               char const *__counted_by(len) text,
                                               int len) {
-    return cnvs_text_cache_shaping(&cv->text_cache, k_font_family,
-                                 (int)sizeof k_font_family - 1,
+    return cnvs_text_cache_shaping(&cv->text_cache,
+                                 cv->cur.font_family, cv->cur.font_family_len,
                                  cv->cur.font_size,
                                  cv->cur.direction == CANVAS_DIRECTION_RTL,
                                  cv->cur.letter_spacing, cv->cur.word_spacing,
@@ -3378,7 +3433,9 @@ static void record_text_blocks(struct canvas *__single cv,
     float a = 0.0f, d = 0.0f;
     (void)canvas_vmetrics(cv, &a, &d);  // intern the family + its vmetrics
     (void)shape_text(cv, text, len);    // ensure the line is cached
-    cnvs_rec_text_blocks(cv->rec, &cv->text_cache, cv->cur.font_size,
+    cnvs_rec_text_blocks(cv->rec, &cv->text_cache,
+                         cv->cur.font_family, cv->cur.font_family_len,
+                         cv->cur.font_size,
                          cv->cur.direction == CANVAS_DIRECTION_RTL,
                          cv->cur.letter_spacing, cv->cur.word_spacing, text, len);
 }

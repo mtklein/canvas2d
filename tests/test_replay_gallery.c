@@ -1,6 +1,6 @@
 // The capstone of the record/replay arc: each committed gallery/<scene>.canvas
 // program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls -- all 44 scenes, the format's whole surface.
+// ZERO Core Text boundary calls -- all 45 scenes, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
 // (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
@@ -21,7 +21,7 @@
 // fonts -- the CI runner has no Libian TC, it is download-on-demand -- that
 // fallback would also have produced different, wrong, or blank glyphs, which
 // the byte compare independently catches).  Scenes that draw no text pass (d)
-// trivially; the twelve TEXT scenes additionally assert the cache saw real
+// trivially; the thirteen TEXT scenes additionally assert the cache saw real
 // traffic (shape/glyph hits > 0), so the zero-miss claim can't pass vacuously
 // where it matters.  Run on the fontless runner via bare ninja, this is what
 // proves replay used the embedded data, not the host's fonts; locally (where
@@ -44,8 +44,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// All 44 scenes, each a (program, image) pair of committed artifacts; `text`
-// marks the twelve text scenes whose cache traffic must be non-trivial.
+// All 45 scenes, each a (program, image) pair of committed artifacts; `text`
+// marks the thirteen text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
 // test_pngread.c lists its corpus rather than assembling paths from dirent
 // names: -fbounds-safety has no safe runtime-bytes -> __null_terminated
@@ -73,6 +73,7 @@ static scene_pair const k_scenes[] = {
     { "gallery/emojiscale.canvas",   "gallery/emojiscale.png",   true  },
     { "gallery/extendedrange.canvas", "gallery/extendedrange.png", false },
     { "gallery/filters.canvas",      "gallery/filters.png",      false },
+    { "gallery/fontfamily.canvas",   "gallery/fontfamily.png",   true  },
     { "gallery/gradients.canvas",    "gallery/gradients.png",    false },
     { "gallery/gradinterp.canvas",   "gallery/gradinterp.png",   true  },
     { "gallery/hittest.canvas",      "gallery/hittest.png",      false },
