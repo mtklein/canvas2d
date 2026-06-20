@@ -349,7 +349,7 @@ static void roundrect(void) {
                                     card[i].r[3], card[i].r[4], card[i].r[5],
                                     card[i].r[6], card[i].r[7]);
             if (pass == 0) {
-                canvas_set_fill_linear_gradient(c, x, y0, x + cw, y0 + ch);
+                canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, x, y0, x + cw, y0 + ch);
                 canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, card[i].c0[0], card[i].c0[1],
                                            card[i].c0[2], 1.0f);
                 canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, card[i].c1[0], card[i].c1[1],
@@ -365,7 +365,7 @@ static void roundrect(void) {
 
     // Wide capsule: huge radii everywhere, clamped by the overlap rule.
     float const bx = 24.0f, by = 178.0f, bw = 500.0f, bh = 36.0f;
-    canvas_set_fill_linear_gradient(c, bx, 0.0f, bx + bw, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, bx, 0.0f, bx + bw, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
@@ -425,7 +425,7 @@ static void strokerect(void) {
             canvas_save(c);
             canvas_translate(c, ox + 74.0f, oy + 42.0f);
             canvas_rotate(c, 0.32f);
-            canvas_set_stroke_linear_gradient(c, -44.0f, 0.0f, 44.0f, 0.0f);
+            canvas_set_stroke_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, -44.0f, 0.0f, 44.0f, 0.0f);
             canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.30f, 0.90f, 0.95f, 1.0f);
             canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.95f, 0.35f, 0.85f, 1.0f);
             canvas_set_line_width(c, 8.0f);
@@ -469,7 +469,7 @@ static void conic(void) {
     int const ns = 13;
 
     // A: smooth rainbow wheel from the cosine palette (wraps red -> red).
-    canvas_set_fill_conic_gradient(c, -TAU * 0.25f, cx[0], cy);
+    canvas_set_fill_conic_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, -TAU * 0.25f, cx[0], cy);
     for (int k = 0; k < ns; k++) {
         float t = (float)k / (float)(ns - 1);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, t, 0.5f + 0.5f * cosf(TAU * t),
@@ -485,7 +485,7 @@ static void conic(void) {
     float const sect[5][3] = { { 0.97f, 0.78f, 0.24f }, { 0.20f, 0.78f, 0.70f },
                                { 0.95f, 0.45f, 0.40f }, { 0.42f, 0.40f, 0.92f },
                                { 0.45f, 0.82f, 0.45f } };
-    canvas_set_fill_conic_gradient(c, -TAU * 0.25f, cx[1], cy);
+    canvas_set_fill_conic_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, -TAU * 0.25f, cx[1], cy);
     for (int s = 0; s < 5; s++) {
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, bnd[s], sect[s][0], sect[s][1], sect[s][2],
                                    1.0f);
@@ -497,7 +497,7 @@ static void conic(void) {
     canvas_fill(c, CANVAS_NONZERO);
 
     // C: a two-tone conic medallion, ringed by a conic-gradient stroke.
-    canvas_set_fill_conic_gradient(c, TAU * 0.1f, cx[2], cy);
+    canvas_set_fill_conic_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, TAU * 0.1f, cx[2], cy);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.82f, 0.84f, 0.90f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.25f, 0.30f, 0.33f, 0.42f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.50f, 0.82f, 0.84f, 0.90f, 1.0f);
@@ -507,7 +507,7 @@ static void conic(void) {
     canvas_arc(c, cx[2], cy, 24.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
 
-    canvas_set_stroke_conic_gradient(c, 0.0f, cx[2], cy);
+    canvas_set_stroke_conic_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, cx[2], cy);
     for (int k = 0; k < ns; k++) {
         float const t = (float)k / (float)(ns - 1);
         canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, t, 0.5f + 0.5f * cosf(TAU * t),
@@ -1096,7 +1096,7 @@ static void path2d_demo(void) {
         canvas_path2d_arc(ring, 365.0f, 116.0f, 54.0f, 0.0f, TAU, false);
         canvas_path2d_arc(hole, 365.0f, 116.0f, 32.0f, 0.0f, TAU, false);
         canvas_path2d_add_path(ring, hole);
-        canvas_set_fill_radial_gradient(c, 348.0f, 98.0f, 6.0f, 365.0f, 116.0f, 58.0f);
+        canvas_set_fill_radial_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 348.0f, 98.0f, 6.0f, 365.0f, 116.0f, 58.0f);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.55f, 0.95f, 0.95f, 1.0f);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.20f, 0.35f, 0.85f, 1.0f);
         canvas_fill_path(c, ring, CANVAS_EVENODD);
@@ -1530,14 +1530,14 @@ static void gradients(void) {
     canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
     canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 120.0f);
 
-    canvas_set_fill_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 20.0f, 20.0f, 100.0f, 100.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.90f, 0.22f, 0.42f, 1.0f);
     canvas_begin_path(c);
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_fill(c, CANVAS_NONZERO);
     // Outline it with a contrasting gradient stroke (cyan -> yellow, diagonal).
-    canvas_set_stroke_linear_gradient(c, 20.0f, 20.0f, 100.0f, 100.0f);
+    canvas_set_stroke_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 20.0f, 20.0f, 100.0f, 100.0f);
     canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.20f, 0.90f, 0.95f, 1.0f);
     canvas_add_stroke_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.95f, 0.95f, 0.20f, 1.0f);
     canvas_set_line_width(c, 5.0f);
@@ -1545,7 +1545,7 @@ static void gradients(void) {
     canvas_round_rect(c, 20.0f, 20.0f, 80.0f, 80.0f, 16.0f);
     canvas_stroke(c);
 
-    canvas_set_fill_radial_gradient(c, 140.0f, 46.0f, 3.0f, 150.0f, 60.0f, 44.0f);
+    canvas_set_fill_radial_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 140.0f, 46.0f, 3.0f, 150.0f, 60.0f, 44.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.4f, 0.30f, 0.65f, 0.95f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.05f, 0.10f, 0.35f, 1.0f);
@@ -1553,7 +1553,7 @@ static void gradients(void) {
     canvas_arc(c, 150.0f, 60.0f, 44.0f, 0.0f, TAU, false);
     canvas_fill(c, CANVAS_NONZERO);
 
-    canvas_set_fill_linear_gradient(c, 205.0f, 0.0f, 285.0f, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 205.0f, 0.0f, 285.0f, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.90f, 0.20f, 0.25f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.33f, 0.95f, 0.80f, 0.25f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.66f, 0.30f, 0.80f, 0.45f, 1.0f);
@@ -1649,7 +1649,7 @@ static void text(void) {
     canvas_fill_rect(c, 0.0f, 0.0f, 420.0f, 170.0f);
 
     // Gradient-filled headline: Latin + Chinese in a single fill_text.
-    canvas_set_fill_linear_gradient(c, 20.0f, 0.0f, 390.0f, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 20.0f, 0.0f, 390.0f, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.00f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.50f, 0.95f, 0.35f, 0.45f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.00f, 0.35f, 0.55f, 0.98f, 1.0f);
@@ -1738,7 +1738,7 @@ static void blend(void) {
 
         // Backdrop: a diagonal gradient block (always source-over).
         canvas_set_global_composite_operation(c, CANVAS_OP_SOURCE_OVER);
-        canvas_set_fill_linear_gradient(c, ox + 18.0f, oy + 12.0f, ox + 122.0f,
+        canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, ox + 18.0f, oy + 12.0f, ox + 122.0f,
                                         oy + 100.0f);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.20f, 0.65f, 0.95f, 1.0f);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.98f, 0.85f, 0.30f, 1.0f);
@@ -1977,7 +1977,7 @@ static void extendedrange(void) {
     canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
     canvas_fill_text(c, "shallow gradient: 8-bit (top, banded) vs 16-bit (bottom, smooth)",
                      lx, 28.0f);
-    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, lx, 0.0f, lx + gw, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, lo, lo, lo, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, hi, hi, hi, 1.0f);
     canvas_fill_rect(c, lx, 70.0f, gw, 26.0f);
@@ -2035,12 +2035,12 @@ static void extendedrange(void) {
     canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.70f, 0.74f, 0.82f, 1.0f);
     canvas_fill_text(c, "extended gradients: HDR white->6x (top), sRGB->Rec.2020 red (bottom)",
                      lx, 356.0f);
-    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, lx, 0.0f, lx + gw, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, 6.0f, 6.0f, 6.0f, 1.0f);
     canvas_fill_rect(c, lx, 368.0f, gw, 26.0f);
     cnvs_rgb const wred = cnvs_rec2020_to_linear_srgb((cnvs_rgb){ 1.0f, 0.0f, 0.0f });
-    canvas_set_fill_linear_gradient(c, lx, 0.0f, lx + gw, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, lx, 0.0f, lx + gw, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_LINEAR_SRGB, 1.0f, wred.r, wred.g, wred.b, 1.0f);
     canvas_fill_rect(c, lx, 398.0f, gw, 26.0f);
@@ -2341,7 +2341,7 @@ static void shaping(void) {
     canvas_set_text_align(c, CANVAS_ALIGN_LEFT);
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
 
-    canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 360.0f, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 36.0f, 0.0f, 360.0f, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 21.0f);
@@ -2394,7 +2394,7 @@ static void rtl(void) {
     canvas_fill_rect(c, 0.0f, 0.0f, 500.0f, 330.0f);
 
     // Headline, ltr.
-    canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 464.0f, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 36.0f, 0.0f, 464.0f, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 20.0f);
@@ -2502,7 +2502,7 @@ static void selection(void) {
     canvas_set_text_baseline(c, CANVAS_BASELINE_ALPHABETIC);
 
     // Headline.
-    canvas_set_fill_linear_gradient(c, 36.0f, 0.0f, 484.0f, 0.0f);
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 36.0f, 0.0f, 484.0f, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.99f, 0.80f, 0.26f, 1.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.35f, 0.55f, 0.98f, 1.0f);
     canvas_set_font_size(c, 20.0f);
@@ -2696,7 +2696,7 @@ static void filters(void) {
         }
 
         // The motif, filtered: a gradient tile, then two translucent discs.
-        canvas_set_fill_linear_gradient(c, ox + 18.0f, oy + 12.0f,
+        canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, ox + 18.0f, oy + 12.0f,
                                         ox + 122.0f, oy + 100.0f);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.98f, 0.55f, 0.15f, 1.0f);
         canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.85f, 0.25f, 0.55f, 1.0f);
@@ -2805,14 +2805,14 @@ static void linearlight(void) {
 //   colour of the transparent end into the ramp as a muddy tint; premul fades
 //   cleanly, the colour living only in the alpha.
 //
-// The committed program carries the non-default set_fill_gradient_interpolation
-// lines (the default sRGB+unpremul ramp records none); it replays on a plain
-// sRGB canvas (the default working space) and matches the PNG.
+// Each ramp's interpolation is chosen at the gradient's creation; the committed
+// program carries it on the set_fill_linear_gradient line.  It replays on a
+// plain sRGB working-space canvas and matches the PNG.
 static void gradinterp_space_ramp(struct canvas *__single c, float x, float y, float w,
                                   float h, enum canvas_color_space space,
                                   char const *__null_terminated label) {
-    canvas_set_fill_linear_gradient(c, x, 0.0f, x + w, 0.0f);
-    canvas_set_fill_gradient_interpolation(c, space, CANVAS_ALPHA_UNPREMUL);  // alpha=1: premul==unpremul
+    canvas_set_fill_linear_gradient(c, space, CANVAS_ALPHA_UNPREMUL,  // alpha=1: premul==unpremul
+                                    x, 0.0f, x + w, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.90f, 0.12f, 0.12f, 1.0f);  // red
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.12f, 0.80f, 0.22f, 1.0f);  // green
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.15f, 0.28f, 0.92f, 1.0f);  // blue
@@ -2844,8 +2844,8 @@ static void gradinterp_alpha_ramp(struct canvas *__single c, float x, float y, f
     // UNPREMUL lerp drags that red into the mid-ramp as a muddy tint; a PREMUL
     // lerp weights the colour by alpha first, so the vanishing red contributes
     // nothing and the fade stays clean blue.
-    canvas_set_fill_linear_gradient(c, x, 0.0f, x + w, 0.0f);
-    canvas_set_fill_gradient_interpolation(c, CANVAS_CS_SRGB, alpha);  // space fixed
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, alpha,  // space fixed
+                                    x, 0.0f, x + w, 0.0f);
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.15f, 0.28f, 0.92f, 1.0f);  // opaque blue
     canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.92f, 0.16f, 0.16f, 0.0f);  // transparent red
     canvas_fill_rect(c, x, y, w, h);

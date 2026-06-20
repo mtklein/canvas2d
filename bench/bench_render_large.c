@@ -24,13 +24,13 @@ static void scene(struct canvas *__single cv, int f) {
     canvas_fill_rect(cv, 0.0f, 0.0f, w, h);
 
     // Full-canvas linear gradient over the whole surface.
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, w, h);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, w, h);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.3f, 0.2f, 0.85f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.2f, 0.4f, 1.0f, 0.85f);
     canvas_fill_rect(cv, 0.0f, 0.0f, w, h);
 
     // Full-canvas radial gradient centred a bit off, large radius.
-    canvas_set_fill_radial_gradient(cv, w * 0.4f, h * 0.45f, 8.0f,
+    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, w * 0.4f, h * 0.45f, 8.0f,
                                     w * 0.5f, h * 0.5f, w * 0.7f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 0.9f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.1f, 0.2f, 0.5f, 0.0f);

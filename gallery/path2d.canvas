@@ -114,7 +114,7 @@ set_stroke_rgba 1 1 1 0.5
 set_line_width 1.20000005
 stroke_path 0
 restore
-set_fill_radial_gradient 348 98 6 365 116 58
+set_fill_radial_gradient srgb unpremul 348 98 6 365 116 58
 add_fill_color_stop 0 0.550000012 0.949999988 0.949999988 1
 add_fill_color_stop 1 0.200000003 0.349999994 0.850000024 1
 path 1 2

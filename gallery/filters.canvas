@@ -2,7 +2,7 @@ working_space srgb
 set_fill_rgba 0.100000001 0.109999999 0.129999995 1
 fill_rect 0 0 444 644
 set_filter_none
-set_fill_linear_gradient 30 24 134 112
+set_fill_linear_gradient srgb unpremul 30 24 134 112
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -31,7 +31,7 @@ run 1 0 0 4 81 5.43400002 0 82 5.07000017 1 81 5.43400002 2 72 4.79699993 3
 fill_text 82 128 none
 set_filter_none
 add_filter_brightness 1.5
-set_fill_linear_gradient 170 24 274 112
+set_fill_linear_gradient srgb unpremul 170 24 274 112
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -67,7 +67,7 @@ run 1 0 0 15 69 5.74599981 0 85 4.1079998 1 76 3.06800008 2 74 4.97900009 3 75 5
 fill_text 222 128 brightness(1.5)
 set_filter_none
 add_filter_contrast 2
-set_fill_linear_gradient 310 24 414 112
+set_fill_linear_gradient srgb unpremul 310 24 414 112
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -94,7 +94,7 @@ run 1 0 0 11 70 5.05700016 0 82 5.07000017 1 81 5.43400002 2 87 3.47099996 3 85 
 fill_text 362 128 contrast(2)
 set_filter_none
 add_filter_grayscale 1
-set_fill_linear_gradient 30 148 134 236
+set_fill_linear_gradient srgb unpremul 30 148 134 236
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -120,7 +120,7 @@ run 1 0 0 12 74 4.97900009 0 85 4.1079998 1 68 5.59000015 2 92 5.66800022 3 86 4
 fill_text 82 252 grayscale(1)
 set_filter_none
 add_filter_hue_rotate 2.09439516
-set_fill_linear_gradient 170 148 274 236
+set_fill_linear_gradient srgb unpremul 170 148 274 236
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -148,7 +148,7 @@ run 1 0 0 18 75 5.7329998 0 88 5.61600018 1 72 4.79699993 2 16 6.00600004 3 85 4
 fill_text 222 252 hue-rotate(120deg)
 set_filter_none
 add_filter_invert 1
-set_fill_linear_gradient 310 148 414 236
+set_fill_linear_gradient srgb unpremul 310 148 414 236
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -173,7 +173,7 @@ run 1 0 0 9 76 3.06800008 0 81 5.43400002 1 89 5.34299994 2 72 4.79699993 3 85 4
 fill_text 362 252 invert(1)
 set_filter_none
 add_filter_opacity 0.349999994
-set_fill_linear_gradient 30 272 134 360
+set_fill_linear_gradient srgb unpremul 30 272 134 360
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -199,7 +199,7 @@ run 1 0 0 13 82 5.07000017 0 83 6.46099997 1 68 5.59000015 2 70 5.05700016 3 76 
 fill_text 82 376 opacity(0.35)
 set_filter_none
 add_filter_saturate 3
-set_fill_linear_gradient 170 272 274 360
+set_fill_linear_gradient srgb unpremul 170 272 274 360
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -223,7 +223,7 @@ run 1 0 0 11 86 4.90100002 0 68 5.59000015 1 87 3.47099996 2 88 5.61600018 3 85 
 fill_text 222 376 saturate(3)
 set_filter_none
 add_filter_sepia 1
-set_fill_linear_gradient 310 272 414 360
+set_fill_linear_gradient srgb unpremul 310 272 414 360
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -247,7 +247,7 @@ run 1 0 0 8 86 4.90100002 0 72 4.79699993 1 83 6.46099997 2 76 3.06800008 3 68 5
 fill_text 362 376 sepia(1)
 set_filter_none
 add_filter_blur 1.5
-set_fill_linear_gradient 30 396 134 484
+set_fill_linear_gradient srgb unpremul 30 396 134 484
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -271,7 +271,7 @@ run 1 0 0 9 69 5.74599981 0 79 2.92499995 1 88 5.61600018 2 85 4.1079998 3 11 2.
 fill_text 82 500 blur(1.5)
 set_filter_none
 add_filter_blur 3
-set_fill_linear_gradient 170 396 274 484
+set_fill_linear_gradient srgb unpremul 170 396 274 484
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -296,7 +296,7 @@ fill_text 222 500 blur(3)
 set_filter_none
 add_filter_blur 3
 add_filter_saturate 3
-set_fill_linear_gradient 310 396 414 484
+set_fill_linear_gradient srgb unpremul 310 396 414 484
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -321,7 +321,7 @@ run 1 0 0 19 69 5.74599981 0 79 2.92499995 1 88 5.61600018 2 85 4.1079998 3 11 2
 fill_text 362 500 blur(3) saturate(3)
 set_filter_none
 add_filter_drop_shadow 3 3 2 0 0 0 1
-set_fill_linear_gradient 30 520 134 608
+set_fill_linear_gradient srgb unpremul 30 520 134 608
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -346,7 +346,7 @@ run 1 0 0 18 71 6.44799995 0 85 4.1079998 1 82 5.07000017 2 83 6.46099997 3 16 6
 fill_text 82 624 drop-shadow(3 3 2)
 set_filter_none
 add_filter_drop_shadow 6 6 3 0.550000012 0.25 0.949999988 0.600000024
-set_fill_linear_gradient 170 520 274 608
+set_fill_linear_gradient srgb unpremul 170 520 274 608
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1
@@ -373,7 +373,7 @@ fill_text 222 624 drop-shadow(violet 60%)
 set_filter_none
 add_filter_grayscale 1
 add_filter_drop_shadow 6 6 3 0.550000012 0.25 0.949999988 0.850000024
-set_fill_linear_gradient 310 520 414 608
+set_fill_linear_gradient srgb unpremul 310 520 414 608
 add_fill_color_stop 0 0.980000019 0.550000012 0.150000006 1
 add_fill_color_stop 0.5 0.850000024 0.25 0.550000012 1
 add_fill_color_stop 1 0.200000003 0.550000012 0.949999988 1

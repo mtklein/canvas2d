@@ -40,12 +40,12 @@ static void scene(struct canvas *__single cv, int f) {
     }
 
     // Linear + radial gradient fills (the 8-wide param solve + stop lerp rows).
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, w, h);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, w, h);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.3f, 0.2f, 0.9f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.2f, 0.4f, 1.0f, 0.9f);
     canvas_fill_rect(cv, 20.0f, 20.0f, 100.0f, 100.0f);
 
-    canvas_set_fill_radial_gradient(cv, 180.0f, 180.0f, 4.0f, 180.0f, 180.0f, 60.0f);
+    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 180.0f, 180.0f, 4.0f, 180.0f, 180.0f, 60.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 0.95f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.1f, 0.2f, 0.5f, 0.0f);
     canvas_fill_rect(cv, 120.0f, 120.0f, 120.0f, 120.0f);

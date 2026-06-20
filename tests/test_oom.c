@@ -37,7 +37,7 @@ static void scene_curve(struct canvas *__single cv) {
 }
 
 static void scene_gradient(struct canvas *__single cv) {
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)W, (float)H);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);

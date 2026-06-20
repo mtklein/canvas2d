@@ -200,7 +200,7 @@ int main(void) {
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, LEN);
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)W, 0.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)W, 0.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.4f, 0.6f, 0.85f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);

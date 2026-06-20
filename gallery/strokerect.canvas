@@ -75,7 +75,7 @@ set_line_cap butt
 save
 translate 234 158
 rotate 0.319999993
-set_stroke_linear_gradient -44 0 44 0
+set_stroke_linear_gradient srgb unpremul -44 0 44 0
 add_stroke_color_stop 0 0.300000012 0.899999976 0.949999988 1
 add_stroke_color_stop 1 0.949999988 0.349999994 0.850000024 1
 set_line_width 8

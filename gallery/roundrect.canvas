@@ -3,7 +3,7 @@ set_fill_rgba 0.100000001 0.109999999 0.140000001 1
 fill_rect 0 0 548 232
 begin_path
 round_rect_radii 24 24 110 120 24 24 24 24 24 24 24 24
-set_fill_linear_gradient 24 24 134 144
+set_fill_linear_gradient srgb unpremul 24 24 134 144
 add_fill_color_stop 0 0.99000001 0.74000001 0.280000001 1
 add_fill_color_stop 1 0.949999988 0.400000006 0.300000012 1
 fill nonzero
@@ -14,7 +14,7 @@ set_line_width 2
 stroke
 begin_path
 round_rect_radii 154 24 110 120 52 22 52 22 52 22 52 22
-set_fill_linear_gradient 154 24 264 144
+set_fill_linear_gradient srgb unpremul 154 24 264 144
 add_fill_color_stop 0 0.400000006 0.850000024 0.550000012 1
 add_fill_color_stop 1 0.150000006 0.550000012 0.620000005 1
 fill nonzero
@@ -25,7 +25,7 @@ set_line_width 2
 stroke
 begin_path
 round_rect_radii 284 24 110 120 54 54 0 0 54 54 0 0
-set_fill_linear_gradient 284 24 394 144
+set_fill_linear_gradient srgb unpremul 284 24 394 144
 add_fill_color_stop 0 0.449999988 0.720000029 0.980000019 1
 add_fill_color_stop 1 0.280000001 0.400000006 0.949999988 1
 fill nonzero
@@ -36,7 +36,7 @@ set_line_width 2
 stroke
 begin_path
 round_rect_radii 414 24 110 120 6 6 50 22 12 46 34 34
-set_fill_linear_gradient 414 24 524 144
+set_fill_linear_gradient srgb unpremul 414 24 524 144
 add_fill_color_stop 0 0.920000017 0.550000012 0.959999979 1
 add_fill_color_stop 1 0.579999983 0.280000001 0.860000014 1
 fill nonzero
@@ -45,7 +45,7 @@ round_rect_radii 414 24 110 120 6 6 50 22 12 46 34 34
 set_stroke_rgba 0.959999979 0.970000029 0.99000001 0.899999976
 set_line_width 2
 stroke
-set_fill_linear_gradient 24 0 524 0
+set_fill_linear_gradient srgb unpremul 24 0 524 0
 add_fill_color_stop 0 0.99000001 0.800000012 0.25999999 1
 add_fill_color_stop 0.5 0.949999988 0.349999994 0.449999988 1
 add_fill_color_stop 1 0.349999994 0.550000012 0.980000019 1

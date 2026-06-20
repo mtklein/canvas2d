@@ -3,7 +3,7 @@ set_fill_rgba 0.100000001 0.109999999 0.140000001 1
 fill_rect 0 0 500 348
 set_text_align left
 set_text_baseline alphabetic
-set_fill_linear_gradient 36 0 360 0
+set_fill_linear_gradient srgb unpremul 36 0 360 0
 add_fill_color_stop 0 0.99000001 0.800000012 0.25999999 1
 add_fill_color_stop 1 0.349999994 0.550000012 0.980000019 1
 set_font_size 21

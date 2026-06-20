@@ -67,6 +67,11 @@ static enum canvas_color_space rd_cs(struct cursor *c) {
     return (enum canvas_color_space)rd_range(c, 0, 2);
 }
 
+// A fuzzed alpha mode (unpremul / premul), for the gradient interpolation knob.
+static enum canvas_alpha_type rd_alpha(struct cursor *c) {
+    return (enum canvas_alpha_type)rd_range(c, 0, 1);
+}
+
 static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, int H) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int x = rd_range(c, -8, W + 8), y = rd_range(c, -8, H + 8);
@@ -235,18 +240,18 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             }
             case OP_SET_DASH_OFFSET: canvas_set_line_dash_offset(cv, rd_f32(&c)); break;
 
-            case OP_FILL_LINEAR_GRAD: canvas_set_fill_linear_gradient(cv, rd_f32(&c),
-                                          rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
-            case OP_FILL_RADIAL_GRAD: canvas_set_fill_radial_gradient(cv, rd_f32(&c),
-                                          rd_f32(&c), rd_f32(&c), rd_f32(&c),
+            case OP_FILL_LINEAR_GRAD: canvas_set_fill_linear_gradient(cv, rd_cs(&c), rd_alpha(&c),
+                                          rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
+            case OP_FILL_RADIAL_GRAD: canvas_set_fill_radial_gradient(cv, rd_cs(&c), rd_alpha(&c),
+                                          rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c),
                                           rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_FILL_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
                 canvas_add_fill_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
                                            stops[2], stops[3]);
                 break;
-            case OP_STROKE_LINEAR_GRAD: canvas_set_stroke_linear_gradient(cv, rd_f32(&c),
-                                            rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
+            case OP_STROKE_LINEAR_GRAD: canvas_set_stroke_linear_gradient(cv, rd_cs(&c), rd_alpha(&c),
+                                            rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_STROKE_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
                 canvas_add_stroke_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],

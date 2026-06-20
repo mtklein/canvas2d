@@ -20,11 +20,11 @@ int main(void) {
     }
     // Overlapping gradients so every pixel differs -- the PQ OETF does real
     // per-pixel work, not a constant the compiler could hoist.
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)DIM, (float)DIM);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)DIM, (float)DIM);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.02f, 0.10f, 0.40f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.90f, 0.50f, 0.10f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)DIM, (float)DIM);
-    canvas_set_fill_radial_gradient(cv, (float)DIM * 0.5f, (float)DIM * 0.5f, 8.0f,
+    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, (float)DIM * 0.5f, (float)DIM * 0.5f, 8.0f,
                                     (float)DIM * 0.5f, (float)DIM * 0.5f, (float)DIM * 0.6f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 0.8f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.10f, 0.20f, 0.50f, 0.0f);

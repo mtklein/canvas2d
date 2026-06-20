@@ -840,7 +840,7 @@ static void extended_fill_survives(void) {
     struct canvas *__single cv3 = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv3 != NULL);
     if (cv3) {
-        canvas_set_fill_linear_gradient(cv3, 0.0f, 0.0f, (float)w, 0.0f);
+        canvas_set_fill_linear_gradient(cv3, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)w, 0.0f);
         canvas_add_fill_color_stop(cv3, CANVAS_CS_LINEAR_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
         canvas_add_fill_color_stop(cv3, CANVAS_CS_LINEAR_SRGB, 1.0f, 6.0f, 6.0f, 6.0f, 1.0f);
         canvas_fill_rect(cv3, 0.0f, 0.0f, (float)w, (float)h);

@@ -279,6 +279,41 @@ static bool read_opt_cs(char const *__counted_by(le) data, size_t le,
     return at_eol(data, le, *jp);  // nothing may follow the token
 }
 
+// A gradient op line's REQUIRED interpolation pair, read after the op name and
+// before the geometry floats: an interp-space token (any of the three colour
+// spaces) then an interp-alpha token (unpremul/premul).  Both are mandatory --
+// the interpolation is fixed at the gradient's creation, with no favoured
+// default to omit -- so a missing or unknown token is malformed and stops
+// replay (the format's strict posture for every named enum).
+static bool read_interp(char const *__counted_by(le) data, size_t le,
+                        size_t *__single jp, enum canvas_color_space *__single space,
+                        enum canvas_alpha_type *__single alpha) {
+    size_t ts, tl;
+    if (!read_token(data, le, jp, &ts, &tl)) {
+        return false;
+    }
+    if      (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
+        *space = CANVAS_CS_SRGB;
+    } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_LINEAR_SRGB])) {
+        *space = CANVAS_CS_LINEAR_SRGB;
+    } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_OKLAB])) {
+        *space = CANVAS_CS_OKLAB;
+    } else {
+        return false;
+    }
+    if (!read_token(data, le, jp, &ts, &tl)) {
+        return false;
+    }
+    if      (tok_eq(data, le, ts, tl, cnvs_alpha_type_name[CANVAS_ALPHA_UNPREMUL])) {
+        *alpha = CANVAS_ALPHA_UNPREMUL;
+    } else if (tok_eq(data, le, ts, tl, cnvs_alpha_type_name[CANVAS_ALPHA_PREMUL])) {
+        *alpha = CANVAS_ALPHA_PREMUL;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 static bool read_bool(char const *__counted_by(le) data, size_t le,
                       size_t *__single jp, bool *__single out) {
     size_t ts, tlen;
@@ -1261,9 +1296,9 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "scale"))     { if (!read_floats(data, le, &j, f, 2)) return false; canvas_scale(cv, f[0], f[1]); }
     else if (tok_eq(data, le, cs, cl, "move_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_move_to(cv, f[0], f[1]); }
     else if (tok_eq(data, le, cs, cl, "line_to"))   { if (!read_floats(data, le, &j, f, 2)) return false; canvas_line_to(cv, f[0], f[1]); }
-    // --- 3 float ---
-    else if (tok_eq(data, le, cs, cl, "set_fill_conic_gradient"))   { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_fill_conic_gradient(cv, f[0], f[1], f[2]); }
-    else if (tok_eq(data, le, cs, cl, "set_stroke_conic_gradient")) { if (!read_floats(data, le, &j, f, 3)) return false; canvas_set_stroke_conic_gradient(cv, f[0], f[1], f[2]); }
+    // --- interp pair + 3 float ---
+    else if (tok_eq(data, le, cs, cl, "set_fill_conic_gradient"))   { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 3)) return false; canvas_set_fill_conic_gradient(cv, sp, al, f[0], f[1], f[2]); }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_conic_gradient")) { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 3)) return false; canvas_set_stroke_conic_gradient(cv, sp, al, f[0], f[1], f[2]); }
 
     // --- 4 float ---
     else if (tok_eq(data, le, cs, cl, "rect"))                       { if (!read_floats(data, le, &j, f, 4)) return false; canvas_rect(cv, f[0], f[1], f[2], f[3]); }
@@ -1274,8 +1309,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "set_stroke_rgba"))            { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_stroke_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
     else if (tok_eq(data, le, cs, cl, "set_shadow_color_rgba"))      { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 4) || !read_opt_cs(data, le, &j, &sp)) return false; canvas_set_shadow_color_rgba(cv, sp, f[0], f[1], f[2], f[3]); return true; }
     else if (tok_eq(data, le, cs, cl, "quadratic_curve_to"))         { if (!read_floats(data, le, &j, f, 4)) return false; canvas_quadratic_curve_to(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_fill_linear_gradient"))   { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_linear_gradient(cv, f[0], f[1], f[2], f[3]); }
-    else if (tok_eq(data, le, cs, cl, "set_stroke_linear_gradient")) { if (!read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_linear_gradient(cv, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "set_fill_linear_gradient"))   { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 4)) return false; canvas_set_fill_linear_gradient(cv, sp, al, f[0], f[1], f[2], f[3]); }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_linear_gradient")) { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 4)) return false; canvas_set_stroke_linear_gradient(cv, sp, al, f[0], f[1], f[2], f[3]); }
 
     // --- 5 float ---
     else if (tok_eq(data, le, cs, cl, "round_rect"))            { if (!read_floats(data, le, &j, f, 5)) return false; canvas_round_rect(cv, f[0], f[1], f[2], f[3], f[4]); }
@@ -1287,8 +1322,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "transform"))                  { if (!read_floats(data, le, &j, f, 6)) return false; canvas_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "set_transform"))              { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "bezier_curve_to"))            { if (!read_floats(data, le, &j, f, 6)) return false; canvas_bezier_curve_to(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
-    else if (tok_eq(data, le, cs, cl, "set_fill_radial_gradient"))   { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_fill_radial_gradient(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
-    else if (tok_eq(data, le, cs, cl, "set_stroke_radial_gradient")) { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_stroke_radial_gradient(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
+    else if (tok_eq(data, le, cs, cl, "set_fill_radial_gradient"))   { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 6)) return false; canvas_set_fill_radial_gradient(cv, sp, al, f[0], f[1], f[2], f[3], f[4], f[5]); }
+    else if (tok_eq(data, le, cs, cl, "set_stroke_radial_gradient")) { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 6)) return false; canvas_set_stroke_radial_gradient(cv, sp, al, f[0], f[1], f[2], f[3], f[4], f[5]); }
 
     // --- 7 float ---
     else if (tok_eq(data, le, cs, cl, "add_filter_drop_shadow")) {
@@ -1375,31 +1410,6 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if (tok_eq(data, le, ts, tl, "ltr"))      canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
         else if (tok_eq(data, le, ts, tl, "rtl")) canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
         else return false;
-    }
-    else if (tok_eq(data, le, cs, cl, "set_fill_gradient_interpolation") ||
-             tok_eq(data, le, cs, cl, "set_stroke_gradient_interpolation")) {
-        bool const fill = data[cs + 4] == 'f';  // "set_[f]ill" vs "set_[s]troke"
-        size_t ts, tl;
-        // SPACE token: any of the three colour spaces is a valid interp space.
-        if (!read_token(data, le, &j, &ts, &tl)) return false;
-        enum canvas_color_space space;
-        if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_SRGB])) {
-            space = CANVAS_CS_SRGB;
-        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_LINEAR_SRGB])) {
-            space = CANVAS_CS_LINEAR_SRGB;
-        } else if (tok_eq(data, le, ts, tl, canvas_color_space_name[CANVAS_CS_OKLAB])) {
-            space = CANVAS_CS_OKLAB;
-        } else {
-            return false;
-        }
-        // ALPHA token: premultiply the colour coords before the lerp, or not.
-        if (!read_token(data, le, &j, &ts, &tl)) return false;
-        enum canvas_alpha_type alpha;
-        if (tok_eq(data, le, ts, tl, "unpremul"))    alpha = CANVAS_ALPHA_UNPREMUL;
-        else if (tok_eq(data, le, ts, tl, "premul")) alpha = CANVAS_ALPHA_PREMUL;
-        else return false;
-        if (fill) canvas_set_fill_gradient_interpolation(cv, space, alpha);
-        else      canvas_set_stroke_gradient_interpolation(cv, space, alpha);
     }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;
