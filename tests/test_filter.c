@@ -239,7 +239,7 @@ static void blur_order_visible(void) {
                 canvas_add_filter_contrast(cv, 2.0f);
             }
             // A hard-stop gradient: pure red for x < 24, pure green from 24 on.
-            canvas_set_fill_linear_gradient(cv, 8.0f, 24.0f, 40.0f, 24.0f);
+            canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 8.0f, 24.0f, 40.0f, 24.0f);
             canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
             canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f);
             canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);

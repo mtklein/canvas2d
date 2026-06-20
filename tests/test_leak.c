@@ -31,7 +31,7 @@ static void draw_some(struct canvas *__single cv, int seed) {
 
     // Gradient fill (grows the parameter/colour row buffers), then a solid
     // fill and a stroke.
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 48.0f, 0.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 48.0f, 0.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_begin_path(cv);

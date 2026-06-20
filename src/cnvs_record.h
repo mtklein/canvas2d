@@ -65,6 +65,10 @@ extern char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1];
 // indexed by enum value: "srgb", "linear", "oklab".  The tokens are the
 // on-disk contract; both record and replay name through this table.
 extern char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1];
+// The alpha-mode tokens, indexed by enum value: "unpremul", "premul".  A
+// gradient op line carries one of these (the same table the image-block format
+// names its alpha type through); both record and replay name through it.
+extern char const *const cnvs_alpha_type_name[CANVAS_ALPHA_PREMUL + 1];
 
 // `working_space <name>` -- emitted at record start ONLY for a non-sRGB working
 // space, so every existing (sRGB) .canvas file stays byte-identical (absence
@@ -189,14 +193,14 @@ void cnvs_rec_text_align(struct cnvs_recorder *__single r, enum canvas_text_alig
 void cnvs_rec_text_baseline(struct cnvs_recorder *__single r,
                             enum canvas_text_baseline baseline);
 void cnvs_rec_direction(struct cnvs_recorder *__single r, enum canvas_direction dir);
-// `<name> <space> <alpha>` -- the fill/stroke gradient interpolation setters,
-// `name` being the op spelling (set_fill_gradient_interpolation /
-// set_stroke_gradient_interpolation), `space` the interpolation colour space by
-// name (srgb/linear/oklab) and `alpha` the premultiply token (unpremul/premul).
-// Emitted ONLY when the interp is non-default (space != srgb OR alpha !=
-// unpremul): absence on replay is the default (srgb + unpremul), keeping every
-// legacy program byte-identical.
-void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
-                             char const *__null_terminated name,
-                             enum canvas_color_space space,
-                             enum canvas_alpha_type alpha);
+// `<name> <interp-space> <interp-alpha> <geometry floats...>` -- a
+// set_*_gradient op line.  `name` is the op spelling (set_fill_linear_gradient
+// and its five siblings); the interpolation rides the line UNCONDITIONALLY,
+// `interp_space` named through canvas_color_space_name and `interp_alpha`
+// through cnvs_alpha_type_name (the interpolation is required at creation, so
+// there is no favoured default to omit), followed by the n geometry floats.
+void cnvs_rec_gradient(struct cnvs_recorder *__single r,
+                       char const *__null_terminated name,
+                       enum canvas_color_space interp_space,
+                       enum canvas_alpha_type interp_alpha,
+                       float const *__counted_by(n) v, int n);

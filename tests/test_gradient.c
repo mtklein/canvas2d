@@ -23,7 +23,7 @@ int main(void) {
 
     // Horizontal linear gradient red -> blue, painted with fillRect (which must
     // honour a gradient fill, like fill()).
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)w, 0.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)w, 0.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
@@ -37,7 +37,7 @@ int main(void) {
 
     // Concentric radial gradient yellow centre -> red rim (radius 28).
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_radial_gradient(cv, 32.0f, 32.0f, 0.0f, 32.0f, 32.0f, 28.0f);
+    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 32.0f, 32.0f, 0.0f, 32.0f, 32.0f, 28.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_begin_path(cv);
@@ -53,7 +53,7 @@ int main(void) {
 
     // A three-stop gradient passes through the middle colour.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)w, 0.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)w, 0.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
@@ -77,7 +77,7 @@ int main(void) {
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.2f, 1.0f);
     canvas_save(cv);
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, (float)w, 0.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)w, 0.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_restore(cv);
@@ -89,7 +89,7 @@ int main(void) {
 
     // Gradient stroke: a thick horizontal line, red -> blue left to right.
     canvas_clear_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
-    canvas_set_stroke_linear_gradient(cv, 0.0f, 0.0f, (float)w, 0.0f);
+    canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)w, 0.0f);
     canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_set_line_width(cv, 12.0f);
@@ -120,13 +120,13 @@ int main(void) {
     canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);  // white ground
 
-    canvas_set_fill_linear_gradient(cv, 32.0f, 32.0f, 32.0f, 32.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 32.0f, 32.0f, 32.0f, 32.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 255, 255, 255, 0));
 
-    canvas_set_fill_radial_gradient(cv, 32.0f, 32.0f, 8.0f, 32.0f, 32.0f, 8.0f);
+    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 32.0f, 32.0f, 8.0f, 32.0f, 32.0f, 8.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
@@ -134,13 +134,13 @@ int main(void) {
 
     // The boundary is exact equality: a tiny-but-nonzero linear gradient and a
     // point-centred conic both still paint.
-    canvas_set_fill_linear_gradient(cv, 32.0f, 32.0f, 32.001f, 32.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 32.0f, 32.0f, 32.001f, 32.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, w, 32, 32), 255, 0, 0, 255, 2));
 
-    canvas_set_fill_conic_gradient(cv, 0.0f, 32.0f, 32.0f);
+    canvas_set_fill_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 32.0f, 32.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f);
     canvas_fill_rect(cv, 0.0f, 0.0f, (float)w, (float)h);
     canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);

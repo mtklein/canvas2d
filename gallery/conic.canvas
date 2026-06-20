@@ -1,7 +1,7 @@
 working_space srgb
 set_fill_rgba 0.100000001 0.109999999 0.140000001 1
 fill_rect 0 0 440 176
-set_fill_conic_gradient -1.57079637 78 78
+set_fill_conic_gradient srgb unpremul -1.57079637 78 78
 add_fill_color_stop 0 1 0.259123087 0.232086718 1
 add_fill_color_stop 0.0833333358 0.933012724 0.0723178089 0.479062259 1
 add_fill_color_stop 0.166666672 0.75 0.000109642744 0.731648266 1
@@ -18,7 +18,7 @@ add_fill_color_stop 1 1 0.259122908 0.232086778 1
 begin_path
 arc 78 78 56 0 6.28318548 0
 fill nonzero
-set_fill_conic_gradient -1.57079637 220 78
+set_fill_conic_gradient srgb unpremul -1.57079637 220 78
 add_fill_color_stop 0 0.970000029 0.779999971 0.239999995 1
 add_fill_color_stop 0.180000007 0.970000029 0.779999971 0.239999995 1
 add_fill_color_stop 0.180000007 0.200000003 0.779999971 0.699999988 1
@@ -32,7 +32,7 @@ add_fill_color_stop 1 0.449999988 0.819999993 0.449999988 1
 begin_path
 arc 220 78 56 0 6.28318548 0
 fill nonzero
-set_fill_conic_gradient 0.628318548 362 78
+set_fill_conic_gradient srgb unpremul 0.628318548 362 78
 add_fill_color_stop 0 0.819999993 0.839999974 0.899999976 1
 add_fill_color_stop 0.25 0.300000012 0.330000013 0.419999987 1
 add_fill_color_stop 0.5 0.819999993 0.839999974 0.899999976 1
@@ -41,7 +41,7 @@ add_fill_color_stop 1 0.819999993 0.839999974 0.899999976 1
 begin_path
 arc 362 78 24 0 6.28318548 0
 fill nonzero
-set_stroke_conic_gradient 0 362 78
+set_stroke_conic_gradient srgb unpremul 0 362 78
 add_stroke_color_stop 0 1 0.259123087 0.232086718 1
 add_stroke_color_stop 0.0833333358 0.933012724 0.0723178089 0.479062259 1
 add_stroke_color_stop 0.166666672 0.75 0.000109642744 0.731648266 1

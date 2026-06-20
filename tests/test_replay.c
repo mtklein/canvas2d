@@ -81,10 +81,10 @@ int main(void) {
     // filter list, reset, resize (back and forth, ending at 64x48), and the
     // maxWidth text pair.
     CHECK(REPLAY(cv,
-        "set_fill_conic_gradient 0.5 32 24\n"
+        "set_fill_conic_gradient srgb unpremul 0.5 32 24\n"
         "add_fill_color_stop 0 1 0 0 1\n"
         "add_fill_color_stop 1 0 0 1 1\n"
-        "set_stroke_conic_gradient 0 32 24\n"
+        "set_stroke_conic_gradient srgb unpremul 0 32 24\n"
         "add_stroke_color_stop 0 1 1 0 1\n"
         "begin_path\n"
         "round_rect_radii 4 4 40 24 2 3 4 2 0 0 5 5\n"
@@ -193,19 +193,23 @@ int main(void) {
                       "bits eJz7z8DwHwAE/wH/\n"
                       "set_fill_pattern 0 sideways\n")); // bad repeat mode
 
-    // Gradient-interpolation lines: both knobs read by name (all three colour
-    // spaces are valid interp spaces; alpha is premul/unpremul).  A valid line
-    // of each, then every malformed-token rejection.
-    CHECK(REPLAY(cv, "set_fill_gradient_interpolation srgb premul\n"));
-    CHECK(REPLAY(cv, "set_fill_gradient_interpolation linear unpremul\n"));
-    CHECK(REPLAY(cv, "set_fill_gradient_interpolation oklab premul\n"));
-    CHECK(REPLAY(cv, "set_stroke_gradient_interpolation oklab unpremul\n"));
-    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation gamma premul\n"));    // bad space
-    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation srgb sideways\n"));   // bad alpha
-    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation srgb\n"));            // missing alpha
-    CHECK(!REPLAY(cv, "set_fill_gradient_interpolation srgb premul extra\n")); // trailing junk
-    CHECK(!REPLAY(cv, "set_stroke_gradient_interpolation gamma premul\n"));  // bad space
-    CHECK(!REPLAY(cv, "set_stroke_gradient_interpolation oklab nope\n"));    // bad alpha
+    // Gradient op lines: the interpolation pair (space + alpha) rides each op
+    // UNCONDITIONALLY, by name, ahead of the geometry floats (all three colour
+    // spaces and both alpha modes are valid).  A valid line of each gradient
+    // kind across fill/stroke, then every malformed-token rejection.
+    CHECK(REPLAY(cv, "set_fill_linear_gradient srgb unpremul 0 0 1 1\n"));
+    CHECK(REPLAY(cv, "set_fill_radial_gradient linear premul 0 0 0 1 1 1\n"));
+    CHECK(REPLAY(cv, "set_fill_conic_gradient oklab unpremul 0.5 1 1\n"));
+    CHECK(REPLAY(cv, "set_stroke_linear_gradient oklab premul 0 0 1 1\n"));
+    CHECK(REPLAY(cv, "set_stroke_radial_gradient srgb premul 0 0 0 1 1 1\n"));
+    CHECK(REPLAY(cv, "set_stroke_conic_gradient linear unpremul 0.25 1 1\n"));
+    CHECK(!REPLAY(cv, "set_fill_linear_gradient gamma unpremul 0 0 1 1\n"));   // bad space
+    CHECK(!REPLAY(cv, "set_fill_linear_gradient srgb sideways 0 0 1 1\n"));    // bad alpha
+    CHECK(!REPLAY(cv, "set_fill_linear_gradient srgb 0 0 1 1\n"));             // missing alpha (parsed as space)
+    CHECK(!REPLAY(cv, "set_fill_linear_gradient 0 0 1 1\n"));                  // missing interp pair
+    CHECK(!REPLAY(cv, "set_fill_linear_gradient srgb unpremul 0 0 1 1 extra\n")); // trailing junk
+    CHECK(!REPLAY(cv, "set_stroke_radial_gradient gamma premul 0 0 0 1 1 1\n"));   // bad space
+    CHECK(!REPLAY(cv, "set_stroke_conic_gradient oklab nope 0.5 1 1\n"));      // bad alpha
 
     // working_space: a valid leading line, then every rejection.  It must lead
     // the file (reconfiguring the immutable space before the first op), name one

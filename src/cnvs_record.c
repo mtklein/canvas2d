@@ -66,6 +66,12 @@ char const *const cnvs_repeat_name[CANVAS_NO_REPEAT + 1] = {
 char const *const canvas_color_space_name[CANVAS_CS_OKLAB + 1] = {
     "srgb", "linear", "oklab",
 };
+// The alpha-mode tokens, indexed by enum value, mirroring the colour-space
+// table.  A gradient op line carries one of these unconditionally (the four
+// image-block formats spell the same tokens inline, the equal-peers posture).
+char const *const cnvs_alpha_type_name[CANVAS_ALPHA_PREMUL + 1] = {
+    "unpremul", "premul",
+};
 
 struct cnvs_recorder {
     FILE *__single f;
@@ -896,30 +902,31 @@ void cnvs_rec_working_space(struct cnvs_recorder *__single r,
     r->pending_space = space;
 }
 
-void cnvs_rec_gradient_interp(struct cnvs_recorder *__single r,
-                             char const *__null_terminated name,
-                             enum canvas_color_space space,
-                             enum canvas_alpha_type alpha) {
+void cnvs_rec_gradient(struct cnvs_recorder *__single r,
+                       char const *__null_terminated name,
+                       enum canvas_color_space interp_space,
+                       enum canvas_alpha_type interp_alpha,
+                       float const *__counted_by(n) v, int n) {
     if (!r || r->suspend != 0) {
         return;
     }
     cnvs_rec_flush_ws(r);
-    // The default (srgb + unpremul) is the absence of the line entirely, so a
-    // default-interp gradient records nothing and stays byte-identical to a
-    // legacy program.  Only a non-default interp emits.
-    if (space == CANVAS_CS_SRGB && alpha == CANVAS_ALPHA_UNPREMUL) {
+    // `<name> <interp-space> <interp-alpha> <geometry floats...>`: the
+    // interpolation is required at creation, so both tokens are written
+    // unconditionally (no favoured default to omit), then the geometry.  An
+    // unnameable enum cannot round-trip -- skip the whole line rather than
+    // write a token the strict parser would reject (no caller produces one).
+    unsigned const si = (unsigned)interp_space;
+    unsigned const ai = (unsigned)interp_alpha;
+    if (si >= sizeof canvas_color_space_name / sizeof canvas_color_space_name[0] ||
+        ai >= sizeof cnvs_alpha_type_name / sizeof cnvs_alpha_type_name[0]) {
         return;
-    }
-    unsigned const i = (unsigned)space;
-    if (i >= sizeof canvas_color_space_name / sizeof canvas_color_space_name[0]) {
-        return;  // out of range; the caller's setter still stored it, but an
-                 // unnameable value cannot round-trip -- skip the line rather
-                 // than write a token the strict parser would reject.
     }
     fputs(name, r->f);
     fputc(' ', r->f);
-    fputs(canvas_color_space_name[i], r->f);
+    fputs(canvas_color_space_name[si], r->f);
     fputc(' ', r->f);
-    fputs(alpha == CANVAS_ALPHA_PREMUL ? "premul" : "unpremul", r->f);
+    fputs(cnvs_alpha_type_name[ai], r->f);
+    put_floats(r->f, v, n);
     fputc('\n', r->f);
 }

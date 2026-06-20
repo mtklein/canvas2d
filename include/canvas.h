@@ -66,9 +66,8 @@ enum canvas_composite_op {
 
 // The colour spaces this API names.  ONE enum spanning every role; each
 // surface that takes a space accepts only the valid SUBSET for that role
-// (canvas takes the two compositing spaces and returns NULL otherwise;
-// the gradient interpolation setters take all three and silently ignore an
-// out-of-range value).  Neither asserts.
+// (canvas takes the two compositing spaces and returns NULL otherwise; a
+// gradient's interpolation argument takes all three).  Neither asserts.
 //   CANVAS_CS_SRGB        -- encoded sRGB.
 //   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB (same primaries, linear
 //                            transfer).
@@ -98,18 +97,14 @@ enum canvas_composite_op {
 // colour parameter and emits 16-bit Rec.2020/PQ regardless -- see write_png.)
 //
 // A gradient's INTERPOLATION SPACE: the colour space its stop colours blend in
-// between stops (the gradient interpolation setters).  Per gradient (not per
-// canvas): it rides the fill/stroke gradient, so save/restore brackets it like
-// any drawing state, and a fresh canvas_set_*_gradient resets it to the sRGB
-// default.  The geometry of the gradient (which stop pair, how far between) is
-// identical either way; only the colour lerp differs.  All THREE colour spaces
-// are valid here (the orthogonal alpha knob, premul or unpremul, applies to
-// each); an out-of-range value for either knob is ignored, leaving the
-// gradient's interpolation untouched:
-//   CANVAS_CS_SRGB        -- component-wise lerp of the stop colours as stored,
-//                            today's behaviour byte for byte.  The default, so
-//                            an untouched gradient -- and every legacy program
-//                            with no interpolation line -- is unchanged.
+// between stops, a required choice at the gradient's creation (the first
+// argument of every canvas_set_*_gradient).  Per gradient (not per canvas): it
+// rides the fill/stroke gradient, so save/restore brackets it like any drawing
+// state.  The geometry of the gradient (which stop pair, how far between) is
+// identical across the three; only the colour lerp differs.  All THREE colour
+// spaces are equal peers here (the orthogonal alpha knob, premul or unpremul,
+// applies to each):
+//   CANVAS_CS_SRGB        -- component-wise lerp of the stop colours as stored.
 //   CANVAS_CS_LINEAR_SRGB -- lerp in linear-light sRGB (the stops decode
 //                            sRGB->linear, blend, encode back), so the ramp
 //                            tracks physical light rather than the encoded
@@ -252,31 +247,33 @@ void canvas_add_filter_sepia(struct canvas *__single cv, float amount);
 // Set the fill paint to a gradient and clear its stops; fill() uses it until the
 // next canvas_set_fill_rgba.  Coordinates are user space (the transform is baked in
 // now).  Add stops with canvas_add_fill_color_stop; offsets clamp to [0,1].
+//
+// The interpolation is chosen at creation, two orthogonal required knobs: the
+// colour SPACE the stops lerp in (interp_space, any of CANVAS_CS_SRGB /
+// CANVAS_CS_LINEAR_SRGB / CANVAS_CS_OKLAB -- equal peers, see canvas_color_space)
+// and whether the colour coordinates are premultiplied by alpha before the lerp
+// (interp_alpha, CANVAS_ALPHA_PREMUL hygiene -- a transparent stop contributes
+// no colour -- or CANVAS_ALPHA_UNPREMUL, lerped directly; the two are equal
+// peers).  Alpha itself always lerps linearly.
 void canvas_set_fill_linear_gradient(struct canvas *__single cv,
+                                     enum canvas_color_space interp_space,
+                                     enum canvas_alpha_type interp_alpha,
                                      float x0, float y0, float x1, float y1);
-void canvas_set_fill_radial_gradient(struct canvas *__single cv, float x0, float y0,
+void canvas_set_fill_radial_gradient(struct canvas *__single cv,
+                                     enum canvas_color_space interp_space,
+                                     enum canvas_alpha_type interp_alpha,
+                                     float x0, float y0,
                                      float r0, float x1, float y1, float r1);
 // Conic gradient (createConicGradient): colours sweep clockwise around (x, y)
 // from `start_angle` radians (measured from the +x axis).  Stops are added with
 // canvas_add_fill_color_stop, as for the linear/radial gradients.
-void canvas_set_fill_conic_gradient(struct canvas *__single cv, float start_angle,
-                                    float x, float y);
+void canvas_set_fill_conic_gradient(struct canvas *__single cv,
+                                    enum canvas_color_space interp_space,
+                                    enum canvas_alpha_type interp_alpha,
+                                    float start_angle, float x, float y);
 void canvas_add_fill_color_stop(struct canvas *__single cv,
                                 enum canvas_color_space space, float offset,
                                 float r, float g, float b, float a);
-// Choose the interpolation for the current fill gradient, two orthogonal knobs:
-// the colour SPACE the stops lerp in (CANVAS_CS_SRGB / CANVAS_CS_LINEAR_SRGB /
-// CANVAS_CS_OKLAB) and whether the colour coordinates are premultiplied by
-// alpha before the lerp (CANVAS_ALPHA_PREMUL hygiene -- a transparent stop
-// contributes no colour) or lerped directly (CANVAS_ALPHA_UNPREMUL).  Alpha
-// itself always lerps linearly.  Default CANVAS_CS_SRGB + CANVAS_ALPHA_UNPREMUL
-// (the legacy straight stored-value lerp, byte-for-byte).  Applies to whichever
-// gradient is the fill paint now; a later canvas_set_fill_*_gradient resets it
-// to the default, so set it after creating the gradient and before (or after)
-// its stops.
-void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
-                                            enum canvas_color_space space,
-                                            enum canvas_alpha_type alpha);
 // Image pattern fill paint (createPattern): the tightly packed RGBA8 source
 // (w*h, top row first) tiles the plane per `repeat`.  The source is *borrowed* --
 // the caller must keep it alive while it remains the fill paint (including across
@@ -399,20 +396,24 @@ void canvas_set_stroke_rgba(struct canvas *__single cv, enum canvas_color_space 
                             float r, float g, float b, float a);
 // Gradient stroke paint, mirroring the fill gradient calls; stroke() uses it
 // until the next canvas_set_stroke_rgba.  (Coordinates are baked through the
-// transform now, as for fills.)
+// transform now, as for fills.)  interp_space and interp_alpha are the required
+// interpolation knobs, exactly as for the fill twins above.
 void canvas_set_stroke_linear_gradient(struct canvas *__single cv,
+                                       enum canvas_color_space interp_space,
+                                       enum canvas_alpha_type interp_alpha,
                                        float x0, float y0, float x1, float y1);
-void canvas_set_stroke_radial_gradient(struct canvas *__single cv, float x0, float y0,
+void canvas_set_stroke_radial_gradient(struct canvas *__single cv,
+                                       enum canvas_color_space interp_space,
+                                       enum canvas_alpha_type interp_alpha,
+                                       float x0, float y0,
                                        float r0, float x1, float y1, float r1);
-void canvas_set_stroke_conic_gradient(struct canvas *__single cv, float start_angle,
-                                      float x, float y);
+void canvas_set_stroke_conic_gradient(struct canvas *__single cv,
+                                      enum canvas_color_space interp_space,
+                                      enum canvas_alpha_type interp_alpha,
+                                      float start_angle, float x, float y);
 void canvas_add_stroke_color_stop(struct canvas *__single cv,
                                   enum canvas_color_space space, float offset,
                                   float r, float g, float b, float a);
-// Interpolation space x alpha for the current stroke gradient (the fill twin above).
-void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
-                                              enum canvas_color_space space,
-                                              enum canvas_alpha_type alpha);
 // Image pattern stroke paint, mirroring canvas_set_fill_pattern (the same
 // `space` tag, sampled in-space and converted to the working space on deposit).
 void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_space space,

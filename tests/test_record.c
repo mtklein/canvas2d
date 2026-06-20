@@ -56,22 +56,22 @@ static void draw_program(struct canvas *__single cv) {
     canvas_clear_rect(cv, 1.0f, 1.0f, 2.0f, 2.0f);
 
     // Fill gradients (linear + radial) with stops.
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 16.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_set_fill_radial_gradient(cv, 8.0f, 8.0f, 0.0f, 8.0f, 8.0f, 16.0f);
+    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 8.0f, 8.0f, 0.0f, 8.0f, 8.0f, 16.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_set_fill_conic_gradient(cv, 0.5f, 16.0f, 12.0f);
+    canvas_set_fill_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.5f, 16.0f, 12.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
     canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.5f, 1.0f, 1.0f);
 
     // Stroke paints (solid, then both gradient forms) + line styles.
     canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_stroke_linear_gradient(cv, 0.0f, 0.0f, 32.0f, 0.0f);
+    canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 32.0f, 0.0f);
     canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_set_stroke_radial_gradient(cv, 4.0f, 4.0f, 1.0f, 4.0f, 4.0f, 8.0f);
+    canvas_set_stroke_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 4.0f, 4.0f, 1.0f, 4.0f, 4.0f, 8.0f);
     canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f);
-    canvas_set_stroke_conic_gradient(cv, 0.25f, 16.0f, 12.0f);
+    canvas_set_stroke_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.25f, 16.0f, 12.0f);
     canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f);
     canvas_set_line_width(cv, 2.0f);
     canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
@@ -259,9 +259,9 @@ static void record_colors(char const *__null_terminated path,
     canvas_set_fill_rgba(cv, space, 0.25f, 0.5f, 0.75f, 1.0f);
     canvas_set_stroke_rgba(cv, space, 0.125f, 0.25f, 0.375f, 0.5f);
     canvas_set_shadow_color_rgba(cv, space, 0.5f, 0.5f, 0.5f, 0.25f);
-    canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 16.0f);
+    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
     canvas_add_fill_color_stop(cv, space, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_stroke_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 0.0f);
+    canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 0.0f);
     canvas_add_stroke_color_stop(cv, space, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
     canvas_add_filter_drop_shadow(cv, space, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
     // put_image_data: its colour space rides the BLOCK's optional tag.
@@ -497,7 +497,7 @@ int main(void) {
         CHECK(cv != NULL);
         CHECK(canvas_record_to(cv, cp_okl));
         canvas_set_fill_rgba(cv, CANVAS_CS_OKLAB, 0.5f, 0.25f, 0.75f, 1.0f);
-        canvas_set_fill_linear_gradient(cv, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
         canvas_add_fill_color_stop(cv, CANVAS_CS_OKLAB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
         canvas_free(cv);
         char buf[1 << 13];

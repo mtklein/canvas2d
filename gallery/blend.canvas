@@ -2,7 +2,7 @@ working_space srgb
 set_fill_rgba 0.100000001 0.109999999 0.129999995 1
 fill_rect 0 0 724 396
 set_global_composite_operation source-over
-set_fill_linear_gradient 30 24 134 112
+set_fill_linear_gradient srgb unpremul 30 24 134 112
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -34,7 +34,7 @@ shaping 13 0 0 0 8 1 8 multiply
 run 1 0 0 8 80 8.125 0 88 5.61600018 1 79 2.92499995 2 87 3.47099996 3 76 3.06800008 4 83 6.46099997 5 79 2.92499995 6 92 5.66800022 7
 fill_text 82 128 multiply
 set_global_composite_operation source-over
-set_fill_linear_gradient 170 24 274 112
+set_fill_linear_gradient srgb unpremul 170 24 274 112
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -62,7 +62,7 @@ shaping 13 0 0 0 6 1 6 screen
 run 1 0 0 6 86 4.90100002 0 70 5.05700016 1 85 4.1079998 2 72 4.79699993 3 72 4.79699993 4 81 5.43400002 5
 fill_text 222 128 screen
 set_global_composite_operation source-over
-set_fill_linear_gradient 310 24 414 112
+set_fill_linear_gradient srgb unpremul 310 24 414 112
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -88,7 +88,7 @@ shaping 13 0 0 0 7 1 7 overlay
 run 1 0 0 7 82 5.07000017 0 89 5.34299994 1 72 4.79699993 2 85 4.1079998 3 79 2.92499995 4 68 5.59000015 5 92 5.66800022 6
 fill_text 362 128 overlay
 set_global_composite_operation source-over
-set_fill_linear_gradient 450 24 554 112
+set_fill_linear_gradient srgb unpremul 450 24 554 112
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -113,7 +113,7 @@ shaping 13 0 0 0 6 1 6 darken
 run 1 0 0 6 71 6.44799995 0 68 5.59000015 1 85 4.1079998 2 78 5.75899982 3 72 4.79699993 4 81 5.43400002 5
 fill_text 502 128 darken
 set_global_composite_operation source-over
-set_fill_linear_gradient 590 24 694 112
+set_fill_linear_gradient srgb unpremul 590 24 694 112
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -138,7 +138,7 @@ shaping 13 0 0 0 7 1 7 lighten
 run 1 0 0 7 79 2.92499995 0 76 3.06800008 1 74 4.97900009 2 75 5.7329998 3 87 3.47099996 4 72 4.79699993 5 81 5.43400002 6
 fill_text 642 128 lighten
 set_global_composite_operation source-over
-set_fill_linear_gradient 30 148 134 236
+set_fill_linear_gradient srgb unpremul 30 148 134 236
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -162,7 +162,7 @@ shaping 13 0 0 0 11 1 11 color-dodge
 run 1 0 0 11 70 5.05700016 0 82 5.07000017 1 79 2.92499995 2 82 5.07000017 3 85 4.1079998 4 16 6.00600004 5 71 6.44799995 6 82 5.07000017 7 71 6.44799995 8 74 4.97900009 9 72 4.79699993 10
 fill_text 82 252 color-dodge
 set_global_composite_operation source-over
-set_fill_linear_gradient 170 148 274 236
+set_fill_linear_gradient srgb unpremul 170 148 274 236
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -186,7 +186,7 @@ shaping 13 0 0 0 10 1 10 color-burn
 run 1 0 0 10 70 5.05700016 0 82 5.07000017 1 79 2.92499995 2 82 5.07000017 3 85 4.1079998 4 16 6.00600004 5 69 5.74599981 6 88 5.61600018 7 85 4.1079998 8 81 5.43400002 9
 fill_text 222 252 color-burn
 set_global_composite_operation source-over
-set_fill_linear_gradient 310 148 414 236
+set_fill_linear_gradient srgb unpremul 310 148 414 236
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -209,7 +209,7 @@ shaping 13 0 0 0 10 1 10 hard-light
 run 1 0 0 10 75 5.7329998 0 68 5.59000015 1 85 4.1079998 2 71 6.44799995 3 16 6.00600004 4 79 2.92499995 5 76 3.06800008 6 74 4.97900009 7 75 5.7329998 8 87 3.47099996 9
 fill_text 362 252 hard-light
 set_global_composite_operation source-over
-set_fill_linear_gradient 450 148 554 236
+set_fill_linear_gradient srgb unpremul 450 148 554 236
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -233,7 +233,7 @@ shaping 13 0 0 0 10 1 10 soft-light
 run 1 0 0 10 86 4.90100002 0 82 5.07000017 1 73 4.21199989 2 87 3.47099996 3 16 6.00600004 4 79 2.92499995 5 76 3.06800008 6 74 4.97900009 7 75 5.7329998 8 87 3.47099996 9
 fill_text 502 252 soft-light
 set_global_composite_operation source-over
-set_fill_linear_gradient 590 148 694 236
+set_fill_linear_gradient srgb unpremul 590 148 694 236
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -256,7 +256,7 @@ shaping 13 0 0 0 10 1 10 difference
 run 1 0 0 10 71 6.44799995 0 76 3.06800008 1 73 4.21199989 2 73 4.21199989 3 72 4.79699993 4 85 4.1079998 5 72 4.79699993 6 81 5.43400002 7 70 5.05700016 8 72 4.79699993 9
 fill_text 642 252 difference
 set_global_composite_operation source-over
-set_fill_linear_gradient 30 272 134 360
+set_fill_linear_gradient srgb unpremul 30 272 134 360
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -280,7 +280,7 @@ shaping 13 0 0 0 9 1 9 exclusion
 run 1 0 0 9 72 4.79699993 0 91 5.66800022 1 70 5.05700016 2 79 2.92499995 3 88 5.61600018 4 86 4.90100002 5 76 3.06800008 6 82 5.07000017 7 81 5.43400002 8
 fill_text 82 376 exclusion
 set_global_composite_operation source-over
-set_fill_linear_gradient 170 272 274 360
+set_fill_linear_gradient srgb unpremul 170 272 274 360
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -303,7 +303,7 @@ shaping 13 0 0 0 3 1 3 hue
 run 1 0 0 3 75 5.7329998 0 88 5.61600018 1 72 4.79699993 2
 fill_text 222 376 hue
 set_global_composite_operation source-over
-set_fill_linear_gradient 310 272 414 360
+set_fill_linear_gradient srgb unpremul 310 272 414 360
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -326,7 +326,7 @@ shaping 13 0 0 0 10 1 10 saturation
 run 1 0 0 10 86 4.90100002 0 68 5.59000015 1 87 3.47099996 2 88 5.61600018 3 85 4.1079998 4 68 5.59000015 5 87 3.47099996 6 76 3.06800008 7 82 5.07000017 8 81 5.43400002 9
 fill_text 362 376 saturation
 set_global_composite_operation source-over
-set_fill_linear_gradient 450 272 554 360
+set_fill_linear_gradient srgb unpremul 450 272 554 360
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
@@ -349,7 +349,7 @@ shaping 13 0 0 0 5 1 5 color
 run 1 0 0 5 70 5.05700016 0 82 5.07000017 1 79 2.92499995 2 82 5.07000017 3 85 4.1079998 4
 fill_text 502 376 color
 set_global_composite_operation source-over
-set_fill_linear_gradient 590 272 694 360
+set_fill_linear_gradient srgb unpremul 590 272 694 360
 add_fill_color_stop 0 0.200000003 0.649999976 0.949999988 1
 add_fill_color_stop 1 0.980000019 0.850000024 0.300000012 1
 begin_path
