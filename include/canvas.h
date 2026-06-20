@@ -646,6 +646,30 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
                                  int dirty_x, int dirty_y,
                                  int dirty_w, int dirty_h);
 
+// The rgba-float16 ImageData twins (the spec's `rgba-float16` storage format):
+// straight (unpremultiplied) _Float16 RGBA instead of u8, `len` the ELEMENT
+// count (w*h*4) rather than a byte count.  Unlike the u8 path these preserve
+// EXTENDED range -- HDR (>1) and wide-gamut (negative) colour a CANVAS_CS_LINEAR_SRGB
+// canvas stores are neither clamped to [0,1] nor quantized to 8-bit.  `space`
+// (see canvas_color_space) is the f16 values' colour space, with the same
+// meaning as the u8 versions: for get the OUTPUT space, for put the space the
+// incoming values are interpreted in.  On a linear canvas extended values
+// survive end to end; on an sRGB canvas they bound through the sRGB encode/blend.
+void canvas_get_image_data_f16(struct canvas *__single cv,
+                               enum canvas_color_space space,
+                               int x, int y, int w, int h,
+                               _Float16 *__counted_by(len) out, int len);
+void canvas_put_image_data_f16(struct canvas *__single cv,
+                               enum canvas_color_space space,
+                               _Float16 const *__counted_by(len) data, int len,
+                               int w, int h, int dx, int dy);
+void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
+                                     enum canvas_color_space space,
+                                     _Float16 const *__counted_by(len) data, int len,
+                                     int w, int h, int dx, int dy,
+                                     int dirty_x, int dirty_y,
+                                     int dirty_w, int dirty_h);
+
 // Read a text canvas-program from `path` and replay it onto cv via the calls
 // above.  One command per line (UTF-8): each command is exactly the canvas_*
 // function name *without* the `canvas_` prefix, followed by its whitespace-
@@ -828,3 +852,12 @@ bool canvas_record_to(struct canvas *__single cv, char const *__null_terminated 
 // The image is independent of any canvas, so none is taken.
 uint8_t *__counted_by_or_null(*len)
 canvas_create_image_data(int sw, int sh, int *__single len);
+
+// createImageData's rgba-float16 twin: a blank (transparent black) _Float16
+// RGBA image of sw*sh pixels -- the layout get/put_image_data_f16 use.  Returns
+// a freshly calloc'd buffer of sw*sh*4 _Float16 elements (free it with free())
+// and stores that ELEMENT count in *len, ready to hand to put_image_data_f16.
+// On non-positive dimensions, a size that would overflow, or out of memory,
+// returns NULL and stores 0.
+_Float16 *__counted_by_or_null(*len)
+canvas_create_image_data_f16(int sw, int sh, int *__single len);
