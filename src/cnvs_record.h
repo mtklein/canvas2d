@@ -172,6 +172,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
                           char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
                           int weight, bool italic, int kerning, int rendering,
+                          int variant_caps, int stretch,
                           char const *__counted_by(lang_len) lang, int lang_len,
                           char const *__counted_by(len) text, int len);
 
@@ -199,6 +200,15 @@ void cnvs_rec_font_kerning(struct cnvs_recorder *__single r, enum canvas_font_ke
 void cnvs_rec_text_rendering(struct cnvs_recorder *__single r, enum canvas_text_rendering rendering);
 void cnvs_rec_lang(struct cnvs_recorder *__single r,
                    char const *__counted_by(len) tag, int len);
+
+// `set_font_variant_caps <normal|small-caps|all-small-caps>` / `set_font_stretch
+// <ultra-condensed|...|ultra-expanded>` -- the small-cap / width setter ops,
+// written by token like set_font_kerning.  Recorded only when the setter is
+// called; the `shaping` block lines carry both regardless (they are the
+// shaped-line cache key).
+void cnvs_rec_font_variant_caps(struct cnvs_recorder *__single r,
+                                enum canvas_font_variant_caps variant_caps);
+void cnvs_rec_font_stretch(struct cnvs_recorder *__single r, enum canvas_font_stretch stretch);
 
 // `name <ints...>` -- the int-typed op lines with no block reference (resize).
 void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminated name,

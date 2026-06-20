@@ -124,6 +124,8 @@ struct canvas_state {
     // they ride the shaped-line cache key, not the glyph/font identity.
     enum canvas_font_kerning font_kerning;      // none disables kerning
     enum canvas_text_rendering text_rendering;  // optimizeSpeed disables kerning+ligatures
+    enum canvas_font_variant_caps font_variant_caps;  // small_caps/all_small_caps -> smcp[/c2sc]
+    enum canvas_font_stretch font_stretch;            // width axis (default NORMAL, the centre)
     char lang[CNVS_LANG_MAX];  // BCP-47 tag held by value (sized model: len+bytes,
     int lang_len;              // no NUL); empty (len 0) = no language
     float letter_spacing;  // extra advance after each cluster, user px (default 0)
@@ -174,6 +176,7 @@ struct canvas {
     int font_built_family_len;
     int font_built_weight;                  // the weight cv->font was built for
     enum canvas_font_style font_built_style;  // the style cv->font was built for
+    enum canvas_font_stretch font_built_stretch;  // the stretch cv->font was built for
     struct cnvs_text_cache text_cache;  // params->derived-data memo of Core Text results:
                                  // shaped lines + canonical glyph curves, checked
                                  // before the boundary is called (cnvs_text.h)
@@ -275,6 +278,8 @@ static void state_defaults(struct canvas_state *s) {
     s->font_style = CANVAS_FONT_STYLE_NORMAL;   // upright
     s->font_kerning = CANVAS_FONT_KERNING_AUTO;        // default kerning on
     s->text_rendering = CANVAS_TEXT_RENDERING_AUTO;    // default kerning+ligatures
+    s->font_variant_caps = CANVAS_FONT_VARIANT_CAPS_NORMAL;  // no small caps
+    s->font_stretch = CANVAS_FONT_STRETCH_NORMAL;            // normal width
     s->lang_len = 0;                            // no language tag
     s->letter_spacing = 0.0f;
     s->word_spacing = 0.0f;
@@ -333,6 +338,7 @@ struct canvas *__single canvas(int width, int height,
                                     // call always rebuilds (family mismatch)
     cv->font_built_weight = 0;
     cv->font_built_style = CANVAS_FONT_STYLE_NORMAL;
+    cv->font_built_stretch = CANVAS_FONT_STRETCH_NORMAL;
     cnvs_text_cache_init(&cv->text_cache);
     cv->rec = NULL;
     cv->owned_images = NULL;
@@ -2992,11 +2998,13 @@ static bool cur_italic(struct canvas const *__single cv) {
     return cv->cur.font_style == CANVAS_FONT_STYLE_ITALIC;
 }
 
-// Rebuild the cached font when the requested size, family, weight, OR style
-// changes; NULL on failure.  The family is matched by (length, bytes) -- the
-// sized model -- so a switch between two families of the same size still
-// rebuilds, and weight/style changes (a different real or synthesized face)
-// rebuild too.
+// Rebuild the cached font when the requested size, family, weight, style, OR
+// stretch changes; NULL on failure.  The family is matched by (length, bytes) --
+// the sized model -- so a switch between two families of the same size still
+// rebuilds, and weight/style/stretch changes (a different real or synthesized
+// face) rebuild too.  fontVariantCaps is deliberately NOT a trigger: it is
+// glyph SELECTION within the shaped runs, not the primary metrics/reference
+// face this handle is (its vmetrics and font-wide box are caps-independent).
 static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
     bool const family_changed =
         cv->font_built_family_len != cv->cur.font_family_len ||
@@ -3004,17 +3012,19 @@ static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
                (size_t)cv->cur.font_family_len) != 0;
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f ||
         family_changed || cv->font_built_weight != cv->cur.font_weight ||
-        cv->font_built_style != cv->cur.font_style) {
+        cv->font_built_style != cv->cur.font_style ||
+        cv->font_built_stretch != cv->cur.font_stretch) {
         cnvs_font_free(cv->font);
         cv->font = cnvs_font(cv->cur.font_family, cv->cur.font_family_len,
                                     cv->cur.font_size, cv->cur.font_weight,
-                                    cur_italic(cv));
+                                    cur_italic(cv), (int)cv->cur.font_stretch);
         cv->font_built_size = cv->cur.font_size;
         memcpy(cv->font_built_family, cv->cur.font_family,
                (size_t)cv->cur.font_family_len);
         cv->font_built_family_len = cv->cur.font_family_len;
         cv->font_built_weight = cv->cur.font_weight;
         cv->font_built_style = cv->cur.font_style;
+        cv->font_built_stretch = cv->cur.font_stretch;
     }
     return cv->font;
 }
@@ -3171,6 +3181,42 @@ void canvas_set_lang(struct canvas *__single cv, char const *__null_terminated t
     canvas_set_lang_n(cv, __null_terminated_to_indexable(tag), len);
 }
 
+// fontVariantCaps / fontStretch are canvas state like the toggles above: they
+// ride save/restore and reset to NORMAL / NORMAL.  An unrecognized enum is
+// ignored (the "ignore invalid" setter pattern).  Each records a state op (by
+// token) so replay restores the same shaping inputs (the shaping block carries
+// them too, as cache-key parts).  variantCaps changes glyph selection within the
+// shaped runs; stretch resolves a different width face (and so rebuilds cv->font
+// on the next ensure_font, the stretch check there).
+void canvas_set_font_variant_caps(struct canvas *__single cv,
+                                  enum canvas_font_variant_caps variant_caps) {
+    switch (variant_caps) {
+        case CANVAS_FONT_VARIANT_CAPS_NORMAL:
+        case CANVAS_FONT_VARIANT_CAPS_SMALL_CAPS:
+        case CANVAS_FONT_VARIANT_CAPS_ALL_SMALL_CAPS:
+            cv->cur.font_variant_caps = variant_caps;
+            if (cv->rec) { cnvs_rec_font_variant_caps(cv->rec, variant_caps); }
+            break;
+    }
+}
+
+void canvas_set_font_stretch(struct canvas *__single cv, enum canvas_font_stretch stretch) {
+    switch (stretch) {
+        case CANVAS_FONT_STRETCH_ULTRA_CONDENSED:
+        case CANVAS_FONT_STRETCH_EXTRA_CONDENSED:
+        case CANVAS_FONT_STRETCH_CONDENSED:
+        case CANVAS_FONT_STRETCH_SEMI_CONDENSED:
+        case CANVAS_FONT_STRETCH_NORMAL:
+        case CANVAS_FONT_STRETCH_SEMI_EXPANDED:
+        case CANVAS_FONT_STRETCH_EXPANDED:
+        case CANVAS_FONT_STRETCH_EXTRA_EXPANDED:
+        case CANVAS_FONT_STRETCH_ULTRA_EXPANDED:
+            cv->cur.font_stretch = stretch;
+            if (cv->rec) { cnvs_rec_font_stretch(cv->rec, stretch); }
+            break;
+    }
+}
+
 // letterSpacing/wordSpacing are canvas state, recorded as ordinary state ops
 // exactly like font_size and direction.  The spacing is also baked into a shaped
 // line's advances and is part of the cache key, so the shaping block a fill_text
@@ -3282,6 +3328,7 @@ static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                  cv->cur.letter_spacing, cv->cur.word_spacing,
                                  cv->cur.font_weight, cur_italic(cv),
                                  (int)cv->cur.font_kerning, (int)cv->cur.text_rendering,
+                                 (int)cv->cur.font_variant_caps, (int)cv->cur.font_stretch,
                                  cv->cur.lang, cv->cur.lang_len,
                                  text, len);
 }
@@ -3562,6 +3609,7 @@ static void record_text_blocks(struct canvas *__single cv,
                          cv->cur.letter_spacing, cv->cur.word_spacing,
                          cv->cur.font_weight, cur_italic(cv),
                          (int)cv->cur.font_kerning, (int)cv->cur.text_rendering,
+                         (int)cv->cur.font_variant_caps, (int)cv->cur.font_stretch,
                          cv->cur.lang, cv->cur.lang_len, text, len);
 }
 

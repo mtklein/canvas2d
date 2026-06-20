@@ -57,14 +57,21 @@ struct cnvs_shaped {
 // the bidi base level the runs are ordered against, so a mixed-direction string
 // reorders -- and its neutrals resolve -- differently under ltr and rtl.  Always
 // explicit, never first-strong: the spec resolves the attribute, not the text.
-// `weight` (CSS 100..900) and `italic` build the shaping font through a font
-// descriptor's traits, so the family's nearest real bold/italic face is matched
-// -- or, when it has none, the platform synthesizes one (the requested trait is
-// honoured, never silently dropped to regular).  `kerning` and `rendering` are
-// the canvas_font_kerning / canvas_text_rendering enums as ints: they set
+// `weight` (CSS 100..900), `italic`, and `stretch` (canvas_font_stretch 0..8 as
+// an int) build the shaping font through a font descriptor's traits, so the
+// family's nearest real bold/italic/width face is matched -- or, when it has no
+// bold/italic, the platform synthesizes one (the requested trait is honoured,
+// never silently dropped to regular).  No width is synthesized: a family with no
+// width face stays at its nearest face (`stretch` is then a no-op).  `kerning`,
+// `rendering`, and `variant_caps` are
+// the canvas_font_kerning / canvas_text_rendering / canvas_font_variant_caps
+// enums as ints: kerning and rendering set
 // kerning and ligature attributes on the shaped run (kerning NONE or rendering
 // OPTIMIZE_SPEED disables kerning; OPTIMIZE_SPEED also disables ligatures; the
-// other values leave Core Text's defaults).  `lang` is a BCP-47 tag (lang_len
+// other values leave Core Text's defaults); variant_caps applies the smcp
+// (small_caps) or smcp + c2sc (all_small_caps) OpenType features so the shaper
+// substitutes small-cap glyphs (a no-op on a font without them).  `lang` is a
+// BCP-47 tag (lang_len
 // bytes, may be empty) set as the run's language for locale-dependent glyph
 // selection; empty sets none.  These are shaping INPUTS (they change advances/
 // glyph choice, baked into the runs), not glyph-outline identity.
@@ -76,7 +83,7 @@ struct cnvs_shaped {
 // ergonomics; the strlen happens once at that entry point, in-rules.)
 struct cnvs_shaped *__single cnvs_shape_text(char const *__counted_by(name_len) name, int name_len,
                                  float size_px, bool rtl, int weight, bool italic,
-                                 int kerning, int rendering,
+                                 int kerning, int rendering, int variant_caps, int stretch,
                                  char const *__counted_by(lang_len) lang, int lang_len,
                                  char const *__counted_by(text_len) text, int text_len);
 void cnvs_shaped_free(struct cnvs_shaped *__single s);
@@ -157,7 +164,7 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 //
 //   - shaped lines, keyed by (font family, size_px bits, paragraph direction,
 //     letterSpacing bits, wordSpacing bits, weight, style, kerning, rendering,
-//     lang bytes, text bytes) -> the
+//     variantCaps, stretch, lang bytes, text bytes) -> the
 //     struct cnvs_shaped.  The family is IN the key (the REQUESTED name, not the
 //     resolved one): two families of the same bytes/size are two distinct lines.
 //     Direction is IN the key because the same bytes shape
@@ -168,10 +175,12 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 //     spacings of the same bytes are two distinct lines.  weight and style are
 //     IN the key because they pick a different (real or synthesized) face, so
 //     bold and regular of the same bytes are two distinct lines.  kerning,
-//     rendering, and lang are IN the key because they are shaping inputs that
-//     change the runs' advances (kerning), ligature formation (rendering), and
-//     glyph selection (lang), so two toggle settings of the same bytes are two
-//     distinct lines.  The cache OWNS
+//     rendering, variantCaps, stretch, and lang are IN the key because they are
+//     shaping inputs that
+//     change the runs' advances (kerning), ligature formation (rendering),
+//     small-cap glyph substitution (variantCaps), the resolved width face
+//     (stretch), and glyph selection (lang), so two toggle settings of the same
+//     bytes are two distinct lines.  The cache OWNS
 //     its entries (each run's retained CTFontRef stays alive with them); call
 //     sites borrow.  Fixed CNVS_SHAPING_CACHE_N slots, evicted
 //     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
@@ -232,6 +241,8 @@ struct cnvs_shaping_slot {
     bool rtl;            // paragraph direction, the key's third part
     int kerning;         // canvas_font_kerning, the key's kerning part
     int rendering;       // canvas_text_rendering, the key's rendering part
+    int variant_caps;    // canvas_font_variant_caps, the key's small-caps part
+    int stretch;         // canvas_font_stretch, the key's width part
     char *__counted_by(lang_len) lang;  // owned key copy of the BCP-47 lang tag
     int lang_len;                       // (0 = no language)
     uint64_t last_use;   // tick at last use, the LRU ordering
@@ -322,7 +333,8 @@ void cnvs_text_cache_reset(struct cnvs_text_cache *__single c);  // free entries
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
-        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
+        int kerning, int rendering, int variant_caps, int stretch,
+        char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len);
 
 // Intern `font`'s name under (name, weight, style) (one boundary name fetch per
@@ -437,7 +449,8 @@ float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
-        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
+        int kerning, int rendering, int variant_caps, int stretch,
+        char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s);
 
@@ -448,7 +461,8 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
-        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
+        int kerning, int rendering, int variant_caps, int stretch,
+        char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len);
 
 // Clear every `emitted` mark (font names, glyphs, shaped lines): a new
@@ -513,16 +527,17 @@ void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
                        float *__single x0, float *__single y0,
                        float *__single x1, float *__single y1);
 
-// A primary font handle: a system typeface at a size/weight/style, for the cheap
-// font-wide metrics (ascent/descent) and as the reference font for measureText's
-// font-wide box and baselines.  `weight`/`italic` build it through the same
-// trait-applying descriptor as cnvs_shape_text.  NULL on failure.  Like
-// cnvs_shape_text, the name crosses the boundary counted -- (bytes, len), no NUL
-// contract.
+// A primary font handle: a system typeface at a size/weight/style/stretch, for
+// the cheap font-wide metrics (ascent/descent) and as the reference font for
+// measureText's font-wide box and baselines.  `weight`/`italic`/`stretch` build
+// it through the same trait-applying descriptor as cnvs_shape_text (a real width
+// face resolves a distinct name, so its vmetrics record stays separate).  NULL
+// on failure.  Like cnvs_shape_text, the name crosses the boundary counted --
+// (bytes, len), no NUL contract.
 struct cnvs_font;
 struct cnvs_font *__single cnvs_font(char const *__counted_by(name_len) name,
                                      int name_len, float size_px,
-                                     int weight, bool italic);
+                                     int weight, bool italic, int stretch);
 void cnvs_font_free(struct cnvs_font *__single f);
 
 // Font vertical metrics in user px: ascent and descent, both positive magnitudes

@@ -323,11 +323,13 @@ static struct cnvs_shaping_slot *__single shaping_lru_victim(struct cnvs_text_ca
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
-        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
+        int kerning, int rendering, int variant_caps, int stretch,
+        char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len) {
     struct cnvs_shaping_slot *__single hit = cnvs_text_cache_shaping_slot(c, name, name_len,
                                                   size_px, rtl, ls, ws, weight, italic,
-                                                  kerning, rendering, lang, lang_len, text, len);
+                                                  kerning, rendering, variant_caps, stretch,
+                                                  lang, lang_len, text, len);
     if (hit) {
         hit->last_use = ++c->tick;
         c->shaping_hits++;
@@ -355,6 +357,7 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
     }
     struct cnvs_shaped *__single s = cnvs_shape_text(name, name_len, size_px, rtl,
                                                      weight, italic, kerning, rendering,
+                                                     variant_caps, stretch,
                                                      lang, lang_len, text, len);
     if (!s) {
         free(copy);
@@ -393,6 +396,8 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
     victim->italic = italic;
     victim->kerning = kerning;
     victim->rendering = rendering;
+    victim->variant_caps = variant_caps;
+    victim->stretch = stretch;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;
@@ -884,7 +889,8 @@ float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
-        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
+        int kerning, int rendering, int variant_caps, int stretch,
+        char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len) {
     if (!c || len < 0 || name_len < 0 || lang_len < 0) {
         return NULL;
@@ -899,6 +905,7 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
             slot->ls_bits == ls_bits && slot->ws_bits == ws_bits &&
             slot->weight == weight && slot->italic == italic &&
             slot->kerning == kerning && slot->rendering == rendering &&
+            slot->variant_caps == variant_caps && slot->stretch == stretch &&
             slot->lang_len == lang_len &&
             memcmp(slot->lang, lang, (size_t)lang_len) == 0 &&
             slot->fam_len == name_len &&
@@ -913,7 +920,8 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
-        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
+        int kerning, int rendering, int variant_caps, int stretch,
+        char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s) {
     if (!c || !s || len < 0 || name_len < 0 || lang_len < 0) {
@@ -940,7 +948,8 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
     // the same victim scan as a live insert.
     struct cnvs_shaping_slot *victim = cnvs_text_cache_shaping_slot(c, name, name_len,
                                               size_px, rtl, ls, ws, weight, italic,
-                                              kerning, rendering, lang, lang_len, text, len);
+                                              kerning, rendering, variant_caps, stretch,
+                                              lang, lang_len, text, len);
     if (!victim) {
         victim = shaping_lru_victim(c);
     }
@@ -967,6 +976,8 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
     victim->italic = italic;
     victim->kerning = kerning;
     victim->rendering = rendering;
+    victim->variant_caps = variant_caps;
+    victim->stretch = stretch;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;
