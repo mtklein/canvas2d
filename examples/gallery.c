@@ -2887,6 +2887,214 @@ static void colorspaces(void) {
     save(c, "gallery/colorspaces.png");
 }
 
+// ellipse with rotation: eight ellipses at evenly spaced rotation angles, filled
+// (top row) and stroked (bottom row), showing the rotation parameter is live.
+static void ellipserot(void) {
+    struct canvas *__single c = canvas(480, 160);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/ellipserot.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 160.0f);
+
+    int const n = 8;
+    float const rx = 28.0f, ry = 12.0f, cx0 = 34.0f, step = 52.0f;
+
+    // Filled row (top).
+    for (int i = 0; i < n; i++) {
+        float const rot = (float)i * (TAU * 0.5f / (float)n);
+        float const t = (float)i / (float)(n - 1);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB,
+                             0.5f + 0.5f * cosf(TAU * t),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                             0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+        canvas_begin_path(c);
+        canvas_ellipse(c, cx0 + (float)i * step, 46.0f,
+                       rx, ry, rot, 0.0f, TAU, false);
+        canvas_fill(c, CANVAS_NONZERO);
+    }
+
+    // Stroked row (bottom), same rotation sweep.
+    canvas_set_line_width(c, 3.0f);
+    for (int i = 0; i < n; i++) {
+        float const rot = (float)i * (TAU * 0.5f / (float)n);
+        float const t = (float)i / (float)(n - 1);
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB,
+                               0.5f + 0.5f * cosf(TAU * t),
+                               0.5f + 0.5f * cosf(TAU * (t + 0.33f)),
+                               0.5f + 0.5f * cosf(TAU * (t + 0.66f)), 1.0f);
+        canvas_begin_path(c);
+        canvas_ellipse(c, cx0 + (float)i * step, 118.0f,
+                       rx, ry, rot, 0.0f, TAU, false);
+        canvas_stroke(c);
+    }
+
+    save(c, "gallery/ellipserot.png");
+}
+
+// is_point_in_path2d and is_point_in_stroke_path (the Path2D hit-testing
+// overloads).  Left: a Path2D triangle under is_point_in_path2d (even-odd);
+// right: a Path2D arc under is_point_in_stroke_path.  Sampled on a 10px grid;
+// hit points draw large and bright, miss points draw small and dim.
+static void path2dhit(void) {
+    struct canvas *__single c = canvas(480, 262);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/path2dhit.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 480.0f, 262.0f);
+
+    int const step = 10, nx = 22, ny = 22;
+
+    // ---- is_point_in_path2d: a filled rounded triangle ----
+    struct canvas_path2d *__single tri = canvas_path2d();
+    if (tri) {
+        canvas_path2d_move_to(tri, 130.0f, 26.0f);
+        canvas_path2d_line_to(tri, 222.0f, 198.0f);
+        canvas_path2d_line_to(tri, 38.0f, 198.0f);
+        canvas_path2d_close_path(tri);
+
+        // Draw the outline so the shape is visible.
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.58f, 0.66f, 0.55f);
+        canvas_set_line_width(c, 1.3f);
+        canvas_stroke_path(c, tri);
+
+        // Collect hits first (so the dot pass uses a clean current path).
+        bool inA[22 * 22];
+        for (int j = 0; j < ny; j++) {
+            for (int i = 0; i < nx; i++) {
+                float px = 22.0f + (float)(i * step);
+                float py = 18.0f + (float)(j * step);
+                inA[j * nx + i] = canvas_is_point_in_path2d(c, tri, px, py,
+                                                             CANVAS_NONZERO);
+            }
+        }
+        for (int j = 0; j < ny; j++) {
+            for (int i = 0; i < nx; i++) {
+                float px = 22.0f + (float)(i * step);
+                float py = 18.0f + (float)(j * step);
+                bool const in = inA[j * nx + i];
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB,
+                                     in ? 0.30f : 0.42f,
+                                     in ? 0.85f : 0.45f,
+                                     in ? 0.70f : 0.52f,
+                                     in ? 1.0f  : 0.85f);
+                canvas_begin_path(c);
+                canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
+                canvas_fill(c, CANVAS_NONZERO);
+            }
+        }
+        canvas_path2d_free(tri);
+    }
+
+    // ---- is_point_in_stroke_path: a thick arc ----
+    struct canvas_path2d *__single arc = canvas_path2d();
+    if (arc) {
+        canvas_path2d_arc(arc, 350.0f, 116.0f, 66.0f, 0.0f, TAU, false);
+        canvas_set_line_width(c, 24.0f);
+
+        bool inB[22 * 22];
+        for (int j = 0; j < ny; j++) {
+            for (int i = 0; i < nx; i++) {
+                float px = 254.0f + (float)(i * step);
+                float py = 18.0f + (float)(j * step);
+                inB[j * nx + i] = canvas_is_point_in_stroke_path(c, arc, px, py);
+            }
+        }
+        canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.62f, 0.52f, 0.40f, 0.22f);
+        canvas_stroke_path(c, arc);
+        for (int j = 0; j < ny; j++) {
+            for (int i = 0; i < nx; i++) {
+                float px = 254.0f + (float)(i * step);
+                float py = 18.0f + (float)(j * step);
+                bool const in = inB[j * nx + i];
+                canvas_set_fill_rgba(c, CANVAS_CS_SRGB,
+                                     in ? 0.97f : 0.42f,
+                                     in ? 0.62f : 0.45f,
+                                     in ? 0.25f : 0.52f,
+                                     in ? 1.0f  : 0.85f);
+                canvas_begin_path(c);
+                canvas_arc(c, px, py, in ? 2.7f : 1.5f, 0.0f, TAU, false);
+                canvas_fill(c, CANVAS_NONZERO);
+            }
+        }
+        canvas_path2d_free(arc);
+    }
+
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "is_point_in_path2d", 130.0f, 248.0f);
+    canvas_fill_text(c, "is_point_in_stroke_path", 350.0f, 248.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/path2dhit.png");
+}
+
+// Nested clips: three save/restore levels each narrowing the active region, then
+// the same rainbow-stripe flood from the clip scene.  The outer clip is a circle;
+// inside it the second clip intersects a rotated rectangle; inside both the third
+// clip further intersects a star.  Flood stripes reveal the running intersection.
+static void nestedclip(void) {
+    struct canvas *__single c = canvas(300, 180);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/nestedclip.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 300.0f, 180.0f);
+
+    // Show each clip boundary as a faint outline before nesting.
+    float const cx = 150.0f, cy = 88.0f, r0 = 74.0f;
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.45f, 0.48f, 0.55f, 0.45f);
+    canvas_set_line_width(c, 1.0f);
+    canvas_begin_path(c);
+    canvas_arc(c, cx, cy, r0, 0.0f, TAU, false);
+    canvas_stroke(c);
+    canvas_save(c);
+    canvas_translate(c, cx, cy);
+    canvas_rotate(c, 0.45f);
+    canvas_stroke_rect(c, -58.0f, -44.0f, 116.0f, 88.0f);
+    canvas_restore(c);
+    star(c, cx, cy, 58.0f);
+    canvas_stroke(c);
+
+    // Level 1: clip to the circle.
+    canvas_save(c);
+    canvas_begin_path(c);
+    canvas_arc(c, cx, cy, r0, 0.0f, TAU, false);
+    canvas_clip(c, CANVAS_NONZERO);
+
+    // Level 2: clip to the rotated rectangle.
+    canvas_save(c);
+    canvas_translate(c, cx, cy);
+    canvas_rotate(c, 0.45f);
+    canvas_begin_path(c);
+    canvas_rect(c, -58.0f, -44.0f, 116.0f, 88.0f);
+    canvas_clip(c, CANVAS_NONZERO);
+    canvas_reset_transform(c);
+
+    // Level 3: clip to the star.
+    star(c, cx, cy, 58.0f);
+    canvas_clip(c, CANVAS_NONZERO);
+
+    // Flood with rainbow stripes; only the triple intersection survives.
+    clip_stripes(c, cx - r0, cy - r0, cx + r0, cy + r0);
+
+    canvas_restore(c);  // pops level 2 (rect) and level 3 (star) via one restore here
+    canvas_restore(c);  // pops level 1 (circle)
+
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.80f, 0.83f, 0.90f, 1.0f);
+    canvas_set_font_size(c, 13.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "circle ∩ rect ∩ star", cx, 168.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/nestedclip.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -2928,6 +3136,9 @@ static void render_all(void) {
     linearlight();
     gradinterp();
     colorspaces();
+    ellipserot();
+    nestedclip();
+    path2dhit();
 }
 
 int main(void) {
