@@ -24,6 +24,97 @@ static CFStringRef str_from_bytes(char const *bytes, int len) {
                                    kCFStringEncodingUTF8, false);
 }
 
+// Map the CSS 100..900 weight axis onto Core Text's kCTFontWeightTrait axis,
+// [-1.0, 1.0] with 0.0 == regular.  The documented anchors -- 400 -> 0.0 (the
+// system regular weight UIFontWeightRegular), 700 -> ~0.4 (UIFontWeightBold) --
+// give a slope of 0.4/300 per CSS step on the 400..700 segment; the same slope
+// extends linearly to either end (100 -> -0.4, 900 -> ~0.667), which stays
+// inside the axis and lets the descriptor matcher pick the nearest real face or
+// synthesize when none is near.
+static CGFloat ct_weight_from_css(int css) {
+    return (CGFloat)((double)(css - 400) * (0.4 / 300.0));
+}
+
+// A synthetic-oblique slant: the x-shear (per unit of y) used to fake italic
+// when the matched face has no real italic.  0.25 is roughly the slope a typical
+// oblique runs at; it matches the visual weight CTFontDrawGlyphs uses for its own
+// synthetic obliques.  The shear rides the FONT MATRIX, so CTFontCreatePathForGlyph
+// returns the skewed outline (the curves the Libian model records) -- not a
+// raster-only effect.
+#define CNVS_SYNTH_ITALIC_SHEAR 0.25
+
+// Build a descriptor font for (family, size, weight, italic) through the family
+// name plus a traits dictionary (the CSS weight on the CT weight axis, plus the
+// italic symbolic trait when italic).  `matrix` is baked into the font (NULL ==
+// identity).  The descriptor matcher resolves to the nearest real face of the
+// family.  NULL when the descriptor can't be built.
+static CTFontRef font_descriptor(CFStringRef family, CGFloat size,
+                                 int weight, bool italic,
+                                 CGAffineTransform const *matrix) {
+    CGFloat const wt = ct_weight_from_css(weight);
+    CTFontSymbolicTraits sym = italic ? kCTFontItalicTrait : 0;
+    CFNumberRef wnum = CFNumberCreate(NULL, kCFNumberCGFloatType, &wt);
+    CFNumberRef snum = CFNumberCreate(NULL, kCFNumberSInt32Type, &sym);
+    CTFontRef out = NULL;
+    if (wnum && snum) {
+        CFStringRef tkeys[2] = { kCTFontWeightTrait, kCTFontSymbolicTrait };
+        const void *tvals[2] = { wnum, snum };
+        CFDictionaryRef traits = CFDictionaryCreate(NULL, (const void **)tkeys,
+            tvals, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        if (traits) {
+            CFStringRef akeys[2] = { kCTFontFamilyNameAttribute,
+                                     kCTFontTraitsAttribute };
+            const void *avals[2] = { family, traits };
+            CFDictionaryRef attrs = CFDictionaryCreate(NULL, (const void **)akeys,
+                avals, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+            if (attrs) {
+                CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
+                if (desc) {
+                    out = CTFontCreateWithFontDescriptor(desc, size, matrix);
+                    CFRelease(desc);
+                }
+                CFRelease(attrs);
+            }
+            CFRelease(traits);
+        }
+    }
+    if (wnum) { CFRelease(wnum); }
+    if (snum) { CFRelease(snum); }
+    return out;
+}
+
+// Build the shaping/metrics font for (family, size, weight, italic).  The weight
+// trait picks the nearest real face on the family's weight axis (a real bold is
+// matched here, with its own heavier outlines).  For italic, the descriptor first
+// tries to match a real italic face; when the resolved face is NOT actually
+// italic (the family has none), the font is rebuilt with a slant baked into the
+// FONT MATRIX so the outline is synthesized -- a real synthetic oblique that the
+// curve-recording (Libian) model captures, rather than the regular face.  Bold
+// without a real heavier face cannot be emboldened at the outline level (Core
+// Text only synthesizes bold weight at raster time), so a synth-bold row falls
+// back to the family's nearest real weight; the italic synthesis is what reads as
+// "synthesized" in the outline model.  Falls back to CTFontCreateWithName when no
+// descriptor can be built.  NULL on failure.
+static CTFontRef font_with_traits(CFStringRef family, CGFloat size,
+                                  int weight, bool italic) {
+    CTFontRef out = font_descriptor(family, size, weight, italic, NULL);
+    if (out && italic &&
+        (CTFontGetSymbolicTraits(out) & kCTFontItalicTrait) == 0) {
+        // The family had no real italic face: synthesize one via a slant matrix
+        // so the recorded outline is actually oblique.
+        CGAffineTransform m = { 1.0, 0.0, CNVS_SYNTH_ITALIC_SHEAR, 1.0, 0.0, 0.0 };
+        CTFontRef synth = font_descriptor(family, size, weight, italic, &m);
+        if (synth) {
+            CFRelease(out);
+            out = synth;
+        }
+    }
+    if (!out) {
+        out = CTFontCreateWithName(family, size, NULL);  // descriptor unavailable
+    }
+    return out;
+}
+
 // Copy a run's font name into the checked core's buffer.  The opaque CTFontRef goes
 // in; CFStringGetCString fills `buf` within `cap` (so the boundary respects the
 // caller's bound -- the inverse of the glyph-run hand-off).
@@ -236,10 +327,10 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
 }
 
 struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_px, bool rtl,
-                        char const *text, int text_len) {
+                        int weight, bool italic, char const *text, int text_len) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     CFStringRef str = str_from_bytes(text, text_len);
-    CTFontRef font = cfname ? CTFontCreateWithName(cfname, size_px, NULL) : NULL;
+    CTFontRef font = cfname ? font_with_traits(cfname, size_px, weight, italic) : NULL;
     if (cfname) {
         CFRelease(cfname);
     }
@@ -269,6 +360,8 @@ struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_p
         if (out) {
             out->utf16s = (int)CFStringGetLength(str);
             out->size_px = size_px;
+            out->weight = weight;
+            out->italic = italic;
             out->nruns = (int)nruns;
             out->run = calloc((size_t)nruns, sizeof *out->run);
             bool ok = out->run != NULL;
@@ -304,12 +397,13 @@ struct cnvs_font {
     CTFontRef font;
 };
 
-struct cnvs_font *cnvs_font(char const *name, int name_len, float size_px) {
+struct cnvs_font *cnvs_font(char const *name, int name_len, float size_px,
+                            int weight, bool italic) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     if (!cfname) {
         return NULL;
     }
-    CTFontRef font = CTFontCreateWithName(cfname, size_px, NULL);
+    CTFontRef font = font_with_traits(cfname, size_px, weight, italic);
     CFRelease(cfname);
     if (!font) {
         return NULL;

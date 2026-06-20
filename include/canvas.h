@@ -30,6 +30,9 @@ enum canvas_text_baseline {
     CANVAS_BASELINE_ALPHABETIC, CANVAS_BASELINE_TOP, CANVAS_BASELINE_HANGING,
     CANVAS_BASELINE_MIDDLE, CANVAS_BASELINE_IDEOGRAPHIC, CANVAS_BASELINE_BOTTOM,
 };
+// fontStyle: upright (normal) or slanted (italic).  An unrecognized value passed
+// to canvas_set_font_style is ignored, keeping the current style.
+enum canvas_font_style { CANVAS_FONT_STYLE_NORMAL, CANVAS_FONT_STYLE_ITALIC };
 
 // imageSmoothingQuality (see canvas_set_image_smoothing_quality).
 enum canvas_image_smoothing_quality {
@@ -557,6 +560,17 @@ void canvas_set_font_family(struct canvas *__single cv, char const *__null_termi
 // canvas_fill_text_n beside canvas_fill_text; len <= 0 is ignored.
 void canvas_set_font_family_n(struct canvas *__single cv,
                               char const *__counted_by(len) name, int len);
+// fontWeight: the typeface weight on the CSS 100..900 axis (400 == normal/
+// regular, 700 == bold), default 400.  The value is clamped to [100, 900].
+// fontStyle: upright (CANVAS_FONT_STYLE_NORMAL, the default) or slanted
+// (CANVAS_FONT_STYLE_ITALIC); an unrecognized enum value is ignored.  Both pick
+// the nearest real face of the current family and, when the family has no such
+// face, let the platform SYNTHESIZE the bold/italic (a thicker / slanted
+// rendering of the regular face) rather than falling back to regular.  Part of
+// the drawing state: save/restore brackets each, reset/resize restore the
+// 400 / NORMAL defaults.
+void canvas_set_font_weight(struct canvas *__single cv, int weight);
+void canvas_set_font_style(struct canvas *__single cv, enum canvas_font_style style);
 // letterSpacing: extra advance added after each typographic cluster, in user px
 // (default 0; may be negative).  wordSpacing: extra advance added at each
 // word-separator (U+0020 SPACE), in user px (default 0; may be negative).  Both
@@ -761,14 +775,18 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //
 // Text-block lines make a recorded program self-contained (no fonts needed to
 // replay): the recorder writes, ahead of each text op that first needs them,
-//     font <id> <ascent> <descent> <name...>
+//     font <id> <ascent> <descent> <weight> <style 0|1> <name...>
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
 //     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-//     shaping <size_px> <rtl 0|1> <ls> <ws> <utf16-len> <nruns> <byte-len> <text...>
+//     shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <fam-len> <fam...> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
 // font declares a file-local font id: its name (rest of the line, spaces
-// allowed) and vertical metrics at size 1.0.  glyph carries one glyph's
+// allowed), vertical metrics at size 1.0, and the weight/style (CSS 100..900;
+// 0 == upright, 1 == italic) that distinguish a SYNTHESIZED bold/italic from
+// the regular face -- the family name alone aliases them (synthesis reports the
+// regular face's name), so the id (and thus the glyph key) keys on all three.
+// glyph carries one glyph's
 // canonical outline -- verbs + control points and its ink box, all in FONT
 // UNITS (units-per-em to the em, y up, baseline-relative), so one block serves
 // every size and transform.  bitmap + its immediately-following bits lines
@@ -779,13 +797,16 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // w*h*4) and base64-chunked, because the raw capture (160x160x4 bytes, ~137 KB
 // encoded) cannot fit one line and the compressed stream is a third to half
 // the bytes.  shaping + its immediately-following run lines carry one
-// shaped line (the text is exactly byte-len raw bytes after one space; the
-// rtl token is the paragraph direction the line was shaped under, and ls/ws
-// the letterSpacing/wordSpacing -- all parts of the cache key, since the same
-// bytes shape and space differently under each.  ls/ws are always written, even
-// when 0; the spacing is already baked into the run advances, so they only key
-// the rebuilt line.  The canvas's spacing STATE -- the value a fill_text keys
-// its lookup by -- rides set_letter_spacing/set_word_spacing ordinary state ops,
+// shaped line (the family is fam-len raw bytes after one space, then the text is
+// exactly byte-len raw bytes after one space; the
+// rtl token is the paragraph direction the line was shaped under, ls/ws the
+// letterSpacing/wordSpacing, and weight/style the font weight/style -- all parts
+// of the cache key, since the same bytes shape and space differently under each.
+// ls/ws and weight/style are always written, even
+// when default; the spacing is already baked into the run advances, so they only
+// key the rebuilt line.  The canvas's family/weight/style/spacing STATE -- the
+// values a fill_text keys its lookup by -- ride set_font_family/set_font_weight/
+// set_font_style/set_letter_spacing/set_word_spacing ordinary state ops,
 // recorded like set_font_size/set_direction).  Replaying the blocks pre-populates
 // the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,

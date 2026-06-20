@@ -47,6 +47,9 @@ struct cnvs_shaped {
     float size_px;  // font size the line was shaped at, user px (every run's font,
                     // fallback included, is at this size; the numerator of the
                     // canonical-curve px scale)
+    int weight;     // CSS 100..900 the line was shaped at; part of the glyph-cache
+    bool italic;    // identity (with the family) so a SYNTHESIZED bold/italic --
+                    // which reports the regular face's name -- does not alias it
 };
 
 // Shape UTF-8 `text` with font `name` at `size_px`.  Runs come back in visual order.
@@ -54,6 +57,10 @@ struct cnvs_shaped {
 // the bidi base level the runs are ordered against, so a mixed-direction string
 // reorders -- and its neutrals resolve -- differently under ltr and rtl.  Always
 // explicit, never first-strong: the spec resolves the attribute, not the text.
+// `weight` (CSS 100..900) and `italic` build the shaping font through a font
+// descriptor's traits, so the family's nearest real bold/italic face is matched
+// -- or, when it has none, the platform synthesizes one (the requested trait is
+// honoured, never silently dropped to regular).
 // NULL on failure.  Implemented in the unsafe boundary TU.  Both strings cross the
 // boundary as counted (bytes, len) slices -- CFStringCreateWithBytes takes exactly
 // that -- so checked callers hand over the (ptr, len) pairs they already hold: no
@@ -61,7 +68,7 @@ struct cnvs_shaped {
 // non-terminated buffer.  (The public canvas.h API keeps its __null_terminated
 // ergonomics; the strlen happens once at that entry point, in-rules.)
 struct cnvs_shaped *__single cnvs_shape_text(char const *__counted_by(name_len) name, int name_len,
-                                 float size_px, bool rtl,
+                                 float size_px, bool rtl, int weight, bool italic,
                                  char const *__counted_by(text_len) text, int text_len);
 void cnvs_shaped_free(struct cnvs_shaped *__single s);
 
@@ -140,27 +147,34 @@ void cnvs_glyph_curves(void *__single font, uint16_t glyph,
 // hands back.  Two maps:
 //
 //   - shaped lines, keyed by (font family, size_px bits, paragraph direction,
-//     letterSpacing bits, wordSpacing bits, text bytes) -> the struct
-//     cnvs_shaped.  The family is IN the key (the REQUESTED name, not the
+//     letterSpacing bits, wordSpacing bits, weight, style, text bytes) -> the
+//     struct cnvs_shaped.  The family is IN the key (the REQUESTED name, not the
 //     resolved one): two families of the same bytes/size are two distinct lines.
 //     Direction is IN the key because the same bytes shape
 //     differently under ltr and rtl paragraphs (run order, neutral
 //     resolution); leaving it out would alias the two.  letterSpacing and
 //     wordSpacing are IN the key because they are baked into the line's
 //     advances (cnvs_shaped_apply_spacing) before it is interned, so two
-//     spacings of the same bytes are two distinct lines.  The cache OWNS its
-//     entries (each run's retained CTFontRef stays alive with them); call
+//     spacings of the same bytes are two distinct lines.  weight and style are
+//     IN the key because they pick a different (real or synthesized) face, so
+//     bold and regular of the same bytes are two distinct lines.  The cache OWNS
+//     its entries (each run's retained CTFontRef stays alive with them); call
 //     sites borrow.  Fixed CNVS_SHAPING_CACHE_N slots, evicted
 //     least-recently-used: LRU keeps the measure-then-draw pair and a frame's
 //     repeated labels hot, and a 64-entry linear scan is cheaper than a
 //     more complex structure here.
-//   - glyph data, keyed by (font name, glyph id) -> the glyph's canonical
+//   - glyph data, keyed by (font name, weight, style, glyph id) -> the glyph's
+//     canonical
 //     form: font-unit verbs/points + units_per_em from cnvs_glyph_curves for
 //     an outline glyph, or the fixed-size premultiplied capture from one
 //     cnvs_glyph_draw for a color (emoji) glyph.  Canonical bytes are size-
 //     and transform-independent, so one entry serves every draw.  Font
-//     identity is the interned font NAME (stable across processes -- what the
-//     serialized form of this lookup needs), not the CTFontRef pointer.
+//     identity is the interned (font NAME, weight, style) triple (stable across
+//     processes -- what the serialized form of this lookup needs), not the
+//     CTFontRef pointer.  weight/style join the identity because a SYNTHESIZED
+//     bold/italic reports the regular face's NAME -- keying by name alone would
+//     return the regular outline for synth-bold; a real bold/italic face already
+//     has a distinct name and so separates on name regardless.
 //     Open-addressed, fixed CNVS_GLYPH_TABLE_N slots; inserts simply stop at
 //     CNVS_GLYPH_CACHE_N entries (no eviction: canonical bytes never go
 //     stale, and a scene with >1k distinct glyphs just degrades the rest to
@@ -199,6 +213,8 @@ struct cnvs_shaping_slot {
     uint32_t size_bits;  // size_px's float bits: exact-bits keying, no epsilon
     uint32_t ls_bits;    // letterSpacing's float bits: keyed exact-bits like size
     uint32_t ws_bits;    // wordSpacing's float bits: keyed exact-bits like size
+    int weight;          // CSS 100..900, the key's weight part
+    bool italic;         // fontStyle italic, the key's style part
     bool rtl;            // paragraph direction, the key's third part
     uint64_t last_use;   // tick at last use, the LRU ordering
     struct cnvs_shaped *__single s;  // owned; freed on eviction/clear
@@ -237,13 +253,20 @@ struct cnvs_glyph_slot {
     bool emitted;  // already serialized into the active recording
 };
 
-// An interned font name (the sized model: length + bytes, no NUL games), plus
-// the font's vertical metrics normalized to size 1.0 -- ascent/descent are
-// linear in size, so one record (and one serialized `font` block) serves every
-// font size; the consumer multiplies by size_px.
+// An interned font (the sized model: length + bytes, no NUL games), keyed by
+// (name, weight, style) -- not name alone -- so a SYNTHESIZED bold/italic, which
+// reports the regular face's NAME, gets its own id (and so its own glyph slots)
+// instead of aliasing the regular face's outlines.  A real bold/italic face has
+// a distinct name and would separate on name alone; the weight/style key covers
+// the synthesized case uniformly.  Carries the font's vertical metrics
+// normalized to size 1.0 -- ascent/descent are linear in size, so one record
+// (and one serialized `font` block) serves every font size; the consumer
+// multiplies by size_px.
 struct cnvs_font_name {
     char *__counted_by(len) name;
     int len;
+    int weight;         // CSS 100..900 this id was interned for, part of the key
+    bool italic;        // fontStyle italic, part of the key
     float asc1, desc1;  // ascent/descent at size 1.0, positive magnitudes from
     bool has_vm;        // the baseline; valid only once has_vm is set
     bool emitted;       // already serialized into the active recording
@@ -274,23 +297,31 @@ void cnvs_text_cache_reset(struct cnvs_text_cache *__single c);  // free entries
 // it (call sites do one lookup per op and never nest, so a borrow never crosses
 // an insert).  NULL only when the boundary itself fails or the key copy can't be
 // allocated -- the same degradation as the uncached path.  `name` is the
-// requested family: it joins the boundary call AND the cache key (two families
-// of the same bytes cache separately).  `c` must be non-NULL (ownership needs
+// requested family and `weight`/`italic` the requested style: they join the
+// boundary call AND the cache key (two families, or two weights/styles, of the
+// same bytes cache separately).  `c` must be non-NULL (ownership needs
 // somewhere to live).
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, float ls, float ws, char const *__counted_by(len) text, int len);
+        bool rtl, float ls, float ws, int weight, bool italic,
+        char const *__counted_by(len) text, int len);
 
-// Intern `font`'s name (one boundary name fetch per run, not per glyph) and
-// return its id for glyph keys; -1 when there is no cache, the intern table is
-// full, or any allocation fails -- the glyph walk then takes plain boundary
-// calls.  A fresh intern also records the font's vmetrics (cnvs_run_vmetrics).
-int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font);
+// Intern `font`'s name under (name, weight, style) (one boundary name fetch per
+// run, not per glyph) and return its id for glyph keys; -1 when there is no
+// cache, the intern table is full, or any allocation fails -- the glyph walk
+// then takes plain boundary calls.  `weight`/`italic` are the requested style
+// the run was shaped under: they join the intern key so a synthesized bold/italic
+// (same resolved name as regular) gets a distinct id.  A fresh intern also
+// records the font's vmetrics (cnvs_run_vmetrics).
+int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font,
+                         int weight, bool italic);
 
-// Intern a font name by its bytes, no boundary call: the replay path, and the
-// canvas's own pinned family.  Same -1 contract as cnvs_text_cache_font.
+// Intern a font by (name bytes, weight, style), no boundary call: the replay
+// path, and the canvas's own metrics intern.  Same -1 contract as
+// cnvs_text_cache_font.
 int cnvs_text_cache_intern(struct cnvs_text_cache *__single c,
-                           char const *__counted_by(len) name, int len);
+                           char const *__counted_by(len) name, int len,
+                           int weight, bool italic);
 
 // The per-name vertical metrics record (asc1/desc1 in struct cnvs_font_name): set
 // keeps the first value it is given (live and replayed values agree, so first
@@ -377,23 +408,26 @@ cnvs_mip cnvs_glyph_mip(struct cnvs_glyph_slot *__single slot, float footprint);
 float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint,
                           cnvs_mip *__single fine, cnvs_mip *__single coarse);
 
-// Insert a rebuilt shaped line for (name, size_px, rtl, ls, ws, text): the
-// replay path.  The advances arrive already spacing-baked (the recorded `run`
-// lines carry them), so this only keys and inserts -- it does NOT re-apply
-// spacing.  `name` is the requested family, the key's family part.  Takes
-// ownership of `s` always (freeing it when it can't insert); copies the key
-// bytes; replaces an existing entry for the same key.
+// Insert a rebuilt shaped line for (name, size_px, rtl, ls, ws, weight, style,
+// text): the replay path.  The advances arrive already spacing-baked (the
+// recorded `run` lines carry them), so this only keys and inserts -- it does NOT
+// re-apply spacing.  `name` is the requested family and `weight`/`italic` the
+// requested style, the key's font parts.  Takes ownership of `s` always (freeing
+// it when it can't insert); copies the key bytes; replaces an existing entry for
+// the same key.
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, float ls, float ws, char const *__counted_by(len) text, int len,
+        bool rtl, float ls, float ws, int weight, bool italic,
+        char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s);
 
 // The recorder's view of a cached line: the slot holding (name, size_px, rtl,
-// ls, ws, text), or NULL when it isn't cached.  `name` is the requested family,
-// the key's family part.  A peek -- no stats, no LRU bump, no shaping.
+// ls, ws, weight, style, text), or NULL when it isn't cached.  `name` is the
+// requested family and `weight`/`italic` the requested style, the key's font
+// parts.  A peek -- no stats, no LRU bump, no shaping.
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, float ls, float ws,
+        bool rtl, float ls, float ws, int weight, bool italic,
         char const *__counted_by(len) text, int len);
 
 // Clear every `emitted` mark (font names, glyphs, shaped lines): a new
@@ -458,13 +492,16 @@ void cnvs_glyph_bounds(void *__single font, uint16_t glyph,
                        float *__single x0, float *__single y0,
                        float *__single x1, float *__single y1);
 
-// A primary font handle: a system typeface at a size, for the cheap font-wide
-// metrics (ascent/descent) and as the reference font for measureText's font-wide
-// box and baselines.  NULL on failure.  Like cnvs_shape_text, the name crosses the
-// boundary counted -- (bytes, len), no NUL contract.
+// A primary font handle: a system typeface at a size/weight/style, for the cheap
+// font-wide metrics (ascent/descent) and as the reference font for measureText's
+// font-wide box and baselines.  `weight`/`italic` build it through the same
+// trait-applying descriptor as cnvs_shape_text.  NULL on failure.  Like
+// cnvs_shape_text, the name crosses the boundary counted -- (bytes, len), no NUL
+// contract.
 struct cnvs_font;
 struct cnvs_font *__single cnvs_font(char const *__counted_by(name_len) name,
-                                     int name_len, float size_px);
+                                     int name_len, float size_px,
+                                     int weight, bool italic);
 void cnvs_font_free(struct cnvs_font *__single f);
 
 // Font vertical metrics in user px: ascent and descent, both positive magnitudes

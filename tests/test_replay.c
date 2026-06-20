@@ -123,11 +123,11 @@ int main(void) {
 
     // reset restarts the file-local font-id space along with the text cache
     // it clears: a re-declared id is legal only after one.
-    CHECK(REPLAY(cv, "font 0 1.0625 0.25 NoSuchFamily\n"
+    CHECK(REPLAY(cv, "font 0 1.0625 0.25 400 0 NoSuchFamily\n"
                      "reset\n"
-                     "font 0 1.0625 0.25 NoSuchFamily\n"));
-    CHECK(!REPLAY(cv, "font 0 1.0625 0.25 NoSuchFamily\n"
-                      "font 0 1.0625 0.25 NoSuchFamily\n"));
+                     "font 0 1.0625 0.25 400 0 NoSuchFamily\n"));
+    CHECK(!REPLAY(cv, "font 0 1.0625 0.25 400 0 NoSuchFamily\n"
+                      "font 0 1.0625 0.25 400 0 NoSuchFamily\n"));
 
     // Path blocks: every command verb, then the three ops that reference the
     // path by id (an empty path is legal and paints nothing).

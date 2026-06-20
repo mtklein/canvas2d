@@ -369,6 +369,8 @@ struct replay_blocks {
     float size_px;                  // the pending shape's cache key...
     bool rtl;                       // ...its paragraph-direction half...
     float ls, ws;                   // ...and its letter/word spacing halves
+    int weight;                     // ...its weight half...
+    bool italic;                    // ...its style half...
     char *__counted_by(fam_len) fam;  // ...the requested family (the key's family
     int fam_len;                      // part; owned copy of the bytes)...
     char *__counted_by(text_len) text;  // owned copy of the pending key bytes
@@ -463,15 +465,16 @@ static void paths_drop(struct replay_blocks *__single b) {
 }
 
 // The pending shape's last run line landed: hand it to the cache, which takes
-// ownership, under its (family, size_px, rtl, ls, ws, text) key -- exactly the
-// key a live lookup uses, so the fill_text/stroke_text op that follows hits (and
-// two families, or an ltr and an rtl shaping, of the same bytes land in distinct
-// slots, never aliased).
+// ownership, under its (family, size_px, rtl, ls, ws, weight, style, text) key --
+// exactly the key a live lookup uses, so the fill_text/stroke_text op that
+// follows hits (and two families, two weights/styles, or an ltr and an rtl
+// shaping, of the same bytes land in distinct slots, never aliased).
 static void blocks_finish_shaping(struct canvas *__single cv,
                                 struct replay_blocks *__single b) {
     cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->fam, b->fam_len,
                               b->size_px, b->rtl,
-                              b->ls, b->ws, b->text, b->text_len, b->s);
+                              b->ls, b->ws, b->weight, b->italic,
+                              b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
     // The block's ls/ws are only its cache key.  The canvas's spacing state --
     // the value a following fill_text/stroke_text keys its lookup by -- is owned
@@ -481,10 +484,12 @@ static void blocks_finish_shaping(struct canvas *__single cv,
     blocks_drop(b);
 }
 
-// font <id> <asc1> <desc1> <name...> -- declare a file-local font id: intern
-// the name (the rest of the line; names can contain spaces) and record its
-// vertical metrics (normalized at size 1.0).  Strict: id in range and not yet
-// declared, finite metrics, non-empty name.
+// font <id> <asc1> <desc1> <weight> <style 0|1> <name...> -- declare a file-local
+// font id: intern the name (the rest of the line; names can contain spaces) under
+// (name, weight, style) and record its vertical metrics (normalized at size 1.0).
+// weight/style key the intern so a synthesized bold/italic (same name as regular)
+// gets a distinct id and so distinct glyph slots.  Strict: id in range and not yet
+// declared, finite metrics, weight in CSS [100, 900], style 0/1, non-empty name.
 static bool replay_font(struct canvas *__single cv, struct replay_blocks *__single b,
                         char const *__counted_by(le) data, size_t le, size_t j) {
     long file_id = 0;
@@ -497,13 +502,18 @@ static bool replay_font(struct canvas *__single cv, struct replay_blocks *__sing
         !isfinite(vm[0]) || !isfinite(vm[1])) {
         return false;
     }
+    long weight = 0, style = 0;
+    if (!read_uint(data, le, &j, 900, &weight) || weight < 100 ||
+        !read_uint(data, le, &j, 1, &style)) {
+        return false;
+    }
     if (j < le && data[j] == ' ') { j++; }  // the single separator before the name
     if (j >= le) {
         return false;  // empty name
     }
     b->seen[file_id] = true;
     int fid = cnvs_text_cache_intern(cnvs_canvas_text_cache(cv), data + j,
-                                     (int)(le - j));
+                                     (int)(le - j), (int)weight, style != 0);
     b->map[file_id] = fid;
     if (fid >= 0) {
         cnvs_text_cache_set_vmetrics(cnvs_canvas_text_cache(cv), fid,
@@ -963,24 +973,27 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
     return true;
 }
 
-// shaping <size_px> <rtl 0|1> <ls> <ws> <fam-len> <fam...> <utf16-len> <nruns>
-// <byte-len> <text...> -- begin one shaped line; its `run` lines must follow
-// immediately.  fam is the requested family (the cache key's family part, always
-// present even for the default), length-prefixed raw bytes after a single
-// separating space.  rtl is the paragraph direction the line was shaped under,
-// ls/ws the letterSpacing/wordSpacing -- the other halves of the cache key,
-// since the same bytes shape (and space) differently under each.  ls/ws are
-// always present (the recorder writes them even when 0); the spacing is already
-// baked into the run advances, so they serve only to key the rebuilt line.  The
-// text is exactly byte-len raw bytes after a single separating space (it is the
-// cache key, byte for byte).  Strict: finite size/ls/ws, fam-len bytes present,
-// utf16-len <= byte-len (every UTF-16 unit costs at least one UTF-8 byte), and
-// the byte count exactly fills the line.
+// shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <fam-len> <fam...>
+// <utf16-len> <nruns> <byte-len> <text...> -- begin one shaped line; its `run`
+// lines must follow immediately.  weight/style are the font weight/style halves
+// of the cache key (always present, even at the 400/upright default), so a bold
+// or italic shaping of the same bytes keys distinctly.  fam is the requested
+// family (the cache key's family part, always present even for the default),
+// length-prefixed raw bytes after a single separating space.  rtl is the
+// paragraph direction the line was shaped under, ls/ws the letterSpacing/
+// wordSpacing -- the other halves of the cache key, since the same bytes shape
+// (and space) differently under each.  ls/ws are always present (the recorder
+// writes them even when 0); the spacing is already baked into the run advances,
+// so they serve only to key the rebuilt line.  The text is exactly byte-len raw
+// bytes after a single separating space (it is the cache key, byte for byte).
+// Strict: finite size/ls/ws, weight in CSS [100, 900], style 0/1, fam-len bytes
+// present, utf16-len <= byte-len (every UTF-16 unit costs at least one UTF-8
+// byte), and the byte count exactly fills the line.
 static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__single b,
                          char const *__counted_by(le) data, size_t le, size_t j) {
     float size = 0.0f, ls = 0.0f, ws = 0.0f;
     bool rtl = false;
-    long famlen = 0, t16 = 0, nruns = 0, blen = 0;
+    long weight = 0, style = 0, famlen = 0, t16 = 0, nruns = 0, blen = 0;
     if (!read_float(data, le, &j, &size) || !isfinite(size) || size < 0.0f) {
         return false;
     }
@@ -989,6 +1002,10 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     }
     if (!read_float(data, le, &j, &ls) || !isfinite(ls) ||
         !read_float(data, le, &j, &ws) || !isfinite(ws)) {
+        return false;
+    }
+    if (!read_uint(data, le, &j, 900, &weight) || weight < 100 ||
+        !read_uint(data, le, &j, 1, &style)) {
         return false;
     }
     // The family: a length, then a single separator space, then exactly famlen
@@ -1017,6 +1034,8 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
         return false;
     }
     s->size_px = size;
+    s->weight = (int)weight;
+    s->italic = style != 0;
     s->utf16s = (int)t16;
     if (nruns > 0) {
         struct cnvs_glyph_run *runs = calloc((size_t)nruns, sizeof *runs);
@@ -1047,6 +1066,8 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     b->rtl = rtl;
     b->ls = ls;
     b->ws = ws;
+    b->weight = (int)weight;
+    b->italic = style != 0;
     b->fam = fam;
     b->fam_len = (int)famlen;
     b->text = txt;
@@ -1432,6 +1453,20 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         if ((size_t)fl != le - j) return false;  // name fills the rest of the line
         canvas_set_font_family_n(cv, data + j, (int)fl);
         return true;  // the name consumed the rest of the line
+    }
+    else if (tok_eq(data, le, cs, cl, "set_font_weight")) {
+        // The recorder writes the sanitized CSS [100, 900] weight; require that
+        // range (the setter would clamp anyway, but replay parses strictly).
+        long w = 0;
+        if (!read_uint(data, le, &j, 900, &w) || w < 100) return false;
+        canvas_set_font_weight(cv, (int)w);
+    }
+    else if (tok_eq(data, le, cs, cl, "set_font_style")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "normal"))      canvas_set_font_style(cv, CANVAS_FONT_STYLE_NORMAL);
+        else if (tok_eq(data, le, ts, tl, "italic")) canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
+        else return false;
     }
     else if (tok_eq(data, le, cs, cl, "set_image_smoothing_quality")) {
         size_t ts, tl;
