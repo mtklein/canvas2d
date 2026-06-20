@@ -97,9 +97,11 @@ Internals (not API features) considered and deferred:
   the shaping cache key and the glyph-cache identity (so a synthesized
   bold/italic never aliases the regular face); the shaping toggles (kerning,
   rendering, lang) join the shaping cache key alone (they change advances/glyph
-  selection, not glyph-outline identity). All serialize through
-  record/replay. No CSS `font` shorthand, and none of `fontStretch`,
-  `fontVariantCaps`.
+  selection, not glyph-outline identity). `fontStretch` (the nine CSS widths
+  mapped to the Core Text width trait, resolving a real width face) and
+  `fontVariantCaps` (small-caps via the `smcp`/`c2sc` OpenType features) join the
+  shaping cache key too. All serialize through record/replay. No CSS `font`
+  shorthand (the individual setters cover it).
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
   `maxWidth` all go through Core Text shaping (`cnvs_shape_text`) with font fallback
   — so code points Libian TC lacks now both draw and measure (color emoji from one

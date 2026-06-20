@@ -214,6 +214,35 @@ snapping onto the cluster's leading edge; and a click round-trips through
 
 ![selection](gallery/selection.png)
 
+Font family — the same line in Libian TC and three system faces (Helvetica,
+Georgia, Menlo); CJK code points fall back and record under the resolved face,
+the Libian model:
+
+![fontfamily](gallery/fontfamily.png)
+
+Weight and style — Helvetica regular / bold / italic / bold-italic (real faces),
+and a Papyrus row whose synthesized italic is a matrix slant baked into the
+recorded outline (synth-bold has no outline form, so a bold-less family falls
+back to its nearest real weight):
+
+![fontstyle](gallery/fontstyle.png)
+
+`letterSpacing` and `wordSpacing` — a line at default, with positive letter
+spacing, and with word spacing:
+
+![textspacing](gallery/textspacing.png)
+
+`fontKerning` / `textRendering` / `lang` — kerning loosened when off,
+`optimizeSpeed` dropping kerning and the ligature, and 骨誤 in their zh-Hans vs
+zh-Hant locale glyph forms:
+
+![fonttoggles](gallery/fonttoggles.png)
+
+`fontVariantCaps` / `fontStretch` — Baskerville small-caps and a condensed
+Futura face:
+
+![fontvariants](gallery/fontvariants.png)
+
 Minification on a ruler — one emoji at geometrically increasing sizes,
 overlapping at 80% alpha, past the 160px capture into upscale, then the same
 ramp progressively rotated (level selection answers the transformed device
@@ -443,7 +472,10 @@ canvas_image_unorm8 / canvas_image_f16 / canvas_snapshot / canvas_image_build_mi
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // reified image
 canvas_set_image_smoothing_enabled / set_image_smoothing_quality
 canvas_set_font_size / set_text_align / set_text_baseline / set_direction
-canvas_measure_text / measure_text_full / fill_text / fill_text_max / stroke_text / stroke_text_max  // Libian TC, UTF-8
+canvas_set_font_family / set_font_weight / set_font_style / set_letter_spacing / set_word_spacing
+canvas_set_font_kerning / set_text_rendering / set_lang / set_font_variant_caps / set_font_stretch
+canvas_measure_text / measure_text_full / fill_text / fill_text_max / stroke_text / stroke_text_max  // default Libian TC, UTF-8
+canvas_text_index_at_x / text_x_at_index / text_selection   // hit-test / caret / selection spans
 canvas_free(cv);
 ```
 
@@ -468,7 +500,7 @@ partial, planned).
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
 | `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas_image`s in any of {unorm8, f16} × {unpremul, premul}, each carrying a colour-space tag (sampled in its own space, the resolved sample converted to the working space on deposit); `canvas_snapshot` is canvas-as-source (premultiplied f16, one memcpy); `canvas_image_build_mips` caches the pyramid explicitly | ◑ DOM sources out of scope |
 | Colour — every colour input/output names a colour space {sRGB, extended-linear-sRGB, Oklab}; compositing in sRGB or extended-linear-sRGB; on a linear canvas extended values (HDR above 1, wide gamut below 0) carry through fills, gradients, images, and shadows to the Rec.2020 / PQ output | ◑ sRGB primaries for compositing (no Display-P3 / Rec.2020 working space) |
-| Text — `fillText`/`strokeText`, Libian TC, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end) | ◑ no font-family/weight; full `measureText` TextMetrics |
+| Text — `fillText`/`strokeText`, any font family (default Libian TC) + weight/style, `letterSpacing`/`wordSpacing`, `fontKerning`/`textRendering`/`lang`/`fontVariantCaps`/`fontStretch`, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end), selection/caret queries | ✅ full `measureText` TextMetrics; no CSS `font` shorthand |
 | Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering every pixel-affecting op (font/glyph/bitmap/shape blocks for text, numbered image blocks naming their {unorm8, f16} × {unpremul, premul} format for bitmap/image/putImageData/pattern sources with `image_mips` carrying mip state, numbered path blocks for Path2D, plus op lines with optional per-colour space tokens); replay reproduces the render with no Core Text call — gallery scenes replay byte-for-byte on a machine without the fonts (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
 | Compositing — all 26 `globalCompositeOperation` modes (Porter-Duff + blend modes) | ✅ |
 | Hit testing — `isPointInPath` / `isPointInStroke` (+ `Path2D` overloads) | ✅ winding + even-odd, transform-aware |
