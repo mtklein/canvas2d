@@ -3,20 +3,26 @@
 #include <limits.h>
 #include <stdint.h>
 
-// Generic SIMD lane vocabulary, <element><lanes>.  short8 is the f16-compare
-// mask (a _Float16 comparison yields 16-bit lanes); f32 comparisons yield
-// int4/int8.  Domain-specific vector types build on these (cnvs_planar.h).
-typedef _Float16 half4   __attribute__((ext_vector_type(4)));
-typedef _Float16 half8   __attribute__((ext_vector_type(8)));
-typedef _Float16 half16  __attribute__((ext_vector_type(16)));
-typedef float    float4  __attribute__((ext_vector_type(4)));
-typedef float    float8  __attribute__((ext_vector_type(8)));
-typedef float    float16 __attribute__((ext_vector_type(16)));
-typedef int32_t  int4    __attribute__((ext_vector_type(4)));
-typedef int32_t  int8    __attribute__((ext_vector_type(8)));
+// Generic SIMD lane vocabulary, <element><lanes> (OpenCL-style: the suffix is the
+// lane count, the element is the C base type, so int8 is 8 int32 lanes, not an
+// int8_t).  short8 is the f16-compare mask (a _Float16 comparison yields 16-bit
+// lanes); f32 comparisons yield int4/int8.  The unsigned byte/word types serve
+// the codec kernels (PNG filter + serialize, zlib adler/crc).  Domain-specific
+// vector types build on these (cnvs_planar.h).
+typedef _Float16 half4    __attribute__((ext_vector_type(4)));
+typedef _Float16 half8    __attribute__((ext_vector_type(8)));
+typedef _Float16 half16   __attribute__((ext_vector_type(16)));
+typedef float    float4   __attribute__((ext_vector_type(4)));
+typedef float    float8   __attribute__((ext_vector_type(8)));
+typedef float    float16  __attribute__((ext_vector_type(16)));
+typedef int32_t  int4     __attribute__((ext_vector_type(4)));
+typedef int32_t  int8     __attribute__((ext_vector_type(8)));
+typedef uint32_t uint16   __attribute__((ext_vector_type(16)));
 typedef short    short8   __attribute__((ext_vector_type(8)));
+typedef uint16_t ushort8  __attribute__((ext_vector_type(8)));
 typedef uint8_t  uchar4   __attribute__((ext_vector_type(4)));
 typedef uint8_t  uchar8   __attribute__((ext_vector_type(8)));
+typedef uint8_t  uchar16  __attribute__((ext_vector_type(16)));
 
 // 2D affine transforms (HTML Canvas 2D convention).  A matrix maps (x, y) to
 //     (a*x + c*y + e,  b*x + d*y + f),

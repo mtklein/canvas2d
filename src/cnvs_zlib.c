@@ -10,6 +10,8 @@
 
 #include "cnvs_zlib.h"
 
+#include "cnvs_math.h"
+
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,13 +34,11 @@ static uint8_t const dist_extra[30] = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
 };
 
-typedef uint8_t u8x16 __attribute__((ext_vector_type(16)));
-typedef uint32_t u32x16 __attribute__((ext_vector_type(16)));
 
 uint32_t cnvs_zlib_adler32(uint8_t const *__counted_by(n) data, size_t n) {
     // Position weights for a 16-byte block: in s1 + s2 = s1 + sum_i(s1 + sum_{j<=i} d[j]),
     // byte j contributes (16 - j) to s2, so wts[j] = 16 - j.
-    u32x16 const wts = { 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
+    uint16 const wts = { 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
     uint32_t s1 = 1, s2 = 0;
     size_t i = 0;
     while (i < n) {
@@ -50,9 +50,9 @@ uint32_t cnvs_zlib_adler32(uint8_t const *__counted_by(n) data, size_t n) {
         }
         size_t const end = i + chunk;
         for (; i + 16 <= end; i += 16) {
-            u8x16 v;
+            uchar16 v;
             memcpy(&v, data + i, sizeof v);  // unaligned vector load, still bounds-checked
-            u32x16 w = __builtin_convertvector(v, u32x16);
+            uint16 w = __builtin_convertvector(v, uint16);
             s2 += 16u * s1 + __builtin_reduce_add(w * wts);  // uses s1 before the block
             s1 += __builtin_reduce_add(w);
         }

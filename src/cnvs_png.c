@@ -14,6 +14,7 @@
 
 #include "cnvs_png.h"
 
+#include "cnvs_math.h"
 #include "cnvs_zlib.h"
 
 #include <limits.h>
@@ -94,9 +95,6 @@ static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
 }
 #endif
 
-typedef uint8_t pngu8x16 __attribute__((ext_vector_type(16)));
-typedef uint16_t pngu16x8 __attribute__((ext_vector_type(8)));
-
 // Up-filter one row: out[i] = cur[i] - prev[i] mod 256.  Whole-vector ops via
 // the memcpy idiom -- one bounds check per 16-byte block (the struct cnvs_cover
 // resolve / blur pattern) -- then a scalar tail.  Lane subtraction wraps mod
@@ -107,7 +105,7 @@ static void filter_up(uint8_t *__counted_by(n) out,
                       uint8_t const *__counted_by(n) prev, int n) {
     int i = 0;
     for (; i + 16 <= n; i += 16) {
-        pngu8x16 c, p;
+        uchar16 c, p;
         memcpy(&c, cur + i, sizeof c);   // bounds-checked vector loads
         memcpy(&p, prev + i, sizeof p);
         c -= p;
@@ -155,7 +153,7 @@ cnvs_png_encode(uint16_t const *__counted_by(width * height * 4) pixels,
             // lays the bytes down big-endian.  Scalar tail for samples % 8.
             int x = 0;
             for (; x + 8 <= samples; x += 8) {
-                pngu16x8 v;
+                ushort8 v;
                 memcpy(&v, row + x, sizeof v);       // bounds-checked vector load
                 v = (v << 8) | (v >> 8);             // swap each 16-bit lane
                 memcpy(dst + x * 2, &v, sizeof v);   // bounds-checked vector store
