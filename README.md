@@ -429,6 +429,7 @@ canvas_fill(rule) / canvas_stroke / canvas_clip(rule) / is_point_in_path / is_po
 canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas_path2d_free
 canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
 canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / encode_png
+canvas_get_image_data_f16 / put_image_data_f16 / put_image_data_dirty_f16 / create_image_data_f16  // rgba-float16, extended range
 canvas_draw_bitmap / draw_bitmap_scaled / draw_bitmap_subrect   // borrowed RGBA8
 canvas_image_unorm8 / canvas_image_f16 / canvas_snapshot / canvas_image_build_mips / canvas_image_width / canvas_image_height / canvas_image_free
 canvas_draw_image / draw_image_scaled / draw_image_subrect   // reified image
@@ -453,7 +454,7 @@ partial, planned).
 | Paths: lines, rects, Béziers, arc, ellipse, roundRect, arcTo | ✅ (roundRect: per-corner elliptical radii) |
 | `fill()` — winding rules (nonzero + even-odd), holes, self-intersection | ✅ analytic coverage |
 | `stroke()` — width (CTM-scaled), miter/round/bevel joins, butt/round/square caps, line dash | ✅ |
-| `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData; each names a colour space {sRGB, extended-linear-sRGB, Oklab}) | ◑ RGBA8 only (no float16 ImageData) |
+| `getImageData` / `putImageData` (clipped 2D blits, dirty-rect, createImageData; each names a colour space {sRGB, extended-linear-sRGB, Oklab}) | ✅ RGBA8 + `rgba-float16` (`*_f16`, extended range preserved) |
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial + conic, fills and strokes, multi-stop; interpolation space (sRGB/linear/Oklab) × alpha (premul/unpremul) | ✅ per-pixel exact stop lerp, 8-wide (≤0.16/255 of exact, hard stops exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
