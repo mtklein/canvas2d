@@ -7,7 +7,8 @@
 // checks vanish and ASan alone must witness that the size arithmetic (rawlen /
 // zcap / total), the Up-filter row kernel, the deflate it feeds, the cursor
 // writes, and the CRC32 paths never run off their buffers, across fuzzed
-// dimensions and pixel content.  (The decode side is fuzz_pngdec.)
+// dimensions and pixel content.  (There is no decode-side harness: PNG is output
+// only.)
 
 #include "cnvs_png.h"
 

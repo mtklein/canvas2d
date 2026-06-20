@@ -37,8 +37,8 @@ bool cnvs_canvas_set_working_space(struct canvas *__single cv,
 
 // Draw one replayed image block (implemented in canvas.c, the replay-side
 // twin of the draw trios): ct/at/cs are the block's format as named on its
-// line (cs the colour-space tag -- interpretation metadata; the sampler
-// honouring it is deferred), `mips` whether the block's draws carry mip-chain
+// line (cs the colour-space tag -- honoured on draw: the resolved sample
+// converts to the working space on deposit), `mips` whether the block's draws carry mip-chain
 // semantics (an `image_mips` line) -- the chain rebuilds per draw here,
 // byte-identical to a live cached chain.  `form` is the op spelling this draw
 // replays (0 = draw_image, 1 = draw_image_scaled, 2 = draw_image_subrect), so

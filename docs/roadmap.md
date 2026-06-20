@@ -154,8 +154,9 @@ Internals (not API features) considered and deferred:
   deliberately falls back to bilinear), and `high` magnifies through a 4×4
   Catmull-Rom (premultiplied taps, the BC-spline pair one swappable line in
   canvas.c).  Sources are RGBA8 only and DOM source kinds are out of scope
-  below; image sampling on a non-sRGB canvas is not yet linear-correct (the
-  colour-management row above).
+  below; an image source is sampled in its own tagged space and the resolved
+  sample converts to the working space on deposit (the colour-management row
+  above) -- filtering stays in the source's space by design.
 - **Text caching** has both halves ([text-boundary.md](text-boundary.md)). Live:
   every canvas memoizes boundary results — shaped lines by (size, text), and
   canonical glyph data by (font name, glyph id): outline curves + ink bounds, or

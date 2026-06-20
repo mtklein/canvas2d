@@ -54,8 +54,8 @@ static void put_bytes(struct writer *w, uint8_t const *__counted_by(n) src, size
 // PNG/zlib's CRC is CRC-32/ISO-HDLC -- exactly what ARMv8's crc32 instructions
 // compute, ~20x faster than the byte-at-a-time table.  Eight bytes at a time via
 // memcpy (unaligned load, still bounds-checked under -fbounds-safety -- the same
-// shape adler32 uses), then a scalar tail.  Shared by encode (chunk emission)
-// and decode (chunk verification).
+// shape adler32 uses), then a scalar tail.  Used by the encoder for chunk
+// emission (there is no decoder).
 static uint32_t crc32_buf(uint8_t const *__counted_by(n) p, size_t n) {
     uint32_t c = 0xFFFFFFFFu;
     size_t i = 0;

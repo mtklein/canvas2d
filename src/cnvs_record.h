@@ -91,9 +91,9 @@ enum {
 // types ride the line by name -- the four formats are peers, none the
 // unmarked default -- deflated (cnvs_zlib) and
 // base64-chunked into `bits` lines exactly like an emoji capture, returning
-// its file-local id.  `cs` is the source's colour-space tag (interpretation
-// metadata; the sampler honouring it is deferred): it rides the line as an
-// OPTIONAL trailing token, emitted ONLY when non-sRGB (absence == sRGB), so
+// its file-local id.  `cs` is the source's colour-space tag (honoured on draw:
+// the resolved sample converts to the working space on deposit): it rides the
+// line as an OPTIONAL trailing token, emitted ONLY when non-sRGB (absence == sRGB), so
 // every existing sRGB image block stays byte-identical.  Deduplicated by
 // CONTENT + the format (ct, at, cs) within the recording (the recorder keeps
 // its own copy of each emitted image; the caller's buffer is borrowed and may

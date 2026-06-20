@@ -64,10 +64,10 @@ enum canvas_composite_op {
 };
 
 // The colour spaces this API names.  ONE enum spanning every role; each
-// surface that takes a space accepts only the valid SUBSET for that role and
-// ignores the rest (canvas_in_space takes the two compositing spaces; the
-// gradient interpolation setters take all three -- an out-of-range value is
-// ignored either way, never asserted).
+// surface that takes a space accepts only the valid SUBSET for that role
+// (canvas_in_space takes the two compositing spaces and returns NULL otherwise;
+// the gradient interpolation setters take all three and silently ignore an
+// out-of-range value).  Neither asserts.
 //   CANVAS_CS_SRGB        -- encoded sRGB.
 //   CANVAS_CS_LINEAR_SRGB -- extended linear sRGB (same primaries, linear
 //                            transfer).
@@ -92,8 +92,9 @@ enum canvas_composite_op {
 // Untagged colours are canonically ENCODED sRGB at every public boundary, in
 // both spaces -- input (set_fill_rgba and siblings, gradient stops, shadow and
 // drop-shadow colours, putImageData/bitmap/image pixels) and output (read_rgba,
-// write_png, get_image_data).  The space changes only what they convert into
-// internally, never how they are spelled at the boundary.
+// get_image_data).  The space changes only what they convert into internally,
+// never how they are spelled at the boundary.  (write_png is separate: it has no
+// colour parameter and emits 16-bit Rec.2020/PQ regardless -- see write_png.)
 //
 // A gradient's INTERPOLATION SPACE: the colour space its stop colours blend in
 // between stops (the gradient interpolation setters).  Per gradient (not per
@@ -279,11 +280,10 @@ void canvas_set_fill_gradient_interpolation(struct canvas *__single cv,
 // the caller must keep it alive while it remains the fill paint (including across
 // save/restore) -- and the pattern is pinned in device space at the current
 // transform, like the gradients.  Sampling honours image smoothing (bilinear vs
-// nearest).  `space` tags how to interpret the source's colours --
-// interpretation metadata only: the sampler honouring it is deferred (see the
-// LINEAR-WORKING-SPACE deferral in canvas.c's draw_image_quad), so today the
-// tag is plumbed but unread.  Ignored if the dimensions are non-positive or
-// overflow.
+// nearest).  `space` tags how to interpret the source's colours -- the pattern
+// is sampled in that space and the resolved sample converts to the canvas
+// working space on deposit (a no-op when they match).  Ignored if the dimensions
+// are non-positive or overflow.
 void canvas_set_fill_pattern(struct canvas *__single cv, enum canvas_color_space space,
                              uint8_t const *__counted_by(w * h * 4) src,
                              int w, int h, enum canvas_pattern_repeat repeat);
@@ -412,7 +412,7 @@ void canvas_set_stroke_gradient_interpolation(struct canvas *__single cv,
                                               enum canvas_color_space space,
                                               enum canvas_alpha_type alpha);
 // Image pattern stroke paint, mirroring canvas_set_fill_pattern (the same
-// deferred-sampler `space` tag).
+// `space` tag, sampled in-space and converted to the working space on deposit).
 void canvas_set_stroke_pattern(struct canvas *__single cv, enum canvas_color_space space,
                                uint8_t const *__counted_by(w * h * 4) src,
                                int w, int h, enum canvas_pattern_repeat repeat);
@@ -459,9 +459,8 @@ void canvas_set_image_smoothing_quality(struct canvas *__single cv,
 // borrowed buffer has no identity to cache derived data against, a minifying
 // draw at medium/high quality rebuilds its mip chain per call -- reified
 // images below pay that cost once, explicitly.  `space` tags how to interpret
-// the buffer's colours -- interpretation metadata only: the sampler honouring
-// it is deferred (see the LINEAR-WORKING-SPACE deferral in canvas.c's
-// draw_image_quad), so today the tag is plumbed but unread.
+// the buffer's colours -- sampled in that space, the resolved sample converted
+// to the canvas working space on deposit (a no-op when they match).
 void canvas_draw_bitmap(struct canvas *__single cv, enum canvas_color_space space,
                        uint8_t const *__counted_by(sw * sh * 4) src,
                        int sw, int sh, float dx, float dy);
@@ -723,9 +722,9 @@ void canvas_put_image_data_dirty(struct canvas *__single cv,
 // by the recorder so one buffer used many ways costs one block.  The trailing
 // <space> (srgb|linear|oklab) is the source's colour-space tag -- OPTIONAL,
 // emitted only when non-sRGB; absence means sRGB, so every legacy image block
-// stays byte-identical.  (It is interpretation metadata: the sampler honouring
-// it is deferred, so it round-trips but does not yet change a replayed image's
-// pixels.)  An optional
+// stays byte-identical.  (The tag is honoured on replay: the source is sampled
+// in that space and the resolved sample converts to the working space on
+// deposit.)  An optional
 //     image_mips <id>
 // line marks the block's draws as carrying mip-chain semantics: the bitmap
 // entry points (per-draw chain rebuild) emit it as soon as their block is

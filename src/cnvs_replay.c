@@ -678,8 +678,8 @@ static bool replay_image(struct replay_blocks *__single b,
     if (!read_uint(data, le, &j, (zlen + 2) / 3, &nlines) || nlines < 1) {
         return false;
     }
-    // The colour-space tag is the OPTIONAL trailing token (interpretation
-    // metadata; the sampler honouring it is deferred): absent == sRGB, so a
+    // The colour-space tag is the OPTIONAL trailing token (the sampler converts
+    // the resolved sample to the working space on deposit): absent == sRGB, so a
     // legacy (no-token) block parses as sRGB and stays byte-identical.  Only
     // the three colour-space names are valid here; anything else is malformed.
     enum canvas_color_space cs = CANVAS_CS_SRGB;
@@ -1493,8 +1493,8 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         }
         if (rep < 0) return false;
         // The block's colour-space tag rides through to the pattern setter, so
-        // a non-sRGB pattern round-trips (the setter's tag is interpretation
-        // metadata; the sampler honouring it is deferred).
+        // a non-sRGB pattern round-trips (the sampler converts the resolved
+        // sample to the working space on deposit).
         if (fill) {
             canvas_set_fill_pattern(cv, blk->img[id].cs, blk->img[id].px,
                                     blk->img[id].w, blk->img[id].h,

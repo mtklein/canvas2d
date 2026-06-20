@@ -3915,16 +3915,15 @@ void canvas_set_image_smoothing_quality(struct canvas *__single cv,
 // pyramid, where `src` is `hi`'s own bytes); zero views + 0 for the public
 // path, which picks its own pair from the source's derived chain below.
 //
-// LINEAR-WORKING-SPACE DEFERRAL: image/bitmap source pixels are untagged
-// encoded sRGB, so on a CANVAS_CS_LINEAR_SRGB canvas they ought to decode
-// sRGB->linear before sampling -- AND the mip box-halving and the bilinear/
-// cubic taps ought to average in linear, not sRGB, to be correct.  That is a
-// pyramid-and-sampler-wide change (every sample_src* and the mip builder), out
-// of this phase's scope; the entry decode lands here when the image pipeline is
-// taken up.  Today an image drawn onto a linear canvas samples its bytes as if
-// they were already linear -- visibly wrong only for translucent overlaps of
-// imagery, untouched on an sRGB canvas (the gallery's linear demonstrator uses
-// putImageData, which DOES decode, for its sRGB half).
+// COLOUR-SPACE MODEL: an image/bitmap source carries a colour-space tag
+// (src_space).  It is sampled -- mip box-halving and the bilinear/cubic taps --
+// in its OWN tagged space; the resolved per-sample colour then converts to the
+// canvas working space on deposit (sample_to_working, applied in the loop below;
+// a no-op when the spaces match).  This is the design, not a shortcut: the
+// image's format governs filtering, the canvas working space governs
+// compositing.  Filtering an sRGB source therefore averages in sRGB even on a
+// linear canvas -- to filter in linear, tag/store the source linear (f16).  Only
+// the deposit crosses spaces.
 static void draw_image_quad(struct canvas *__single cv,
                             uint8_t const *__counted_by(slen) src, int slen,
                             int sw, int sh, float sx, float sy,
@@ -4501,8 +4500,10 @@ static cnvs_px8 read_unorm8(struct canvas *__single cv,
 //   CANVAS_CS_LINEAR_SRGB -- linear-sRGB bytes (linear canvas: the stored values
 //                            quantized directly; sRGB canvas: decode then quantize).
 //   CANVAS_CS_OKLAB       -- Oklab (L,a,b) bytes (working->linear->Oklab).
-// write_png and get_image_data read back through this same entry point (with
-// CANVAS_CS_SRGB -- PNG and the get/put round trip stay sRGB by convention).
+// get_image_data reads back through this same entry point (with CANVAS_CS_SRGB
+// by default -- the get/put round trip stays sRGB by convention).  write_png does
+// NOT route here: it goes through canvas_encode_png -> surface_to_pq16 (16-bit
+// Rec.2020/PQ), a separate output pipeline.
 void canvas_read_rgba(struct canvas *__single cv, enum canvas_color_space space,
                       uint8_t *__counted_by(len) out, int len) {
     if (len < cv->width * cv->height * 4) {

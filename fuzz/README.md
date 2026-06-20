@@ -88,9 +88,9 @@ for the OOB-write classes.
 - **`fuzz_png.c`** — the PNG encoder (`cnvs_png_write`) on fuzzed dimensions +
   pixel content, encoding to `/dev/null`. Exercises the size arithmetic
   (`rawlen`/`zcap`/`total`), the Up-filter row kernel, the deflate it feeds,
-  the pre-sized write cursor, and the CRC32 paths. With `-fbounds-safety` off
-  here, ASan independently witnesses the cursor never overruns. (83k execs
-  against the stored-block encoder: clean.)
+  the pre-sized write cursor, and the CRC32 paths (the encoder is 16-bit RGBA,
+  feeding the in-house LZ77 + Huffman deflate). With `-fbounds-safety` off here,
+  ASan independently witnesses the cursor never overruns.
 - **`fuzz_inflate.c`** — the strict zlib **inflate** (`src/cnvs_zlib.c`) on
   adversarial bytes — the most CVE-scarred parser class in C: Huffman table
   construction from untrusted code lengths, 16/17/18 repeat handling, window
