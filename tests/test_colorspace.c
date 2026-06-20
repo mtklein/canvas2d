@@ -774,8 +774,9 @@ static void pq_rec2020_known_answers(void) {
         double const ref = pow((c1 + c2 * p) / (1.0 + c3 * p), m2);
         CHECK(fabs((double)cnvs_pq_oetf((float)y) - ref) < 1e-3);
     }
-    // PQ(0) is c1^m2 (~7e-7, rounds to code 0), not exactly zero; PQ(1) == 1.
-    CHECK(cnvs_pq_oetf(0.0f) >= 0.0f && cnvs_pq_oetf(0.0f) < 1e-5f);
+    // cnvs_pq_oetf clamps y to [0,1] before the formula, so PQ(0) == 0 exactly
+    // and PQ(1) == 1 exactly (the polynomial is exact at those boundary points).
+    CHECK(cnvs_pq_oetf(0.0f) == 0.0f);
     CHECK(fabsf(cnvs_pq_oetf(1.0f) - 1.0f) < 1e-4f);
     CHECK(cnvs_pq_oetf(-0.5f) >= 0.0f && cnvs_pq_oetf(-0.5f) < 1e-5f);  // clamps below
     CHECK(fabsf(cnvs_pq_oetf(2.0f) - 1.0f) < 1e-4f);   // clamps above
@@ -892,11 +893,65 @@ static void extended_shadow_survives(void) {
     }
 }
 
+// Accuracy and monotonicity sweep for the polynomial cnvs_pq_oetf.  The
+// reference is a double-precision evaluation of the canonical spec formula.
+//
+// Achieved accuracy (log2/exp2 minimax poly approximation, f32 arithmetic):
+//   max |approx - ref|  < 2e-5  (~1.3 16-bit codes) anywhere in [0, 1]
+//   SDR-white anchor (y = 203/10000): error < 3e-6 (~0.2 codes)
+//
+// The approximation is monotone in 16-bit codes over [0, 1] (tiny sub-code
+// violations in f32 round away at 16-bit quantization).  The boundary values
+// y=0 and y=1 map to exactly 0.0f and 1.0f by construction.
+static void pq_oetf_accuracy(void) {
+    double const m1d = 2610.0 / 16384.0, m2d = 2523.0 / 4096.0 * 128.0;
+    double const c1d = 3424.0 / 4096.0, c2d = 2413.0 / 4096.0 * 32.0,
+                 c3d = 2392.0 / 4096.0 * 32.0;
+
+    // Three required anchor points:
+    //   y=0 -> 0 exactly (from the clamp; tested in pq_rec2020_known_answers).
+    //   y=1 -> 1 exactly (polynomial endpoint constraints).
+    CHECK(cnvs_pq_oetf(0.0f) == 0.0f);
+    CHECK(cnvs_pq_oetf(1.0f) == 1.0f);
+
+    // SDR-white anchor: y = CNVS_REF_WHITE_NITS / 10000 = 203/10000 = 0.0203.
+    // The f32 approximation lands within 3e-6 (~0.2 16-bit codes) of the
+    // double-precision reference.
+    double const y_sdr = 203.0 / 10000.0;
+    double const p_sdr = pow(y_sdr, m1d);
+    double const ref_sdr = pow((c1d + c2d * p_sdr) / (1.0 + c3d * p_sdr), m2d);
+    CHECK(fabs((double)cnvs_pq_oetf((float)y_sdr) - ref_sdr) < 3e-6);
+
+    // Dense sweep over [0, 1]: bound max absolute error in [0,1] encoded units,
+    // and verify monotonicity in 16-bit codes (sub-code f32 violations round away).
+    int const N = 10000;
+    double max_err = 0.0;
+    uint16_t prev16 = 0;
+    bool monotone16 = true;
+    for (int i = 1; i <= N; i++) {
+        double const y = (double)i / (double)N;
+        double const pp = pow(y, m1d);
+        double const ref = pow((c1d + c2d * pp) / (1.0 + c3d * pp), m2d);
+        float const approx = cnvs_pq_oetf((float)y);
+        double const err = fabs((double)approx - ref);
+        if (err > max_err) { max_err = err; }
+        // q16: the quantizer used by surface_to_pq16.
+        float const cv = approx < 0.0f ? 0.0f : (approx > 1.0f ? 1.0f : approx);
+        uint16_t const code = (uint16_t)(cv * 65535.0f + 0.5f);
+        if (code < prev16) { monotone16 = false; }
+        prev16 = code;
+    }
+    // max error < 2e-5 in [0,1] units, i.e. < 1.4 16-bit codes.
+    CHECK(max_err < 2e-5);
+    CHECK(monotone16);
+}
+
 int main(void) {
     space_default_and_persistence();
     extended_fill_survives();
     extended_shadow_survives();
     pq_rec2020_known_answers();
+    pq_oetf_accuracy();
     image_sample_space_convert();
     linear_color_round_trip();
     linear_image_data_round_trip();
