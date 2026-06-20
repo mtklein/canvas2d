@@ -2522,7 +2522,7 @@ static void selection(void) {
     canvas_fill_text(c, "a Latin selection [4,15): one visual span", lx, 66.0f);
     float const y1 = 102.0f;
     struct cnvs_shaped *__single latin = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                         false, S(SEL_LATIN));
+                                                         false, 400, false, S(SEL_LATIN));
     cnvs_xspan sp[4];
     if (latin) {
         int const n = cnvs_shaped_selection(latin, 4, 15, sp, 4);
@@ -2545,7 +2545,7 @@ static void selection(void) {
     canvas_fill_text(c, "bidi: one logical range [5,12), two visual spans", lx, 142.0f);
     float const y2 = 178.0f;
     struct cnvs_shaped *__single bidi = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                        true, S(SEL_BIDI));
+                                                        true, 400, false, S(SEL_BIDI));
     if (bidi) {
         float const bx = 484.0f - cnvs_shaped_width(bidi);  // hang from the right margin
         int const n = cnvs_shaped_selection(bidi, 5, 12, sp, 4);
@@ -2574,7 +2574,7 @@ static void selection(void) {
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CARET, lx, y3);
     struct cnvs_shaped *__single line = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                        false, S(SEL_CARET));
+                                                        false, 400, false, S(SEL_CARET));
     if (line) {
         int const at[4] = { 0, 4, 9, 12 };
         char const *const lbl[4] = { "0", "4 = 5", "9", "12" };
@@ -2604,7 +2604,7 @@ static void selection(void) {
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CLICK, lx, y4);
     struct cnvs_shaped *__single click = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                         false, S(SEL_CLICK));
+                                                         false, 400, false, S(SEL_CLICK));
     if (click) {
         float const cx = cnvs_shaped_width(click) * 0.5f;     // the click, mid-line
         int const idx = cnvs_shaped_index_at_x(click, cx);
@@ -3121,6 +3121,70 @@ static void fontfamily(void) {
     save(c, "gallery/fontfamily.png");
 }
 
+// Font WEIGHT and STYLE as canvas state.  Top rows: Helvetica (a family with
+// real bold and italic faces) drawn regular / bold / italic / bold-italic, each
+// labelled -- the weight trait matches Helvetica-Bold's heavier outlines and the
+// italic trait Helvetica-Oblique's slanted ones.  Bottom row: Papyrus, a family
+// with no bold or italic face, so its italic is SYNTHESIZED (Core Text has no
+// real oblique; the boundary bakes a slant into the font matrix, which the
+// recorded glyph curves capture) -- it reads as a slanted Papyrus, distinct from
+// the upright regular.  Each face records its glyph curves (the Libian model), so
+// the .canvas replays fontless byte-for-byte.
+static void fontstyle(void) {
+    struct canvas *__single c = canvas(440, 250, CANVAS_CS_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/fontstyle.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 440.0f, 250.0f);
+
+    char const *__null_terminated sample = "Regular bold italic";
+
+    struct face { char const *__null_terminated label; int weight; enum canvas_font_style style; };
+    struct face const faces[4] = {
+        { "Helvetica regular",     400, CANVAS_FONT_STYLE_NORMAL },
+        { "Helvetica bold",        700, CANVAS_FONT_STYLE_NORMAL },
+        { "Helvetica italic",      400, CANVAS_FONT_STYLE_ITALIC },
+        { "Helvetica bold italic", 700, CANVAS_FONT_STYLE_ITALIC },
+    };
+    for (int i = 0; i < 4; i++) {
+        float const y = 34.0f + (float)i * 44.0f;
+        // The label, in the default upright face at a small size.
+        canvas_set_font_family(c, "Helvetica");
+        canvas_set_font_weight(c, 400);
+        canvas_set_font_style(c, CANVAS_FONT_STYLE_NORMAL);
+        canvas_set_font_size(c, 11.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.58f, 0.66f, 1.0f);
+        canvas_fill_text(c, faces[i].label, 18.0f, y - 16.0f);
+        // The sample, in this weight/style.
+        canvas_set_font_weight(c, faces[i].weight);
+        canvas_set_font_style(c, faces[i].style);
+        canvas_set_font_size(c, 26.0f);
+        canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.93f, 0.96f, 1.0f);
+        canvas_fill_text(c, sample, 18.0f, y + 9.0f);
+    }
+
+    // The synthesis row: Papyrus has no real italic face, so italic is
+    // synthesized (a slanted Papyrus) -- visibly distinct from the upright.
+    float const y = 34.0f + 4.0f * 44.0f;
+    canvas_set_font_family(c, "Helvetica");
+    canvas_set_font_weight(c, 400);
+    canvas_set_font_style(c, CANVAS_FONT_STYLE_NORMAL);
+    canvas_set_font_size(c, 11.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.58f, 0.66f, 1.0f);
+    canvas_fill_text(c, "Papyrus regular | synth italic", 18.0f, y - 16.0f);
+    canvas_set_font_family(c, "Papyrus");
+    canvas_set_font_size(c, 22.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.93f, 0.96f, 1.0f);
+    canvas_set_font_style(c, CANVAS_FONT_STYLE_NORMAL);
+    canvas_fill_text(c, "Papyrus", 18.0f, y + 7.0f);
+    canvas_set_font_style(c, CANVAS_FONT_STYLE_ITALIC);
+    canvas_fill_text(c, "Papyrus", 230.0f, y + 7.0f);
+
+    save(c, "gallery/fontstyle.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -3167,6 +3231,7 @@ static void render_all(void) {
     ellipserot();
     nestedclip();
     fontfamily();
+    fontstyle();
 }
 
 int main(void) {

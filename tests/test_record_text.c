@@ -365,57 +365,62 @@ static void check_strict(void) {
     }
 
     // Well-formed blocks parse (a tiny square glyph, a blank glyph, a shape).
+    // The font block carries weight/style (400 0 here); the shaping block too.
     CHECK(REPLAY(cv,
-        "font 0 1.05 0.33 Libian TC\n"
-        "font 1 1.05 0.33 STLibianTC-Regular\n"
+        "font 0 1.05 0.33 400 0 Libian TC\n"
+        "font 1 1.05 0.33 400 0 STLibianTC-Regular\n"
         "glyph 1 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
         "glyph 1 3 0 0 0 0 0\n"
-        "shaping 12 0 0 0 9 Libian TC 2 1 2 H \n"
+        "shaping 12 0 0 0 400 0 9 Libian TC 2 1 2 H \n"
         "run 1 0 0 2 43 7.224 0 3 2.8 1\n"
         "fill_text 4 20 H \n"));
 
     // An rtl-shaped block parses too, and its op draws under the direction the
     // line was shaped at.
     CHECK(REPLAY(cv,
-        "shaping 12 1 0 0 9 Libian TC 1 1 1 W\n"
+        "shaping 12 1 0 0 400 0 9 Libian TC 1 1 1 W\n"
         "run -1 1 0 1 7 5.5 0\n"
         "set_direction rtl\n"
         "fill_text 4 40 W\n"));
 
     // Malformed blocks are rejected.
-    CHECK(!REPLAY(cv, "font 16 0.5 0.2 Over\n"));            // id out of range
-    CHECK(!REPLAY(cv, "font 0 0.5 0.2 A\nfont 0 0.5 0.2 B\n"));  // redeclared id
-    CHECK(!REPLAY(cv, "font 0 0.5 0.2\n"));                  // empty name
-    CHECK(!REPLAY(cv, "font 0 1e999 0.2 A\n"));              // overflowed float
+    CHECK(!REPLAY(cv, "font 16 0.5 0.2 400 0 Over\n"));            // id out of range
+    CHECK(!REPLAY(cv, "font 0 0.5 0.2 400 0 A\nfont 0 0.5 0.2 400 0 B\n"));  // redeclared id
+    CHECK(!REPLAY(cv, "font 0 0.5 0.2 400 0\n"));            // empty name
+    CHECK(!REPLAY(cv, "font 0 1e999 0.2 400 0 A\n"));        // overflowed float
+    CHECK(!REPLAY(cv, "font 0 1 0.2 50 0 A\n"));             // weight below 100
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 2 A\n"));            // "2" is no style bit
     CHECK(!REPLAY(cv, "glyph 0 5 1000 0 0 1 1 m 1 2\n"));    // undeclared font
-    CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 1000 0 0 1 1 m 1\n"));   // short point
-    CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 1000 0 0 1 1 x 1 2\n")); // bad verb
-    CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 70000 1000 0 0 1 1 z\n")); // gid > 0xFFFF
-    CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 1e999 0 0 1 1 z\n"));    // inf upem
-    CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 0 0 0 0 0 m 1 2\n"));    // blank w/ curves
-    CHECK(!REPLAY(cv, "font 0 1 0.2 A\nglyph 0 5 -1 0 0 1 1 z\n"));       // negative upem
-    CHECK(!REPLAY(cv, "shaping 12 2 0 0 1 2 H \n"));             // "2" is no
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 0 A\nglyph 0 5 1000 0 0 1 1 m 1\n"));   // short point
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 0 A\nglyph 0 5 1000 0 0 1 1 x 1 2\n")); // bad verb
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 0 A\nglyph 0 70000 1000 0 0 1 1 z\n")); // gid > 0xFFFF
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 0 A\nglyph 0 5 1e999 0 0 1 1 z\n"));    // inf upem
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 0 A\nglyph 0 5 0 0 0 0 0 m 1 2\n"));    // blank w/ curves
+    CHECK(!REPLAY(cv, "font 0 1 0.2 400 0 A\nglyph 0 5 -1 0 0 1 1 z\n"));       // negative upem
+    CHECK(!REPLAY(cv, "shaping 12 2 0 0 400 0 1 1 2 H \n"));     // "2" is no
                                                                // direction bit
-    CHECK(!REPLAY(cv, "shaping 12 x 0 0 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
-    CHECK(!REPLAY(cv, "shaping 12 0 x 0 1 1 1 A\n"));            // non-finite ls
-    CHECK(!REPLAY(cv, "shaping 12 0 0 1e999 1 1 1 A\n"));        // non-finite ws
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 3 Lib 999\n"));          // family bytes
+    CHECK(!REPLAY(cv, "shaping 12 x 0 0 400 0 1 1 1 A\nrun -1 0 0 0\n"));  // nor is "x"
+    CHECK(!REPLAY(cv, "shaping 12 0 x 0 400 0 1 1 1 A\n"));      // non-finite ls
+    CHECK(!REPLAY(cv, "shaping 12 0 0 1e999 400 0 1 1 1 A\n"));  // non-finite ws
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 50 0 9 Libian TC 1 1 1 A\n"));  // weight below 100
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 2 9 Libian TC 1 1 1 A\n")); // "2" is no style bit
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 3 Lib 999\n"));    // family bytes
                                                                // overrun the line
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 9 Libian TC 1 1 3 A\n"));  // byte-len mismatch
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 9 Libian TC 4 1 2 Hi\n")); // utf16 len > bytes
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 9 Libian TC 1 1 1 A\n"));  // truncated: no run line
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 9 Libian TC 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 9 Libian TC 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 3 A\n"));  // byte-len mismatch
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 4 1 2 Hi\n")); // utf16 len > bytes
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"));  // truncated: no run line
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
     CHECK(!REPLAY(cv, "run 0 0 0 0\n"));                     // run with no shape
     CHECK(!REPLAY(cv,
-        "font 0 1 0.2 A\n"
-        "shaping 12 0 0 0 9 Libian TC 1 1 1 A\n"
+        "font 0 1 0.2 400 0 A\n"
+        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"
         "run 0 0 0 1 10 5 1\n"));                            // cluster >= utf16 len
     CHECK(!REPLAY(cv,
-        "shaping 12 0 0 0 9 Libian TC 1 1 1 A\n"
+        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"
         "run 3 0 0 1 10 5 0\n"));                            // undeclared run font
     CHECK(!REPLAY(cv,
-        "shaping 12 0 0 0 9 Libian TC 1 1 1 A\n"
+        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
     // Bitmap blocks carry the capture DEFLATED under the base64, so the
@@ -430,7 +435,7 @@ static void check_strict(void) {
     CHECK(zn16 > 3);  // header + adler alone are 6 bytes; > 3 lets us chunk
     char zb16[128] = { 0 };
     CHECK(b64enc(zb16, (int)sizeof zb16, z16, zn16 > 0 ? zn16 : 0) > 0);
-    #define BM_FONT "font 0 1 0.25 AppleColorEmoji\n"
+    #define BM_FONT "font 0 1 0.25 400 0 AppleColorEmoji\n"
 
     // ...parses as one bits line...
     CHECK(replay_fmt(cv, BM_FONT "bitmap 0 64 2 2 0 -0.5 2 1.5 %d 1\nbits %s\n",
@@ -706,9 +711,9 @@ static void check_new_ops(void) {
     CHECK(!REPLAY(cv, "stroke_rect 1 2 1.5.2 10\n"));   // malformed float token
     // fill_text_max needs three floats before the text; the text is the tail.
     CHECK(REPLAY(cv,
-        "font 0 1.05 0.33 Libian TC\n"
+        "font 0 1.05 0.33 400 0 Libian TC\n"
         "glyph 0 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
-        "shaping 12 0 0 0 9 Libian TC 1 1 1 H\n"
+        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 H\n"
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width

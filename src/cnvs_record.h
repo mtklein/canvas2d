@@ -171,6 +171,7 @@ void cnvs_rec_path_rule(struct cnvs_recorder *__single r,
 void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
                           char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
+                          int weight, bool italic,
                           char const *__counted_by(len) text, int len);
 
 // `set_font_family <name-len> <name-bytes>` -- the fontFamily setter op (the
@@ -180,6 +181,12 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
 // is the cache key).
 void cnvs_rec_font_family(struct cnvs_recorder *__single r,
                           char const *__counted_by(len) name, int len);
+
+// `set_font_style <normal|italic>` -- the fontStyle setter op, written by token
+// like set_direction.  (Weight is an int op via cnvs_rec_ints.)  Recorded only
+// when the setter is called; the shaping/font blocks carry weight/style
+// regardless (they are the glyph-cache key for synthesized faces).
+void cnvs_rec_font_style(struct cnvs_recorder *__single r, enum canvas_font_style style);
 
 // `name <ints...>` -- the int-typed op lines with no block reference (resize).
 void cnvs_rec_ints(struct cnvs_recorder *__single r, char const *__null_terminated name,

@@ -260,13 +260,16 @@ static char const *__null_terminated verb_token(enum cnvs_glyph_verb v,
 }
 
 // The glyph key for one run, color (emoji) runs included -- captures key by
-// font name exactly as curves do: a replay-built run carries its interned id;
-// a live run interns through the boundary (idempotent).
-static int run_fid(struct cnvs_text_cache *__single c, struct cnvs_glyph_run const *__single run) {
+// (font name, weight, style) exactly as curves do: a replay-built run carries
+// its interned id; a live run interns through the boundary (idempotent).  The
+// line's weight/style join the intern key so a synthesized bold/italic gets a
+// distinct id from the regular face it shares a resolved name with.
+static int run_fid(struct cnvs_text_cache *__single c, struct cnvs_glyph_run const *__single run,
+                   int weight, bool italic) {
     if (run->name_id >= 0) {
         return run->name_id;
     }
-    return cnvs_text_cache_font(c, run->font);
+    return cnvs_text_cache_font(c, run->font, weight, italic);
 }
 
 // Deflated-capture bytes per `bits` line: divisible by 3, so every line but
@@ -296,17 +299,21 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
 }
 
 // The shaped line itself: everything struct cnvs_shaped carries, so replay
-// rebuilds it without shaping.  The family token is the requested typeface, the
-// cache key's family part (length-prefixed bytes, written unconditionally even
-// for the default family): two families of the same bytes are distinct lines, so
-// replay must key its insert with it.  The rtl token is the paragraph direction
+// rebuilds it without shaping.  weight/style are the font weight/style keys
+// (written unconditionally, even at the default 400/upright): they pick a
+// different real or synthesized face, so they are part of the cache key and the
+// glyph identity.  The family token is the requested typeface, the cache key's
+// family part (length-prefixed bytes, written unconditionally even for the
+// default family): two families of the same bytes are distinct lines, so replay
+// must key its insert with it.  The rtl token is the paragraph direction
 // half of the cache key -- the same bytes shape differently under ltr and rtl,
 // so replay must key its insert with it or the two would alias.  ls/ws are the
 // letterSpacing/wordSpacing keys (written unconditionally, even when 0): the
 // spacing is already baked into the run advances, so replay needs them only to
-// key the rebuilt line under the same (family, size, rtl, ls, ws, text) tuple a
-// live lookup uses.  The canvas's family/spacing state -- the values a fill_text
-// keys its lookup by -- are carried by the set_font_family/set_letter_spacing/
+// key the rebuilt line under the same (family, size, rtl, ls, ws, weight, style,
+// text) tuple a live lookup uses.  The canvas's family/weight/style/spacing
+// state -- the values a fill_text keys its lookup by -- are carried by the
+// set_font_family/set_font_weight/set_font_style/set_letter_spacing/
 // set_word_spacing ops, not by this block.  The text is length-prefixed raw
 // bytes to end of line (the key, byte for byte).
 static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
@@ -314,9 +321,10 @@ static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
                                   struct cnvs_shaped const *__single s,
                                   char const *__counted_by(fam_len) family, int fam_len,
                                   float size_px, bool rtl, float ls, float ws,
+                                  int weight, bool italic,
                                   char const *__counted_by(len) text, int len) {
-    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d ", (double)size_px,
-            rtl ? 1 : 0, (double)ls, (double)ws, fam_len);
+    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d %d %d ", (double)size_px,
+            rtl ? 1 : 0, (double)ls, (double)ws, weight, italic ? 1 : 0, fam_len);
     if (fam_len > 0) {
         fwrite(family, 1, (size_t)fam_len, r->f);
     }
@@ -327,8 +335,8 @@ static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
     fputc('\n', r->f);
     for (int ri = 0; ri < s->nruns; ri++) {
         struct cnvs_glyph_run const *__single run = &s->run[ri];
-        fprintf(r->f, "run %d %d %d %d", run_fid(c, run), run->rtl ? 1 : 0,
-                run->is_color ? 1 : 0, run->count);
+        fprintf(r->f, "run %d %d %d %d", run_fid(c, run, weight, italic),
+                run->rtl ? 1 : 0, run->is_color ? 1 : 0, run->count);
         for (int i = 0; i < run->count; i++) {
             fprintf(r->f, " %u %.9g %d", (unsigned)run->glyph[i],
                     (double)run->xadv[i], run->cluster[i]);
@@ -340,13 +348,14 @@ static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
 void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
                           char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
+                          int weight, bool italic,
                           char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0 || !c) {
         return;
     }
     cnvs_rec_flush_ws(r);
     struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, family, fam_len,
-                                                                size_px, rtl, ls, ws, text, len);
+                                                  size_px, rtl, ls, ws, weight, italic, text, len);
     if (!slot) {
         return;  // not cached (shaping failed: nothing to carry)
     }
@@ -358,14 +367,17 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // which is intern order: declared before use) ahead of any glyph or run
     // line that references them.
     for (int ri = 0; ri < s->nruns; ri++) {
-        (void)run_fid(c, &s->run[ri]);
+        (void)run_fid(c, &s->run[ri], weight, italic);
     }
     for (int i = 0; i < c->nfonts; i++) {
         if (c->font[i].emitted) {
             continue;
         }
-        fprintf(r->f, "font %d %.9g %.9g ", i, (double)c->font[i].asc1,
-                (double)c->font[i].desc1);
+        // weight/style ride the font block: a synthesized bold/italic shares the
+        // regular face's NAME, so the id (and the glyph key) keys on them too.
+        fprintf(r->f, "font %d %.9g %.9g %d %d ", i, (double)c->font[i].asc1,
+                (double)c->font[i].desc1, c->font[i].weight,
+                c->font[i].italic ? 1 : 0);
         fwrite(c->font[i].name, 1, (size_t)c->font[i].len, r->f);
         fputc('\n', r->f);
         c->font[i].emitted = true;
@@ -375,7 +387,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // its one boundary fetch here and hits from then on.
     for (int ri = 0; ri < s->nruns; ri++) {
         struct cnvs_glyph_run const *__single run = &s->run[ri];
-        int fid = run_fid(c, run);
+        int fid = run_fid(c, run, weight, italic);
         if (run->is_color || fid < 0) {
             continue;  // emoji carry bitmap blocks below; unkeyable runs carry
         }              // nothing and replay degrades them to blank advances
@@ -427,7 +439,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // replay re-derives the levels at no format cost.
     for (int ri = 0; ri < s->nruns; ri++) {
         struct cnvs_glyph_run const *__single run = &s->run[ri];
-        int const fid = run_fid(c, run);
+        int const fid = run_fid(c, run, weight, italic);
         if (!run->is_color || fid < 0) {
             continue;
         }
@@ -463,9 +475,10 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
             g->emitted = true;
         }
     }
-    // The shaped line itself (and its run lines), keyed by the family and the
-    // spacing it bakes.
-    cnvs_rec_shaping_line(r, c, s, family, fam_len, size_px, rtl, ls, ws, text, len);
+    // The shaped line itself (and its run lines), keyed by the family, weight,
+    // style, and the spacing it bakes.
+    cnvs_rec_shaping_line(r, c, s, family, fam_len, size_px, rtl, ls, ws,
+                          weight, italic, text, len);
     slot->emitted = true;
 }
 
@@ -855,6 +868,16 @@ void cnvs_rec_font_family(struct cnvs_recorder *__single r,
     if (len > 0) {
         fwrite(name, 1, (size_t)len, r->f);
     }
+    fputc('\n', r->f);
+}
+
+void cnvs_rec_font_style(struct cnvs_recorder *__single r, enum canvas_font_style style) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    cnvs_rec_flush_ws(r);
+    fputs("set_font_style ", r->f);
+    fputs(style == CANVAS_FONT_STYLE_ITALIC ? "italic" : "normal", r->f);
     fputc('\n', r->f);
 }
 

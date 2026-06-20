@@ -321,9 +321,10 @@ static struct cnvs_shaping_slot *__single shaping_lru_victim(struct cnvs_text_ca
 
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, float ls, float ws, char const *__counted_by(len) text, int len) {
+        bool rtl, float ls, float ws, int weight, bool italic,
+        char const *__counted_by(len) text, int len) {
     struct cnvs_shaping_slot *__single hit = cnvs_text_cache_shaping_slot(c, name, name_len,
-                                                               size_px, rtl, ls, ws, text, len);
+                                                  size_px, rtl, ls, ws, weight, italic, text, len);
     if (hit) {
         hit->last_use = ++c->tick;
         c->shaping_hits++;
@@ -344,7 +345,8 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
     }
     memcpy(copy, text, (size_t)len);
     memcpy(fam, name, (size_t)name_len);
-    struct cnvs_shaped *__single s = cnvs_shape_text(name, name_len, size_px, rtl, text, len);
+    struct cnvs_shaped *__single s = cnvs_shape_text(name, name_len, size_px, rtl,
+                                                     weight, italic, text, len);
     if (!s) {
         free(copy);
         free(fam);
@@ -374,6 +376,8 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
     victim->size_bits = size_bits;
     victim->ls_bits = ls_bits;
     victim->ws_bits = ws_bits;
+    victim->weight = weight;
+    victim->italic = italic;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;
@@ -382,13 +386,17 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
 }
 
 int cnvs_text_cache_intern(struct cnvs_text_cache *__single c,
-                           char const *__counted_by(len) name, int len) {
+                           char const *__counted_by(len) name, int len,
+                           int weight, bool italic) {
     if (!c || len <= 0) {
         return -1;
     }
-    // The sized model throughout: compare by (length, bytes), no str*() bridge.
+    // The sized model throughout: compare by (length, bytes, weight, style), no
+    // str*() bridge.  weight/style are part of the key so a synthesized bold/
+    // italic (same resolved name as regular) gets a distinct id.
     for (int i = 0; i < c->nfonts; i++) {
-        if (c->font[i].len == len &&
+        if (c->font[i].len == len && c->font[i].weight == weight &&
+            c->font[i].italic == italic &&
             memcmp(c->font[i].name, name, (size_t)len) == 0) {
             return i;
         }
@@ -403,11 +411,14 @@ int cnvs_text_cache_intern(struct cnvs_text_cache *__single c,
     memcpy(copy, name, (size_t)len);
     c->font[c->nfonts].name = copy;
     c->font[c->nfonts].len = len;
+    c->font[c->nfonts].weight = weight;
+    c->font[c->nfonts].italic = italic;
     c->nfonts += 1;
     return c->nfonts - 1;
 }
 
-int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font) {
+int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font,
+                         int weight, bool italic) {
     if (!c || !font) {
         return -1;
     }
@@ -416,7 +427,7 @@ int cnvs_text_cache_font(struct cnvs_text_cache *__single c, void *__single font
     if (n <= 0) {
         return -1;
     }
-    int const fid = cnvs_text_cache_intern(c, buf, n);
+    int const fid = cnvs_text_cache_intern(c, buf, n, weight, italic);
     // A live handle is the chance to record the name's vmetrics (one boundary
     // fetch per font ever) -- the serialized `font` block reads them back.
     if (fid >= 0 && !c->font[fid].has_vm) {
@@ -857,7 +868,7 @@ float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint
 
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, float ls, float ws,
+        bool rtl, float ls, float ws, int weight, bool italic,
         char const *__counted_by(len) text, int len) {
     if (!c || len < 0 || name_len < 0) {
         return NULL;
@@ -870,6 +881,7 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
         struct cnvs_shaping_slot *slot = &c->shaping[i];
         if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
             slot->ls_bits == ls_bits && slot->ws_bits == ws_bits &&
+            slot->weight == weight && slot->italic == italic &&
             slot->fam_len == name_len &&
             memcmp(slot->fam, name, (size_t)name_len) == 0 &&
             slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
@@ -881,7 +893,8 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
 
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
-        bool rtl, float ls, float ws, char const *__counted_by(len) text, int len,
+        bool rtl, float ls, float ws, int weight, bool italic,
+        char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s) {
     if (!c || !s || len < 0 || name_len < 0) {
         cnvs_shaped_free(s);
@@ -901,7 +914,7 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.
     struct cnvs_shaping_slot *victim = cnvs_text_cache_shaping_slot(c, name, name_len,
-                                                         size_px, rtl, ls, ws, text, len);
+                                              size_px, rtl, ls, ws, weight, italic, text, len);
     if (!victim) {
         victim = shaping_lru_victim(c);
     }
@@ -921,6 +934,8 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
     victim->size_bits = size_bits;
     victim->ls_bits = ls_bits;
     victim->ws_bits = ws_bits;
+    victim->weight = weight;
+    victim->italic = italic;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;
@@ -1021,9 +1036,11 @@ float cnvs_shaped_outline(struct cnvs_text_cache *__single cache,
         struct cnvs_glyph_run const run = s->run[r];  // visual-order glyphs, so advancing the pen
         // The glyph key (color runs included -- captures key by name too): a
         // replay-built run carries its interned id; a live run resolves through
-        // one name fetch per run, not per glyph.
+        // one name fetch per run, not per glyph.  The line's weight/style join
+        // the intern key so a synthesized bold/italic doesn't alias the regular
+        // face (which it shares a resolved name with).
         int fid = run.name_id >= 0 ? run.name_id
-                                   : cnvs_text_cache_font(cache, run.font);
+                                   : cnvs_text_cache_font(cache, run.font, s->weight, s->italic);
         for (int i = 0; i < run.count; i++) {  // left-to-right places RTL runs too
             if (run.is_color) {
                 if (color) {  // no outline to trace: hand it over to be drawn
@@ -1075,7 +1092,7 @@ void cnvs_shaped_metrics(struct cnvs_text_cache *__single cache,
     for (int r = 0; r < s->nruns; r++) {
         struct cnvs_glyph_run const run = s->run[r];
         int fid = run.name_id >= 0 ? run.name_id
-                                   : cnvs_text_cache_font(cache, run.font);
+                                   : cnvs_text_cache_font(cache, run.font, s->weight, s->italic);
         for (int i = 0; i < run.count; i++) {
             float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
             struct cnvs_glyph_slot *slot = run.is_color

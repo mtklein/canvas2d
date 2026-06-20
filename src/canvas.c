@@ -109,6 +109,10 @@ struct canvas_state {
     // family falls back through Core Text and records as the resolved font.
     char font_family[CNVS_FONT_FAMILY_MAX];
     int font_family_len;
+    int font_weight;  // CSS 100..900 (default 400; clamped on set); with style,
+                      // part of the glyph-cache identity so a synthesized bold
+                      // never aliases the regular face
+    enum canvas_font_style font_style;  // upright/italic (default NORMAL)
     float letter_spacing;  // extra advance after each cluster, user px (default 0)
     float word_spacing;    // extra advance at each U+0020 SPACE, user px (default 0)
     enum canvas_text_align text_align;
@@ -150,10 +154,13 @@ struct canvas {
     int stack_cap;
     struct cnvs_path path;
     struct cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
-    struct cnvs_font *__single font;  // cached for cur.font_size/family; rebuilt when either changes
+    struct cnvs_font *__single font;  // cached for cur.font_size/family/weight/style;
+                                      // rebuilt when any of them changes
     float font_built_size;
     char font_built_family[CNVS_FONT_FAMILY_MAX];  // the family cv->font was built for
     int font_built_family_len;
+    int font_built_weight;                  // the weight cv->font was built for
+    enum canvas_font_style font_built_style;  // the style cv->font was built for
     struct cnvs_text_cache text_cache;  // params->derived-data memo of Core Text results:
                                  // shaped lines + canonical glyph curves, checked
                                  // before the boundary is called (cnvs_text.h)
@@ -251,6 +258,8 @@ static void state_defaults(struct canvas_state *s) {
     s->font_size = 10.0f;
     s->font_family_len = (int)sizeof k_font_family - 1;  // the default typeface
     memcpy(s->font_family, k_font_family, (size_t)s->font_family_len);
+    s->font_weight = 400;                       // CSS normal weight
+    s->font_style = CANVAS_FONT_STYLE_NORMAL;   // upright
     s->letter_spacing = 0.0f;
     s->word_spacing = 0.0f;
     s->text_align = CANVAS_ALIGN_START;
@@ -306,6 +315,8 @@ struct canvas *__single canvas(int width, int height,
     cv->font_built_size = 0.0f;
     cv->font_built_family_len = 0;  // no family built yet; ensure_font's first
                                     // call always rebuilds (family mismatch)
+    cv->font_built_weight = 0;
+    cv->font_built_style = CANVAS_FONT_STYLE_NORMAL;
     cnvs_text_cache_init(&cv->text_cache);
     cv->rec = NULL;
     cv->owned_images = NULL;
@@ -2960,23 +2971,34 @@ void canvas_stroke_rect(struct canvas *__single cv, float x, float y, float w, f
     cnvs_path_free(&rp);
 }
 
-// Rebuild the cached font when the requested size OR family changes; NULL on
-// failure.  The family is matched by (length, bytes) -- the sized model -- so a
-// switch between two families of the same size still rebuilds.
+// The current fontStyle as the boundary's bool italic.
+static bool cur_italic(struct canvas const *__single cv) {
+    return cv->cur.font_style == CANVAS_FONT_STYLE_ITALIC;
+}
+
+// Rebuild the cached font when the requested size, family, weight, OR style
+// changes; NULL on failure.  The family is matched by (length, bytes) -- the
+// sized model -- so a switch between two families of the same size still
+// rebuilds, and weight/style changes (a different real or synthesized face)
+// rebuild too.
 static struct cnvs_font *__single ensure_font(struct canvas *__single cv) {
     bool const family_changed =
         cv->font_built_family_len != cv->cur.font_family_len ||
         memcmp(cv->font_built_family, cv->cur.font_family,
                (size_t)cv->cur.font_family_len) != 0;
     if (!cv->font || fabsf(cv->font_built_size - cv->cur.font_size) > 1e-6f ||
-        family_changed) {
+        family_changed || cv->font_built_weight != cv->cur.font_weight ||
+        cv->font_built_style != cv->cur.font_style) {
         cnvs_font_free(cv->font);
         cv->font = cnvs_font(cv->cur.font_family, cv->cur.font_family_len,
-                                    cv->cur.font_size);
+                                    cv->cur.font_size, cv->cur.font_weight,
+                                    cur_italic(cv));
         cv->font_built_size = cv->cur.font_size;
         memcpy(cv->font_built_family, cv->cur.font_family,
                (size_t)cv->cur.font_family_len);
         cv->font_built_family_len = cv->cur.font_family_len;
+        cv->font_built_weight = cv->cur.font_weight;
+        cv->font_built_style = cv->cur.font_style;
     }
     return cv->font;
 }
@@ -2992,7 +3014,8 @@ static bool canvas_vmetrics(struct canvas *__single cv, float *__single ascent,
                             float *__single descent) {
     float const size = cv->cur.font_size;
     int fid = cnvs_text_cache_intern(&cv->text_cache, cv->cur.font_family,
-                                     cv->cur.font_family_len);
+                                     cv->cur.font_family_len, cv->cur.font_weight,
+                                     cur_italic(cv));
     float a1 = 0.0f, d1 = 0.0f;
     if (cnvs_text_cache_get_vmetrics(&cv->text_cache, fid, &a1, &d1)) {
         *ascent = a1 * size;
@@ -3050,6 +3073,29 @@ void canvas_set_font_family(struct canvas *__single cv, char const *__null_termi
     }
     int const len = (int)strlen(name);
     canvas_set_font_family_n(cv, __null_terminated_to_indexable(name), len);
+}
+
+// fontWeight/fontStyle are canvas state like fontFamily: they ride save/restore
+// and reset to 400 / NORMAL.  Weight is clamped to the CSS [100, 900] axis;
+// an unrecognized style enum is ignored (the "ignore invalid" setter pattern).
+// Both record their sanitized value -- set_font_weight an int, set_font_style a
+// token -- so replay restores the same identity (and the shaping/font blocks
+// carry weight/style too, since they are the glyph-cache key for synthesized
+// faces).
+void canvas_set_font_weight(struct canvas *__single cv, int weight) {
+    int const w = weight < 100 ? 100 : (weight > 900 ? 900 : weight);
+    cv->cur.font_weight = w;
+    if (cv->rec) { cnvs_rec_ints(cv->rec, "set_font_weight", (int[]){ w }, 1); }
+}
+
+void canvas_set_font_style(struct canvas *__single cv, enum canvas_font_style style) {
+    switch (style) {
+        case CANVAS_FONT_STYLE_NORMAL:
+        case CANVAS_FONT_STYLE_ITALIC:
+            cv->cur.font_style = style;
+            if (cv->rec) { cnvs_rec_font_style(cv->rec, style); }
+            break;
+    }
 }
 
 // letterSpacing/wordSpacing are canvas state, recorded as ordinary state ops
@@ -3161,6 +3207,7 @@ static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                  cv->cur.font_size,
                                  cv->cur.direction == CANVAS_DIRECTION_RTL,
                                  cv->cur.letter_spacing, cv->cur.word_spacing,
+                                 cv->cur.font_weight, cur_italic(cv),
                                  text, len);
 }
 
@@ -3437,7 +3484,8 @@ static void record_text_blocks(struct canvas *__single cv,
                          cv->cur.font_family, cv->cur.font_family_len,
                          cv->cur.font_size,
                          cv->cur.direction == CANVAS_DIRECTION_RTL,
-                         cv->cur.letter_spacing, cv->cur.word_spacing, text, len);
+                         cv->cur.letter_spacing, cv->cur.word_spacing,
+                         cv->cur.font_weight, cur_italic(cv), text, len);
 }
 
 void canvas_fill_text_n(struct canvas *__single cv, char const *__counted_by(len) text,
