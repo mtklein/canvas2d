@@ -133,7 +133,7 @@ static void check_eviction(void) {
         last[1] = (char)('a' + i / 26);
         last[2] = (char)('a' + i % 26);
         (void)cnvs_text_cache_shaping(c, k_family, (int)sizeof k_family - 1,
-                                    16.0f, false, last, (int)sizeof last);
+                                    16.0f, false, 0.0f, 0.0f, last, (int)sizeof last);
     }
     CHECK(c->shaping_misses == CNVS_SHAPING_CACHE_N + 1);
 
@@ -143,7 +143,7 @@ static void check_eviction(void) {
     CHECK(c->shaping_misses == CNVS_SHAPING_CACHE_N + 2);
     CHECK(c->shaping_hits == hits);
     (void)cnvs_text_cache_shaping(c, k_family, (int)sizeof k_family - 1,
-                                16.0f, false, last, (int)sizeof last);
+                                16.0f, false, 0.0f, 0.0f, last, (int)sizeof last);
     CHECK(c->shaping_hits == hits + 1);  // the newest entry survived
 
     canvas_set_fill_rgba(churn, CANVAS_CS_SRGB, 0.2f, 0.2f, 0.7f, 1.0f);

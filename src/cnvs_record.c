@@ -15,6 +15,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+// A float's raw bits, for exact (bit-for-bit) equality without a -Wfloat-equal
+// `==` -- the same keying rule the text cache uses for size/spacing.
+static uint32_t float_bits(float f) {
+    uint32_t b = 0;
+    memcpy(&b, &f, sizeof b);
+    return b;
+}
+
 // One content-deduped `image` block already in this file: an owned copy of
 // the pixels for the content compare (the caller's buffer is borrowed and may
 // be freed or mutated between the ops that reference it).  The entry's index
@@ -63,6 +71,16 @@ struct cnvs_recorder {
     FILE *__single f;
     int suspend;  // >0 while a compound op's sub-calls are being swallowed
     bool wrote_ws;  // a `working_space` line has been emitted for this file
+    // The spacing the most recently emitted `shaping` block carried.  Replay
+    // sets its canvas spacing from each shaping block, so a text op whose
+    // spacing matches the last block's needs no fresh block (the deduped one
+    // already left replay's spacing right); a text op whose spacing differs --
+    // a repeat of an already-emitted line after an intervening different-spacing
+    // line moved replay's context -- forces a fresh shaping+run pair so replay's
+    // spacing is restored before the op.  have_spacing latches on the first
+    // shaping block.
+    float last_ls, last_ws;
+    bool have_spacing;
     struct rec_image img[CNVS_REC_IMAGES_MAX];  // [0, nimg) are this file's image blocks
     int nimg;
     struct rec_path path[CNVS_REC_PATHS_MAX];   // [0, npath) are its path blocks
@@ -257,18 +275,72 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
     fputc('\n', f);
 }
 
+// The shaped line itself: everything struct cnvs_shaped carries, so replay
+// rebuilds it without shaping.  The rtl token is the paragraph direction half of
+// the cache key -- the same bytes shape differently under ltr and rtl, so replay
+// must key its insert with it or the two would alias.  ls/ws are the
+// letterSpacing/wordSpacing keys (written unconditionally, even when 0): the
+// spacing is already baked into the run advances, so replay needs them to key
+// the rebuilt line under the same (size, rtl, ls, ws, text) tuple a live lookup
+// uses AND to set its spacing context for the op that follows.  The text is
+// length-prefixed raw bytes to end of line (the key, byte for byte).
+static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
+                                  struct cnvs_text_cache *__single c,
+                                  struct cnvs_shaped const *__single s,
+                                  float size_px, bool rtl, float ls, float ws,
+                                  char const *__counted_by(len) text, int len) {
+    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d %d %d ", (double)size_px,
+            rtl ? 1 : 0, (double)ls, (double)ws, s->utf16s, s->nruns, len);
+    if (len > 0) {
+        fwrite(text, 1, (size_t)len, r->f);
+    }
+    fputc('\n', r->f);
+    for (int ri = 0; ri < s->nruns; ri++) {
+        struct cnvs_glyph_run const *__single run = &s->run[ri];
+        fprintf(r->f, "run %d %d %d %d", run_fid(c, run), run->rtl ? 1 : 0,
+                run->is_color ? 1 : 0, run->count);
+        for (int i = 0; i < run->count; i++) {
+            fprintf(r->f, " %u %.9g %d", (unsigned)run->glyph[i],
+                    (double)run->xadv[i], run->cluster[i]);
+        }
+        fputc('\n', r->f);
+    }
+}
+
 void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cache *__single c,
-                          float size_px, bool rtl,
+                          float size_px, bool rtl, float ls, float ws,
                           char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0 || !c) {
         return;
     }
     struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, size_px, rtl,
-                                                                text, len);
-    if (!slot || slot->emitted) {
-        return;  // not cached (shaping failed: nothing to carry), or this
-    }            // recording already wrote this line's blocks
+                                                                ls, ws, text, len);
+    if (!slot) {
+        return;  // not cached (shaping failed: nothing to carry)
+    }
     struct cnvs_shaped const *__single s = slot->s;
+    // Whether replay's spacing context (set from the last shaping block it saw)
+    // would already be this op's spacing.  If not, a fresh shaping+run pair must
+    // precede the op even when its blocks are already emitted -- otherwise the
+    // op would key its lookup against the stale context and miss the line.
+    // Compared by exact float bits (the cache keying rule), not value, so a
+    // -0.0/+0.0 pair never reads "current" against itself wrongly.
+    bool const spacing_current = r->have_spacing &&
+        float_bits(r->last_ls) == float_bits(ls) &&
+        float_bits(r->last_ws) == float_bits(ws);
+    if (slot->emitted) {
+        if (spacing_current) {
+            return;  // blocks present and replay's spacing already matches
+        }
+        // Re-emit only the shaping+run pair: the font/glyph/bitmap blocks are
+        // already in the file (their `emitted` marks stand), and the shaping
+        // block restores replay's spacing context for the op that follows.
+        cnvs_rec_shaping_line(r, c, s, size_px, rtl, ls, ws, text, len);
+        r->last_ls = ls;
+        r->last_ws = ws;
+        r->have_spacing = true;
+        return;
+    }
     // Intern every run's font first, so the font blocks land (in id order,
     // which is intern order: declared before use) ahead of any glyph or run
     // line that references them.
@@ -378,29 +450,12 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
             g->emitted = true;
         }
     }
-    // The shaped line itself: everything struct cnvs_shaped carries, so replay
-    // rebuilds it without shaping.  The rtl token is the paragraph direction
-    // half of the cache key -- the same bytes shape differently under ltr and
-    // rtl, so replay must key its insert with it or the two would alias.  The
-    // text is length-prefixed raw bytes to end of line (the key, byte for
-    // byte).
-    fprintf(r->f, "shaping %.9g %d %d %d %d ", (double)size_px, rtl ? 1 : 0,
-            s->utf16s, s->nruns, len);
-    if (len > 0) {
-        fwrite(text, 1, (size_t)len, r->f);
-    }
-    fputc('\n', r->f);
-    for (int ri = 0; ri < s->nruns; ri++) {
-        struct cnvs_glyph_run const *__single run = &s->run[ri];
-        fprintf(r->f, "run %d %d %d %d", run_fid(c, run), run->rtl ? 1 : 0,
-                run->is_color ? 1 : 0, run->count);
-        for (int i = 0; i < run->count; i++) {
-            fprintf(r->f, " %u %.9g %d", (unsigned)run->glyph[i],
-                    (double)run->xadv[i], run->cluster[i]);
-        }
-        fputc('\n', r->f);
-    }
+    // The shaped line itself (and its run lines), keyed by the spacing it bakes.
+    cnvs_rec_shaping_line(r, c, s, size_px, rtl, ls, ws, text, len);
     slot->emitted = true;
+    r->last_ls = ls;  // replay will set its spacing context from this block
+    r->last_ws = ws;
+    r->have_spacing = true;
 }
 
 int cnvs_rec_image(struct cnvs_recorder *__single r,

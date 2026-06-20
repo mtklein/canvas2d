@@ -539,6 +539,14 @@ void canvas_draw_image_subrect(struct canvas *__single cv,
 // +x, and paint the glyph outlines like fill()/stroke(): transform, clip, gradient
 // and global alpha all apply.  measure_text returns the advance width in user px.
 void canvas_set_font_size(struct canvas *__single cv, float px);
+// letterSpacing: extra advance added after each typographic cluster, in user px
+// (default 0; may be negative).  wordSpacing: extra advance added at each
+// word-separator (U+0020 SPACE), in user px (default 0; may be negative).  Both
+// affect the drawing pen position and measure_text/measure_text_full width.  A
+// NaN or infinite value is treated as 0.  Part of the drawing state:
+// save/restore brackets each, reset/resize restore the 0 default.
+void canvas_set_letter_spacing(struct canvas *__single cv, float px);
+void canvas_set_word_spacing(struct canvas *__single cv, float px);
 // textAlign: horizontal placement of the text relative to the (x, y) passed to
 // fill_text/stroke_text, by the advance width.  left puts x at the left edge,
 // right at the right edge, center centres it; start (default) and end resolve
@@ -712,7 +720,7 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
 //     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-//     shaping <size_px> <rtl 0|1> <utf16-len> <nruns> <byte-len> <text...>
+//     shaping <size_px> <rtl 0|1> <ls> <ws> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
 // font declares a file-local font id: its name (rest of the line, spaces
 // allowed) and vertical metrics at size 1.0.  glyph carries one glyph's
@@ -727,9 +735,11 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // encoded) cannot fit one line and the compressed stream is a third to half
 // the bytes.  shaping + its immediately-following run lines carry one
 // shaped line (the text is exactly byte-len raw bytes after one space; the
-// rtl token is the paragraph direction the line was shaped under -- part of
-// the cache key, since the same bytes shape differently under ltr and rtl).
-// Replaying the blocks pre-populates the canvas's text cache, so the text ops
+// rtl token is the paragraph direction the line was shaped under, and ls/ws
+// the letterSpacing/wordSpacing -- all parts of the cache key, since the same
+// bytes shape and space differently under each.  ls/ws are always written, even
+// when 0; the spacing is already baked into the run advances, so they only key
+// the rebuilt line).  Replaying the blocks pre-populates the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,
 // emoji included, replays byte-identically on machines without the recording
 // machine's fonts.

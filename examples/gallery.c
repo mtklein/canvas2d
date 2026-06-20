@@ -1675,6 +1675,39 @@ static void text(void) {
     save(c, "gallery/text.png");
 }
 
+// letterSpacing / wordSpacing: the same line drawn three ways -- default
+// (no spacing), positive letterSpacing (extra advance after each cluster), and
+// positive wordSpacing (extra advance at each space).  The spacing is baked into
+// the shaped advances, so it widens the line and the spaces visibly.
+static void textspacing(void) {
+    struct canvas *__single c = canvas(420, 160);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/textspacing.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 420.0f, 160.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.93f, 0.96f, 1.0f);
+    canvas_set_font_size(c, 26.0f);
+
+    char const *__null_terminated line = "spaced out text";
+
+    // Default: no spacing.
+    canvas_fill_text(c, line, 20.0f, 45.0f);
+
+    // Positive letterSpacing: extra advance after every cluster.
+    canvas_set_letter_spacing(c, 4.0f);
+    canvas_fill_text(c, line, 20.0f, 90.0f);
+    canvas_set_letter_spacing(c, 0.0f);
+
+    // Positive wordSpacing: extra advance at each space.
+    canvas_set_word_spacing(c, 16.0f);
+    canvas_fill_text(c, line, 20.0f, 135.0f);
+    canvas_set_word_spacing(c, 0.0f);
+
+    save(c, "gallery/textspacing.png");
+}
+
 // globalCompositeOperation: all fifteen blend modes -- the eleven separable plus
 // the four non-separable -- each compositing two overlapping discs over the same
 // diagonal gradient backdrop (the W3C composite+blend formula, the checked-C blend
@@ -3078,6 +3111,7 @@ static void render_all(void) {
     textgrid();
     textmetrics();
     textmaxwidth();
+    textspacing();
     porterduff();
     hittest();
     blend();
