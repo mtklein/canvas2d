@@ -1164,13 +1164,13 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     }
 
     // --- working space (leads the file; reconfigures the fresh canvas) ---
-    // Only a non-sRGB program ever writes this line, and only as its first
-    // command -- it reconfigures the canvas's immutable working space before any
-    // colour interns.  Rejected if anything has been drawn yet (`started`), so a
+    // Every recorded program writes this line, and only as its first command --
+    // it reconfigures the canvas's immutable working space before any colour
+    // interns.  Rejected if anything has been drawn yet (`started`), so a
     // malformed file can't flip the space mid-stream; the canvas is still all-
     // zero transparent here, identical in either space, so the reconfigure is
-    // exactly creation-time.  Absence means sRGB (the latched-on-first-op
-    // default), keeping every existing program byte-stable.
+    // exactly creation-time.  A file without the line replays in the canvas's
+    // as-created space (the parser leaves it untouched).
     if (tok_eq(data, le, cs, cl, "working_space")) {
         if (blk->started) {
             return false;  // must lead the file

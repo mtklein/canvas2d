@@ -154,7 +154,7 @@ static void check_scene(scene_pair s) {
         return;
     }
 
-    struct canvas *__single cv = canvas(w, h);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(want);

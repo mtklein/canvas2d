@@ -20,7 +20,7 @@ int main(void) {
         0, 0, 255, 255,   255, 255, 0, 255,
     };
 
-    struct canvas *__single cv = canvas(w, h);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);

@@ -1,3 +1,4 @@
+working_space srgb
 set_fill_rgba 0.939999998 0.939999998 0.959999979 1
 fill_rect 0 0 700 520
 set_text_align left

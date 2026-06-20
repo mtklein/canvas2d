@@ -1,3 +1,4 @@
+working_space srgb
 set_fill_rgba 0.100000001 0.109999999 0.140000001 1
 fill_rect 0 0 518 210
 image 0 unorm8 unpremul 220 150 66565 6

@@ -17,17 +17,17 @@
 
 int main(void) {
     // canvas bounds: rejects non-positive and oversized, accepts in-range.
-    CHECK(canvas(0, 10) == NULL);
-    CHECK(canvas(10, -1) == NULL);
-    CHECK(canvas(16385, 1) == NULL);
-    CHECK(canvas(1, 16385) == NULL);
-    CHECK(canvas(OVF, OVF) == NULL);
+    CHECK(canvas(0, 10, CANVAS_CS_SRGB) == NULL);
+    CHECK(canvas(10, -1, CANVAS_CS_SRGB) == NULL);
+    CHECK(canvas(16385, 1, CANVAS_CS_SRGB) == NULL);
+    CHECK(canvas(1, 16385, CANVAS_CS_SRGB) == NULL);
+    CHECK(canvas(OVF, OVF, CANVAS_CS_SRGB) == NULL);
 
-    struct canvas *__single cv = canvas(16384, 1);  // boundary value is accepted
+    struct canvas *__single cv = canvas(16384, 1, CANVAS_CS_SRGB);  // boundary value is accepted
     CHECK(cv != NULL);
     canvas_free(cv);
 
-    cv = canvas(8, 8);
+    cv = canvas(8, 8, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
 
     // get_image_data: an overflowing region must be rejected *before* the memset

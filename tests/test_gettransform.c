@@ -12,7 +12,7 @@ static bool mat_near(canvas_matrix m, float a, float b, float c, float d,
 }
 
 int main(void) {
-    struct canvas *__single cv = canvas(16, 16);
+    struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();

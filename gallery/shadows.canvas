@@ -1,3 +1,4 @@
+working_space srgb
 set_fill_rgba 0.930000007 0.939999998 0.959999979 1
 fill_rect 0 0 400 185
 set_shadow_color_rgba 0 0 0 0.449999988

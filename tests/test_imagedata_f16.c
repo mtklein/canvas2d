@@ -38,7 +38,7 @@ static bool px_near_f16(struct f16px p, float r, float g, float b, float a,
 static void extended_roundtrip_linear(void) {
     enum { W = 4, H = 4 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas_in_space(W, H, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -69,7 +69,7 @@ static void extended_roundtrip_linear(void) {
 static void roundtrip_srgb(void) {
     enum { W = 3, H = 2 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H);  // sRGB working space
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);  // sRGB working space
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -100,7 +100,7 @@ static void cross_space(void) {
     int const len = W * H * 4;
     // 3a. LINEAR-space f16 onto an sRGB canvas, read back LINEAR.
     {
-        struct canvas *__single cv = canvas(W, H);  // sRGB working space
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);  // sRGB working space
         _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
         _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
         CHECK(cv && in && out);
@@ -120,7 +120,7 @@ static void cross_space(void) {
     }
     // 3b. OKLAB-space f16 onto a LINEAR canvas, read back OKLAB.
     {
-        struct canvas *__single cv = canvas_in_space(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
         _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
         _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
         CHECK(cv && in && out);
@@ -168,7 +168,7 @@ static void create_image_data(void) {
 static void dirty_and_subrect(void) {
     enum { W = 4, H = 4 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -227,7 +227,7 @@ static void recording_roundtrip(void) {
             in[i * 4 + 3] = (_Float16)1.0f;
         }
         // Record a put_f16 to disk, capturing the live surface.
-        struct canvas *__single rec = canvas_in_space(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas *__single rec = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
         CHECK(rec != NULL);
         if (rec) {
             CHECK(canvas_record_to(rec, path));
@@ -236,7 +236,7 @@ static void recording_roundtrip(void) {
             canvas_free(rec);  // flush + close
         }
         // Replay onto a fresh canvas; the surface must match.
-        struct canvas *__single rep = canvas_in_space(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas *__single rep = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
         CHECK(rep != NULL);
         if (rep) {
             CHECK(canvas_replay_from(rep, path));
@@ -259,7 +259,7 @@ static void recording_roundtrip(void) {
 static void guards(void) {
     enum { W = 2, H = 2 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);

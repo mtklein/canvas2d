@@ -19,7 +19,7 @@
 #define FRAMES 20
 
 int main(void) {
-    struct canvas *__single cv = canvas(DIM, DIM);
+    struct canvas *__single cv = canvas(DIM, DIM, CANVAS_CS_SRGB);
     int const slen = SRC * SRC * 4;
     uint8_t *src = malloc((size_t)slen);
     int const len = DIM * DIM * 4;

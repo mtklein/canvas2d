@@ -151,7 +151,7 @@ static void check_round_trip(void) {
     memset(&m23, 0, sizeof m23);
     memset(&me, 0, sizeof me);
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -174,7 +174,7 @@ static void check_round_trip(void) {
     CHECK(me.actual_bounding_box_ascent > 0.0f);  // the emoji ink measured
 
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -221,7 +221,7 @@ static void check_dedup(void) {
     char const *__null_terminated twice = "build/test_record_text_d2.canvas";
 
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -233,7 +233,7 @@ static void check_dedup(void) {
         canvas_free(cv);
     }
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -285,7 +285,7 @@ static void check_dedup(void) {
 static void check_size(void) {
     char const *__null_terminated path = "build/test_record_text_z.canvas";
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -358,7 +358,7 @@ static bool replay_fmt(struct canvas *__single cv, char const *__null_terminated
 // Strict parsing: malformed blocks stop replay (false) without corrupting the
 // canvas -- it draws normally afterwards.
 static void check_strict(void) {
-    struct canvas *__single cv = canvas(64, 48);
+    struct canvas *__single cv = canvas(64, 48, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -557,7 +557,7 @@ static bool roundtrips(struct canvas *__single cv, FILE *__single f,
 // The float round-trip property: emit/parse identity over denormals, negative
 // zero, extremes, powers of two, and a large random sweep of bit patterns.
 static void check_float_round_trip(void) {
-    struct canvas *__single cv = canvas(8, 8);
+    struct canvas *__single cv = canvas(8, 8, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -640,7 +640,7 @@ static void check_new_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -674,7 +674,7 @@ static void check_new_ops(void) {
     }
 
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -693,7 +693,7 @@ static void check_new_ops(void) {
     }
 
     // Strict parsing of the new op lines (the canvas still draws after each).
-    struct canvas *__single cv = canvas(32, 32);
+    struct canvas *__single cv = canvas(32, 32, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -723,7 +723,7 @@ static void check_shadow_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -742,7 +742,7 @@ static void check_shadow_ops(void) {
         canvas_free(cv);
     }
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -758,7 +758,7 @@ static void check_shadow_ops(void) {
     }
 
     // Strict parse of the shadow op lines.
-    struct canvas *__single cv = canvas(32, 32);
+    struct canvas *__single cv = canvas(32, 32, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -786,7 +786,7 @@ static void check_direction_blocks(void) {
     uint8_t recorded_px[NPX];
     float w_ltr = 0.0f, w_rtl = 0.0f;
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
@@ -819,7 +819,7 @@ static void check_direction_blocks(void) {
     CHECK(count_lines(buf, n, "set_direction ") == 1);
 
     {
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;

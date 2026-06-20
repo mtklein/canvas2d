@@ -77,7 +77,7 @@ static void scene(struct canvas *__single cv, int f) {
 }
 
 int main(void) {
-    struct canvas *__single cv = canvas(DIM, DIM);
+    struct canvas *__single cv = canvas(DIM, DIM, CANVAS_CS_SRGB);
     int const len = DIM * DIM * 4;
     uint8_t *px = malloc((size_t)len);
     if (!cv || !px) {

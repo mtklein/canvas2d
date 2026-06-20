@@ -56,7 +56,7 @@ int main(void) {
     uint8_t *__counted_by(LEN) px = malloc((size_t)LEN);
     uint8_t *__counted_by(LEN) qx = malloc((size_t)LEN);
     CHECK(px && qx);
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!px || !qx || !cv) {
         free(px);

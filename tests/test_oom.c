@@ -208,7 +208,7 @@ static void scene_png(struct canvas *__single cv) {
 // Run `fn` with each of its allocations failing in turn; it must never crash, and
 // the canvas must stay usable afterwards.
 static void sweep(scene_fn fn) {
-    struct canvas *__single probe = canvas(W, H);
+    struct canvas *__single probe = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(probe != NULL);
     if (!probe) {
         return;
@@ -220,7 +220,7 @@ static void sweep(scene_fn fn) {
     CHECK(allocs > 0);  // the scene must allocate, or the sweep tests nothing
 
     for (int k = 1; k <= allocs; k++) {
-        struct canvas *__single cv = canvas(W, H);  // fresh -> stable alloc sequence
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);  // fresh -> stable alloc sequence
         if (!cv) {
             continue;
         }
@@ -252,7 +252,7 @@ int main(void) {
     // (rather than return a half-built canvas), for every alloc it makes.
     for (int k = 1; k <= 12; k++) {
         cnvs_oom_fail_at(k);
-        struct canvas *__single cv = canvas(W, H);
+        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
         cnvs_oom_fail_at(0);
         if (cv) {
             canvas_free(cv);  // k past create's alloc count -> a real canvas
@@ -261,7 +261,7 @@ int main(void) {
 
     // Sanity: with the injector disarmed everything still works end to end.
     cnvs_oom_fail_at(0);
-    struct canvas *__single cv = canvas(W, H);
+    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);

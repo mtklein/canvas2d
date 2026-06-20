@@ -1,7 +1,8 @@
 // The working-space parameter (canvas.h) and the linear-light pipeline.  Three
 // claims:
-//   1. The default space is sRGB, and it survives reset()/resize() -- the space
-//      is on the canvas, not the save/restore state.
+//   1. The working space is a required choice between sRGB and linear, and it
+//      survives reset()/resize() -- the space is on the canvas, not the
+//      save/restore state.
 //   2. A linear canvas round-trips an untagged sRGB colour: the decode on entry
 //      and the encode on readback cancel to within 8-bit tolerance, and a
 //      get_image_data -> put_image_data round trip on a linear canvas does too.
@@ -55,7 +56,7 @@ static int probe_expected(bool linear) {
     return q;
 }
 
-static void space_default_and_persistence(void) {
+static void space_choice_and_persistence(void) {
     int const w = 8, h = 8, len = w * h * 4;
     uint8_t *__counted_by(len) px = malloc((size_t)len);
     CHECK(px != NULL);
@@ -66,15 +67,8 @@ static void space_default_and_persistence(void) {
     int const lin_red  = probe_expected(true);
     CHECK(abs(srgb_red - lin_red) > 20);  // the two spaces are clearly apart
 
-    // canvas() is sRGB by default.
-    struct canvas *__single def = canvas(w, h);
-    CHECK(def != NULL);
-    if (def) {
-        CHECK(abs(space_probe(def, w, h, px, len) - srgb_red) <= 2);
-        canvas_free(def);
-    }
-    // canvas_in_space(.., SRGB) is the same.
-    struct canvas *__single s = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    // An sRGB canvas composites in encoded sRGB.
+    struct canvas *__single s = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(s != NULL);
     if (s) {
         CHECK(abs(space_probe(s, w, h, px, len) - srgb_red) <= 2);
@@ -83,7 +77,7 @@ static void space_default_and_persistence(void) {
 
     // A linear canvas behaves linearly -- and stays linear across reset/resize,
     // because the space is not part of the drawing state.
-    struct canvas *__single lin = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single lin = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(lin != NULL);
     if (lin) {
         CHECK(abs(space_probe(lin, w, h, px, len) - lin_red) <= 2);
@@ -112,7 +106,7 @@ static void linear_color_round_trip(void) {
     if (!px) {
         return;
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         float const c = 188.0f / 255.0f;
@@ -143,7 +137,7 @@ static void linear_image_data_round_trip(void) {
         free(b);
         return;
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.85f, 0.35f, 0.55f, 0.7f);
@@ -153,7 +147,7 @@ static void linear_image_data_round_trip(void) {
         canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, w, h, a, len);
 
         // Round the read-back bytes back onto a fresh linear canvas, read again.
-        struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+        struct canvas *__single cv2 = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
         CHECK(cv2 != NULL);
         if (cv2) {
             canvas_put_image_data(cv2, CANVAS_CS_SRGB, a, len, w, h, 0, 0);
@@ -202,7 +196,7 @@ static void linear_source_over_oracle(void) {
     int const want_srgb = (int)(co_s * 255.0 + 0.5);
     CHECK(abs(want_lin - want_srgb) > 8);  // the spaces genuinely diverge here
 
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, bl_f, bl_f, bl_f, 1.0f);
@@ -233,7 +227,7 @@ static void linear_multiply_differs(void) {
     }
     int srgb_red = -1, lin_red = -1;
     for (int pass = 0; pass < 2; pass++) {
-        struct canvas *__single cv = canvas_in_space(
+        struct canvas *__single cv = canvas(
             w, h, pass == 0 ? CANVAS_CS_SRGB : CANVAS_CS_LINEAR_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
@@ -386,7 +380,7 @@ static void linear_blend_modes_oracle(void) {
         int const want_g = (int)(clampd(blended.g) * 255.0 + 0.5);
         int const want_b = (int)(clampd(blended.b) * 255.0 + 0.5);
 
-        struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+        struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -425,7 +419,7 @@ static void srgb_canvas_tag_branches(void) {
     if (!px) {
         return;
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         // LINEAR_SRGB input on an sRGB canvas: encode linear->sRGB, clamp01.
@@ -483,7 +477,7 @@ static void linear_canvas_tag_branches(void) {
     int const want_srgb_tag = (int)(v * 255.0f + 0.5f);
     CHECK(abs(want_linear_tag - want_srgb_tag) > 20);  // the tags diverge
 
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, v, v, v, 1.0f);
@@ -512,7 +506,7 @@ static void read_rgba_output_space(void) {
     if (!px) {
         return;
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         float const v = 0.5f;  // a linear value, stored verbatim (LINEAR_SRGB in)
@@ -558,7 +552,7 @@ static void linear_put_read_round_trip(void) {
         src[i * 4 + 2] = (uint8_t)((i * 3 + 90) & 0xff);
         src[i * 4 + 3] = (uint8_t)(128 + ((i * 5) & 0x7f));  // 128..255, opaque-ish
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_put_image_data(cv, CANVAS_CS_LINEAR_SRGB, src, len, w, h, 0, 0);
@@ -592,7 +586,7 @@ static void oklab_pixel_io_round_trip(void) {
         return;
     }
     int const R = 180, G = 96, B = 130;  // an in-gamut opaque sRGB colour
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_SRGB,
@@ -603,7 +597,7 @@ static void oklab_pixel_io_round_trip(void) {
         // Read back as Oklab bytes, push them onto a fresh canvas as Oklab, and
         // read THAT as sRGB -- the original colour should reappear.
         canvas_read_rgba(cv, CANVAS_CS_OKLAB, lab, len);
-        struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_SRGB);
+        struct canvas *__single cv2 = canvas(w, h, CANVAS_CS_SRGB);
         CHECK(cv2 != NULL);
         if (cv2) {
             canvas_put_image_data(cv2, CANVAS_CS_OKLAB, lab, len, w, h, 0, 0);
@@ -641,7 +635,7 @@ static void srgb_pixel_io_identity(void) {
         src[i * 4 + 2] = (uint8_t)((i * 5 + 70) & 0xff);
         src[i * 4 + 3] = 255;  // opaque: an unpremultiplied byte survives exactly
     }
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_put_image_data(cv, CANVAS_CS_SRGB, src, len, w, h, 0, 0);
@@ -683,7 +677,7 @@ static void image_sample_space_convert(void) {
         src[i * 4 + 2] = 128;
         src[i * 4 + 3] = 255;
     }
-    struct canvas *__single lin = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single lin = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(lin != NULL);
     if (lin) {
         canvas_draw_bitmap(lin, CANVAS_CS_SRGB, src, w, h, 0.0f, 0.0f);
@@ -695,7 +689,7 @@ static void image_sample_space_convert(void) {
     }
 
     // 2. Matched: the SAME sRGB source on an sRGB canvas is byte-exact.
-    struct canvas *__single srgb = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    struct canvas *__single srgb = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(srgb != NULL);
     if (srgb) {
         canvas_draw_bitmap(srgb, CANVAS_CS_SRGB, src, w, h, 0.0f, 0.0f);
@@ -717,7 +711,7 @@ static void image_sample_space_convert(void) {
     int const want_enc = (int)(cnvs_linear_to_srgb(0.5f) * 255.0f + 0.5f);
     struct canvas_image *__single fimg =
         canvas_image_f16(CANVAS_CS_LINEAR_SRGB, fpx, w, h, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single sc = canvas_in_space(w, h, CANVAS_CS_SRGB);
+    struct canvas *__single sc = canvas(w, h, CANVAS_CS_SRGB);
     CHECK(fimg != NULL && sc != NULL);
     if (fimg && sc) {
         canvas_draw_image(sc, fimg, 0.0f, 0.0f);
@@ -743,7 +737,7 @@ static void image_sample_space_convert(void) {
     }
     struct canvas_image *__single pimg =
         canvas_image_unorm8(CANVAS_CS_SRGB, pm, w, h, CANVAS_ALPHA_PREMUL);
-    struct canvas *__single lc = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single lc = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(pimg != NULL && lc != NULL);
     if (pimg && lc) {
         canvas_draw_image(lc, pimg, 0.0f, 0.0f);
@@ -817,7 +811,7 @@ static void extended_fill_survives(void) {
     int const w = 4, h = 4;
     cnvs_premul surf[16];
 
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_fill_rgba(cv, CANVAS_CS_LINEAR_SRGB, 4.0f, 4.0f, 4.0f, 1.0f);
@@ -829,7 +823,7 @@ static void extended_fill_survives(void) {
         canvas_free(cv);
     }
 
-    struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv2 = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv2 != NULL);
     if (cv2) {
         cnvs_rgb const wide = cnvs_rec2020_to_linear_srgb((cnvs_rgb){ 1.0f, 0.0f, 0.0f });
@@ -843,7 +837,7 @@ static void extended_fill_survives(void) {
 
     // Gradients carry extended values too (no inconsistency with solid fills): a
     // ramp from reference white to 6x white keeps the bright end above 1.0.
-    struct canvas *__single cv3 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv3 = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv3 != NULL);
     if (cv3) {
         canvas_set_fill_linear_gradient(cv3, 0.0f, 0.0f, (float)w, 0.0f);
@@ -866,7 +860,7 @@ static void extended_shadow_survives(void) {
     int const idx = 10 * w + 10;  // inside the (8,8)-offset shadow of a 6x6 source
     cnvs_premul surf[256];
 
-    struct canvas *__single cv = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (cv) {
         canvas_set_shadow_color_rgba(cv, CANVAS_CS_LINEAR_SRGB, 0.0f, 4.0f, 4.0f, 1.0f);
@@ -880,7 +874,7 @@ static void extended_shadow_survives(void) {
         canvas_free(cv);
     }
 
-    struct canvas *__single cv2 = canvas_in_space(w, h, CANVAS_CS_LINEAR_SRGB);
+    struct canvas *__single cv2 = canvas(w, h, CANVAS_CS_LINEAR_SRGB);
     CHECK(cv2 != NULL);
     if (cv2) {
         canvas_add_filter_drop_shadow(cv2, CANVAS_CS_LINEAR_SRGB, 8.0f, 8.0f, 0.0f,
@@ -1021,7 +1015,7 @@ static void oklab_image_sample_deposit(void) {
     // Both deposit arms read back (in sRGB) to the authored colour.
     enum canvas_color_space const spaces[2] = { CANVAS_CS_SRGB, CANVAS_CS_LINEAR_SRGB };
     for (int s = 0; s < 2 && img; s++) {
-        struct canvas *__single cv = canvas_in_space(w, h, spaces[s]);
+        struct canvas *__single cv = canvas(w, h, spaces[s]);
         CHECK(cv != NULL);
         if (cv) {
             canvas_draw_image(cv, img, 0.0f, 0.0f);  // 1:1, flat image -> exact
@@ -1039,11 +1033,11 @@ static void oklab_image_sample_deposit(void) {
     free(px);
 
     // Oklab is an authoring space, not a compositing one: no Oklab working space.
-    CHECK(canvas_in_space(w, h, CANVAS_CS_OKLAB) == NULL);
+    CHECK(canvas(w, h, CANVAS_CS_OKLAB) == NULL);
 }
 
 int main(void) {
-    space_default_and_persistence();
+    space_choice_and_persistence();
     extended_fill_survives();
     extended_shadow_survives();
     pq_rec2020_known_answers();

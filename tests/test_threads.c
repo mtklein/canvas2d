@@ -233,7 +233,7 @@ static bool render_tile(int scene, int tile, uint8_t *__counted_by(len) out, int
     (void)len;
     int const tx = TILE * (tile % COLS);
     int const ty = TILE * (tile / COLS);
-    struct canvas *__single cv = canvas(TILE, TILE);
+    struct canvas *__single cv = canvas(TILE, TILE, CANVAS_CS_SRGB);
     if (!cv) {
         return false;
     }

@@ -2,7 +2,7 @@
 #include "test_util.h"
 
 int main(void) {
-    struct canvas *__single cv = canvas(8, 8);
+    struct canvas *__single cv = canvas(8, 8, CANVAS_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
