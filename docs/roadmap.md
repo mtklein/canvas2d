@@ -87,14 +87,19 @@ Internals (not API features) considered and deferred:
   Libian TC), `font-weight` (CSS 100..900) and `font-style` (italic) -- the
   latter two resolved through a Core Text trait descriptor, which matches a real
   bold/italic face or synthesizes an oblique when the family has none --
-  `letterSpacing`, `wordSpacing`, `textAlign` (start/end resolving against
+  `letterSpacing`, `wordSpacing`, `fontKerning` (none disables kerning),
+  `textRendering` (optimizeSpeed disables kerning + ligatures, a pragmatic
+  mapping), `lang` (a BCP-47 tag set on the run for locale-dependent glyph
+  selection), `textAlign` (start/end resolving against
   direction), `textBaseline`, and `direction` (ltr/rtl, the bidi paragraph base
   -- it reorders mixed-direction text, resolves neutrals, and rides the
   shape-block cache key through record/replay). Family, weight, and style join
   the shaping cache key and the glyph-cache identity (so a synthesized
-  bold/italic never aliases the regular face) and serialize through
-  record/replay. No CSS `font` shorthand, and none of `lang` (a recent spec
-  addition), `fontKerning`, `fontStretch`, `fontVariantCaps`, `textRendering`.
+  bold/italic never aliases the regular face); the shaping toggles (kerning,
+  rendering, lang) join the shaping cache key alone (they change advances/glyph
+  selection, not glyph-outline identity). All serialize through
+  record/replay. No CSS `font` shorthand, and none of `fontStretch`,
+  `fontVariantCaps`.
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
   `maxWidth` all go through Core Text shaping (`cnvs_shape_text`) with font fallback
   — so code points Libian TC lacks now both draw and measure (color emoji from one

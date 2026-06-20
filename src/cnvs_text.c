@@ -284,6 +284,7 @@ void cnvs_text_cache_reset(struct cnvs_text_cache *__single c) {
             cnvs_shaped_free(c->shaping[i].s);  // releases the runs' CTFontRefs too
             free(c->shaping[i].text);
             free(c->shaping[i].fam);
+            free(c->shaping[i].lang);
         }
     }
     for (int i = 0; i < c->glyph_cap; i++) {
@@ -322,34 +323,43 @@ static struct cnvs_shaping_slot *__single shaping_lru_victim(struct cnvs_text_ca
 struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
+        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len) {
     struct cnvs_shaping_slot *__single hit = cnvs_text_cache_shaping_slot(c, name, name_len,
-                                                  size_px, rtl, ls, ws, weight, italic, text, len);
+                                                  size_px, rtl, ls, ws, weight, italic,
+                                                  kerning, rendering, lang, lang_len, text, len);
     if (hit) {
         hit->last_use = ++c->tick;
         c->shaping_hits++;
         return hit->s;
     }
     c->shaping_misses++;
-    // Miss.  Copy the key bytes the slot will own (text and the requested
-    // family; +1 each so a zero-length key still has an allocation to own), then
-    // shape through the counted boundary: (text, len) crosses as-is, so no
-    // NUL-terminated copy exists anywhere on this path.  Any failure degrades to
-    // nothing-to-draw.
+    // Miss.  Copy the key bytes the slot will own (text, the requested family,
+    // and the lang tag; +1 each so a zero-length key still has an allocation to
+    // own), then shape through the counted boundary: (text, len) crosses as-is,
+    // so no NUL-terminated copy exists anywhere on this path.  Any failure
+    // degrades to nothing-to-draw.
     char *copy = malloc((size_t)len + 1);
     char *fam = malloc((size_t)name_len + 1);
-    if (!copy || !fam) {
+    char *langcopy = malloc((size_t)lang_len + 1);
+    if (!copy || !fam || !langcopy) {
         free(copy);
         free(fam);
+        free(langcopy);
         return NULL;
     }
     memcpy(copy, text, (size_t)len);
     memcpy(fam, name, (size_t)name_len);
+    if (lang_len > 0) {
+        memcpy(langcopy, lang, (size_t)lang_len);
+    }
     struct cnvs_shaped *__single s = cnvs_shape_text(name, name_len, size_px, rtl,
-                                                     weight, italic, text, len);
+                                                     weight, italic, kerning, rendering,
+                                                     lang, lang_len, text, len);
     if (!s) {
         free(copy);
         free(fam);
+        free(langcopy);
         return NULL;  // boundary failure: nothing to cache, nothing to draw
     }
     // Bake letterSpacing/wordSpacing into the advances before the line is
@@ -368,16 +378,21 @@ struct cnvs_shaped const *__single cnvs_text_cache_shaping(struct cnvs_text_cach
         cnvs_shaped_free(victim->s);
         free(victim->text);
         free(victim->fam);
+        free(victim->lang);
     }
     victim->text = copy;
     victim->len = len;
     victim->fam = fam;
     victim->fam_len = name_len;
+    victim->lang = langcopy;
+    victim->lang_len = lang_len;
     victim->size_bits = size_bits;
     victim->ls_bits = ls_bits;
     victim->ws_bits = ws_bits;
     victim->weight = weight;
     victim->italic = italic;
+    victim->kerning = kerning;
+    victim->rendering = rendering;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;
@@ -869,8 +884,9 @@ float cnvs_glyph_mip_pair(struct cnvs_glyph_slot *__single slot, float footprint
 struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
+        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len) {
-    if (!c || len < 0 || name_len < 0) {
+    if (!c || len < 0 || name_len < 0 || lang_len < 0) {
         return NULL;
     }
     uint32_t size_bits = 0, ls_bits = 0, ws_bits = 0;
@@ -882,6 +898,9 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
         if (slot->s && slot->size_bits == size_bits && slot->rtl == rtl &&
             slot->ls_bits == ls_bits && slot->ws_bits == ws_bits &&
             slot->weight == weight && slot->italic == italic &&
+            slot->kerning == kerning && slot->rendering == rendering &&
+            slot->lang_len == lang_len &&
+            memcmp(slot->lang, lang, (size_t)lang_len) == 0 &&
             slot->fam_len == name_len &&
             memcmp(slot->fam, name, (size_t)name_len) == 0 &&
             slot->len == len && memcmp(slot->text, text, (size_t)len) == 0) {
@@ -894,27 +913,34 @@ struct cnvs_shaping_slot *__single cnvs_text_cache_shaping_slot(struct cnvs_text
 void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         char const *__counted_by(name_len) name, int name_len, float size_px,
         bool rtl, float ls, float ws, int weight, bool italic,
+        int kerning, int rendering, char const *__counted_by(lang_len) lang, int lang_len,
         char const *__counted_by(len) text, int len,
         struct cnvs_shaped *__single s) {
-    if (!c || !s || len < 0 || name_len < 0) {
+    if (!c || !s || len < 0 || name_len < 0 || lang_len < 0) {
         cnvs_shaped_free(s);
         return;
     }
     char *copy = malloc((size_t)len + 1);        // +1 each: a zero-length key
     char *fam = malloc((size_t)name_len + 1);    // still needs an allocation to own
-    if (!copy || !fam) {
+    char *langcopy = malloc((size_t)lang_len + 1);
+    if (!copy || !fam || !langcopy) {
         free(copy);
         free(fam);
+        free(langcopy);
         cnvs_shaped_free(s);  // can't key it: the usual best-effort degradation
         return;
     }
     memcpy(copy, text, (size_t)len);  // key bytes only: the slot's text is
     memcpy(fam, name, (size_t)name_len);  // __counted_by(len), no NUL contract
+    if (lang_len > 0) {
+        memcpy(langcopy, lang, (size_t)lang_len);
+    }
     // Replace an existing entry for the key (a re-recorded shape block after
     // the first copy was evicted), else fill an empty slot or evict the LRU --
     // the same victim scan as a live insert.
     struct cnvs_shaping_slot *victim = cnvs_text_cache_shaping_slot(c, name, name_len,
-                                              size_px, rtl, ls, ws, weight, italic, text, len);
+                                              size_px, rtl, ls, ws, weight, italic,
+                                              kerning, rendering, lang, lang_len, text, len);
     if (!victim) {
         victim = shaping_lru_victim(c);
     }
@@ -922,6 +948,7 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
         cnvs_shaped_free(victim->s);
         free(victim->text);
         free(victim->fam);
+        free(victim->lang);
     }
     uint32_t size_bits = 0, ls_bits = 0, ws_bits = 0;
     memcpy(&size_bits, &size_px, sizeof size_bits);
@@ -931,11 +958,15 @@ void cnvs_text_cache_put_shaping(struct cnvs_text_cache *__single c,
     victim->len = len;
     victim->fam = fam;
     victim->fam_len = name_len;
+    victim->lang = langcopy;
+    victim->lang_len = lang_len;
     victim->size_bits = size_bits;
     victim->ls_bits = ls_bits;
     victim->ws_bits = ws_bits;
     victim->weight = weight;
     victim->italic = italic;
+    victim->kerning = kerning;
+    victim->rendering = rendering;
     victim->rtl = rtl;
     victim->last_use = ++c->tick;
     victim->s = s;

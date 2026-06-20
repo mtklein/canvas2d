@@ -2522,7 +2522,7 @@ static void selection(void) {
     canvas_fill_text(c, "a Latin selection [4,15): one visual span", lx, 66.0f);
     float const y1 = 102.0f;
     struct cnvs_shaped *__single latin = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                         false, 400, false, S(SEL_LATIN));
+                                                         false, 400, false, 0, 0, S(""), S(SEL_LATIN));
     cnvs_xspan sp[4];
     if (latin) {
         int const n = cnvs_shaped_selection(latin, 4, 15, sp, 4);
@@ -2545,7 +2545,7 @@ static void selection(void) {
     canvas_fill_text(c, "bidi: one logical range [5,12), two visual spans", lx, 142.0f);
     float const y2 = 178.0f;
     struct cnvs_shaped *__single bidi = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                        true, 400, false, S(SEL_BIDI));
+                                                        true, 400, false, 0, 0, S(""), S(SEL_BIDI));
     if (bidi) {
         float const bx = 484.0f - cnvs_shaped_width(bidi);  // hang from the right margin
         int const n = cnvs_shaped_selection(bidi, 5, 12, sp, 4);
@@ -2574,7 +2574,7 @@ static void selection(void) {
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CARET, lx, y3);
     struct cnvs_shaped *__single line = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                        false, 400, false, S(SEL_CARET));
+                                                        false, 400, false, 0, 0, S(""), S(SEL_CARET));
     if (line) {
         int const at[4] = { 0, 4, 9, 12 };
         char const *const lbl[4] = { "0", "4 = 5", "9", "12" };
@@ -2604,7 +2604,7 @@ static void selection(void) {
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CLICK, lx, y4);
     struct cnvs_shaped *__single click = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                         false, 400, false, S(SEL_CLICK));
+                                                         false, 400, false, 0, 0, S(""), S(SEL_CLICK));
     if (click) {
         float const cx = cnvs_shaped_width(click) * 0.5f;     // the click, mid-line
         int const idx = cnvs_shaped_index_at_x(click, cx);
@@ -3185,6 +3185,75 @@ static void fontstyle(void) {
     save(c, "gallery/fontstyle.png");
 }
 
+// The shaping-attribute toggles (fontKerning / textRendering / lang) as canvas
+// state.  Each row draws the same string twice -- once at the AUTO default, once
+// with the toggle changed -- so the observable effect reads side by side:
+//   - fontKerning: a kerning-sensitive Helvetica string with kerning AUTO
+//     (Core Text's default pair kerning, advances tightened) vs NONE (kerning
+//     off, the looser unkerned advances).  The "AVA To Wa" gaps visibly open.
+//   - textRendering: a Hoefler Text string (a face with default kerning AND
+//     ligatures) at AUTO vs optimizeSpeed, which disables both -- the advance
+//     loosens and the ffi/fl ligatures break into separate glyphs.
+//   - lang: PingFang SC shaping the Han characters 骨/誤 under zh-Hans vs
+//     zh-Hant, whose locale-specific glyph forms differ (Han unification).
+// The defaults (AUTO / AUTO / "") reproduce today's shaping, so each row's first
+// draw is exactly what the canvas drew before this feature.  Every face records
+// its glyph curves (the Libian model), so the .canvas replays fontless.
+static void fonttoggles(void) {
+    struct canvas *__single c = canvas(560, 240, CANVAS_CS_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/fonttoggles.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 560.0f, 240.0f);
+
+    float const lbl_r = 0.55f, lbl_g = 0.58f, lbl_b = 0.66f;
+    float const ink_r = 0.92f, ink_g = 0.93f, ink_b = 0.96f;
+
+    // Row 1: fontKerning AUTO vs NONE (Helvetica, a kerned face).
+    canvas_set_font_family(c, "Helvetica");
+    canvas_set_font_size(c, 11.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lbl_r, lbl_g, lbl_b, 1.0f);
+    canvas_fill_text(c, "fontKerning: auto (kerned)  vs  none (unkerned)", 18.0f, 28.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, ink_r, ink_g, ink_b, 1.0f);
+    canvas_set_font_kerning(c, CANVAS_FONT_KERNING_AUTO);
+    canvas_fill_text(c, "AVA To Wa", 18.0f, 62.0f);
+    canvas_set_font_kerning(c, CANVAS_FONT_KERNING_NONE);
+    canvas_fill_text(c, "AVA To Wa", 300.0f, 62.0f);
+    canvas_set_font_kerning(c, CANVAS_FONT_KERNING_AUTO);  // back to default
+
+    // Row 2: textRendering AUTO vs optimizeSpeed (Hoefler Text: kerning + ligatures).
+    canvas_set_font_family(c, "Hoefler Text");
+    canvas_set_font_size(c, 11.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lbl_r, lbl_g, lbl_b, 1.0f);
+    canvas_fill_text(c, "textRendering: auto  vs  optimizeSpeed (no kerning/ligatures)",
+                     18.0f, 112.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, ink_r, ink_g, ink_b, 1.0f);
+    canvas_set_text_rendering(c, CANVAS_TEXT_RENDERING_AUTO);
+    canvas_fill_text(c, "office Wa", 18.0f, 146.0f);
+    canvas_set_text_rendering(c, CANVAS_TEXT_RENDERING_OPTIMIZE_SPEED);
+    canvas_fill_text(c, "office Wa", 300.0f, 146.0f);
+    canvas_set_text_rendering(c, CANVAS_TEXT_RENDERING_AUTO);  // back to default
+
+    // Row 3: lang zh-Hans vs zh-Hant (PingFang SC: locale-specific Han forms).
+    canvas_set_font_family(c, "PingFang SC");
+    canvas_set_font_size(c, 11.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lbl_r, lbl_g, lbl_b, 1.0f);
+    canvas_fill_text(c, "lang: zh-Hans  vs  zh-Hant (locale glyph forms)", 18.0f, 196.0f);
+    canvas_set_font_size(c, 34.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, ink_r, ink_g, ink_b, 1.0f);
+    canvas_set_lang(c, "zh-Hans");
+    canvas_fill_text(c, "\xE9\xAA\xA8\xE8\xAA\xA4", 18.0f, 232.0f);   // 骨誤
+    canvas_set_lang(c, "zh-Hant");
+    canvas_fill_text(c, "\xE9\xAA\xA8\xE8\xAA\xA4", 300.0f, 232.0f);  // 骨誤
+    canvas_set_lang(c, "");  // back to default
+
+    save(c, "gallery/fonttoggles.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -3232,6 +3301,7 @@ static void render_all(void) {
     nestedclip();
     fontfamily();
     fontstyle();
+    fonttoggles();
 }
 
 int main(void) {

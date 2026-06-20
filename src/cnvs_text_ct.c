@@ -326,8 +326,25 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
     *x1 = (float)CGRectGetMaxX(r); *y1 = (float)CGRectGetMaxY(r);
 }
 
+// The shaping toggles, mapped onto Core Text attributes.  These mirror the
+// public canvas_font_kerning / canvas_text_rendering enums (passed as ints to
+// keep the enum spellings out of the boundary ABI):
+//   - fontKerning NONE, and textRendering OPTIMIZE_SPEED, disable kerning by
+//     setting kCTKernAttributeName = 0 on the run (Core Text then lays glyphs
+//     at their unkerned advances).  AUTO/NORMAL (and the other textRendering
+//     values) leave the attribute unset, so Core Text's default kerning applies.
+//   - textRendering OPTIMIZE_SPEED additionally disables ligatures with
+//     kCTLigatureAttributeName = 0 (a pragmatic mapping: Core Text exposes no
+//     single "speed" knob, so the speed hint is spelled as no kerning + no
+//     ligatures).  The other values leave ligatures at the default.
+// The enum values must match canvas.h (AUTO=0/NORMAL=1/NONE=2 for kerning;
+// AUTO=0/OPTIMIZE_SPEED=1 for rendering); the boundary keeps no canvas.h
+// dependency, so they are spelled here as the documented integers.
+enum { CT_KERNING_NONE = 2, CT_RENDERING_OPTIMIZE_SPEED = 1 };
+
 struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_px, bool rtl,
-                        int weight, bool italic, char const *text, int text_len) {
+                        int weight, bool italic, int kerning, int rendering,
+                        char const *lang, int lang_len, char const *text, int text_len) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     CFStringRef str = str_from_bytes(text, text_len);
     CTFontRef font = cfname ? font_with_traits(cfname, size_px, weight, italic) : NULL;
@@ -344,12 +361,25 @@ struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_p
         { kCTParagraphStyleSpecifierBaseWritingDirection, sizeof wd, &wd },
     };
     CTParagraphStyleRef ps = CTParagraphStyleCreate(ps_set, 1);
+    // The shaping toggles' attributes, appended to the always-present font +
+    // paragraph-style pair: kerning 0 (off), ligature 0 (off), and the lang tag.
+    bool const kern_off = kerning == CT_KERNING_NONE ||
+                          rendering == CT_RENDERING_OPTIMIZE_SPEED;
+    bool const liga_off = rendering == CT_RENDERING_OPTIMIZE_SPEED;
+    int const zero = 0;
+    CFNumberRef kern0 = kern_off ? CFNumberCreate(NULL, kCFNumberIntType, &zero) : NULL;
+    CFNumberRef liga0 = liga_off ? CFNumberCreate(NULL, kCFNumberIntType, &zero) : NULL;
+    CFStringRef cflang = (lang_len > 0) ? str_from_bytes(lang, lang_len) : NULL;
     struct cnvs_shaped *out = NULL;
     if (font && str && ps) {
-        CFStringRef keys[2] = { kCTFontAttributeName,
+        CFStringRef keys[5] = { kCTFontAttributeName,
                                 kCTParagraphStyleAttributeName };
-        const void *vals[2] = { font, ps };
-        CFDictionaryRef attrs = CFDictionaryCreate(NULL, (const void **)keys, vals, 2,
+        const void *vals[5] = { font, ps };
+        CFIndex na = 2;
+        if (kern0)   { keys[na] = kCTKernAttributeName;     vals[na] = kern0;   na++; }
+        if (liga0)   { keys[na] = kCTLigatureAttributeName; vals[na] = liga0;   na++; }
+        if (cflang)  { keys[na] = kCTLanguageAttributeName; vals[na] = cflang;  na++; }
+        CFDictionaryRef attrs = CFDictionaryCreate(NULL, (const void **)keys, vals, na,
             &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
         CFAttributedStringRef astr = CFAttributedStringCreate(NULL, str, attrs);
         CTLineRef line = CTLineCreateWithAttributedString(astr);
@@ -379,6 +409,15 @@ struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_p
     }
     if (ps) {
         CFRelease(ps);
+    }
+    if (kern0) {
+        CFRelease(kern0);
+    }
+    if (liga0) {
+        CFRelease(liga0);
+    }
+    if (cflang) {
+        CFRelease(cflang);
     }
     if (font) {
         CFRelease(font);

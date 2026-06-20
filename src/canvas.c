@@ -36,6 +36,12 @@
 // field; a fixed buffer keeps that copy allocation-free.
 #define CNVS_FONT_FAMILY_MAX 128
 
+// Fixed capacity for the BCP-47 lang tag held in the drawing state (bytes; a
+// longer tag passed to canvas_set_lang is truncated to fit).  Held by value like
+// the family name so save()/restore() snapshot it; tags are short ("en",
+// "zh-Hant", "az-Cyrl-AZ"), so a small buffer is ample.
+#define CNVS_LANG_MAX 32
+
 // The default font family: the typeface a fresh canvas (and reset/resize) draws
 // with until canvas_set_font_family changes it.  Carries both Latin and Chinese.
 static char const k_font_family[] = "Libian TC";
@@ -113,6 +119,13 @@ struct canvas_state {
                       // part of the glyph-cache identity so a synthesized bold
                       // never aliases the regular face
     enum canvas_font_style font_style;  // upright/italic (default NORMAL)
+    // Shaping-attribute toggles (default AUTO / AUTO / ""): inputs to Core Text
+    // shaping that affect the runs' advances/glyphs (not the glyph outlines), so
+    // they ride the shaped-line cache key, not the glyph/font identity.
+    enum canvas_font_kerning font_kerning;      // none disables kerning
+    enum canvas_text_rendering text_rendering;  // optimizeSpeed disables kerning+ligatures
+    char lang[CNVS_LANG_MAX];  // BCP-47 tag held by value (sized model: len+bytes,
+    int lang_len;              // no NUL); empty (len 0) = no language
     float letter_spacing;  // extra advance after each cluster, user px (default 0)
     float word_spacing;    // extra advance at each U+0020 SPACE, user px (default 0)
     enum canvas_text_align text_align;
@@ -260,6 +273,9 @@ static void state_defaults(struct canvas_state *s) {
     memcpy(s->font_family, k_font_family, (size_t)s->font_family_len);
     s->font_weight = 400;                       // CSS normal weight
     s->font_style = CANVAS_FONT_STYLE_NORMAL;   // upright
+    s->font_kerning = CANVAS_FONT_KERNING_AUTO;        // default kerning on
+    s->text_rendering = CANVAS_TEXT_RENDERING_AUTO;    // default kerning+ligatures
+    s->lang_len = 0;                            // no language tag
     s->letter_spacing = 0.0f;
     s->word_spacing = 0.0f;
     s->text_align = CANVAS_ALIGN_START;
@@ -3098,6 +3114,63 @@ void canvas_set_font_style(struct canvas *__single cv, enum canvas_font_style st
     }
 }
 
+// fontKerning / textRendering / lang are canvas state like the font setters
+// above: they ride save/restore and reset to AUTO / AUTO / "".  An unrecognized
+// kerning/rendering enum is ignored (the "ignore invalid" setter pattern); the
+// lang tag is copied into the fixed state buffer truncated to capacity, and a
+// NULL tag is ignored (pass "" to clear).  Each records a state op -- the enums
+// by token, lang length-prefixed like set_font_family -- so replay restores the
+// same shaping inputs (the shaping block carries them too, as cache-key parts).
+void canvas_set_font_kerning(struct canvas *__single cv, enum canvas_font_kerning kerning) {
+    switch (kerning) {
+        case CANVAS_FONT_KERNING_AUTO:
+        case CANVAS_FONT_KERNING_NORMAL:
+        case CANVAS_FONT_KERNING_NONE:
+            cv->cur.font_kerning = kerning;
+            if (cv->rec) { cnvs_rec_font_kerning(cv->rec, kerning); }
+            break;
+    }
+}
+
+void canvas_set_text_rendering(struct canvas *__single cv, enum canvas_text_rendering rendering) {
+    switch (rendering) {
+        case CANVAS_TEXT_RENDERING_AUTO:
+        case CANVAS_TEXT_RENDERING_OPTIMIZE_SPEED:
+        case CANVAS_TEXT_RENDERING_OPTIMIZE_LEGIBILITY:
+        case CANVAS_TEXT_RENDERING_GEOMETRIC_PRECISION:
+            cv->cur.text_rendering = rendering;
+            if (cv->rec) { cnvs_rec_text_rendering(cv->rec, rendering); }
+            break;
+    }
+}
+
+// The length-counted core (the replay parser stays in the indexable world, no
+// __null_terminated seam, exactly as canvas_set_font_family_n serves the family).
+// Unlike the family, an empty tag is the valid "no language" value, not an
+// ignored call: len == 0 clears, len < 0 (only an internal misuse) is ignored.
+void canvas_set_lang_n(struct canvas *__single cv,
+                       char const *__counted_by(len) tag, int len) {
+    if (len < 0) {
+        return;
+    }
+    // Truncate to the state buffer's capacity (the copy reads only `keep` bytes,
+    // which `len` still bounds).
+    int const keep = len > CNVS_LANG_MAX ? CNVS_LANG_MAX : len;
+    if (keep > 0) {
+        memcpy(cv->cur.lang, tag, (size_t)keep);
+    }
+    cv->cur.lang_len = keep;
+    if (cv->rec) { cnvs_rec_lang(cv->rec, cv->cur.lang, keep); }
+}
+
+void canvas_set_lang(struct canvas *__single cv, char const *__null_terminated tag) {
+    if (!tag) {
+        return;  // NULL: ignore, keep current (pass "" to clear)
+    }
+    int const len = (int)strlen(tag);
+    canvas_set_lang_n(cv, __null_terminated_to_indexable(tag), len);
+}
+
 // letterSpacing/wordSpacing are canvas state, recorded as ordinary state ops
 // exactly like font_size and direction.  The spacing is also baked into a shaped
 // line's advances and is part of the cache key, so the shaping block a fill_text
@@ -3208,6 +3281,8 @@ static struct cnvs_shaped const *__single shape_text(struct canvas *__single cv,
                                  cv->cur.direction == CANVAS_DIRECTION_RTL,
                                  cv->cur.letter_spacing, cv->cur.word_spacing,
                                  cv->cur.font_weight, cur_italic(cv),
+                                 (int)cv->cur.font_kerning, (int)cv->cur.text_rendering,
+                                 cv->cur.lang, cv->cur.lang_len,
                                  text, len);
 }
 
@@ -3485,7 +3560,9 @@ static void record_text_blocks(struct canvas *__single cv,
                          cv->cur.font_size,
                          cv->cur.direction == CANVAS_DIRECTION_RTL,
                          cv->cur.letter_spacing, cv->cur.word_spacing,
-                         cv->cur.font_weight, cur_italic(cv), text, len);
+                         cv->cur.font_weight, cur_italic(cv),
+                         (int)cv->cur.font_kerning, (int)cv->cur.text_rendering,
+                         cv->cur.lang, cv->cur.lang_len, text, len);
 }
 
 void canvas_fill_text_n(struct canvas *__single cv, char const *__counted_by(len) text,

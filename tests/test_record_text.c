@@ -371,17 +371,25 @@ static void check_strict(void) {
         "font 1 1.05 0.33 400 0 STLibianTC-Regular\n"
         "glyph 1 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
         "glyph 1 3 0 0 0 0 0\n"
-        "shaping 12 0 0 0 400 0 9 Libian TC 2 1 2 H \n"
+        "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 2 1 2 H \n"
         "run 1 0 0 2 43 7.224 0 3 2.8 1\n"
         "fill_text 4 20 H \n"));
 
     // An rtl-shaped block parses too, and its op draws under the direction the
     // line was shaped at.
     CHECK(REPLAY(cv,
-        "shaping 12 1 0 0 400 0 9 Libian TC 1 1 1 W\n"
+        "shaping 12 1 0 0 400 0 0 0 0  9 Libian TC 1 1 1 W\n"
         "run -1 1 0 1 7 5.5 0\n"
         "set_direction rtl\n"
         "fill_text 4 40 W\n"));
+
+    // The shaping toggles ride the block: a non-default kerning (2 = none),
+    // rendering (1 = optimizeSpeed), and a lang tag ("zh-Hant", 7 bytes) all
+    // parse, length-prefixed lang like the family.
+    CHECK(REPLAY(cv,
+        "shaping 12 0 0 0 400 0 2 1 7 zh-Hant 9 Libian TC 1 1 1 A\n"
+        "run -1 0 0 1 7 5.5 0\n"
+        "fill_text 4 60 A\n"));
 
     // Malformed blocks are rejected.
     CHECK(!REPLAY(cv, "font 16 0.5 0.2 400 0 Over\n"));            // id out of range
@@ -404,23 +412,27 @@ static void check_strict(void) {
     CHECK(!REPLAY(cv, "shaping 12 0 0 1e999 400 0 1 1 1 A\n"));  // non-finite ws
     CHECK(!REPLAY(cv, "shaping 12 0 0 0 50 0 9 Libian TC 1 1 1 A\n"));  // weight below 100
     CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 2 9 Libian TC 1 1 1 A\n")); // "2" is no style bit
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 3 Lib 999\n"));    // family bytes
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 0  3 Lib 999\n"));    // family bytes
                                                                // overrun the line
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 3 A\n"));  // byte-len mismatch
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 4 1 2 Hi\n")); // utf16 len > bytes
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"));  // truncated: no run line
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
-    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 3 A\n"));  // byte-len mismatch
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 4 1 2 Hi\n")); // utf16 len > bytes
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 A\n"));  // truncated: no run line
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 A\nfill_rect 0 0 4 4\n"));  // non-run inside
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 A\n# comment\nrun 0 0 0 0\n"));  // ditto
+    // The shaping toggles parse strictly: kerning in [0, 2], rendering in [0, 3].
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 3 0 0  9 Libian TC 1 1 1 A\n"));  // kerning out of range
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 4 0  9 Libian TC 1 1 1 A\n"));  // rendering out of range
+    CHECK(!REPLAY(cv, "shaping 12 0 0 0 400 0 0 0 99 ab\n"));  // lang bytes overrun the line
     CHECK(!REPLAY(cv, "run 0 0 0 0\n"));                     // run with no shape
     CHECK(!REPLAY(cv,
         "font 0 1 0.2 400 0 A\n"
-        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"
+        "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 A\n"
         "run 0 0 0 1 10 5 1\n"));                            // cluster >= utf16 len
     CHECK(!REPLAY(cv,
-        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"
+        "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 A\n"
         "run 3 0 0 1 10 5 0\n"));                            // undeclared run font
     CHECK(!REPLAY(cv,
-        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 A\n"
+        "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 A\n"
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
     // Bitmap blocks carry the capture DEFLATED under the base64, so the
@@ -713,7 +725,7 @@ static void check_new_ops(void) {
     CHECK(REPLAY(cv,
         "font 0 1.05 0.33 400 0 Libian TC\n"
         "glyph 0 43 1000 10 11 592 601 m 10 11 l 592 11 l 592 601 l 10 601 z\n"
-        "shaping 12 0 0 0 400 0 9 Libian TC 1 1 1 H\n"
+        "shaping 12 0 0 0 400 0 0 0 0  9 Libian TC 1 1 1 H\n"
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
