@@ -54,6 +54,32 @@ enum canvas_text_rendering {
     CANVAS_TEXT_RENDERING_GEOMETRIC_PRECISION,
 };
 
+// fontVariantCaps: small-capitals glyph selection.  normal (the default) leaves
+// the text unchanged; small_caps applies the font's smcp feature (lowercase
+// letters draw as small capitals); all_small_caps applies smcp AND c2sc (both
+// lowercase and uppercase draw as small capitals).  This SELECTS substitute
+// glyphs within the SAME resolved font, so it changes shaping (advances and
+// glyph ids), not the resolved face -- a font with no smcp feature is a no-op.
+// An unrecognized value passed to canvas_set_font_variant_caps is ignored.
+enum canvas_font_variant_caps {
+    CANVAS_FONT_VARIANT_CAPS_NORMAL, CANVAS_FONT_VARIANT_CAPS_SMALL_CAPS,
+    CANVAS_FONT_VARIANT_CAPS_ALL_SMALL_CAPS,
+};
+// fontStretch: the typeface's width on the nine-keyword CSS axis, normal (the
+// default) the centre.  It maps onto Core Text's width trait (condensed
+// negative, expanded positive) so the descriptor resolves a real WIDTH face of
+// the family (e.g. "Avenir Next Condensed") or a variable-width instance -- a
+// distinct resolved name, so the glyph cache separates it.  No width is
+// synthesized: a family with no width face stays at its nearest face (a no-op).
+// An unrecognized value passed to canvas_set_font_stretch is ignored.
+enum canvas_font_stretch {
+    CANVAS_FONT_STRETCH_ULTRA_CONDENSED, CANVAS_FONT_STRETCH_EXTRA_CONDENSED,
+    CANVAS_FONT_STRETCH_CONDENSED, CANVAS_FONT_STRETCH_SEMI_CONDENSED,
+    CANVAS_FONT_STRETCH_NORMAL,
+    CANVAS_FONT_STRETCH_SEMI_EXPANDED, CANVAS_FONT_STRETCH_EXPANDED,
+    CANVAS_FONT_STRETCH_EXTRA_EXPANDED, CANVAS_FONT_STRETCH_ULTRA_EXPANDED,
+};
+
 // imageSmoothingQuality (see canvas_set_image_smoothing_quality).
 enum canvas_image_smoothing_quality {
     CANVAS_SMOOTHING_LOW, CANVAS_SMOOTHING_MEDIUM, CANVAS_SMOOTHING_HIGH,
@@ -615,6 +641,22 @@ void canvas_set_lang(struct canvas *__single cv, char const *__null_terminated t
 // clears the language.
 void canvas_set_lang_n(struct canvas *__single cv,
                        char const *__counted_by(len) tag, int len);
+// fontVariantCaps / fontStretch: more shaping/face state, drawing state like the
+// font setters above (save/restore brackets each, reset/resize restore the
+// defaults).  fontVariantCaps feeds Core Text's small-cap features and so
+// changes shaping (glyph ids and advances); fontStretch feeds the width trait
+// and so resolves a different real face.  The defaults (NORMAL / NORMAL)
+// reproduce exactly what the shaper draws today.
+//   fontVariantCaps: small_caps applies smcp, all_small_caps smcp + c2sc;
+//     normal applies neither (canvas_font_variant_caps; an unrecognized enum is
+//     ignored).  A no-op on a font without the feature.
+//   fontStretch: the nine width keywords map onto the width trait so the
+//     descriptor resolves a real condensed/expanded face; no width is
+//     synthesized, so a family with no width face is a no-op
+//     (canvas_font_stretch; an unrecognized enum is ignored).
+void canvas_set_font_variant_caps(struct canvas *__single cv,
+                                  enum canvas_font_variant_caps variant_caps);
+void canvas_set_font_stretch(struct canvas *__single cv, enum canvas_font_stretch stretch);
 // letterSpacing: extra advance added after each typographic cluster, in user px
 // (default 0; may be negative).  wordSpacing: extra advance added at each
 // word-separator (U+0020 SPACE), in user px (default 0; may be negative).  Both
@@ -793,7 +835,8 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //     fill_text 12 30 Hello
 // Enums (set_global_composite_operation / set_line_join / set_line_cap /
 // set_text_align / set_text_baseline / set_direction / set_font_style /
-// set_font_kerning / set_text_rendering /
+// set_font_kerning / set_text_rendering / set_font_variant_caps /
+// set_font_stretch /
 // set_image_smoothing_quality / the pattern repeat modes) are written by
 // name; fill and clip carry their fill rule by name (`fill nonzero`,
 // `clip evenodd`), like fill_path/clip_path; bool args (arc/ellipse winding,
@@ -824,7 +867,7 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 //     glyph <font-id> <gid> <units-per-em> <x0 y0 x1 y1> <m/l/q/c/z curves...>
 //     bitmap <font-id> <gid> <w> <h> <x0 y0 x1 y1> <zlen> <nlines>
 //     bits <base64...>                            (exactly nlines of these)
-//     shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <kerning 0-2> <rendering 0-3> <lang-len> <lang...> <fam-len> <fam...> <utf16-len> <nruns> <byte-len> <text...>
+//     shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <kerning 0-2> <rendering 0-3> <variant-caps 0-2> <stretch 0-8> <lang-len> <lang...> <fam-len> <fam...> <utf16-len> <nruns> <byte-len> <text...>
 //     run <font-id|-1> <rtl 0|1> <color 0|1> <nglyphs> (gid adv cluster)*
 // font declares a file-local font id: its name (rest of the line, spaces
 // allowed), vertical metrics at size 1.0, and the weight/style (CSS 100..900;
@@ -847,14 +890,16 @@ void canvas_put_image_data_dirty_f16(struct canvas *__single cv,
 // exactly byte-len raw bytes after one space; the
 // rtl token is the paragraph direction the line was shaped under, ls/ws the
 // letterSpacing/wordSpacing, weight/style the font weight/style, and
-// kerning/rendering/lang the shaping toggles -- all parts
+// kerning/rendering/variant-caps/stretch/lang the shaping toggles -- all parts
 // of the cache key, since the same bytes shape and space differently under each.
-// ls/ws, weight/style, and kerning/rendering/lang are always written, even
+// ls/ws, weight/style, and kerning/rendering/variant-caps/stretch/lang are
+// always written, even
 // when default; the spacing is already baked into the run advances, so they only
 // key the rebuilt line.  The canvas's family/weight/style/spacing/toggle STATE --
 // the values a fill_text keys its lookup by -- ride set_font_family/
 // set_font_weight/set_font_style/set_letter_spacing/set_word_spacing/
-// set_font_kerning/set_text_rendering/set_lang ordinary state ops,
+// set_font_kerning/set_text_rendering/set_font_variant_caps/set_font_stretch/
+// set_lang ordinary state ops,
 // recorded like set_font_size/set_direction).  Replaying the blocks pre-populates
 // the canvas's text cache, so the text ops
 // that follow never call the platform text system -- a recorded program,

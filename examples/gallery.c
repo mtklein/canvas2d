@@ -2522,7 +2522,7 @@ static void selection(void) {
     canvas_fill_text(c, "a Latin selection [4,15): one visual span", lx, 66.0f);
     float const y1 = 102.0f;
     struct cnvs_shaped *__single latin = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                         false, 400, false, 0, 0, S(""), S(SEL_LATIN));
+                                                         false, 400, false, 0, 0, 0, 4, S(""), S(SEL_LATIN));
     cnvs_xspan sp[4];
     if (latin) {
         int const n = cnvs_shaped_selection(latin, 4, 15, sp, 4);
@@ -2545,7 +2545,7 @@ static void selection(void) {
     canvas_fill_text(c, "bidi: one logical range [5,12), two visual spans", lx, 142.0f);
     float const y2 = 178.0f;
     struct cnvs_shaped *__single bidi = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                        true, 400, false, 0, 0, S(""), S(SEL_BIDI));
+                                                        true, 400, false, 0, 0, 0, 4, S(""), S(SEL_BIDI));
     if (bidi) {
         float const bx = 484.0f - cnvs_shaped_width(bidi);  // hang from the right margin
         int const n = cnvs_shaped_selection(bidi, 5, 12, sp, 4);
@@ -2574,7 +2574,7 @@ static void selection(void) {
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CARET, lx, y3);
     struct cnvs_shaped *__single line = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                        false, 400, false, 0, 0, S(""), S(SEL_CARET));
+                                                        false, 400, false, 0, 0, 0, 4, S(""), S(SEL_CARET));
     if (line) {
         int const at[4] = { 0, 4, 9, 12 };
         char const *const lbl[4] = { "0", "4 = 5", "9", "12" };
@@ -2604,7 +2604,7 @@ static void selection(void) {
     canvas_set_font_size(c, size);
     canvas_fill_text(c, SEL_CLICK, lx, y4);
     struct cnvs_shaped *__single click = cnvs_shape_text(S(SELECTION_FONT), size,
-                                                         false, 400, false, 0, 0, S(""), S(SEL_CLICK));
+                                                         false, 400, false, 0, 0, 0, 4, S(""), S(SEL_CLICK));
     if (click) {
         float const cx = cnvs_shaped_width(click) * 0.5f;     // the click, mid-line
         int const idx = cnvs_shaped_index_at_x(click, cx);
@@ -3254,6 +3254,60 @@ static void fonttoggles(void) {
     save(c, "gallery/fonttoggles.png");
 }
 
+// fontVariantCaps and fontStretch as canvas state.  Each row draws the same
+// string twice -- once at the NORMAL default, once with the attribute changed --
+// so the observable effect reads side by side:
+//   - fontVariantCaps: Baskerville (a face carrying the smcp small-cap feature)
+//     drawn NORMAL vs SMALL_CAPS -- the lowercase letters become small capitals,
+//     a different set of glyph ids at slightly different advances.
+//   - fontStretch: Futura drawn NORMAL vs CONDENSED -- the width trait resolves
+//     Futura-CondensedMedium, a real narrower face (a distinct resolved name, so
+//     the glyph cache separates it), so the same string draws visibly tighter.
+// The defaults (NORMAL / NORMAL) reproduce today's shaping, so each row's first
+// draw is exactly what the canvas drew before this feature.  Both effects come
+// from real faces/features the recorded glyph curves capture (the Libian model),
+// so the .canvas replays fontless.
+static void fontvariants(void) {
+    struct canvas *__single c = canvas(560, 180, CANVAS_CS_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/fontvariants.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.10f, 0.11f, 0.14f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 560.0f, 180.0f);
+
+    float const lbl_r = 0.55f, lbl_g = 0.58f, lbl_b = 0.66f;
+    float const ink_r = 0.92f, ink_g = 0.93f, ink_b = 0.96f;
+
+    // Row 1: fontVariantCaps NORMAL vs SMALL_CAPS (Baskerville, an smcp face).
+    canvas_set_font_family(c, "Baskerville");
+    canvas_set_font_size(c, 11.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lbl_r, lbl_g, lbl_b, 1.0f);
+    canvas_fill_text(c, "fontVariantCaps: normal  vs  small-caps", 18.0f, 36.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, ink_r, ink_g, ink_b, 1.0f);
+    canvas_set_font_variant_caps(c, CANVAS_FONT_VARIANT_CAPS_NORMAL);
+    canvas_fill_text(c, "Chapter", 18.0f, 74.0f);
+    canvas_set_font_variant_caps(c, CANVAS_FONT_VARIANT_CAPS_SMALL_CAPS);
+    canvas_fill_text(c, "Chapter", 300.0f, 74.0f);
+    canvas_set_font_variant_caps(c, CANVAS_FONT_VARIANT_CAPS_NORMAL);  // back to default
+
+    // Row 2: fontStretch NORMAL vs CONDENSED (Futura, with a real condensed face).
+    canvas_set_font_family(c, "Futura");
+    canvas_set_font_size(c, 11.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, lbl_r, lbl_g, lbl_b, 1.0f);
+    canvas_fill_text(c, "fontStretch: normal  vs  condensed", 18.0f, 122.0f);
+    canvas_set_font_size(c, 30.0f);
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, ink_r, ink_g, ink_b, 1.0f);
+    canvas_set_font_stretch(c, CANVAS_FONT_STRETCH_NORMAL);
+    canvas_fill_text(c, "Magazine", 18.0f, 160.0f);
+    canvas_set_font_stretch(c, CANVAS_FONT_STRETCH_CONDENSED);
+    canvas_fill_text(c, "Magazine", 300.0f, 160.0f);
+    canvas_set_font_stretch(c, CANVAS_FONT_STRETCH_NORMAL);  // back to default
+
+    save(c, "gallery/fontvariants.png");
+}
+
 static void render_all(void) {
     shapes();
     affine();
@@ -3302,6 +3356,7 @@ static void render_all(void) {
     fontfamily();
     fontstyle();
     fonttoggles();
+    fontvariants();
 }
 
 int main(void) {

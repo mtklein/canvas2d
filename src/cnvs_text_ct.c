@@ -35,6 +35,19 @@ static CGFloat ct_weight_from_css(int css) {
     return (CGFloat)((double)(css - 400) * (0.4 / 300.0));
 }
 
+// Map the nine fontStretch keywords (canvas_font_stretch 0..8, normal == 4) onto
+// Core Text's kCTFontWidthTrait axis, [-1.0, 1.0] with 0.0 == normal width.  The
+// keywords are evenly spaced four steps either side of normal, so each step is
+// 0.25 of the axis -- ultra-condensed -1.0, normal 0.0, ultra-expanded 1.0.  The
+// descriptor matcher then resolves the nearest real WIDTH face of the family (a
+// distinct named face, so the glyph cache separates it) or leaves the regular
+// face when none is near -- no width is synthesized.  STRETCH_NORMAL (4) gives
+// exactly 0.0, so the default adds no width trait pull beyond what the family's
+// regular face already is.
+static CGFloat ct_width_from_stretch(int stretch) {
+    return (CGFloat)((double)(stretch - 4) * 0.25);
+}
+
 // A synthetic-oblique slant: the x-shear (per unit of y) used to fake italic
 // when the matched face has no real italic.  0.25 is roughly the slope a typical
 // oblique runs at; it matches the visual weight CTFontDrawGlyphs uses for its own
@@ -43,24 +56,39 @@ static CGFloat ct_weight_from_css(int css) {
 // raster-only effect.
 #define CNVS_SYNTH_ITALIC_SHEAR 0.25
 
-// Build a descriptor font for (family, size, weight, italic) through the family
-// name plus a traits dictionary (the CSS weight on the CT weight axis, plus the
-// italic symbolic trait when italic).  `matrix` is baked into the font (NULL ==
-// identity).  The descriptor matcher resolves to the nearest real face of the
-// family.  NULL when the descriptor can't be built.
+// fontStretch NORMAL: the centre of the width axis (canvas_font_stretch 4), the
+// value at which no width trait is added so the default face resolves exactly as
+// it did before fontStretch existed (a width trait of 0.0 still nudges the
+// matcher, so the default path must omit the trait entirely, not pass 0.0).
+#define CNVS_STRETCH_NORMAL 4
+
+// Build a descriptor font for (family, size, weight, italic, stretch) through the
+// family name plus a traits dictionary (the CSS weight on the CT weight axis, the
+// italic symbolic trait when italic, and the width trait when stretch is not
+// NORMAL).  `matrix` is baked into the font (NULL == identity).  The descriptor
+// matcher resolves to the nearest real face of the family.  NULL when the
+// descriptor can't be built.
 static CTFontRef font_descriptor(CFStringRef family, CGFloat size,
-                                 int weight, bool italic,
+                                 int weight, bool italic, int stretch,
                                  CGAffineTransform const *matrix) {
     CGFloat const wt = ct_weight_from_css(weight);
+    CGFloat const wd = ct_width_from_stretch(stretch);
     CTFontSymbolicTraits sym = italic ? kCTFontItalicTrait : 0;
     CFNumberRef wnum = CFNumberCreate(NULL, kCFNumberCGFloatType, &wt);
     CFNumberRef snum = CFNumberCreate(NULL, kCFNumberSInt32Type, &sym);
+    // The width trait rides the traits dict only off the NORMAL default: a width
+    // of 0.0 would still steer the matcher, so the default omits it entirely to
+    // keep the resolved face byte-identical to the pre-fontStretch path.
+    CFNumberRef dnum = stretch != CNVS_STRETCH_NORMAL
+        ? CFNumberCreate(NULL, kCFNumberCGFloatType, &wd) : NULL;
     CTFontRef out = NULL;
-    if (wnum && snum) {
-        CFStringRef tkeys[2] = { kCTFontWeightTrait, kCTFontSymbolicTrait };
-        const void *tvals[2] = { wnum, snum };
+    if (wnum && snum && (dnum || stretch == CNVS_STRETCH_NORMAL)) {
+        CFStringRef tkeys[3] = { kCTFontWeightTrait, kCTFontSymbolicTrait };
+        const void *tvals[3] = { wnum, snum };
+        CFIndex nt = 2;
+        if (dnum) { tkeys[nt] = kCTFontWidthTrait; tvals[nt] = dnum; nt++; }
         CFDictionaryRef traits = CFDictionaryCreate(NULL, (const void **)tkeys,
-            tvals, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+            tvals, nt, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
         if (traits) {
             CFStringRef akeys[2] = { kCTFontFamilyNameAttribute,
                                      kCTFontTraitsAttribute };
@@ -80,30 +108,37 @@ static CTFontRef font_descriptor(CFStringRef family, CGFloat size,
     }
     if (wnum) { CFRelease(wnum); }
     if (snum) { CFRelease(snum); }
+    if (dnum) { CFRelease(dnum); }
     return out;
 }
 
-// Build the shaping/metrics font for (family, size, weight, italic).  The weight
+// Build the shaping/metrics font for (family, size, weight, italic, stretch).
+// The weight
 // trait picks the nearest real face on the family's weight axis (a real bold is
-// matched here, with its own heavier outlines).  For italic, the descriptor first
+// matched here, with its own heavier outlines); the width trait (when stretch is
+// not NORMAL) picks the nearest real WIDTH face (a real condensed/expanded face,
+// with its own distinct name -- the glyph cache separates it -- or a variable
+// wdth instance).  For italic, the descriptor first
 // tries to match a real italic face; when the resolved face is NOT actually
 // italic (the family has none), the font is rebuilt with a slant baked into the
 // FONT MATRIX so the outline is synthesized -- a real synthetic oblique that the
 // curve-recording (Libian) model captures, rather than the regular face.  Bold
 // without a real heavier face cannot be emboldened at the outline level (Core
 // Text only synthesizes bold weight at raster time), so a synth-bold row falls
-// back to the family's nearest real weight; the italic synthesis is what reads as
+// back to the family's nearest real weight; likewise no width is synthesized, so
+// a family with no width face falls back to its nearest face (stretch is then a
+// no-op).  The italic synthesis is what reads as
 // "synthesized" in the outline model.  Falls back to CTFontCreateWithName when no
 // descriptor can be built.  NULL on failure.
 static CTFontRef font_with_traits(CFStringRef family, CGFloat size,
-                                  int weight, bool italic) {
-    CTFontRef out = font_descriptor(family, size, weight, italic, NULL);
+                                  int weight, bool italic, int stretch) {
+    CTFontRef out = font_descriptor(family, size, weight, italic, stretch, NULL);
     if (out && italic &&
         (CTFontGetSymbolicTraits(out) & kCTFontItalicTrait) == 0) {
         // The family had no real italic face: synthesize one via a slant matrix
         // so the recorded outline is actually oblique.
         CGAffineTransform m = { 1.0, 0.0, CNVS_SYNTH_ITALIC_SHEAR, 1.0, 0.0, 0.0 };
-        CTFontRef synth = font_descriptor(family, size, weight, italic, &m);
+        CTFontRef synth = font_descriptor(family, size, weight, italic, stretch, &m);
         if (synth) {
             CFRelease(out);
             out = synth;
@@ -342,14 +377,91 @@ void cnvs_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
 // dependency, so they are spelled here as the documented integers.
 enum { CT_KERNING_NONE = 2, CT_RENDERING_OPTIMIZE_SPEED = 1 };
 
+// canvas_font_variant_caps values (kept off the boundary ABI like the others):
+// NORMAL == 0 (no feature), SMALL_CAPS == 1 (smcp), ALL_SMALL_CAPS == 2 (smcp +
+// c2sc).
+enum { CT_VARIANT_NORMAL = 0, CT_VARIANT_SMALL_CAPS = 1, CT_VARIANT_ALL_SMALL_CAPS = 2 };
+
+// Append `font` with the small-cap OpenType features for `variant_caps` baked in:
+// smcp (lowercase -> small caps) for SMALL_CAPS, smcp + c2sc (uppercase too) for
+// ALL_SMALL_CAPS.  Returns a NEW retained font (the caller releases the original
+// on success); NORMAL or any failure returns NULL, so the caller keeps the
+// unfeatured font.  The features ride the font's descriptor
+// (kCTFontFeatureSettingsAttribute, OpenType tag form), so the shaper substitutes
+// the small-cap glyphs within the SAME resolved face -- a no-op on a font that
+// has neither feature (Core Text leaves the unfeatured glyphs).
+static CTFontRef font_with_smallcaps(CTFontRef font, int variant_caps) {
+    if (!font || variant_caps == CT_VARIANT_NORMAL) {
+        return NULL;
+    }
+    // One feature dict per tag: { kCTFontOpenTypeFeatureTag: "smcp"/"c2sc",
+    // kCTFontOpenTypeFeatureValue: 1 }.  ALL_SMALL_CAPS adds c2sc to smcp.
+    char const *tags[2] = { "smcp", NULL };
+    int ntags = 1;
+    if (variant_caps == CT_VARIANT_ALL_SMALL_CAPS) {
+        tags[1] = "c2sc";
+        ntags = 2;
+    }
+    int const one = 1;
+    CFNumberRef onenum = CFNumberCreate(NULL, kCFNumberIntType, &one);
+    CFMutableArrayRef feats = CFArrayCreateMutable(NULL, ntags, &kCFTypeArrayCallBacks);
+    CTFontRef out = NULL;
+    if (onenum && feats) {
+        for (int i = 0; i < ntags; i++) {
+            CFStringRef tag = CFStringCreateWithCString(NULL, tags[i],
+                                                        kCFStringEncodingASCII);
+            if (!tag) {
+                continue;
+            }
+            CFStringRef fkeys[2] = { kCTFontOpenTypeFeatureTag,
+                                     kCTFontOpenTypeFeatureValue };
+            const void *fvals[2] = { tag, onenum };
+            CFDictionaryRef one_feat = CFDictionaryCreate(NULL, (const void **)fkeys,
+                fvals, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+            if (one_feat) {
+                CFArrayAppendValue(feats, one_feat);
+                CFRelease(one_feat);
+            }
+            CFRelease(tag);
+        }
+        CFStringRef akeys[1] = { kCTFontFeatureSettingsAttribute };
+        const void *avals[1] = { feats };
+        CFDictionaryRef attrs = CFDictionaryCreate(NULL, (const void **)akeys,
+            avals, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        if (attrs) {
+            CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
+            if (desc) {
+                out = CTFontCreateCopyWithAttributes(font, CTFontGetSize(font), NULL, desc);
+                CFRelease(desc);
+            }
+            CFRelease(attrs);
+        }
+    }
+    if (onenum) { CFRelease(onenum); }
+    if (feats) { CFRelease(feats); }
+    return out;
+}
+
 struct cnvs_shaped *cnvs_shape_text(char const *name, int name_len, float size_px, bool rtl,
                         int weight, bool italic, int kerning, int rendering,
+                        int variant_caps, int stretch,
                         char const *lang, int lang_len, char const *text, int text_len) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     CFStringRef str = str_from_bytes(text, text_len);
-    CTFontRef font = cfname ? font_with_traits(cfname, size_px, weight, italic) : NULL;
+    CTFontRef font = cfname ? font_with_traits(cfname, size_px, weight, italic, stretch)
+                            : NULL;
     if (cfname) {
         CFRelease(cfname);
+    }
+    // fontVariantCaps: re-copy the resolved width/weight/style face with the
+    // small-cap features baked into its descriptor, so the shaper substitutes
+    // small-cap glyphs within that face (a no-op on a face without smcp/c2sc).
+    if (font) {
+        CTFontRef sc = font_with_smallcaps(font, variant_caps);
+        if (sc) {
+            CFRelease(font);
+            font = sc;
+        }
     }
     // The paragraph base writing direction: always explicit (never CT's
     // first-strong "natural" default), because the canvas direction attribute
@@ -437,12 +549,12 @@ struct cnvs_font {
 };
 
 struct cnvs_font *cnvs_font(char const *name, int name_len, float size_px,
-                            int weight, bool italic) {
+                            int weight, bool italic, int stretch) {
     CFStringRef cfname = str_from_bytes(name, name_len);
     if (!cfname) {
         return NULL;
     }
-    CTFontRef font = font_with_traits(cfname, size_px, weight, italic);
+    CTFontRef font = font_with_traits(cfname, size_px, weight, italic, stretch);
     CFRelease(cfname);
     if (!font) {
         return NULL;

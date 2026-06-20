@@ -373,6 +373,8 @@ struct replay_blocks {
     bool italic;                    // ...its style half...
     int kerning;                    // ...its fontKerning half...
     int rendering;                  // ...its textRendering half...
+    int variant_caps;              // ...its fontVariantCaps half...
+    int stretch;                   // ...its fontStretch half...
     char *__counted_by(lang_len) lang;  // ...its lang tag (owned copy; the key's
     int lang_len;                       // lang part)...
     char *__counted_by(fam_len) fam;  // ...the requested family (the key's family
@@ -473,7 +475,8 @@ static void paths_drop(struct replay_blocks *__single b) {
 
 // The pending shape's last run line landed: hand it to the cache, which takes
 // ownership, under its (family, size_px, rtl, ls, ws, weight, style, kerning,
-// rendering, lang, text) key -- exactly the key a live lookup uses, so the
+// rendering, variant-caps, stretch, lang, text) key -- exactly the key a live
+// lookup uses, so the
 // fill_text/stroke_text op that follows hits (and two families, two
 // weights/styles, two toggle settings, or an ltr and an rtl shaping, of the same
 // bytes land in distinct slots, never aliased).
@@ -482,7 +485,8 @@ static void blocks_finish_shaping(struct canvas *__single cv,
     cnvs_text_cache_put_shaping(cnvs_canvas_text_cache(cv), b->fam, b->fam_len,
                               b->size_px, b->rtl,
                               b->ls, b->ws, b->weight, b->italic,
-                              b->kerning, b->rendering, b->lang, b->lang_len,
+                              b->kerning, b->rendering, b->variant_caps, b->stretch,
+                              b->lang, b->lang_len,
                               b->text, b->text_len, b->s);
     b->s = NULL;  // ownership went to the cache
     // The block's ls/ws are only its cache key.  The canvas's spacing state --
@@ -983,13 +987,16 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
 }
 
 // shaping <size_px> <rtl 0|1> <ls> <ws> <weight> <style 0|1> <kerning 0-2>
-// <rendering 0-3> <lang-len> <lang...> <fam-len> <fam...>
+// <rendering 0-3> <variant-caps 0-2> <stretch 0-8> <lang-len> <lang...>
+// <fam-len> <fam...>
 // <utf16-len> <nruns> <byte-len> <text...> -- begin one shaped line; its `run`
 // lines must follow immediately.  weight/style are the font weight/style halves
 // of the cache key (always present, even at the 400/upright default), so a bold
 // or italic shaping of the same bytes keys distinctly.  kerning/rendering are the
 // shaping-toggle enums (canvas_font_kerning 0-2 / canvas_text_rendering 0-3,
-// always present even at the AUTO default), and lang is the BCP-47 tag
+// always present even at the AUTO default), variant-caps/stretch the small-cap /
+// width enums (canvas_font_variant_caps 0-2 / canvas_font_stretch 0-8, always
+// present even at the NORMAL default), and lang is the BCP-47 tag
 // (length-prefixed raw bytes after a single separating space, may be empty) --
 // all halves of the cache key, since they change the runs' advances/glyphs.  fam
 // is the requested family (the cache key's family part, always present even for
@@ -1001,7 +1008,7 @@ static bool replay_bits(struct canvas *__single cv, struct replay_blocks *__sing
 // so they serve only to key the rebuilt line.  The text is exactly byte-len raw
 // bytes after a single separating space (it is the cache key, byte for byte).
 // Strict: finite size/ls/ws, weight in CSS [100, 900], style 0/1, kerning 0-2,
-// rendering 0-3, lang-len/fam-len bytes
+// rendering 0-3, variant-caps 0-2, stretch 0-8, lang-len/fam-len bytes
 // present, utf16-len <= byte-len (every UTF-16 unit costs at least one UTF-8
 // byte), and the byte count exactly fills the line.
 static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__single b,
@@ -1009,6 +1016,7 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     float size = 0.0f, ls = 0.0f, ws = 0.0f;
     bool rtl = false;
     long weight = 0, style = 0, kerning = 0, rendering = 0,
+         variant_caps = 0, stretch = 0,
          langlen = 0, famlen = 0, t16 = 0, nruns = 0, blen = 0;
     if (!read_float(data, le, &j, &size) || !isfinite(size) || size < 0.0f) {
         return false;
@@ -1029,6 +1037,12 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     // file (the live setter would have ignored it).
     if (!read_uint(data, le, &j, 2, &kerning) ||
         !read_uint(data, le, &j, 3, &rendering)) {
+        return false;
+    }
+    // The small-cap / width toggles: variant-caps in canvas_font_variant_caps's
+    // [0, 2] and stretch in canvas_font_stretch's [0, 8], strict like the others.
+    if (!read_uint(data, le, &j, 2, &variant_caps) ||
+        !read_uint(data, le, &j, 8, &stretch)) {
         return false;
     }
     // The lang tag: a length, then a single separator space, then exactly
@@ -1109,6 +1123,8 @@ static bool replay_shaping(struct canvas *__single cv, struct replay_blocks *__s
     b->italic = style != 0;
     b->kerning = (int)kerning;
     b->rendering = (int)rendering;
+    b->variant_caps = (int)variant_caps;
+    b->stretch = (int)stretch;
     b->lang = langbuf;
     b->lang_len = (int)langlen;
     b->fam = fam;
@@ -1526,6 +1542,28 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
         else if (tok_eq(data, le, ts, tl, "optimizeSpeed"))       canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_OPTIMIZE_SPEED);
         else if (tok_eq(data, le, ts, tl, "optimizeLegibility"))  canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_OPTIMIZE_LEGIBILITY);
         else if (tok_eq(data, le, ts, tl, "geometricPrecision"))  canvas_set_text_rendering(cv, CANVAS_TEXT_RENDERING_GEOMETRIC_PRECISION);
+        else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_font_variant_caps")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "normal"))               canvas_set_font_variant_caps(cv, CANVAS_FONT_VARIANT_CAPS_NORMAL);
+        else if (tok_eq(data, le, ts, tl, "small-caps"))      canvas_set_font_variant_caps(cv, CANVAS_FONT_VARIANT_CAPS_SMALL_CAPS);
+        else if (tok_eq(data, le, ts, tl, "all-small-caps"))  canvas_set_font_variant_caps(cv, CANVAS_FONT_VARIANT_CAPS_ALL_SMALL_CAPS);
+        else return false;
+    }
+    else if (tok_eq(data, le, cs, cl, "set_font_stretch")) {
+        size_t ts, tl;
+        if (!read_token(data, le, &j, &ts, &tl)) return false;
+        if (tok_eq(data, le, ts, tl, "ultra-condensed"))      canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_ULTRA_CONDENSED);
+        else if (tok_eq(data, le, ts, tl, "extra-condensed")) canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_EXTRA_CONDENSED);
+        else if (tok_eq(data, le, ts, tl, "condensed"))       canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_CONDENSED);
+        else if (tok_eq(data, le, ts, tl, "semi-condensed"))  canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_SEMI_CONDENSED);
+        else if (tok_eq(data, le, ts, tl, "normal"))          canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_NORMAL);
+        else if (tok_eq(data, le, ts, tl, "semi-expanded"))   canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_SEMI_EXPANDED);
+        else if (tok_eq(data, le, ts, tl, "expanded"))        canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_EXPANDED);
+        else if (tok_eq(data, le, ts, tl, "extra-expanded"))  canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_EXTRA_EXPANDED);
+        else if (tok_eq(data, le, ts, tl, "ultra-expanded"))  canvas_set_font_stretch(cv, CANVAS_FONT_STRETCH_ULTRA_EXPANDED);
         else return false;
     }
     else if (tok_eq(data, le, cs, cl, "set_lang")) {

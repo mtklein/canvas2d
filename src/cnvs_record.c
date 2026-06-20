@@ -302,9 +302,10 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
 // rebuilds it without shaping.  weight/style are the font weight/style keys
 // (written unconditionally, even at the default 400/upright): they pick a
 // different real or synthesized face, so they are part of the cache key and the
-// glyph identity.  kerning/rendering/lang are the shaping-toggle keys (written
-// unconditionally, even at the AUTO/AUTO/"" default): they change the runs'
-// advances/glyphs, so they are part of the cache key.  The lang tag is
+// glyph identity.  kerning/rendering/variant-caps/stretch/lang are the
+// shaping-toggle keys (written
+// unconditionally, even at the AUTO/AUTO/NORMAL/NORMAL/"" default): they change
+// the runs' advances/glyphs, so they are part of the cache key.  The lang tag is
 // length-prefixed bytes (the same shape as the family token), the family token
 // is the requested typeface, the cache key's
 // family part (length-prefixed bytes, written unconditionally even for the
@@ -315,11 +316,13 @@ static void put_bits_line(FILE *__single f, uint8_t const *__counted_by(n) p,
 // letterSpacing/wordSpacing keys (written unconditionally, even when 0): the
 // spacing is already baked into the run advances, so replay needs them only to
 // key the rebuilt line under the same (family, size, rtl, ls, ws, weight, style,
-// kerning, rendering, lang, text) tuple a live lookup uses.  The canvas's
+// kerning, rendering, variant-caps, stretch, lang, text) tuple a live lookup
+// uses.  The canvas's
 // family/weight/style/spacing/toggle state -- the values a fill_text keys its
 // lookup by -- are carried by the set_font_family/set_font_weight/
 // set_font_style/set_letter_spacing/set_word_spacing/set_font_kerning/
-// set_text_rendering/set_lang ops, not by this block.  The text is
+// set_text_rendering/set_font_variant_caps/set_font_stretch/set_lang ops, not by
+// this block.  The text is
 // length-prefixed raw bytes to end of line (the key, byte for byte).
 static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
                                   struct cnvs_text_cache *__single c,
@@ -327,11 +330,12 @@ static void cnvs_rec_shaping_line(struct cnvs_recorder *__single r,
                                   char const *__counted_by(fam_len) family, int fam_len,
                                   float size_px, bool rtl, float ls, float ws,
                                   int weight, bool italic, int kerning, int rendering,
+                                  int variant_caps, int stretch,
                                   char const *__counted_by(lang_len) lang, int lang_len,
                                   char const *__counted_by(len) text, int len) {
-    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d %d %d %d %d ", (double)size_px,
+    fprintf(r->f, "shaping %.9g %d %.9g %.9g %d %d %d %d %d %d %d ", (double)size_px,
             rtl ? 1 : 0, (double)ls, (double)ws, weight, italic ? 1 : 0,
-            kerning, rendering, lang_len);
+            kerning, rendering, variant_caps, stretch, lang_len);
     if (lang_len > 0) {
         fwrite(lang, 1, (size_t)lang_len, r->f);
     }
@@ -360,6 +364,7 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
                           char const *__counted_by(fam_len) family, int fam_len,
                           float size_px, bool rtl, float ls, float ws,
                           int weight, bool italic, int kerning, int rendering,
+                          int variant_caps, int stretch,
                           char const *__counted_by(lang_len) lang, int lang_len,
                           char const *__counted_by(len) text, int len) {
     if (!r || r->suspend != 0 || !c) {
@@ -368,7 +373,8 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     cnvs_rec_flush_ws(r);
     struct cnvs_shaping_slot *__single slot = cnvs_text_cache_shaping_slot(c, family, fam_len,
                                                   size_px, rtl, ls, ws, weight, italic,
-                                                  kerning, rendering, lang, lang_len, text, len);
+                                                  kerning, rendering, variant_caps, stretch,
+                                                  lang, lang_len, text, len);
     if (!slot) {
         return;  // not cached (shaping failed: nothing to carry)
     }
@@ -491,7 +497,8 @@ void cnvs_rec_text_blocks(struct cnvs_recorder *__single r, struct cnvs_text_cac
     // The shaped line itself (and its run lines), keyed by the family, weight,
     // style, the shaping toggles, and the spacing it bakes.
     cnvs_rec_shaping_line(r, c, s, family, fam_len, size_px, rtl, ls, ws,
-                          weight, italic, kerning, rendering, lang, lang_len, text, len);
+                          weight, italic, kerning, rendering, variant_caps, stretch,
+                          lang, lang_len, text, len);
     slot->emitted = true;
 }
 
@@ -936,6 +943,41 @@ void cnvs_rec_lang(struct cnvs_recorder *__single r,
         fwrite(tag, 1, (size_t)len, r->f);
     }
     fputc('\n', r->f);
+}
+
+void cnvs_rec_font_variant_caps(struct cnvs_recorder *__single r,
+                                enum canvas_font_variant_caps variant_caps) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    cnvs_rec_flush_ws(r);
+    char const *__null_terminated tok = "normal";
+    switch (variant_caps) {
+        case CANVAS_FONT_VARIANT_CAPS_NORMAL:         tok = "normal";          break;
+        case CANVAS_FONT_VARIANT_CAPS_SMALL_CAPS:     tok = "small-caps";      break;
+        case CANVAS_FONT_VARIANT_CAPS_ALL_SMALL_CAPS: tok = "all-small-caps";  break;
+    }
+    fprintf(r->f, "set_font_variant_caps %s\n", tok);
+}
+
+void cnvs_rec_font_stretch(struct cnvs_recorder *__single r, enum canvas_font_stretch stretch) {
+    if (!r || r->suspend != 0) {
+        return;
+    }
+    cnvs_rec_flush_ws(r);
+    char const *__null_terminated tok = "normal";
+    switch (stretch) {
+        case CANVAS_FONT_STRETCH_ULTRA_CONDENSED: tok = "ultra-condensed"; break;
+        case CANVAS_FONT_STRETCH_EXTRA_CONDENSED: tok = "extra-condensed"; break;
+        case CANVAS_FONT_STRETCH_CONDENSED:       tok = "condensed";       break;
+        case CANVAS_FONT_STRETCH_SEMI_CONDENSED:  tok = "semi-condensed";  break;
+        case CANVAS_FONT_STRETCH_NORMAL:          tok = "normal";          break;
+        case CANVAS_FONT_STRETCH_SEMI_EXPANDED:   tok = "semi-expanded";   break;
+        case CANVAS_FONT_STRETCH_EXPANDED:        tok = "expanded";        break;
+        case CANVAS_FONT_STRETCH_EXTRA_EXPANDED:  tok = "extra-expanded";  break;
+        case CANVAS_FONT_STRETCH_ULTRA_EXPANDED:  tok = "ultra-expanded";  break;
+    }
+    fprintf(r->f, "set_font_stretch %s\n", tok);
 }
 
 void cnvs_rec_composite(struct cnvs_recorder *__single r, enum canvas_composite_op op) {
