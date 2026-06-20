@@ -1,6 +1,6 @@
 // The capstone of the record/replay arc: each committed gallery/<scene>.canvas
 // program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls -- all 40 scenes, the format's whole surface.
+// ZERO Core Text boundary calls -- all 43 scenes, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
 // (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
@@ -44,7 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// All 40 scenes, each a (program, image) pair of committed artifacts; `text`
+// All 43 scenes, each a (program, image) pair of committed artifacts; `text`
 // marks the eleven text scenes whose cache traffic must be non-trivial.
 // Literal paths so they are __null_terminated already (the same reason
 // test_pngread.c lists its corpus rather than assembling paths from dirent
@@ -68,6 +68,7 @@ static scene_pair const k_scenes[] = {
     { "gallery/dashes.canvas",       "gallery/dashes.png",       false },
     { "gallery/dirtyrect.canvas",    "gallery/dirtyrect.png",    false },
     { "gallery/drawimage.canvas",    "gallery/drawimage.png",    false },
+    { "gallery/ellipserot.canvas",   "gallery/ellipserot.png",   false },
     { "gallery/emoji.canvas",        "gallery/emoji.png",        true  },
     { "gallery/emojiscale.canvas",   "gallery/emojiscale.png",   true  },
     { "gallery/extendedrange.canvas", "gallery/extendedrange.png", false },
@@ -81,7 +82,9 @@ static scene_pair const k_scenes[] = {
     { "gallery/joins.canvas",        "gallery/joins.png",        false },
     { "gallery/linearlight.canvas",  "gallery/linearlight.png",  false },
     { "gallery/miterdash.canvas",    "gallery/miterdash.png",    false },
+    { "gallery/nestedclip.canvas",   "gallery/nestedclip.png",   false },
     { "gallery/path2d.canvas",       "gallery/path2d.png",       false },
+    { "gallery/path2dhit.canvas",    "gallery/path2dhit.png",    false },
     { "gallery/paths.canvas",        "gallery/paths.png",        false },
     { "gallery/pattern.canvas",      "gallery/pattern.png",      false },
     { "gallery/porterduff.canvas",   "gallery/porterduff.png",   false },

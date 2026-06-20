@@ -228,10 +228,11 @@ def main():
     # gallery scene, sorted.
     gallery_scenes = [
         "affine", "batch", "blend", "clip", "colorspaces", "conic", "dashes", "dirtyrect",
-        "drawimage", "emoji", "emojiscale", "extendedrange", "filters", "gradients", "gradinterp",
+        "drawimage", "ellipserot", "emoji", "emojiscale", "extendedrange", "filters",
+        "gradients", "gradinterp",
         "hittest",
         "imagecolorspace", "imagedata", "imagescale", "joins", "linearlight", "miterdash",
-        "path2d", "paths", "pattern",
+        "nestedclip", "path2d", "path2dhit", "paths", "pattern",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",
         "textmaxwidth", "textmetrics", "winding",

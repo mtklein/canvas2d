@@ -72,10 +72,24 @@ hole:
 
 ![path2d](gallery/path2d.png)
 
+`is_point_in_path2d` / `is_point_in_stroke_path` — the Path2D hit-testing
+overloads. Left: a triangular Path2D sampled on a grid under
+`is_point_in_path2d`; right: an arc Path2D sampled under
+`is_point_in_stroke_path` with a 24px line width:
+
+![path2dhit](gallery/path2dhit.png)
+
 Clipping — a circular window, the intersection of two discs, and a
 self-intersecting star, each masking the same flood of stripes:
 
 ![clip](gallery/clip.png)
+
+Nested clips — three `canvas_clip` calls in nested save/restore levels,
+each narrowing the active region: a circle, then a rotated rectangle
+intersected with it, then a star intersected with both. Faint outlines show
+each boundary; rainbow stripes reveal the triple intersection:
+
+![nestedclip](gallery/nestedclip.png)
 
 Gradients — a diagonal linear fill outlined with a gradient stroke, an
 off-centre radial, and a multi-stop rainbow ramp:
@@ -101,6 +115,12 @@ Batching — 320 translucent discs, each its own `fill()`, composited in order:
 rotated:
 
 ![drawimage](gallery/drawimage.png)
+
+`ellipse` with rotation — eight ellipses at evenly spaced rotation angles from 0
+to π/2, filled (top row) and stroked (bottom row), showing the rotation parameter
+is live:
+
+![ellipserot](gallery/ellipserot.png)
 
 `imageSmoothingEnabled` — a 16×16 pixel-art source upscaled with smoothing off
 (nearest-neighbour) vs on (bilinear):
