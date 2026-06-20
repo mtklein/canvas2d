@@ -2716,14 +2716,19 @@ void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
         b.w = 0;
         b.h = 0;  // empty path: clip to nothing
     }
-    // new_clip = old_clip * path_coverage, zero outside the path's bbox.
-    for (int yy = 0; yy < cv->height; yy++) {
-        for (int xx = 0; xx < cv->width; xx++) {
+    // new_clip = old_clip * path_coverage, zero outside the path's bbox.  Outside
+    // the bbox pc == 0, so that region is all zero: memset it once and only
+    // multiply within the bbox (clamped to the canvas) -- the common small clip
+    // path then skips most of the canvas instead of multiplying it by zero.
+    memset(nm, 0, (size_t)n);
+    int const x0 = b.x < 0 ? 0 : b.x;
+    int const y0 = b.y < 0 ? 0 : b.y;
+    int const x1 = b.x + b.w > cv->width ? cv->width : b.x + b.w;
+    int const y1 = b.y + b.h > cv->height ? cv->height : b.y + b.h;
+    for (int yy = y0; yy < y1; yy++) {
+        for (int xx = x0; xx < x1; xx++) {
             int const i = yy * cv->width + xx;
-            int pc = 0;
-            if (xx >= b.x && xx < b.x + b.w && yy >= b.y && yy < b.y + b.h) {
-                pc = cv->cov[(yy - b.y) * b.w + (xx - b.x)];
-            }
+            int const pc = cv->cov[(yy - b.y) * b.w + (xx - b.x)];
             int const old = cv->cur.clip_mask ? cv->cur.clip_mask[i] : 255;
             nm[i] = (uint8_t)(old * pc / 255);
         }
