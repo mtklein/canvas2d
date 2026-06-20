@@ -4548,6 +4548,15 @@ static uint16_t q16(float x) {  // [0,1] -> 16-bit unorm
     return (uint16_t)(v * 65535.0f + 0.5f);
 }
 
+// 8-wide q16: clamp to [0,1], scale, round, truncate -- the lanewise twin of q16.
+// min/max clamp matches the scalar ternary for the finite [0,1]-ish inputs here,
+// and convertvector truncates toward zero like the (uint16_t) cast.
+static int8 q16x8(float8 x) {
+    float8 const v = __builtin_elementwise_max((float8)0.0f,
+                     __builtin_elementwise_min((float8)1.0f, x));
+    return __builtin_convertvector(v * 65535.0f + 0.5f, int8);
+}
+
 // Fill `out` (width*height*4 native-endian uint16) with the surface as BT.2100.
 static void surface_to_pq16(struct canvas *__single cv,
                             uint16_t *__counted_by(n4) out, int n4) {
@@ -4555,7 +4564,43 @@ static void surface_to_pq16(struct canvas *__single cv,
     bool const lin = cv->space == CANVAS_CS_LINEAR_SRGB;
     float const scale = CNVS_REF_WHITE_NITS / 10000.0f;
     int const n = cv->target_len;
-    for (int i = 0; i < n; i++) {
+
+    // One pixel's worth of the scalar pipeline into RGB planes (+ alpha): unpremul
+    // -> (sRGB->linear) -> Rec.2020 -> *scale.  A transparent pixel contributes 0
+    // to every plane, which PQ maps to 0 -- the all-zero output the spec wants.
+    // The PQ OETF and quantize then run 8 pixels at a time; the cheap per-pixel
+    // unpremul/matrix stays scalar (data-dependent 1/a, AoS source), bit-exact.
+    int i = 0;
+    for (; i + 8 <= n; i += 8) {
+        float8 wr = {0}, wg = {0}, wb = {0}, af = {0};
+        for (int j = 0; j < 8; j++) {
+            cnvs_premul const px = cv->target[i + j];
+            float const a = (float)px.a;
+            af[j] = a;
+            if (a > 0.0f) {
+                float const inv = 1.0f / a;
+                cnvs_rgb l = { (float)px.r * inv, (float)px.g * inv, (float)px.b * inv };
+                if (!lin) {
+                    l = cnvs_rgb_srgb_to_linear(l);
+                }
+                cnvs_rgb const wide = cnvs_linear_srgb_to_rec2020(l);
+                wr[j] = wide.r * scale;
+                wg[j] = wide.g * scale;
+                wb[j] = wide.b * scale;
+            }
+        }
+        int8 const r = q16x8(cnvs_pq_oetf8(wr));
+        int8 const g = q16x8(cnvs_pq_oetf8(wg));
+        int8 const b = q16x8(cnvs_pq_oetf8(wb));
+        int8 const av = q16x8(af);
+        for (int j = 0; j < 8; j++) {
+            out[(i + j) * 4 + 0] = (uint16_t)r[j];
+            out[(i + j) * 4 + 1] = (uint16_t)g[j];
+            out[(i + j) * 4 + 2] = (uint16_t)b[j];
+            out[(i + j) * 4 + 3] = (uint16_t)av[j];
+        }
+    }
+    for (; i < n; i++) {  // scalar tail (n % 8), the original per-pixel path
         cnvs_premul const px = cv->target[i];
         float const a = (float)px.a;
         uint16_t r = 0, g = 0, b = 0, av = 0;

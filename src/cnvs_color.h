@@ -19,6 +19,8 @@
 // kernels are therefore f32 in / f32 out; a caller that holds _Float16 colour
 // widens at the call and narrows the result.
 
+#include "cnvs_math.h"
+
 typedef struct {
     float r, g, b;
 } cnvs_rgb;
@@ -67,3 +69,9 @@ cnvs_rgb cnvs_rec2020_to_linear_srgb(cnvs_rgb c);
 // a bounded display transfer, not total over R: out-of-range inputs clamp to
 // [0,1] (PQ has no meaning outside it).  cnvs_pq_oetf(0)=0, (1)=1, monotone.
 float cnvs_pq_oetf(float y);
+
+// 8-wide cnvs_pq_oetf: lane-for-lane bit-identical to the scalar (mirrors its
+// exact expression tree -- same coefficients, same Horner, same boundary
+// selects), so the encoder runs it on whole planes without shifting an output
+// byte.  This is the vectorizable form the scalar's polynomial design exists for.
+float8 cnvs_pq_oetf8(float8 y);

@@ -23,6 +23,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 // A probe that reads back differently per working space: opaque mid-grey, then a
 // 50%-alpha black painted over it.  Returns the centre pixel's red byte.
@@ -946,12 +947,52 @@ static void pq_oetf_accuracy(void) {
     CHECK(monotone16);
 }
 
+// The 8-wide cnvs_pq_oetf8 must equal the scalar cnvs_pq_oetf lane-for-lane,
+// BIT for bit -- that exactness is what lets surface_to_pq16 run the wide form on
+// whole planes without shifting a single committed PNG byte.  Sweep [0,1] densely
+// plus out-of-domain inputs (negative, >1), where the boundary selects and the
+// discarded-lane arithmetic must still agree.  Bitwise compare (memcmp) avoids
+// -Wfloat-equal and catches any 1-ULP FMA-contraction divergence.
+static void pq_oetf8_matches_scalar(void) {
+    bool exact = true;
+
+    float const anchors[8] = { 0.0f, 1.0f, 203.0f / 10000.0f, 0.5f,
+                               0.999f, 0.001f, -0.1f, 2.0f };
+    float8 ya = {0};
+    for (int j = 0; j < 8; j++) { ya[j] = anchors[j]; }
+    float8 const ga = cnvs_pq_oetf8(ya);
+    for (int j = 0; j < 8; j++) {
+        float const want = cnvs_pq_oetf(ya[j]), got = ga[j];
+        if (memcmp(&want, &got, sizeof want) != 0) { exact = false; }
+    }
+
+    int const N = 4096;  // not pixel count -- just a dense input sweep
+    for (int base = 0; base < N; base += 8) {
+        float8 y = {0};
+        for (int j = 0; j < 8; j++) {
+            int const k = base + j;
+            float v;
+            if (k % 37 == 0)      { v = -((float)(k % 50)) * 0.03f; }      // < 0
+            else if (k % 41 == 0) { v = 1.0f + (float)(k % 64) * 0.05f; }  // > 1
+            else                  { v = (float)k / (float)N; }            // [0,1)
+            y[j] = v;
+        }
+        float8 const got = cnvs_pq_oetf8(y);
+        for (int j = 0; j < 8; j++) {
+            float const want = cnvs_pq_oetf(y[j]), g = got[j];
+            if (memcmp(&want, &g, sizeof want) != 0) { exact = false; }
+        }
+    }
+    CHECK(exact);
+}
+
 int main(void) {
     space_default_and_persistence();
     extended_fill_survives();
     extended_shadow_survives();
     pq_rec2020_known_answers();
     pq_oetf_accuracy();
+    pq_oetf8_matches_scalar();
     image_sample_space_convert();
     linear_color_round_trip();
     linear_image_data_round_trip();

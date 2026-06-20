@@ -240,3 +240,78 @@ float cnvs_pq_oetf(float y) {
     // frac^m2 via the narrow-domain log2 (exact at frac=1) and exp2.
     return pq_exp2(m2 * pq_log2_frac(frac));
 }
+
+// 8-wide forms of the three helpers and the OETF, each a direct transliteration
+// of its scalar twin: identical coefficients in identical Horner order (so the
+// compiler applies the same FMA contraction per lane) and the IEEE bit twiddling
+// as vector reinterpret (memcpy float8<->int8) plus elementwise int ops.  The
+// shifts are masked (&0xFF) or operate on values the domain keeps non-negative
+// and small (n+127 in [106,147], so (n+127)<<23 never reaches bit 31), so signed
+// lanes behave like the scalar's uint32.  Result: bit-identical to the scalar
+// lane for lane -- test_colorspace's pq_oetf8_matches_scalar pins it exactly.
+static float8 pq_log2_wide8(float8 y) {
+    int8 bits;
+    memcpy(&bits, &y, sizeof bits);
+    int8 const e = ((bits >> 23) & 0xFF) - 126;
+    bits = (bits & 0x007FFFFF) | (126 << 23);
+    float8 m;
+    memcpy(&m, &bits, sizeof m);
+    float8 const q = (((( -2.2140944730f  * m
+                        +10.2211130607f) * m
+                        -19.7612251545f) * m
+                        +20.8321998273f) * m
+                        -13.3117024570f) * m
+                        + 6.2336918059f;
+    return __builtin_convertvector(e, float8) + (m - 0.5f) * q - 1.0f;
+}
+
+static float8 pq_log2_frac8(float8 frac) {
+    float8 const r = ((((  -0.2517282200f  * frac
+                         + 1.5710494790f) * frac
+                         - 4.1226418001f) * frac
+                         + 5.9401468216f) * frac
+                         - 5.2592650306f) * frac
+                         + 3.5651338172f;
+    return (frac - 1.0f) * r;
+}
+
+static float8 pq_exp28(float8 x) {
+    int8 const xi = __builtin_convertvector(x, int8);  // (int32_t)x: trunc toward 0
+    // floor: the f32 compare yields a 0/-1 mask, so adding it subtracts 1 where
+    // x < trunc(x) -- the scalar's `xi - (x < (float)xi ? 1 : 0)`.
+    int8 const n = xi + (x < __builtin_convertvector(xi, float8));
+    float8 const f = x - __builtin_convertvector(n, float8);
+    int8 const pow2_bits = (n + 127) << 23;
+    float8 pow2;
+    memcpy(&pow2, &pow2_bits, sizeof pow2);
+    float8 const g = (((( 0.0002082919f  * f
+                       + 0.0012689354f) * f
+                       + 0.0096524405f) * f
+                       + 0.0554959362f) * f
+                       + 0.2402272150f) * f
+                       + 0.6931471706f;
+    return (1.0f + f * g) * pow2;
+}
+
+float8 cnvs_pq_oetf8(float8 y) {
+    float const m1 = 0.1593017578125f, m2 = 78.84375f;
+    float const c1 = 0.8359375f, c2 = 18.8515625f, c3 = 18.6875f;
+    float8 const t = pq_exp28(m1 * pq_log2_wide8(y));
+    float8 const frac = (c1 + c2 * t) / (1.0f + c3 * t);
+    float8 e = pq_exp28(m2 * pq_log2_frac8(frac));
+    // The scalar returns early outside [0,1]; the vector computes every lane then
+    // blends.  Mandatory, not cosmetic: a negative y (a wide-gamut Rec.2020
+    // component) computes to a large finite value, not 0, without this select.
+    // ext_vector has no `?:` in C, so reinterpret to int lanes and mask-select:
+    // y>=1 -> 1.0f bits, y<=0 -> 0 bits (= +0.0f, what the scalar returns).
+    int8 const ge1 = (y >= 1.0f);  // 0 / -1 per lane
+    int8 const le0 = (y <= 0.0f);
+    float8 const onef = (float8)1.0f;
+    int8 eb, ones;
+    memcpy(&eb, &e, sizeof eb);
+    memcpy(&ones, &onef, sizeof ones);
+    eb = (ge1 & ones) | (~ge1 & eb);  // y>=1 -> 1.0f
+    eb = ~le0 & eb;                    // y<=0 -> +0.0f
+    memcpy(&e, &eb, sizeof e);
+    return e;
+}
