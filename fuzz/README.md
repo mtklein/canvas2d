@@ -115,17 +115,16 @@ for the OOB-write classes.
   number parsing, line handling, and the `__null_terminated` seam — a classic C
   text-parsing attack surface, and the "Role B" strict-format validating parser
   (bounds-safe, zero forges) as a fuzz target in its own right. Seed it with
-  `fuzz/seeds_replay/` (committed): `font`/`glyph`/`shape` block programs so
-  mutations reach the cross-line block state machine, the verb-token
-  validation, and the cache-insert paths; an emoji `bitmap` and an `image`
-  block (base64 `bits` lines over a deflated stream — the zlib seam);
-  a Path2D `path` block with all three referencing ops; the scalar ops
-  (conic gradients, the filter list, `round_rect_radii`, smoothing,
-  `reset`/`resize`); an rtl-direction program (the shape block's direction
-  bit + `set_direction` op lines); and a reduced crasher regression
+  `fuzz/seeds_replay/` (committed): current-format canvas programs, most copied
+  from the gallery so mutations reach the whole parser — `font`/`glyph`/`shape`
+  blocks (text plus the font-styling toggles: family/weight/style/kerning/
+  rendering/lang/variant/stretch), `image`/`bitmap` blocks including float16
+  ImageData (base64 `bits` lines over a deflated stream — the zlib seam), a
+  Path2D `path` block, gradient/pattern/colour ops with their unconditional
+  space tokens, and an rtl-direction program — plus a reduced crasher regression
   (`subrect_saturated_sample.canvas`: a huge `draw_image_subrect` source rect
   whose saturated bilinear tap once overflowed `int`):
-  `./build/fuzz/fuzz_replay -max_len=8192 fuzz/seeds_replay`.
+  `./build/fuzz/fuzz_replay -max_len=65536 fuzz/seeds_replay`.
 
 The fuzz build enables `-fsanitize-address-use-after-scope` and
 `-fsanitize-address-use-after-return=always`, matching the debug variant.
@@ -139,10 +138,10 @@ The fuzz build enables `-fsanitize-address-use-after-scope` and
   `#ifndef FUZZ_NO_MAIN`).
 - `seed_gen.c` — emits a seed corpus of real drawing programs (`fuzz/seeds/`).
 - `seeds_text/` — committed UTF-8 seeds for `fuzz_text`.
-- `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`: inline
-  font/glyph/shape and emoji-bitmap block programs, an `image`-block program
-  driving every image op, a Path2D `path`-block program, the scalar ops, an
-  rtl-direction program, and a reduced sampler-overflow crasher.
+- `seeds_replay/` — committed canvas-program seeds for `fuzz_replay`: mostly
+  current-format gallery programs covering the font/glyph/shape, image/bitmap
+  (incl. float16), path, gradient, pattern, and colour-op parser paths, plus a
+  reduced sampler-overflow crasher.
 - `seeds_zlib/` — committed zlib streams for `fuzz_inflate` and
   `fuzz_zlib_diff`: minimal/stored/dynamic shapes plus a trailing-garbage
   stream that lands in the differential harness's one allowed asymmetry.

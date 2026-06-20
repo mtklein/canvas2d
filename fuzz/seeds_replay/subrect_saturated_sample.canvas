@@ -1,4 +1,4 @@
 working_space linear
-image 0 unorm8 unpremul 1 1 12 1
+image 0 unorm8 unpremul 1 1 12 1 srgb
 bits eJz7z8DwHwAE/wH/
 draw_image_subrect 0 0 0 1 122399e998 0 3 2.83200002 1
