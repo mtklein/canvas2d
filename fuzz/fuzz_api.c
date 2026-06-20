@@ -60,6 +60,13 @@ static int rd_range(struct cursor *c, int lo, int hi) {
     return lo + (int)(v % span);
 }
 
+// A fuzzed INPUT colour space: any of the three authoring spaces (sRGB, linear,
+// Oklab) -- exercises intern_color / the gradient-stop conversion paths, not just
+// the sRGB default.
+static enum canvas_color_space rd_cs(struct cursor *c) {
+    return (enum canvas_color_space)rd_range(c, 0, 2);
+}
+
 static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, int H) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int x = rd_range(c, -8, W + 8), y = rd_range(c, -8, H + 8);
@@ -157,7 +164,11 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
 
     int W = rd_range(&c, 1, 256), H = rd_range(&c, 1, 256);
-    struct canvas *__single cv = canvas(W, H);
+    // Vary the working space: sRGB or extended linear sRGB (Oklab is not a
+    // compositing space).  Fuzzes the linear decode/encode + extended-range paths.
+    enum canvas_color_space const ws =
+        (rd_u8(&c) & 1) ? CANVAS_CS_LINEAR_SRGB : CANVAS_CS_SRGB;
+    struct canvas *__single cv = canvas_in_space(W, H, ws);
     if (!cv) {
         return 0;
     }
@@ -198,9 +209,9 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_CLEAR_RECT: canvas_clear_rect(cv, rd_f32(&c), rd_f32(&c),
                                                   rd_f32(&c), rd_f32(&c)); break;
 
-            case OP_SET_FILL_RGBA:   canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, rd_f32(&c), rd_f32(&c),
+            case OP_SET_FILL_RGBA:   canvas_set_fill_rgba(cv, rd_cs(&c), rd_f32(&c), rd_f32(&c),
                                                           rd_f32(&c), rd_f32(&c)); break;
-            case OP_SET_STROKE_RGBA: canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, rd_f32(&c), rd_f32(&c),
+            case OP_SET_STROKE_RGBA: canvas_set_stroke_rgba(cv, rd_cs(&c), rd_f32(&c), rd_f32(&c),
                                                             rd_f32(&c), rd_f32(&c)); break;
             case OP_SET_GLOBAL_ALPHA: canvas_set_global_alpha(cv, rd_f32(&c)); break;
             case OP_SET_LINE_WIDTH:  canvas_set_line_width(cv, rd_f32(&c)); break;
@@ -231,14 +242,14 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                                           rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_FILL_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
-                canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, rd_f32(&c), stops[0], stops[1],
+                canvas_add_fill_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
                                            stops[2], stops[3]);
                 break;
             case OP_STROKE_LINEAR_GRAD: canvas_set_stroke_linear_gradient(cv, rd_f32(&c),
                                             rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_STROKE_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
-                canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, rd_f32(&c), stops[0], stops[1],
+                canvas_add_stroke_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
                                              stops[2], stops[3]);
                 break;
 
@@ -257,6 +268,10 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_PUT_IMAGE_DATA: do_image_put(cv, &c); break;
             case OP_DRAW_IMAGE:     do_image_draw(cv, &c); break;
             case OP_DRAW_IMAGE_OBJ: do_image_obj(cv, &c); break;
+            case OP_ENCODE: {  // the BT.2100 16-bit encode path; discard the bytes
+                int n = 0;
+                free(canvas_encode_png(cv, &n));
+            } break;
             default: break;
         }
     }

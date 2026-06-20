@@ -57,6 +57,8 @@ enum fuzz_op {
     OP_DRAW_IMAGE_OBJ,  // reified canvas_image: each {unorm8,f16}x{unpremul,premul}
                         // format, optional mips, a smoothing quality, drawn scaled
                         // -- reaches trilinear, Catmull-Rom, and the f16 samplers
+    OP_ENCODE,          // the BT.2100 16-bit encode path: surface_to_pq16 (PQ OETF
+                        // + Rec.2020 + quantize) then cnvs_png_encode
 
     FUZZ_OP_COUNT,
 };
