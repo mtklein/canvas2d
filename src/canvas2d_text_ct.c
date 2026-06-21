@@ -98,7 +98,18 @@ static CTFontRef font_descriptor(CFStringRef family, CGFloat size,
             if (attrs) {
                 CTFontDescriptorRef desc = CTFontDescriptorCreateWithAttributes(attrs);
                 if (desc) {
-                    out = CTFontCreateWithFontDescriptor(desc, size, matrix);
+                    // PreventAutoActivation|PreventAutoDownload: when the family is
+                    // absent (CI runners lack download-on-demand faces like the
+                    // default Libian TC), matching a family-name descriptor would
+                    // otherwise fetch/activate the font and block -- for a long
+                    // time, per resolution.  With the options Core Text substitutes
+                    // immediately.  Both are no-ops where the face is already
+                    // present, so a machine that has it resolves the identical font
+                    // and local renders stay byte-for-byte the same.
+                    out = CTFontCreateWithFontDescriptorAndOptions(
+                        desc, size, matrix,
+                        kCTFontOptionsPreventAutoActivation
+                            | kCTFontOptionsPreventAutoDownload);
                     CFRelease(desc);
                 }
                 CFRelease(attrs);
@@ -144,8 +155,10 @@ static CTFontRef font_with_traits(CFStringRef family, CGFloat size,
             out = synth;
         }
     }
-    if (!out) {
-        out = CTFontCreateWithName(family, size, NULL);  // descriptor unavailable
+    if (!out) {  // descriptor unavailable; same no-fetch options as font_descriptor
+        out = CTFontCreateWithNameAndOptions(family, size, NULL,
+                                             kCTFontOptionsPreventAutoActivation
+                                                 | kCTFontOptionsPreventAutoDownload);
     }
     return out;
 }
