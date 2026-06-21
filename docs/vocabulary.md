@@ -34,10 +34,14 @@ names that disambiguate them from a same-stem public header: `canvas2d_blit.h`
 `canvas2d_image.h`) and `canvas2d_path2d_internal.h` (the recorded-command
 representation, distinct from the public builder in `canvas2d_path2d.h`).
 
-The single exception is the SIMD lane vocabulary -- the unprefixed lane vector
-types (`f16x4`, `f32x8`, `u32x16`, `i16x8`, `u8x4`, ...) and the lane helpers
-that live with them in `src/canvas2d_math.h`.  These keep their bare names
-pending a separate normalization pass; they are not part of this namespace.
+The namespace rule binds `include/`: every type, function, and macro a PUBLIC
+header names is `canvas2d_`-prefixed (or refactored so the header need not name
+it).  Internal-only symbols may stay undecorated by design -- the prime case is
+the SIMD lane vocabulary (`f16x4`, `f32x8`, `u32x16`, `i16x8`, `u8x4`, ... and
+the lane helpers in `src/canvas2d_math.h`), kept deliberately bare; a handful of
+internal value-types (`gradpx8`, `rgb8`, `foldv8`, `cbbox`, `p2d_cmd`) are
+likewise undecorated.  None appear in `include/`, so the boundary stays clean
+without dragging the project prefix onto generic low-level vocabulary.
 
 ## Collisions (same word, different meanings)
 
