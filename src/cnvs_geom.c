@@ -63,3 +63,16 @@ void cnvs_verts_free(struct cnvs_verts *v) {
     v->nverts = 0;
     v->cap = 0;
 }
+
+foldv8 mat_apply8(cnvs_mat m, float8 x, float y) {
+    return (foldv8){ .x = m.a * x + m.c * y + m.e,
+                     .y = m.b * x + m.d * y + m.f };
+}
+
+foldv8 mat_apply8_persp(cnvs_mat m, float8 x, float y) {
+    float8 const u = m.a * x + m.c * y + m.e;
+    float8 const v = m.b * x + m.d * y + m.f;
+    float8 const w = m.g * x + m.h * y + m.i;
+    float8 const inv = (float8)1.0f / w;
+    return (foldv8){ .x = u * inv, .y = v * inv };
+}
