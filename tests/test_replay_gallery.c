@@ -1,6 +1,6 @@
 // The capstone of the record/replay arc: each committed gallery/<scene>.canvas
 // program replays to its committed gallery/<scene>.png BYTE FOR BYTE, with
-// ZERO Core Text boundary calls -- all 48 scenes, the format's whole surface.
+// ZERO Core Text boundary calls -- all 49 scenes, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
 // (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
@@ -21,7 +21,7 @@
 // fonts -- the CI runner has no Libian TC, it is download-on-demand -- that
 // fallback would also have produced different, wrong, or blank glyphs, which
 // the byte compare independently catches).  Scenes that draw no text pass (d)
-// trivially; the sixteen TEXT scenes additionally assert the cache saw real
+// trivially; the seventeen TEXT scenes additionally assert the cache saw real
 // traffic (shape/glyph hits > 0), so the zero-miss claim can't pass vacuously
 // where it matters.  Run on the fontless runner via bare ninja, this is what
 // proves replay used the embedded data, not the host's fonts; locally (where
