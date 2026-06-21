@@ -4,7 +4,7 @@
 // CTM scale.  Dashed strokes use butt caps and no joins.
 
 #include "cnvs_geom.h"
-#include "cnvs_math.h"
+#include "cnvs_matrix.h"
 
 #include <ptrcheck.h>
 

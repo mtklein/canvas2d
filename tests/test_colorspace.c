@@ -16,6 +16,7 @@
 // then re-encoded) -- a gap of ~30/255, far outside any rounding tolerance.
 
 #include "canvas.h"
+#include "canvas_image.h"
 #include "cnvs_blend.h"
 #include "cnvs_color.h"
 #include "cnvs_math.h"

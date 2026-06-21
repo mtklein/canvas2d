@@ -17,7 +17,8 @@
 // implicit conversion at every call site the bounds check: exactly one per
 // 8-pixel slab.
 
-#include "cnvs_math.h"  // cnvs_premul
+#include "cnvs_color.h"  // cnvs_premul, cnvs_unpremul
+#include "cnvs_math.h"   // half4, half8, float16, int8, short8, uchar4, uchar8
 
 #include <arm_neon.h>
 #include <ptrcheck.h>

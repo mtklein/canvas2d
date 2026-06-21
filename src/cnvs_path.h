@@ -4,7 +4,7 @@
 // are added, matching Canvas 2D.  All subpaths share one point array; `subs`
 // holds each one's [start, start+count) range.
 
-#include "cnvs_math.h"
+#include "cnvs_matrix.h"
 
 #include <ptrcheck.h>
 

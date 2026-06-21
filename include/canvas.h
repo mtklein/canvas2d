@@ -422,38 +422,10 @@ bool canvas_is_point_in_path(struct canvas *__single cv, float x, float y,
 bool canvas_is_point_in_stroke(struct canvas *__single cv, float x, float y);
 
 // Path2D: a constructible path object, independent of the canvas and its current
-// path.  Coordinates are recorded in user space and transformed by the canvas's
-// current transform when the path is filled/stroked/clipped/hit-tested -- so the
-// same Path2D draws differently under different transforms (unlike the current
-// path, whose points are baked at build time).  NULL on allocation failure; free
-// with canvas_path2d_free.
+// path.  The object itself -- struct canvas_path2d, its constructor/free, and the
+// canvas_path2d_* builders -- lives in canvas_path2d.h; forward-declared here for
+// the canvas methods below that consume one.
 struct canvas_path2d;
-struct canvas_path2d *__single canvas_path2d(void);
-void canvas_path2d_free(struct canvas_path2d *__single p);
-
-// Build a Path2D.  These mirror the canvas path methods (a zero-radius corner is
-// sharp; arc/ellipse angles are radians; round_rect takes one scalar radius).
-void canvas_path2d_move_to(struct canvas_path2d *__single p, float x, float y);
-void canvas_path2d_line_to(struct canvas_path2d *__single p, float x, float y);
-void canvas_path2d_quadratic_curve_to(struct canvas_path2d *__single p,
-                                      float cpx, float cpy, float x, float y);
-void canvas_path2d_bezier_curve_to(struct canvas_path2d *__single p, float c1x, float c1y,
-                                   float c2x, float c2y, float x, float y);
-void canvas_path2d_arc(struct canvas_path2d *__single p, float x, float y, float radius,
-                       float start_angle, float end_angle, bool anticlockwise);
-void canvas_path2d_ellipse(struct canvas_path2d *__single p, float x, float y,
-                           float rx, float ry, float rotation,
-                           float start_angle, float end_angle, bool anticlockwise);
-void canvas_path2d_arc_to(struct canvas_path2d *__single p, float x1, float y1,
-                          float x2, float y2, float radius);
-void canvas_path2d_rect(struct canvas_path2d *__single p, float x, float y,
-                        float w, float h);
-void canvas_path2d_round_rect(struct canvas_path2d *__single p, float x, float y,
-                              float w, float h, float radius);
-void canvas_path2d_close_path(struct canvas_path2d *__single p);
-// Append all of `src`'s commands to `dst` (addPath, without a transform).
-void canvas_path2d_add_path(struct canvas_path2d *__single dst,
-                            struct canvas_path2d const *__single src);
 
 // Fill / stroke / clip / hit-test a Path2D (the fill rule is explicit here, not
 // taken from state).  None of these disturb the canvas's current path.
@@ -555,27 +527,11 @@ void canvas_draw_bitmap_subrect(struct canvas *__single cv, enum canvas_color_sp
 
 // Reified images, in the Skia vocabulary: an image is a thing you draw FROM,
 // a surface (the canvas) a thing you draw TO, a bitmap the raw RGBA8 memory
-// realizing either.  An image owns a copy of its pixels, which gives them
-// identity -- the hook derived data caches against.
+// realizing either.  The image object -- struct canvas_image, its typed
+// constructors (canvas_image_unorm8 / _f16), canvas_image_build_mips, and
+// canvas_image_width / _height / _free -- lives in canvas_image.h; forward-
+// declared here for the canvas methods below that produce or consume one.
 struct canvas_image;
-
-// Construct an image, one typed constructor per colour type, each taking its
-// alpha type -- the four formats are peers, none favoured.  Pixels are RGBA,
-// top row first, copied in (lossless: a 1:1 draw of an unorm8 unpremul image
-// in the working space is byte-identical to drawing the bitmap directly).
-// `space` tags how to interpret the pixels' colours: the image is filtered in
-// that space (its mip chain too), and the resolved sample converts to the
-// canvas working space on deposit -- a no-op when they match.  NULL on bad
-// dimensions or allocation failure; free with canvas_image_free (which, like
-// free(), accepts NULL).
-struct canvas_image *__single canvas_image_unorm8(
-    enum canvas_color_space space,
-    uint8_t const *__counted_by(w * h * 4) px, int w, int h,
-    enum canvas_alpha_type at);
-struct canvas_image *__single canvas_image_f16(
-    enum canvas_color_space space,
-    _Float16 const *__counted_by(w * h * 4) px, int w, int h,
-    enum canvas_alpha_type at);
 
 // Snapshot a canvas as an image (canvas-as-source).  The
 // surface is premultiplied f16 and so is the snapshot: a straight memcpy,
@@ -585,18 +541,6 @@ struct canvas_image *__single canvas_image_f16(
 // snapped pixels ARE in the working space -- CANVAS_CS_SRGB
 // for an sRGB canvas, CANVAS_CS_LINEAR_SRGB for a linear one).  NULL on OOM.
 struct canvas_image *__single canvas_snapshot(struct canvas *__single cv);
-
-// Build the image's mip pyramid -- the one-time cost that minifying draws at
-// medium/high smoothing quality then sample with trilinear filtering.
-// Deliberately explicit: WITHOUT built mips a minifying image draw falls
-// back to plain bilinear rather than hiding a rebuild (the bitmap entry
-// points' behaviour) -- the caller decides if and when to pay.  Idempotent;
-// false on allocation failure (the image stays valid, mip-less).
-bool canvas_image_build_mips(struct canvas_image *__single img);
-
-int canvas_image_width(struct canvas_image const *__single img);
-int canvas_image_height(struct canvas_image const *__single img);
-void canvas_image_free(struct canvas_image *__single img);
 
 // drawImage from a reified image: the bitmap trio's three overloads, same
 // transform/clip/alpha/quality semantics, sourcing the image's pixels (and

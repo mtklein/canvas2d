@@ -21,6 +21,37 @@
 
 #include "cnvs_math.h"
 
+// Colour channels are _Float16 -- the narrowest storage type for which the
+// spec's 8-bit edges round-trip exactly: every (u8 colour, u8 alpha) pair
+// survives premultiply -> f16 store -> unpremultiply -> 8-bit quantize
+// unchanged (all 65,280; a u8 premultiplied store corrupts half of them), at
+// half float32's footprint -- see docs/decisions/float16-color-type.md.
+// Per docs/decisions/color-axis.md, _Float16 is the COMPUTE type too: the
+// blend, filter, gradient-lerp, premultiply, and readback kernels do their
+// arithmetic in f16, with no widen/narrow converts at the load/store
+// boundaries.  The bulk kernels are PLANAR over that type (cnvs_planar.h);
+// the per-pixel converters stay one pixel's four lanes.
+//
+// Two types so premultiplied and unpremultiplied colour can't be mixed up:
+// cnvs_unpremul is what the Canvas API speaks (r,g,b independent of a); cnvs_premul
+// is what internal pixel buffers hold (r,g,b scaled by a).  Convert only through
+// cnvs_premultiply / cnvs_unpremultiply, never by reinterpreting the shared layout.
+typedef struct cnvs_unpremul {
+    _Float16 r, g, b, a;
+} cnvs_unpremul;
+
+typedef struct cnvs_premul {
+    _Float16 r, g, b, a;
+} cnvs_premul;
+
+// Build an unpremultiplied colour; the float -> _Float16 narrowing site.
+cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a);
+
+// premultiply scales rgb by a; unpremultiply divides it back (a == 0 -> all-zero).
+// Both clamp to [0,1].
+cnvs_premul cnvs_premultiply(cnvs_unpremul c);
+cnvs_unpremul cnvs_unpremultiply(cnvs_premul c);
+
 typedef struct {
     float r, g, b;
 } cnvs_rgb;

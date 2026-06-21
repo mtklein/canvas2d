@@ -1,4 +1,6 @@
 #include "canvas.h"
+#include "canvas_image.h"
+#include "canvas_path2d.h"
 
 #include "blur.h"
 #include "cnvs_blend.h"
@@ -9,6 +11,7 @@
 #include "cnvs_geom.h"
 #include "cnvs_gradient.h"
 #include "cnvs_math.h"
+#include "cnvs_matrix.h"
 #include "cnvs_mem.h"
 #include "cnvs_path.h"
 #include "cnvs_path2d.h"

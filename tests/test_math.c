@@ -1,4 +1,4 @@
-#include "cnvs_math.h"
+#include "cnvs_matrix.h"
 #include "test_util.h"
 
 #include <math.h>

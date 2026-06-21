@@ -14,7 +14,7 @@
 // each function's result to [0,1] unpremultiplied (here: rgb to [0,a]) before
 // the next function runs, and that clamp is nonlinear.
 
-#include "cnvs_math.h"  // cnvs_premul
+#include "cnvs_color.h"  // cnvs_premul
 
 #include <ptrcheck.h>
 

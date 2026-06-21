@@ -11,7 +11,8 @@
 // Each pass is a running-sum box blur: O(1) per pixel regardless of r (add the
 // entering sample, subtract the leaving one).  dst and src must not alias.
 
-#include "cnvs_math.h"  // cnvs_premul
+#include "cnvs_color.h"  // cnvs_premul
+#include "cnvs_math.h"   // int8
 
 #include <ptrcheck.h>
 #include <stdint.h>

@@ -13,6 +13,7 @@
 #include "test_util.h"
 
 #include "canvas.h"
+#include "canvas_path2d.h"
 #include "cnvs_replay.h"
 
 #include <ptrcheck.h>

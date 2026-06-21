@@ -4,6 +4,7 @@
 // nothing; affine behaviour is unchanged; record->replay round-trips).
 
 #include "cnvs_math.h"
+#include "cnvs_matrix.h"
 #include "test_util.h"
 
 #include "canvas.h"

@@ -9,6 +9,7 @@
 // transform applies when the path is drawn, not here (canvas.h).
 
 #include "canvas.h"
+#include "canvas_path2d.h"  // the public Path2D API; this header adds the internals
 
 #include <ptrcheck.h>
 
