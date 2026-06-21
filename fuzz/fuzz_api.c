@@ -268,6 +268,16 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
                                                 rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_SET_TRANSFORM: canvas2d_set_transform(cv, rd_f32(&c), rd_f32(&c),
                                        rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
+            case OP_SET_TRANSFORM_3X3: canvas2d_set_transform_3x3(cv, rd_f32(&c), rd_f32(&c),
+                                           rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c),
+                                           rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
+            // Source rect + four destination corners -> homography (Heckbert solve,
+            // the 3x3 invert).  Raw floats reach the degenerate/near-collinear and
+            // w<=0 (behind-plane) cases the projective divide + w-clip must survive.
+            case OP_SET_PERSPECTIVE_QUAD: canvas2d_set_perspective_quad(cv,
+                                              rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c),
+                                              rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c),
+                                              rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_RESET_TRANSFORM: canvas2d_reset_transform(cv); break;
 
             case OP_GET_IMAGE_DATA: do_image_get(cv, &c, W, H); break;

@@ -49,6 +49,8 @@ enum fuzz_op {
     OP_ROTATE,
     OP_TRANSFORM,
     OP_SET_TRANSFORM,
+    OP_SET_TRANSFORM_3X3,     // 3x3 homography (the projective CTM)
+    OP_SET_PERSPECTIVE_QUAD,  // source rect -> four destination corners
     OP_RESET_TRANSFORM,
 
     OP_GET_IMAGE_DATA,

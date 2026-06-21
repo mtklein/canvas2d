@@ -108,6 +108,32 @@ int main(int argc, char **argv) {
         write_seed(dir, idx++, &s);
     }
 
+    {   // perspective quad: map a source rect onto a keystoned destination, then
+        // fill it -- drives the homography solve + the per-pixel projective divide.
+        struct buf s = { 0 }; canvas2d_hw(&s, 160, 160);
+        op(&s, OP_SET_PERSPECTIVE_QUAD);
+        f32(&s, 0); f32(&s, 0); f32(&s, 100); f32(&s, 100);  // source rect
+        f32(&s, 40); f32(&s, 10);    // TL
+        f32(&s, 120); f32(&s, 10);   // TR
+        f32(&s, 150); f32(&s, 150);  // BR
+        f32(&s, 10); f32(&s, 150);   // BL
+        op(&s, OP_SET_FILL_RGBA); f32(&s, 0.3f); f32(&s, 0.7f); f32(&s, 0.5f); f32(&s, 1.0f);
+        op(&s, OP_FILL_RECT); f32(&s, 0); f32(&s, 0); f32(&s, 100); f32(&s, 100);
+        write_seed(dir, idx++, &s);
+    }
+    {   // 3x3 homography directly, drawing an image through it -- the projective
+        // image sampler (w<=0 clip + perspective-correct fetch).
+        struct buf s = { 0 }; canvas2d_hw(&s, 128, 128);
+        op(&s, OP_SET_TRANSFORM_3X3);
+        f32(&s, 1.0f); f32(&s, 0.0f);    f32(&s, 0.0f);
+        f32(&s, 1.0f); f32(&s, 10.0f);   f32(&s, 10.0f);
+        f32(&s, 0.004f); f32(&s, 0.002f); f32(&s, 1.0f);  // non-zero g,h: projective
+        op(&s, OP_DRAW_IMAGE); rng(&s, 1, 16); rng(&s, 1, 16);
+        for (int i = 0; i < 16 * 16 * 4; i++) { u8(&s, (i * 29) & 0xFF); }
+        f32(&s, 0); f32(&s, 0); f32(&s, 100); f32(&s, 100);
+        write_seed(dir, idx++, &s);
+    }
+
     (void)fprintf(stderr, "wrote %d seeds to %s\n", idx, dir);
     return 0;
 }
