@@ -1,4 +1,5 @@
 #include "canvas.h"
+#include "canvas_path2d.h"
 #include "test_pixels.h"
 #include "test_util.h"
 

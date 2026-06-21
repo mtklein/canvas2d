@@ -9,7 +9,7 @@
 
 #include "canvas.h"
 
-#include "cnvs_color.h"     // cnvs_unpremul, cnvs_premul (via cnvs_math.h)
+#include "cnvs_color.h"     // cnvs_unpremul, cnvs_premul
 #include "cnvs_cover.h"     // struct cnvs_cover
 #include "cnvs_filter.h"    // cnvs_filter
 #include "cnvs_geom.h"      // cnvs_mat, cnvs_vec2, struct cnvs_verts

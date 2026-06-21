@@ -5,6 +5,7 @@
 // weight 0.5625 becomes ~0.47, so 143 becomes ~120).
 
 #include "canvas.h"
+#include "canvas_image.h"
 #include "test_pixels.h"
 #include "test_util.h"
 

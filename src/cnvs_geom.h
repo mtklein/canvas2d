@@ -4,6 +4,7 @@
 // __counted_by(cap) is valid and the two must be reassigned together.
 
 #include "cnvs_math.h"
+#include "cnvs_matrix.h"
 
 #include <ptrcheck.h>
 

@@ -6,6 +6,7 @@
 // image_mips record/replay round trip.
 
 #include "canvas.h"
+#include "canvas_image.h"
 #include "test_pixels.h"
 #include "test_util.h"
 

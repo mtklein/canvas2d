@@ -1,4 +1,6 @@
+#include "cnvs_color.h"
 #include "cnvs_math.h"
+#include "cnvs_matrix.h"
 
 #include <math.h>
 

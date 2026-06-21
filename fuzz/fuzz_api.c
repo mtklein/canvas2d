@@ -19,6 +19,7 @@
 // fuzzer probes clip/clamp logic without OOMing on multi-GB allocations.
 
 #include "canvas.h"
+#include "canvas_image.h"
 #include "fuzz_ops.h"
 
 #include <ptrcheck.h>

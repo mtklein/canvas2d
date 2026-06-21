@@ -9,6 +9,7 @@
 // `if (!p) return false` OOM guards that the normal suite leaves untaken.
 
 #include "canvas.h"
+#include "canvas_path2d.h"
 #include "oom_alloc.h"
 #include "test_util.h"
 

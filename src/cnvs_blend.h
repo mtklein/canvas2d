@@ -12,7 +12,8 @@
 // target (the caller clips to it).
 
 #include "canvas.h"
-#include "cnvs_math.h"  // cnvs_premul
+#include "cnvs_color.h"  // cnvs_premul
+#include "cnvs_math.h"   // int8
 
 #include <ptrcheck.h>
 #include <stdint.h>

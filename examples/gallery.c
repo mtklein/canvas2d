@@ -6,6 +6,8 @@
 // ops, so its program replays fontless like every other scene's.
 
 #include "canvas.h"
+#include "canvas_image.h"
+#include "canvas_path2d.h"
 #include "cnvs_color.h"
 #include "cnvs_text.h"
 

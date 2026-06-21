@@ -8,6 +8,7 @@
 // round-trips through record/replay.
 
 #include "cnvs_math.h"
+#include "cnvs_matrix.h"
 #include "test_util.h"
 
 #include "canvas.h"

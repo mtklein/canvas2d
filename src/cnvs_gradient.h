@@ -6,7 +6,8 @@
 // blend stage composites.
 
 #include "canvas.h"     // enum canvas_color_space, enum canvas_alpha_type
-#include "cnvs_math.h"
+#include "cnvs_color.h"  // cnvs_unpremul
+#include "cnvs_matrix.h" // cnvs_mat, cnvs_vec2
 
 #include <ptrcheck.h>
 

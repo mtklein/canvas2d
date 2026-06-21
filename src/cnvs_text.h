@@ -13,7 +13,8 @@
 // the arrays; a bad cluster *value* is caught by an explicit range check in the core.
 // See docs/text-boundary.md.
 
-#include "cnvs_math.h"
+#include "cnvs_math.h"    // int8, uint16
+#include "cnvs_matrix.h"  // cnvs_mat, cnvs_vec2
 #include "cnvs_path.h"
 
 #include <ptrcheck.h>

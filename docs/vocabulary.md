@@ -26,17 +26,28 @@ utility meant for callers -> `cnvs_` in include/; internal implementation ->
 `cnvs_` in src/.
 
 History: this began as "canvas_ public, cnvs_ internal, airtight at the public
-header."  Mike chose the **full utility belt** (2026-06-21): expose zlib, the PNG
-encoder (already buffer-based -- `cnvs_png_encode` takes a raw uint16 RGBA buffer,
-not a canvas), colour-space conversion, and the matrix/homography math as public
-`cnvs_` headers, so `cnvs_` now spans public-utility and internal, split by
-location.  The moves are low-churn: the build is `-Iinclude -Isrc`, so a bare
-`#include "cnvs_x.h"` resolves wherever the file sits.  cnvs_math.h is a grab-bag
-(matrix + lane vocab + colour types + clamp/convert) -- expose only the geometry
-(and the colour types colour-space needs); keep the lane/compute vocabulary
-internal.  Still pending: normalize `blur_*` / `blur.{c,h}` -> `cnvs_blur_*`
-(internal); internal helpers wearing the public `canvas_` prefix -> `cnvs_`.
-`canvas_free`, `canvas_record_to`, `canvas_replay_from` are legitimately public.
+header."  Mike chose the **full utility belt** (2026-06-21).
+
+Landed: the utility belt is public.  `include/` carries zlib (`cnvs_zlib.h`), the
+PNG encoder (`cnvs_png.h` -- already buffer-based: `cnvs_png_encode` takes a raw
+uint16 RGBA buffer, not a canvas), colour-space conversion (`cnvs_color.h`), and
+the matrix/homography math (`cnvs_matrix.h`), each a `cnvs_` header, so `cnvs_`
+now spans public-utility and internal, split by location.  The moves were
+low-churn: the build is `-Iinclude -Isrc`, so a bare `#include "cnvs_x.h"`
+resolves wherever the file sits.  cnvs_math.h had been a grab-bag (matrix + lane
+vocab + colour types + clamp/convert); the split exposed only the geometry (to
+`cnvs_matrix.h`: `cnvs_vec2`, `cnvs_mat`, and the `cnvs_mat_*` operators) and the
+colour value-types colour-space needs (to `cnvs_color.h`: `cnvs_unpremul`,
+`cnvs_premul`, and `cnvs_unpremul_of` / `cnvs_premultiply` / `cnvs_unpremultiply`).
+The lane/compute vocabulary (the SIMD lane types, `cnvs_clamp01` / `float8_clamp01`
+/ `cnvs_f2i` / `cnvs_f2u8`) stayed internal in `src/cnvs_math.h`.  The Path2D and
+image objects split out of `canvas.h` into `include/canvas_path2d.h` and
+`include/canvas_image.h`; `canvas.h` stays the context API and forward-declares
+both structs for the methods that take or produce one.
+
+Still pending: normalize `blur_*` / `blur.{c,h}` -> `cnvs_blur_*` (internal);
+internal helpers wearing the public `canvas_` prefix -> `cnvs_`.  `canvas_free`,
+`canvas_record_to`, `canvas_replay_from` are legitimately public.
 
 ## Collisions (same word, different meanings)
 
