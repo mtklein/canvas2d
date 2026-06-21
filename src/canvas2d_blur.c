@@ -11,8 +11,8 @@ static int clampi(int v, int lo, int hi) {
 // Exclusive 8-lane prefix sum (lane i = sum of lanes 0..i-1), in-register:
 // shift in a zero, then the three Hillis-Steele shift-add steps (the coverage
 // resolve's prefix_sum8, exclusive).
-static inline int8 excl_prefix8(int8 v) {
-    int8 const z = (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+static inline i32x8 excl_prefix8(i32x8 v) {
+    i32x8 const z = (i32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
     v  = __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // shift in the zero
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1
     v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
@@ -20,10 +20,10 @@ static inline int8 excl_prefix8(int8 v) {
     return v;
 }
 
-static inline int8 load8_widen(uint8_t const *__counted_by(8) p) {
-    uchar8 b;
+static inline i32x8 load8_widen(uint8_t const *__counted_by(8) p) {
+    u8x8 b;
     memcpy(&b, p, sizeof b);  // one bounds check for all 8 samples
-    return __builtin_convertvector(b, int8);
+    return __builtin_convertvector(b, i32x8);
 }
 
 // Divide 8 window sums by the window EXACTLY, rounded: (sum + win/2) / win,
@@ -31,14 +31,14 @@ static inline int8 load8_widen(uint8_t const *__counted_by(8) p) {
 // within +-1 of the true quotient (n < 2^24 is exact in float, and the
 // relative error is ~2^-23), and one remainder comparison snaps it.  No NEON
 // integer divide needed.
-static inline uchar8 div_round8(int8 wsum, int win, int bias, float recip) {
-    int8 const n = wsum + bias;
-    float8 const f = __builtin_convertvector(n, float8);
-    int8 q = __builtin_convertvector(f * recip, int8);  // truncates
-    int8 const rem = n - q * win;
+static inline u8x8 div_round8(i32x8 wsum, int win, int bias, float recip) {
+    i32x8 const n = wsum + bias;
+    f32x8 const f = __builtin_convertvector(n, f32x8);
+    i32x8 q = __builtin_convertvector(f * recip, i32x8);  // truncates
+    i32x8 const rem = n - q * win;
     q -= (rem >= win);  // comparison lanes are -1/0: snap a low guess up
     q += (rem < 0);     //                           ...and a high guess down
-    return __builtin_convertvector(q, uchar8);
+    return __builtin_convertvector(q, u8x8);
 }
 
 void canvas2d_blur_box_h(uint8_t *__counted_by(w * h) dst,
@@ -76,11 +76,11 @@ void canvas2d_blur_box_h(uint8_t *__counted_by(w * h) dst,
         // window sums at once; the carry to the next block is just lane math.
         if (wide) {
             for (; x + r + 9 <= w; x += 8) {
-                int8 const e = load8_widen(src + base + x + r + 1);
-                int8 const l = load8_widen(src + base + x - r);
-                int8 const d = e - l;
-                int8 const ws = sum + excl_prefix8(d);
-                uchar8 q = div_round8(ws, win, bias, recip);
+                i32x8 const e = load8_widen(src + base + x + r + 1);
+                i32x8 const l = load8_widen(src + base + x - r);
+                i32x8 const d = e - l;
+                i32x8 const ws = sum + excl_prefix8(d);
+                u8x8 q = div_round8(ws, win, bias, recip);
                 memcpy(dst + base + x, &q, sizeof q);  // bounds-checked vector store
                 sum = ws[7] + d[7];
             }
@@ -113,12 +113,12 @@ void canvas2d_blur_box_v(uint8_t *__counted_by(w * h) dst,
     // the scalar loop, as in the horizontal pass (div_round8 needs n < 2^24).
     if (r < 32768) {
         for (; x + 8 <= w; x += 8) {
-            int8 sum = (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+            i32x8 sum = (i32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
             for (int k = -r; k <= r; k++) {
                 sum += load8_widen(src + clampi(k, 0, h - 1) * w + x);  // window centred at y = 0
             }
             for (int y = 0; y < h; y++) {
-                uchar8 q = div_round8(sum, win, bias, recip);
+                u8x8 q = div_round8(sum, win, bias, recip);
                 memcpy(dst + y * w + x, &q, sizeof q);  // bounds-checked vector store
                 int in  = clampi(y + r + 1, 0, h - 1) * w + x;  // entering below
                 int out = clampi(y - r,     0, h - 1) * w + x;  // leaving above
@@ -144,7 +144,7 @@ void canvas2d_blur_box_v(uint8_t *__counted_by(w * h) dst,
 //
 // A 2-tap lerp between each sample and its left (up) neighbour: max products
 // 255*256 need 32-bit lanes, so these ride the box passes' load8_widen ->
-// int8 idiom, eight pixels per step.  The first column (row) has no
+// i32x8 idiom, eight pixels per step.  The first column (row) has no
 // neighbour inside the mask and lerps against transparent zero.
 
 void canvas2d_blur_shift_h(uint8_t *__counted_by(w * h) dst,
@@ -158,10 +158,10 @@ void canvas2d_blur_shift_h(uint8_t *__counted_by(w * h) dst,
         dst[base] = (uint8_t)((src[base] * j + 128) >> 8);  // in[-1] is transparent
         int x = 1;
         for (; x + 8 <= w; x += 8) {
-            int8 const cur  = load8_widen(src + base + x);
-            int8 const left = load8_widen(src + base + x - 1);
-            uchar8 const q =
-                __builtin_convertvector((cur * j + left * k + 128) >> 8, uchar8);
+            i32x8 const cur  = load8_widen(src + base + x);
+            i32x8 const left = load8_widen(src + base + x - 1);
+            u8x8 const q =
+                __builtin_convertvector((cur * j + left * k + 128) >> 8, u8x8);
             memcpy(dst + base + x, &q, sizeof q);
         }
         for (; x < w; x++) {
@@ -181,11 +181,11 @@ void canvas2d_blur_shift_v(uint8_t *__counted_by(w * h) dst,
         int const base = y * w, up = base - w;  // y = 0 lerps against transparent
         int x = 0;
         for (; x + 8 <= w; x += 8) {
-            int8 const cur   = load8_widen(src + base + x);
-            int8 const above = y > 0 ? load8_widen(src + up + x)
-                                     : (int8){ 0, 0, 0, 0, 0, 0, 0, 0 };
-            uchar8 const q =
-                __builtin_convertvector((cur * j + above * k + 128) >> 8, uchar8);
+            i32x8 const cur   = load8_widen(src + base + x);
+            i32x8 const above = y > 0 ? load8_widen(src + up + x)
+                                     : (i32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+            u8x8 const q =
+                __builtin_convertvector((cur * j + above * k + 128) >> 8, u8x8);
             memcpy(dst + base + x, &q, sizeof q);
         }
         for (; x < w; x++) {
@@ -207,34 +207,34 @@ void canvas2d_blur_shift_v(uint8_t *__counted_by(w * h) dst,
 
 // Load/store one premultiplied pixel (four contiguous _Float16) widened to f32:
 // the memcpy is one bounds check for all four channels (the canvas2d_filter idiom).
-static inline float4 load4f(canvas2d_premul const *__counted_by(1) p) {
-    half4 v;
+static inline f32x4 load4f(canvas2d_premul const *__counted_by(1) p) {
+    f16x4 v;
     memcpy(&v, p, sizeof v);
-    return __builtin_convertvector(v, float4);
+    return __builtin_convertvector(v, f32x4);
 }
 
-static inline void store4f(canvas2d_premul *__counted_by(1) p, float4 v) {
-    half4 q = __builtin_convertvector(v, half4);
+static inline void store4f(canvas2d_premul *__counted_by(1) p, f32x4 v) {
+    f16x4 q = __builtin_convertvector(v, f16x4);
     memcpy(p, &q, sizeof q);
 }
 
 // Four adjacent pixels (16 lanes) at once; one bounds check covers all four.
-static inline float16 load16f(canvas2d_premul const *__counted_by(4) p) {
-    half16 v;
+static inline f32x16 load16f(canvas2d_premul const *__counted_by(4) p) {
+    f16x16 v;
     memcpy(&v, p, sizeof v);
-    return __builtin_convertvector(v, float16);
+    return __builtin_convertvector(v, f32x16);
 }
 
-static inline void store16f(canvas2d_premul *__counted_by(4) p, float16 v) {
-    half16 q = __builtin_convertvector(v, half16);
+static inline void store16f(canvas2d_premul *__counted_by(4) p, f32x16 v) {
+    f16x16 q = __builtin_convertvector(v, f16x16);
     memcpy(p, &q, sizeof q);
 }
 
 // Exclusive prefix sum over the four pixel groups of a 16-lane block (group g =
 // sum of groups 0..g-1): excl_prefix8 with a pixel's four lanes as the unit --
 // shift in a zero group, then the two Hillis-Steele shift-add steps.
-static inline float16 excl_prefix4px(float16 v) {
-    float16 const z = (float16)0.0f;
+static inline f32x16 excl_prefix4px(f32x16 v) {
+    f32x16 const z = (f32x16)0.0f;
     v  = __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
                                  4, 5, 6, 7, 8, 9, 10, 11);  // shift in the zero group
     v += __builtin_shufflevector(v, z, 16, 17, 18, 19, 0, 1, 2, 3,
@@ -245,12 +245,12 @@ static inline float16 excl_prefix4px(float16 v) {
 }
 
 // One pixel repeated across the four groups, and the last group extracted.
-static inline float16 splat4px(float4 p) {
+static inline f32x16 splat4px(f32x4 p) {
     return __builtin_shufflevector(p, p, 0, 1, 2, 3, 0, 1, 2, 3,
                                    0, 1, 2, 3, 0, 1, 2, 3);
 }
 
-static inline float4 group3(float16 v) {
+static inline f32x4 group3(f32x16 v) {
     return __builtin_shufflevector(v, v, 12, 13, 14, 15);
 }
 
@@ -264,7 +264,7 @@ void canvas2d_blur_box_h_f16(canvas2d_premul *__counted_by(w * h) dst,
     for (int y = 0; y < h; y++) {
         int const base = y * w;
         // Window centred at x = 0: only src[0..r] exist; outside is transparent.
-        float4 sum = (float4)0.0f;
+        f32x4 sum = (f32x4)0.0f;
         int const top = r < w - 1 ? r : w - 1;
         for (int k = 0; k <= top; k++) {
             sum += load4f(src + base + k);
@@ -284,10 +284,10 @@ void canvas2d_blur_box_h_f16(canvas2d_premul *__counted_by(w * h) dst,
         // groups turns the serial running sum into four window sums at once;
         // the carry to the next block is lane math.
         for (; x >= r && x + r + 4 < w; x += 4) {
-            float16 const e = load16f(src + base + x + r + 1);
-            float16 const l = load16f(src + base + x - r);
-            float16 const d = e - l;
-            float16 const ws = splat4px(sum) + excl_prefix4px(d);
+            f32x16 const e = load16f(src + base + x + r + 1);
+            f32x16 const l = load16f(src + base + x - r);
+            f32x16 const d = e - l;
+            f32x16 const ws = splat4px(sum) + excl_prefix4px(d);
             store16f(dst + base + x, ws * recip);
             sum = group3(ws) + group3(d);
         }
@@ -320,7 +320,7 @@ void canvas2d_blur_box_v_f16(canvas2d_premul *__counted_by(w * h) dst,
     // y, not x), so even the edge rows run vectorized; an out-of-tile row is
     // transparent and simply adds nothing.
     for (; x + 4 <= w; x += 4) {
-        float16 sum = (float16)0.0f;
+        f32x16 sum = (f32x16)0.0f;
         for (int k = 0; k <= top; k++) {
             sum += load16f(src + k * w + x);
         }
@@ -336,7 +336,7 @@ void canvas2d_blur_box_v_f16(canvas2d_premul *__counted_by(w * h) dst,
     }
     // The w%4 tail columns, one pixel's four lanes at a time.
     for (; x < w; x++) {
-        float4 sum = (float4)0.0f;
+        f32x4 sum = (f32x4)0.0f;
         for (int k = 0; k <= top; k++) {
             sum += load4f(src + k * w + x);
         }

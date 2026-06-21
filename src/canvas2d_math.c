@@ -125,11 +125,11 @@ canvas2d_unpremul canvas2d_unpremul_of(float r, float g, float b, float a) {
 canvas2d_premul canvas2d_premultiply(canvas2d_unpremul c) {
     // {r*a, g*a, b*a, a}, clamped to [0,1], in _Float16 directly
     // (docs/decisions/color-axis.md).
-    half4 const p = { c.r, c.g, c.b, c.a };
+    f16x4 const p = { c.r, c.g, c.b, c.a };
     _Float16 a = p[3];
-    half4 out = p * (half4){ a, a, a, (_Float16)1.0f };
-    out = __builtin_elementwise_min((half4)(_Float16)1.0f,
-                                    __builtin_elementwise_max((half4)(_Float16)0.0f, out));
+    f16x4 out = p * (f16x4){ a, a, a, (_Float16)1.0f };
+    out = __builtin_elementwise_min((f16x4)(_Float16)1.0f,
+                                    __builtin_elementwise_max((f16x4)(_Float16)0.0f, out));
     return (canvas2d_premul){ .r = out[0], .g = out[1], .b = out[2], .a = out[3] };
 }
 
@@ -140,9 +140,9 @@ canvas2d_unpremul canvas2d_unpremultiply(canvas2d_premul c) {
     if (a <= (_Float16)0.0f) {  // fully transparent un-premultiplies to all zero
         return (canvas2d_unpremul){ .r = 0, .g = 0, .b = 0, .a = 0 };
     }
-    half4 u = (half4){ c.r, c.g, c.b, c.a } / a;
+    f16x4 u = (f16x4){ c.r, c.g, c.b, c.a } / a;
     u[3] = a;
-    u = __builtin_elementwise_min((half4)(_Float16)1.0f,
-                                  __builtin_elementwise_max((half4)(_Float16)0.0f, u));
+    u = __builtin_elementwise_min((f16x4)(_Float16)1.0f,
+                                  __builtin_elementwise_max((f16x4)(_Float16)0.0f, u));
     return (canvas2d_unpremul){ .r = u[0], .g = u[1], .b = u[2], .a = u[3] };
 }

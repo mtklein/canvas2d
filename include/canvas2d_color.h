@@ -105,4 +105,4 @@ float canvas2d_pq_oetf(float y);
 // exact expression tree -- same coefficients, same Horner, same boundary
 // selects), so the encoder runs it on whole planes without shifting an output
 // byte.  This is the vectorizable form the scalar's polynomial design exists for.
-float8 canvas2d_pq_oetf8(float8 y);
+f32x8 canvas2d_pq_oetf8(f32x8 y);

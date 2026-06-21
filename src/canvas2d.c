@@ -1283,7 +1283,7 @@ static void cover_path_edges(struct canvas2d_context *__single cv, cbbox b, stru
 // soft-light, HSL) un-premultiply once.  Porter-Duff: co = Fa*s + Fb*d.
 //
 // Everything below runs eight pixels at a time over channel planes
-// (canvas2d_planar.h); per-pixel branches are bitwise lane selects (half8_if_then_else)
+// (canvas2d_planar.h); per-pixel branches are bitwise lane selects (f16x8_if_then_else)
 // that compute both arms and discard a guarded divide's inf/NaN lanes
 // exactly.
 //
@@ -1326,22 +1326,22 @@ static bool coverage_folds(enum canvas2d_composite_op m) {
 }
 
 // Separable blend B(cb, cs), unpremultiplied; only the non-linear modes need it.
-static half8 blend_sep8(enum canvas2d_composite_op mode, half8 cb, half8 cs) {
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+static f16x8 blend_sep8(enum canvas2d_composite_op mode, f16x8 cb, f16x8 cs) {
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
     switch ((int)mode) {
         case CANVAS2D_OP_COLOR_DODGE:
-            return half8_if_then_else(cb <= zero, zero,
-                   half8_if_then_else(cs >= one,  one,
+            return f16x8_if_then_else(cb <= zero, zero,
+                   f16x8_if_then_else(cs >= one,  one,
                        __builtin_elementwise_min(one, cb / (one - cs))));
         case CANVAS2D_OP_COLOR_BURN:
-            return half8_if_then_else(cb >= one,  one,
-                   half8_if_then_else(cs <= zero, zero,
+            return f16x8_if_then_else(cb >= one,  one,
+                   f16x8_if_then_else(cs <= zero, zero,
                        one - __builtin_elementwise_min(one, (one - cb) / cs)));
         case CANVAS2D_OP_SOFT_LIGHT: {
-            half8 dd = half8_if_then_else(cb <= (half8)(_Float16)0.25f,
+            f16x8 dd = f16x8_if_then_else(cb <= (f16x8)(_Float16)0.25f,
                 (((_Float16)16.0f * cb - (_Float16)12.0f) * cb + (_Float16)4.0f) * cb,
                 __builtin_elementwise_sqrt(cb));
-            return half8_if_then_else(cs <= (half8)(_Float16)0.5f,
+            return f16x8_if_then_else(cs <= (f16x8)(_Float16)0.5f,
                 cb - (one - (_Float16)2.0f * cs) * cb * (one - cb),
                 cb + ((_Float16)2.0f * cs - one) * (dd - cb));
         }
@@ -1351,28 +1351,28 @@ static half8 blend_sep8(enum canvas2d_composite_op mode, half8 cb, half8 cs) {
 }
 
 // Premultiplied separable term T = sa*da*B per channel plane (s, d premultiplied).
-static half8 blend_term8(enum canvas2d_composite_op mode,
-                           half8 s, half8 d, half8 sa, half8 da) {
+static f16x8 blend_term8(enum canvas2d_composite_op mode,
+                           f16x8 s, f16x8 d, f16x8 sa, f16x8 da) {
     switch ((int)mode) {
         case CANVAS2D_OP_MULTIPLY:    return s * d;
         case CANVAS2D_OP_SCREEN:      return sa * d + da * s - s * d;
         case CANVAS2D_OP_OVERLAY:
-            return half8_if_then_else((_Float16)2.0f * d <= da,
+            return f16x8_if_then_else((_Float16)2.0f * d <= da,
                                       (_Float16)2.0f * s * d,
                                       sa * da - (_Float16)2.0f * (da - d) * (sa - s));
         case CANVAS2D_OP_DARKEN:      return __builtin_elementwise_min(s * da, d * sa);
         case CANVAS2D_OP_LIGHTEN:     return __builtin_elementwise_max(s * da, d * sa);
         case CANVAS2D_OP_HARD_LIGHT:
-            return half8_if_then_else((_Float16)2.0f * s <= sa,
+            return f16x8_if_then_else((_Float16)2.0f * s <= sa,
                                       (_Float16)2.0f * s * d,
                                       sa * da - (_Float16)2.0f * (da - d) * (sa - s));
         case CANVAS2D_OP_DIFFERENCE:
             return __builtin_elementwise_abs(s * da - d * sa);
         case CANVAS2D_OP_EXCLUSION:   return sa * d + da * s - (_Float16)2.0f * s * d;
         default: {  // color-dodge / color-burn / soft-light
-            half8 const zero = (half8)(_Float16)0.0f;
-            half8 const cs = half8_if_then_else(sa > zero, s / sa, zero);
-            half8 const cb = half8_if_then_else(da > zero, d / da, zero);
+            f16x8 const zero = (f16x8)(_Float16)0.0f;
+            f16x8 const cs = f16x8_if_then_else(sa > zero, s / sa, zero);
+            f16x8 const cb = f16x8_if_then_else(da > zero, d / da, zero);
             return sa * da * blend_sep8(mode, cb, cs);
         }
     }
@@ -1416,7 +1416,7 @@ static bool linear_direct(enum canvas2d_composite_op mode) {
 // a == 0 stays all-zero), transfer each RGB lane through the f32 scalar kernel
 // (canvas2d_color.c -- precision-sensitive pow runs in f32, narrowing once), then
 // repremultiply.  Alpha rides through untouched -- it is never a colour.  Scalar
-// per lane (libm has no half8 pow; the deferral note in canvas2d_color.c applies):
+// per lane (libm has no f16x8 pow; the deferral note in canvas2d_color.c applies):
 // these wrap only the spec-in-sRGB blend modes, which are not the profiled hot
 // path -- the over-family fast path never enters here.
 typedef float (*chan_xfer)(float);
@@ -1440,7 +1440,7 @@ static canvas2d_px8 px8_transfer(canvas2d_px8 p, chan_xfer xf_chan) {
 // (its encoded values live in [0,1]).  Source-over is range-preserving, so on a
 // linear canvas the fold runs directly on the linear slabs -- no encode wrapper.
 static canvas2d_px8 src_over8(canvas2d_px8 s, canvas2d_px8 d, bool lin) {
-    half8 const fb = (half8)(_Float16)1.0f - s.a;
+    f16x8 const fb = (f16x8)(_Float16)1.0f - s.a;
     canvas2d_px8 co = { s.r + fb * d.r, s.g + fb * d.g,
                     s.b + fb * d.b, s.a + fb * d.a };
     return lin ? canvas2d_px8_clamp_premul_lin(co) : canvas2d_px8_clamp_premul(co);
@@ -1448,58 +1448,58 @@ static canvas2d_px8 src_over8(canvas2d_px8 s, canvas2d_px8 d, bool lin) {
 
 // Eight pixels' unpremultiplied colour as three channel planes.
 typedef struct {
-    half8 r, g, b;
+    f16x8 r, g, b;
 } rgb8;
 
-static half8 lum8(rgb8 c) {
+static f16x8 lum8(rgb8 c) {
     return (_Float16)0.3f * c.r + (_Float16)0.59f * c.g + (_Float16)0.11f * c.b;
 }
 
 static rgb8 clip_color8(rgb8 c) {
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    half8 const l = lum8(c);
-    half8 const n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
-    half8 const x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    short8 const lo = n < zero;  // lanes with a channel below 0: scale about l
-    half8 const kn = l / (l - n);
-    c.r = half8_if_then_else(lo, l + (c.r - l) * kn, c.r);
-    c.g = half8_if_then_else(lo, l + (c.g - l) * kn, c.g);
-    c.b = half8_if_then_else(lo, l + (c.b - l) * kn, c.b);
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
+    f16x8 const l = lum8(c);
+    f16x8 const n = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    f16x8 const x = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    i16x8 const lo = n < zero;  // lanes with a channel below 0: scale about l
+    f16x8 const kn = l / (l - n);
+    c.r = f16x8_if_then_else(lo, l + (c.r - l) * kn, c.r);
+    c.g = f16x8_if_then_else(lo, l + (c.g - l) * kn, c.g);
+    c.b = f16x8_if_then_else(lo, l + (c.b - l) * kn, c.b);
     // The W3C ClipColor computes n and x ONCE, before either fix: the x > 1
     // test and the kx denominator both read the pre-fix maximum even though
     // the channels they rescale may have just been pulled toward l.
-    short8 const hi = x > one;   // lanes with a channel above 1
-    half8 const kx = (one - l) / (x - l);
-    c.r = half8_if_then_else(hi, l + (c.r - l) * kx, c.r);
-    c.g = half8_if_then_else(hi, l + (c.g - l) * kx, c.g);
-    c.b = half8_if_then_else(hi, l + (c.b - l) * kx, c.b);
+    i16x8 const hi = x > one;   // lanes with a channel above 1
+    f16x8 const kx = (one - l) / (x - l);
+    c.r = f16x8_if_then_else(hi, l + (c.r - l) * kx, c.r);
+    c.g = f16x8_if_then_else(hi, l + (c.g - l) * kx, c.g);
+    c.b = f16x8_if_then_else(hi, l + (c.b - l) * kx, c.b);
     return c;
 }
 
-static rgb8 set_lum8(rgb8 c, half8 l) {
-    half8 const dl = l - lum8(c);
+static rgb8 set_lum8(rgb8 c, f16x8 l) {
+    f16x8 const dl = l - lum8(c);
     c.r += dl;
     c.g += dl;
     c.b += dl;
     return clip_color8(c);
 }
 
-static half8 saturation8(rgb8 c) {
+static f16x8 saturation8(rgb8 c) {
     return __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b))
          - __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
 }
 
 // Set saturation: max channel -> s, min -> 0, mid proportional; an all-equal
 // lane (mx <= mn) has no saturation axis and goes to black.
-static rgb8 set_saturation8(rgb8 c, half8 s) {
-    half8 const zero = (half8)(_Float16)0.0f;
-    half8 const mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
-    half8 const mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
-    short8 const flat = mx <= mn;
-    half8 const k = s / (mx - mn);
-    return (rgb8){ .r = half8_if_then_else(flat, zero, (c.r - mn) * k),
-                   .g = half8_if_then_else(flat, zero, (c.g - mn) * k),
-                   .b = half8_if_then_else(flat, zero, (c.b - mn) * k) };
+static rgb8 set_saturation8(rgb8 c, f16x8 s) {
+    f16x8 const zero = (f16x8)(_Float16)0.0f;
+    f16x8 const mn = __builtin_elementwise_min(c.r, __builtin_elementwise_min(c.g, c.b));
+    f16x8 const mx = __builtin_elementwise_max(c.r, __builtin_elementwise_max(c.g, c.b));
+    i16x8 const flat = mx <= mn;
+    f16x8 const k = s / (mx - mn);
+    return (rgb8){ .r = f16x8_if_then_else(flat, zero, (c.r - mn) * k),
+                   .g = f16x8_if_then_else(flat, zero, (c.g - mn) * k),
+                   .b = f16x8_if_then_else(flat, zero, (c.b - mn) * k) };
 }
 
 static rgb8 blend_nonsep8(enum canvas2d_composite_op mode, rgb8 cb, rgb8 cs) {
@@ -1547,13 +1547,13 @@ static canvas2d_px8 blend8(canvas2d_px8 s, canvas2d_px8 d, enum canvas2d_composi
         // source-over bit-identical no matter which loop reached it.
         return src_over8(s, d, lin);
     }
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    half8 sa = s.a, da = d.a;
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
+    f16x8 sa = s.a, da = d.a;
     canvas2d_px8 co;
 
     if ((int)mode <= CANVAS2D_OP_COPY) {
         // Porter-Duff: co = Fa*s + Fb*d, ao = Fa*sa + Fb*da.
-        half8 fa, fb;
+        f16x8 fa, fb;
         switch ((int)mode) {
             case CANVAS2D_OP_SOURCE_IN:        fa = da;       fb = zero;      break;
             case CANVAS2D_OP_SOURCE_OUT:       fa = one - da; fb = zero;      break;
@@ -1574,13 +1574,13 @@ static canvas2d_px8 blend8(canvas2d_px8 s, canvas2d_px8 d, enum canvas2d_composi
     } else {
         canvas2d_px8 t;
         if ((int)mode >= CANVAS2D_OP_HUE) {
-            short8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
-            rgb8 cs = { half8_if_then_else(sm, s.r / sa, zero),
-                        half8_if_then_else(sm, s.g / sa, zero),
-                        half8_if_then_else(sm, s.b / sa, zero) };
-            rgb8 cb = { half8_if_then_else(dm, d.r / da, zero),
-                        half8_if_then_else(dm, d.g / da, zero),
-                        half8_if_then_else(dm, d.b / da, zero) };
+            i16x8 sm = sa > zero, dm = da > zero;  // a == 0 un-premultiplies to 0
+            rgb8 cs = { f16x8_if_then_else(sm, s.r / sa, zero),
+                        f16x8_if_then_else(sm, s.g / sa, zero),
+                        f16x8_if_then_else(sm, s.b / sa, zero) };
+            rgb8 cb = { f16x8_if_then_else(dm, d.r / da, zero),
+                        f16x8_if_then_else(dm, d.g / da, zero),
+                        f16x8_if_then_else(dm, d.b / da, zero) };
             rgb8 const bl = blend_nonsep8(mode, cb, cs);
             t.r = sa * da * bl.r;
             t.g = sa * da * bl.g;
@@ -1610,8 +1610,8 @@ static canvas2d_px8 blend8(canvas2d_px8 s, canvas2d_px8 d, enum canvas2d_composi
 // cov == 0 returns dst bit-exactly (full coverage must not perturb the blend;
 // zero coverage must not perturb the destination).  The clamp restores the
 // premultiplied invariant against the one-ULP drift of cov + (1-cov) in f16.
-static canvas2d_px8 cov_lerp8(canvas2d_px8 d, canvas2d_px8 co, half8 cov, bool lin) {
-    half8 const icov = (half8)(_Float16)1.0f - cov;
+static canvas2d_px8 cov_lerp8(canvas2d_px8 d, canvas2d_px8 co, f16x8 cov, bool lin) {
+    f16x8 const icov = (f16x8)(_Float16)1.0f - cov;
     canvas2d_px8 o = { co.r * cov + d.r * icov, co.g * cov + d.g * icov,
                    co.b * cov + d.b * icov, co.a * cov + d.a * icov };
     // Coverage is a geometric fraction (antialiasing), so the lerp between two
@@ -1639,7 +1639,7 @@ static void blend_region(struct canvas2d_context *__single cv, int x, int y, int
     bool const atten = cov || clip;  // any coverage to apply?
     bool const lin = cv->space == CANVAS2D_CS_LINEAR_SRGB;  // false -> sRGB bypass
     _Float16 const inv255 = (_Float16)(1.0f / 255.0f);
-    half8 const one = (half8)(_Float16)1.0f;
+    f16x8 const one = (f16x8)(_Float16)1.0f;
     for (int row = 0; row < h; row++) {
         int col = 0;
         for (; col + 8 <= w; col += 8) {
@@ -1654,19 +1654,19 @@ static void blend_region(struct canvas2d_context *__single cv, int x, int y, int
                 // Attenuate the source by each factor in turn, exactly as the
                 // fast path does (combining the factors first re-rounds).
                 if (cov) {
-                    s = canvas2d_px8_scale(s, half8_from_u8(cov + ti) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8(cov + ti) * inv255);
                 }
                 if (clip) {
-                    s = canvas2d_px8_scale(s, half8_from_u8(clip + di) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8(clip + di) * inv255);
                 }
                 o = blend8(s, d, mode, lin);
             } else {
-                half8 cv8 = one;  // 1*x is exact: a lone factor passes through
+                f16x8 cv8 = one;  // 1*x is exact: a lone factor passes through
                 if (cov) {
-                    cv8 = cv8 * (half8_from_u8(cov + ti) * inv255);
+                    cv8 = cv8 * (f16x8_from_u8(cov + ti) * inv255);
                 }
                 if (clip) {
-                    cv8 = cv8 * (half8_from_u8(clip + di) * inv255);
+                    cv8 = cv8 * (f16x8_from_u8(clip + di) * inv255);
                 }
                 o = cov_lerp8(d, blend8(s, d, mode, lin), cv8, lin);
             }
@@ -1683,19 +1683,19 @@ static void blend_region(struct canvas2d_context *__single cv, int x, int y, int
                 o = blend8(s, d, mode, lin);
             } else if (folds) {
                 if (cov) {
-                    s = canvas2d_px8_scale(s, half8_from_u8_k(cov + ti, n) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8_k(cov + ti, n) * inv255);
                 }
                 if (clip) {
-                    s = canvas2d_px8_scale(s, half8_from_u8_k(clip + di, n) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8_k(clip + di, n) * inv255);
                 }
                 o = blend8(s, d, mode, lin);
             } else {
-                half8 cv8 = one;
+                f16x8 cv8 = one;
                 if (cov) {
-                    cv8 = cv8 * (half8_from_u8_k(cov + ti, n) * inv255);
+                    cv8 = cv8 * (f16x8_from_u8_k(cov + ti, n) * inv255);
                 }
                 if (clip) {
-                    cv8 = cv8 * (half8_from_u8_k(clip + di, n) * inv255);
+                    cv8 = cv8 * (f16x8_from_u8_k(clip + di, n) * inv255);
                 }
                 o = cov_lerp8(d, blend8(s, d, mode, lin), cv8, lin);
             }
@@ -1733,10 +1733,10 @@ void canvas2d_blend(struct canvas2d_context *__single cv, int x, int y, int w, i
                 int di = (y + row) * cv->width + (x + col);
                 canvas2d_px8 s = canvas2d_px8_load(tile + ti);
                 if (cov) {
-                    s = canvas2d_px8_scale(s, half8_from_u8(cov + ti) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8(cov + ti) * inv255);
                 }
                 if (clip) {
-                    s = canvas2d_px8_scale(s, half8_from_u8(clip + di) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8(clip + di) * inv255);
                 }
                 canvas2d_px8 d = canvas2d_px8_load(cv->target + di);
                 canvas2d_px8_store(cv->target + di, src_over8(s, d, lin));
@@ -1747,10 +1747,10 @@ void canvas2d_blend(struct canvas2d_context *__single cv, int x, int y, int w, i
                 int const di = (y + row) * cv->width + (x + col);
                 canvas2d_px8 s = canvas2d_px8_load_k(tile + ti, k);
                 if (cov) {
-                    s = canvas2d_px8_scale(s, half8_from_u8_k(cov + ti, k) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8_k(cov + ti, k) * inv255);
                 }
                 if (clip) {
-                    s = canvas2d_px8_scale(s, half8_from_u8_k(clip + di, k) * inv255);
+                    s = canvas2d_px8_scale(s, f16x8_from_u8_k(clip + di, k) * inv255);
                 }
                 canvas2d_px8 const d = canvas2d_px8_load_k(cv->target + di, k);
                 canvas2d_px8_store_k(cv->target + di, k, src_over8(s, d, lin));
@@ -1759,8 +1759,8 @@ void canvas2d_blend(struct canvas2d_context *__single cv, int x, int y, int w, i
         return;
     }
     // The generic modes: the shared region walk (splat unused, tile present).
-    canvas2d_px8 const zero = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
-                            (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    canvas2d_px8 const zero = { (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f,
+                            (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f };
     blend_region(cv, x, y, w, h, tile, zero, cov, clip, clip_len, mode);
 }
 
@@ -1784,8 +1784,8 @@ void canvas2d_blend_solid(struct canvas2d_context *__single cv, int x, int y, in
     // the region walk here, not the fast path, and still lands the same
     // bytes: blend8 delegates source-over to src_over8, and the fold arm
     // applies cov/clip as the same two successive scales.
-    canvas2d_px8 const splat = { (half8)color.r, (half8)color.g,
-                             (half8)color.b, (half8)color.a };
+    canvas2d_px8 const splat = { (f16x8)color.r, (f16x8)color.g,
+                             (f16x8)color.b, (f16x8)color.a };
     blend_region(cv, x, y, w, h, NULL, splat, cov, clip, clip_len, mode);
 }
 
@@ -1810,12 +1810,12 @@ void canvas2d_blend_read(struct canvas2d_context *__single cv,
 
 // Eight coverage bytes as an f16 plane in [0, 1]: exact widen (every u8 value
 // is exact in _Float16), one multiply by RN16(1/255).
-static half8 cover8(uint8_t const *__counted_by(8) cov) {
-    return half8_from_u8(cov) * (_Float16)(1.0f / 255.0f);
+static f16x8 cover8(uint8_t const *__counted_by(8) cov) {
+    return f16x8_from_u8(cov) * (_Float16)(1.0f / 255.0f);
 }
 
-static half8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
-    return half8_from_u8_k(cov, k) * (_Float16)(1.0f / 255.0f);
+static f16x8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
+    return f16x8_from_u8_k(cov, k) * (_Float16)(1.0f / 255.0f);
 }
 
 // Premultiply the colour planes under the folded alpha plane.  No clamp: alpha
@@ -1823,7 +1823,7 @@ static half8 cover8_k(uint8_t const *__counted_by(k) cov, int k) {
 // belongs to the blend's space-aware output clamp -- the sRGB path re-clamps to
 // [0,ao] (so this stays byte-identical there), the linear path keeps extended
 // (HDR above 1, wide-gamut below 0) colour.
-static canvas2d_px8 shade8(half8 r, half8 g, half8 b, half8 alpha) {
+static canvas2d_px8 shade8(f16x8 r, f16x8 g, f16x8 b, f16x8 alpha) {
     return (canvas2d_px8){ r * alpha, g * alpha, b * alpha, alpha };
 }
 
@@ -1868,9 +1868,9 @@ static void paint_tile_solid(struct canvas2d_context *__single cv, cbbox b, canv
     // constant, so the loop is a coverage widen, two multiplies, and the
     // premultiply -> st4.  Coverage and tile are both dense over the bbox, so
     // one flat loop covers all rows.
-    half8 const base = (half8)(_Float16)((float)solid.a * ga);
-    half8 const cr = (half8)solid.r, cg = (half8)solid.g,
-                cb = (half8)solid.b;
+    f16x8 const base = (f16x8)(_Float16)((float)solid.a * ga);
+    f16x8 const cr = (f16x8)solid.r, cg = (f16x8)solid.g,
+                cb = (f16x8)solid.b;
     int const npix = b.w * b.h;
     if (!fold) {
         // Full-strength source: every pixel is the same premultiplied
@@ -1914,10 +1914,10 @@ static void paint_tile_solid(struct canvas2d_context *__single cv, cbbox b, canv
 // miss, consumed by the unchanged canvas2d_gradient_color_row.
 static void grad_param_row_persp(struct canvas2d_gradient const *gr, int x0, float y,
                                  int n, float *__counted_by(n) t_out) {
-    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    f32x8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     int i = 0;
     for (; i + 8 <= n; i += 8) {
-        float8 const xs = (float)x0 + ((float)i + lane) + 0.5f;
+        f32x8 const xs = (float)x0 + ((float)i + lane) + 0.5f;
         foldv8 const uv = mat_apply8_persp(gr->to_user, xs, y);
         for (int l = 0; l < 8; l++) {
             float t;
@@ -1945,7 +1945,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
         // does the per-pixel device->user divide), then reuse the unchanged
         // colour + fold stages.  Affine gradients never reach here -- persp is
         // false -- so the divide-free row solver below stays byte-identical.
-        half8 const gah = (half8)(_Float16)ga;
+        f16x8 const gah = (f16x8)(_Float16)ga;
         for (int py = 0; py < b.h; py++) {
             grad_param_row_persp(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
                                  cv->trow);
@@ -1954,7 +1954,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
             int px = 0;
             for (; px + 8 <= b.w; px += 8) {
                 canvas2d_px8 const col = canvas2d_px8_load_unpremul(cv->crow + px);
-                half8 alpha = col.a * gah;
+                f16x8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8(cv->cov + row + px);
                 }
@@ -1964,7 +1964,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
             if (px < b.w) {
                 int const k = b.w - px;
                 canvas2d_px8 const col = canvas2d_px8_load_unpremul_k(cv->crow + px, k);
-                half8 alpha = col.a * gah;
+                f16x8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8_k(cv->cov + row + px, k);
                 }
@@ -1982,7 +1982,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
         // piecewise-linear colour, no precomputed ramp
         // (docs/decisions/gradient-eval.md) -- then pick the colours back up
         // as planes (ld4 over the row buffer) for the fold.
-        half8 const gah = (half8)(_Float16)ga;
+        f16x8 const gah = (f16x8)(_Float16)ga;
         for (int py = 0; py < b.h; py++) {
             canvas2d_gradient_param_row(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
                                     cv->trow);
@@ -1991,7 +1991,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
             int px = 0;
             for (; px + 8 <= b.w; px += 8) {
                 canvas2d_px8 const col = canvas2d_px8_load_unpremul(cv->crow + px);
-                half8 alpha = col.a * gah;
+                f16x8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8(cv->cov + row + px);
                 }
@@ -2001,7 +2001,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
             if (px < b.w) {
                 int const k = b.w - px;
                 canvas2d_px8 const col = canvas2d_px8_load_unpremul_k(cv->crow + px, k);
-                half8 alpha = col.a * gah;
+                f16x8 alpha = col.a * gah;
                 if (fold) {
                     alpha = alpha * cover8_k(cv->cov + row + px, k);
                 }
@@ -2117,7 +2117,7 @@ static void paint_tile_pattern(struct canvas2d_context *__single cv, cbbox b, st
     // it is non-affine exactly when that CTM was perspective, which is the per-
     // pixel-divide branch.  Affine patterns keep mat_apply8's linear DDA.
     bool const persp = !canvas2d_mat_is_affine(p->to_pattern);
-    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    f32x8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const dy = (float)b.y + (float)py + 0.5f;
         for (int px = 0; px < b.w; px += 8) {
@@ -2125,11 +2125,11 @@ static void paint_tile_pattern(struct canvas2d_context *__single cv, cbbox b, st
             int const k = b.w - px < 8 ? b.w - px : 8;
             // Pixel-centre x per lane: integer-exact f32 sums, so the grouping
             // can't differ from the scalar (float)b.x + (float)(px+l) + 0.5f.
-            float8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
+            f32x8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
             foldv8 const uv = persp ? mat_apply8_persp(p->to_pattern, xs, dy)
                                     : mat_apply8(p->to_pattern, xs, dy);
-            float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
-                   sa = (float8)0.0f;
+            f32x8 sr = (f32x8)0.0f, sg = (f32x8)0.0f, sb = (f32x8)0.0f,
+                   sa = (f32x8)0.0f;
             for (int l = 0; l < k; l++) {
                 if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
                     continue;
@@ -2144,14 +2144,14 @@ static void paint_tile_pattern(struct canvas2d_context *__single cv, cbbox b, st
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            half8 alpha = __builtin_convertvector(sa * ga, half8);
+            f16x8 alpha = __builtin_convertvector(sa * ga, f16x8);
             if (fold) {
                 alpha = alpha * (k < 8 ? cover8_k(cv->cov + i, k)
                                        : cover8(cv->cov + i));
             }
-            canvas2d_px8 const out = shade8(__builtin_convertvector(sr, half8),
-                                        __builtin_convertvector(sg, half8),
-                                        __builtin_convertvector(sb, half8),
+            canvas2d_px8 const out = shade8(__builtin_convertvector(sr, f16x8),
+                                        __builtin_convertvector(sg, f16x8),
+                                        __builtin_convertvector(sb, f16x8),
                                         alpha);
             if (k < 8) {
                 canvas2d_px8_store_k(cv->tile + i, k, out);
@@ -2314,8 +2314,8 @@ static void emit_shadow(struct canvas2d_context *__single cv, cbbox b,
     // The tile stays untouched -- it holds the op this shadow lands under.
     canvas2d_unpremul const sc = cv->cur.shadow_color;
     canvas2d_premul px;
-    canvas2d_px8_store_k(&px, 1, shade8((half8)sc.r, (half8)sc.g, (half8)sc.b,
-                                    (half8)sc.a));
+    canvas2d_px8_store_k(&px, 1, shade8((f16x8)sc.r, (f16x8)sc.g, (f16x8)sc.b,
+                                    (f16x8)sc.a));
     canvas2d_blend_solid(cv, sx0, sy0, sw, sh, px, cv->shadow_src,
                      cv->cur.clip_mask, cv->cur.clip_len,
                      cv->cur.composite);
@@ -4468,7 +4468,7 @@ static void draw_image_quad(struct canvas2d_context *__single cv,
     canvas2d_mat const inv = canvas2d_mat_invert(cv->cur.ctm);  // device -> user
     bool const persp = !canvas2d_mat_is_affine(cv->cur.ctm);  // per-pixel divide?
     float const ga = cv->cur.global_alpha;
-    half8 const gah = (half8)(_Float16)ga;
+    f16x8 const gah = (f16x8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
     // Sampler tier.  imageSmoothingQuality is live for the quality_tiers
@@ -4545,7 +4545,7 @@ static void draw_image_quad(struct canvas2d_context *__single cv,
     float const lbx = (float)lo.w / (float)sw, lby = (float)lo.h / (float)sh;
     bool const premul_data =
         premul_src || samp == SAMP_TRILINEAR || samp == SAMP_CUBIC;
-    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    f32x8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const devy = (float)b.y + (float)py + 0.5f;
         for (int px = 0; px < b.w; px += 8) {
@@ -4556,13 +4556,13 @@ static void draw_image_quad(struct canvas2d_context *__single cv,
             // per lane, bit for bit).  The pixel-centre x sums are
             // integer-exact f32, so the grouping can't differ from the
             // scalar (float)b.x + (float)(px+l) + 0.5f.
-            float8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
+            f32x8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
             foldv8 const u = persp ? mat_apply8_persp(inv, xs, devy)
                                    : mat_apply8(inv, xs, devy);
-            float8 const fsx = sx + ((u.x - dx) / dw) * sww;
-            float8 const fsy = sy + ((u.y - dy) / dh) * shh;
-            float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
-                   sa = (float8)0.0f;
+            f32x8 const fsx = sx + ((u.x - dx) / dw) * sww;
+            f32x8 const fsy = sy + ((u.y - dy) / dh) * shh;
+            f32x8 sr = (f32x8)0.0f, sg = (f32x8)0.0f, sb = (f32x8)0.0f,
+                   sa = (f32x8)0.0f;
             for (int l = 0; l < k; l++) {
                 if (cv->cov[i + l] == 0) {  // a zero-coverage lane skips its taps
                     continue;
@@ -4622,24 +4622,24 @@ static void draw_image_quad(struct canvas2d_context *__single cv,
                 sb[l] = s[2];
                 sa[l] = s[3];
             }
-            half8 const covh = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
+            f16x8 const covh = fold ? (k < 8 ? cover8_k(cv->cov + i, k)
                                              : cover8(cv->cov + i))
-                                    : (half8)(_Float16)1.0f;  // unused when !fold
+                                    : (f16x8)(_Float16)1.0f;  // unused when !fold
             canvas2d_px8 out;
             if (premul_data) {
-                half8 const m = fold ? gah * covh : gah;
-                out = (canvas2d_px8){ __builtin_convertvector(sr, half8) * m,
-                                  __builtin_convertvector(sg, half8) * m,
-                                  __builtin_convertvector(sb, half8) * m,
-                                  __builtin_convertvector(sa, half8) * m };
+                f16x8 const m = fold ? gah * covh : gah;
+                out = (canvas2d_px8){ __builtin_convertvector(sr, f16x8) * m,
+                                  __builtin_convertvector(sg, f16x8) * m,
+                                  __builtin_convertvector(sb, f16x8) * m,
+                                  __builtin_convertvector(sa, f16x8) * m };
             } else {
-                half8 alpha = __builtin_convertvector(sa * ga, half8);
+                f16x8 alpha = __builtin_convertvector(sa * ga, f16x8);
                 if (fold) {
                     alpha = alpha * covh;
                 }
-                out = shade8(__builtin_convertvector(sr, half8),
-                             __builtin_convertvector(sg, half8),
-                             __builtin_convertvector(sb, half8),
+                out = shade8(__builtin_convertvector(sr, f16x8),
+                             __builtin_convertvector(sg, f16x8),
+                             __builtin_convertvector(sb, f16x8),
                              alpha);
             }
             if (k < 8) {

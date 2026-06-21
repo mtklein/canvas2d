@@ -151,9 +151,9 @@ canvas2d_unpremul canvas2d_gradient_color_at(struct canvas2d_gradient const *gr,
                 return general_lerp(lo.color, hi.color, lerp_t,
                                     gr->interp, gr->interp_alpha, gr->space);
             }
-            half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
-            half4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
-            half4 const c = lov + (hiv - lov) * (_Float16)lerp_t;
+            f16x4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
+            f16x4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
+            f16x4 const c = lov + (hiv - lov) * (_Float16)lerp_t;
             return (canvas2d_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
         }
     }
@@ -267,12 +267,12 @@ canvas2d_unpremul canvas2d_gradient_sample(struct canvas2d_gradient const *gr, c
     return c;
 }
 
-// Bit-exact f32 lane select, the 32-bit twin of half8_if_then_else: a where the mask
+// Bit-exact f32 lane select, the 32-bit twin of f16x8_if_then_else: a where the mask
 // lane is set (-1, from a vector comparison), else b.  Bitwise: the selected
 // lane passes through untouched (an arithmetic b + (a-b)*m re-rounds it), and
 // an unselected lane's inf/NaN is discarded exactly.
-static float8 float8_if_then_else(int8 m, float8 a, float8 b) {
-    return (float8)(((int8)a & m) | ((int8)b & ~m));
+static f32x8 f32x8_if_then_else(i32x8 m, f32x8 a, f32x8 b) {
+    return (f32x8)(((i32x8)a & m) | ((i32x8)b & ~m));
 }
 
 // Parameter solve for a horizontal run of `n` pixel centres
@@ -282,7 +282,7 @@ static float8 float8_if_then_else(int8 m, float8 a, float8 b) {
 // vectorizes 8 wide.
 void canvas2d_gradient_param_row(struct canvas2d_gradient const *gr, int x0, float y, int n,
                              float *__counted_by(n) t_out) {
-    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    f32x8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     float const base = (float)x0 + 0.5f - gr->p0.x;
     int i = 0;
     if (gr->kind == CANVAS2D_GRAD_LINEAR) {
@@ -292,8 +292,8 @@ void canvas2d_gradient_param_row(struct canvas2d_gradient const *gr, int x0, flo
         float const inv = denom > 1e-12f ? 1.0f / denom : 0.0f;  // inv == 0 -> all-zero t
         float const cy = (y - gr->p0.y) * dy;                    // y term constant per row
         for (; i + 8 <= n; i += 8) {
-            float8 const px = base + ((float)i + lane);
-            float8 v = float8_clamp01((px * dx + cy) * inv);  // canvas2d_clamp01(((p-p0).d)/|d|^2)
+            f32x8 const px = base + ((float)i + lane);
+            f32x8 v = f32x8_clamp01((px * dx + cy) * inv);  // canvas2d_clamp01(((p-p0).d)/|d|^2)
             memcpy(t_out + i, &v, sizeof v);            // bounds-checked vector store
         }
     } else if (gr->kind == CANVAS2D_GRAD_RADIAL) {
@@ -306,30 +306,30 @@ void canvas2d_gradient_param_row(struct canvas2d_gradient const *gr, int x0, flo
         float const bconst = cdy * pdy + r0 * dr;  // b = -2*(cdx*pdx + bconst)
         float const cconst = pdy * pdy - r0 * r0;  // c = pdx*pdx + cconst
         bool const a_lin = fabsf(a) < 1e-9f;       // a is constant along the row
-        float8 const inv2a = (float8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
+        f32x8 const inv2a = (f32x8)(a_lin ? 0.0f : 1.0f / (2.0f * a));
         for (; i + 8 <= n; i += 8) {
-            float8 const pdx = base + ((float)i + lane);
-            float8 const b = -2.0f * (cdx * pdx + bconst);
-            float8 c = pdx * pdx + cconst;
-            float8 root;
-            int8 valid;
+            f32x8 const pdx = base + ((float)i + lane);
+            f32x8 const b = -2.0f * (cdx * pdx + bconst);
+            f32x8 c = pdx * pdx + cconst;
+            f32x8 root;
+            i32x8 valid;
             if (a_lin) {  // degenerate: the t^2 term vanishes -> b t + c = 0
                 root = -c / b;
                 valid = ((b > 1e-12f) | (b < -1e-12f)) & (r0 + root * dr >= 0.0f);
             } else {
-                float8 const disc = b * b - 4.0f * a * c;
-                float8 sq = __builtin_elementwise_sqrt(
-                    __builtin_elementwise_max((float8)0.0f, disc));
-                float8 const r1_ = (-b + sq) * inv2a;
-                float8 const r2_ = (-b - sq) * inv2a;
-                float8 const hi = __builtin_elementwise_max(r1_, r2_);
-                float8 const lo = __builtin_elementwise_min(r1_, r2_);
-                int8 const hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
-                int8 const look = r0 + lo * dr >= 0.0f;
-                root = float8_if_then_else(hiok, hi, float8_if_then_else(look, lo, (float8)0.0f));
+                f32x8 const disc = b * b - 4.0f * a * c;
+                f32x8 sq = __builtin_elementwise_sqrt(
+                    __builtin_elementwise_max((f32x8)0.0f, disc));
+                f32x8 const r1_ = (-b + sq) * inv2a;
+                f32x8 const r2_ = (-b - sq) * inv2a;
+                f32x8 const hi = __builtin_elementwise_max(r1_, r2_);
+                f32x8 const lo = __builtin_elementwise_min(r1_, r2_);
+                i32x8 const hiok = r0 + hi * dr >= 0.0f;  // prefer the larger valid root
+                i32x8 const look = r0 + lo * dr >= 0.0f;
+                root = f32x8_if_then_else(hiok, hi, f32x8_if_then_else(look, lo, (f32x8)0.0f));
                 valid = (disc >= 0.0f) & (hiok | look);
             }
-            float8 out = float8_if_then_else(valid, float8_clamp01(root), (float8)-1.0f);
+            f32x8 out = f32x8_if_then_else(valid, f32x8_clamp01(root), (f32x8)-1.0f);
             memcpy(t_out + i, &out, sizeof out);  // bounds-checked vector store
         }
     }
@@ -346,12 +346,12 @@ void canvas2d_gradient_param_row(struct canvas2d_gradient const *gr, int x0, flo
 // canvas2d_px8 (canvas2d_planar.h), kept a distinct type for the same reason
 // canvas2d_unpremul is distinct from canvas2d_premul.
 typedef struct {
-    half8 r, g, b, a;
+    f16x8 r, g, b, a;
 } gradpx8;
 
-static gradpx8 gradpx8_sel(short8 m, gradpx8 x, gradpx8 y) {
-    return (gradpx8){ half8_if_then_else(m, x.r, y.r), half8_if_then_else(m, x.g, y.g),
-                      half8_if_then_else(m, x.b, y.b), half8_if_then_else(m, x.a, y.a) };
+static gradpx8 gradpx8_sel(i16x8 m, gradpx8 x, gradpx8 y) {
+    return (gradpx8){ f16x8_if_then_else(m, x.r, y.r), f16x8_if_then_else(m, x.g, y.g),
+                      f16x8_if_then_else(m, x.b, y.b), f16x8_if_then_else(m, x.a, y.a) };
 }
 
 // The planar->AoS seam for unpremultiplied colours, mirroring canvas2d_px8_store:
@@ -374,7 +374,7 @@ static void gradpx8_store(canvas2d_unpremul *__counted_by(8) p, gradpx8 px) {
 // Every NON-default interpolation (any space x alpha but sRGB + unpremul) takes
 // the WHOLE row through the scalar evaluator (the same path as the n % 8 tail).
 // The general colour lerp is a per-lane transfer/cbrt/cube behind the same data-
-// dependent stop search, with no portable vector spelling (libm has no half8
+// dependent stop search, with no portable vector spelling (libm has no f16x8
 // cbrt -- exactly canvas2d_color.c's situation), and it is not on a profiled hot
 // path; routing it through canvas2d_gradient_color_at makes planar == scalar bit-
 // identical BY CONSTRUCTION (one evaluator, called per lane) and leaves the
@@ -395,41 +395,41 @@ void canvas2d_gradient_color_row(struct canvas2d_gradient const *gr,
         // Per-stop lane constants, splatted once per row: offsets in f32 (they
         // are geometry, like the parameter), channels in _Float16 (the colour
         // compute type, docs/decisions/color-axis.md).
-        float8 off[CANVAS2D_STOPS_MAX];
+        f32x8 off[CANVAS2D_STOPS_MAX];
         gradpx8 col[CANVAS2D_STOPS_MAX];
         for (int s = 0; s < sc; s++) {
             canvas2d_stop const st = gr->stops[s];
-            off[s] = (float8)st.offset;
-            col[s] = (gradpx8){ (half8)st.color.r, (half8)st.color.g,
-                                (half8)st.color.b, (half8)st.color.a };
+            off[s] = (f32x8)st.offset;
+            col[s] = (gradpx8){ (f16x8)st.color.r, (f16x8)st.color.g,
+                                (f16x8)st.color.b, (f16x8)st.color.a };
         }
         int const last = sc - 1;
-        half8 const zero = (half8)(_Float16)0.0f;
+        f16x8 const zero = (f16x8)(_Float16)0.0f;
         for (; i + 8 <= n; i += 8) {
-            float8 tv;
+            f32x8 tv;
             memcpy(&tv, t + i, sizeof tv);  // bounds-checked vector load
             // Stop search: lo starts at stop 0 and advances to the last stop
             // whose offset is strictly below t, hi to the stop after it --
             // strict, so a lane between coincident offsets resolves to the
             // same pair as the scalar scan.
-            float8  lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
+            f32x8  lo_off = off[0], hi_off = off[last > 0 ? 1 : 0];
             gradpx8 lo     = col[0], hi     = col[last > 0 ? 1 : 0];
             for (int s = 1; s + 1 < sc; s++) {
-                int8 const m = tv > off[s];
-                short8 const mh = __builtin_convertvector(m, short8);
-                lo_off = float8_if_then_else(m, off[s],     lo_off);
-                hi_off = float8_if_then_else(m, off[s + 1], hi_off);
+                i32x8 const m = tv > off[s];
+                i16x8 const mh = __builtin_convertvector(m, i16x8);
+                lo_off = f32x8_if_then_else(m, off[s],     lo_off);
+                hi_off = f32x8_if_then_else(m, off[s + 1], hi_off);
                 lo = gradpx8_sel(mh, col[s],     lo);
                 hi = gradpx8_sel(mh, col[s + 1], hi);
             }
             // The scalar lerp, eight lanes wide.  Lanes the edge selects below
             // overwrite may divide by a zero span; the bitwise selects discard
             // the resulting inf/NaN exactly.
-            float8 const span = hi_off - lo_off;
-            float8 const lt32 = float8_if_then_else(span > 0.0f,
+            f32x8 const span = hi_off - lo_off;
+            f32x8 const lt32 = f32x8_if_then_else(span > 0.0f,
                                                     (tv - lo_off) / span,
-                                                    (float8)0.0f);
-            half8 const lerp_t = __builtin_convertvector(lt32, half8);
+                                                    (f32x8)0.0f);
+            f16x8 const lerp_t = __builtin_convertvector(lt32, f16x8);
             gradpx8 c = { lo.r + (hi.r - lo.r) * lerp_t,
                           lo.g + (hi.g - lo.g) * lerp_t,
                           lo.b + (hi.b - lo.b) * lerp_t,
@@ -438,9 +438,9 @@ void canvas2d_gradient_color_row(struct canvas2d_gradient const *gr,
             // past the last stop takes the last colour, t at or before the
             // first takes the first (applied second, so it wins ties exactly
             // like the scalar's early-out order), and t < 0 is transparent.
-            short8 mlast  = __builtin_convertvector(tv >= off[last],    short8);
-            short8 const mfirst = __builtin_convertvector(tv <= off[0],       short8);
-            short8 mout   = __builtin_convertvector(tv <  (float8)0.0f, short8);
+            i16x8 mlast  = __builtin_convertvector(tv >= off[last],    i16x8);
+            i16x8 const mfirst = __builtin_convertvector(tv <= off[0],       i16x8);
+            i16x8 mout   = __builtin_convertvector(tv <  (f32x8)0.0f, i16x8);
             c = gradpx8_sel(mlast,  col[last], c);
             c = gradpx8_sel(mfirst, col[0],    c);
             c = gradpx8_sel(mout,   (gradpx8){ zero, zero, zero, zero }, c);

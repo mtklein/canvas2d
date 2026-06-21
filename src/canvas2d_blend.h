@@ -13,7 +13,7 @@
 
 #include "canvas2d.h"
 #include "canvas2d_color.h"  // canvas2d_premul
-#include "canvas2d_math.h"   // int8
+#include "canvas2d_math.h"   // i32x8
 
 #include <ptrcheck.h>
 #include <stdint.h>

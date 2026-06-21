@@ -255,7 +255,7 @@ Each entry: the idea, what it buys, what it costs, how it composes with
 ### 3.1 Finish the planar conversion through the shade stage
 
 **Idea.** `paint_tile`'s inner loop, 8 pixels per step: load 8 coverage bytes as
-one f16 plane (`half8_from_u8` — exists), fold `paint_alpha × global_alpha ×
+one f16 plane (`f16x8_from_u8` — exists), fold `paint_alpha × global_alpha ×
 coverage` as plane math, `canvas2d_px8_premultiply` (exists), `canvas2d_px8_store`
 (exists). For solid paint the whole loop is a color splat, ~4 multiplies, and an
 st4 per 8 pixels. For gradients, `canvas2d_gradient_color_row` already produces a row
@@ -601,9 +601,9 @@ canvas/compositor split are CPU:
 float x,y inputs
 half  cov = cov_fn(x,y,cov_ctx)
 if (cov == 0) return
-half4 src = shader_fn(x,y,shader_ctx)
-half4 dst = load_dst(ptr, fmt)
-half4 blend = blend_fn(src,dst)
+f16x4 src = shader_fn(x,y,shader_ctx)
+f16x4 dst = load_dst(ptr, fmt)
+f16x4 blend = blend_fn(src,dst)
 if (cov < 1) blend = lerp(dst, blend, cov)
 store_dst(ptr, fmt, blend)
 ```

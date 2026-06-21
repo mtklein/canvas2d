@@ -953,9 +953,9 @@ static void pq_oetf8_matches_scalar(void) {
 
     float const anchors[8] = { 0.0f, 1.0f, 203.0f / 10000.0f, 0.5f,
                                0.999f, 0.001f, -0.1f, 2.0f };
-    float8 ya = {0};
+    f32x8 ya = {0};
     for (int j = 0; j < 8; j++) { ya[j] = anchors[j]; }
-    float8 const ga = canvas2d_pq_oetf8(ya);
+    f32x8 const ga = canvas2d_pq_oetf8(ya);
     for (int j = 0; j < 8; j++) {
         float const want = canvas2d_pq_oetf(ya[j]), got = ga[j];
         if (memcmp(&want, &got, sizeof want) != 0) { exact = false; }
@@ -963,7 +963,7 @@ static void pq_oetf8_matches_scalar(void) {
 
     int const N = 4096;  // not pixel count -- just a dense input sweep
     for (int base = 0; base < N; base += 8) {
-        float8 y = {0};
+        f32x8 y = {0};
         for (int j = 0; j < 8; j++) {
             int const k = base + j;
             float v;
@@ -972,7 +972,7 @@ static void pq_oetf8_matches_scalar(void) {
             else                  { v = (float)k / (float)N; }            // [0,1)
             y[j] = v;
         }
-        float8 const got = canvas2d_pq_oetf8(y);
+        f32x8 const got = canvas2d_pq_oetf8(y);
         for (int j = 0; j < 8; j++) {
             float const want = canvas2d_pq_oetf(y[j]), g = got[j];
             if (memcmp(&want, &g, sizeof want) != 0) { exact = false; }

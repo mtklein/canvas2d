@@ -21,16 +21,16 @@
 // exhaustive round-trip).  Returns finished byte values in [0.5, 255.5) for
 // the truncating store seam (canvas2d_px8_store_rgba8).
 static canvas2d_px8 unpremul_to_unorm8(canvas2d_px8 p) {
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    short8 const opaque = p.a > zero;
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
+    i16x8 const opaque = p.a > zero;
     canvas2d_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, p.a };
-    u.r = half8_if_then_else(opaque, __builtin_elementwise_min(one,
+    u.r = f16x8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.r)), zero);
-    u.g = half8_if_then_else(opaque, __builtin_elementwise_min(one,
+    u.g = f16x8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.g)), zero);
-    u.b = half8_if_then_else(opaque, __builtin_elementwise_min(one,
+    u.b = f16x8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.b)), zero);
-    u.a = half8_if_then_else(opaque, __builtin_elementwise_min(one,
+    u.a = f16x8_if_then_else(opaque, __builtin_elementwise_min(one,
                         __builtin_elementwise_max(zero, u.a)), zero);
     _Float16 const bias = (_Float16)0.5f, k255 = (_Float16)255.0f;
     return (canvas2d_px8){ u.r * k255 + bias, u.g * k255 + bias,
@@ -43,12 +43,12 @@ static canvas2d_px8 unpremul_to_unorm8(canvas2d_px8 p) {
 // exit, and the transfer must run BEFORE it so an extended linear value collapses
 // to its encoded byte rather than being crushed to 1.0 first.  Scalar per lane:
 // the encode is a precision-sensitive f32 pow (canvas2d_color.c's deferral note),
-// with no half8 spelling in libm; the readback hot path is the sRGB-canvas
+// with no f16x8 spelling in libm; the readback hot path is the sRGB-canvas
 // SIMD function above, never this.  Alpha takes no transfer (coverage, not
 // colour).  An out-of-[0,1] alpha still clamps, like the planar path.
 static canvas2d_px8 unpremul_encode_to_unorm8(canvas2d_px8 p) {
-    canvas2d_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
-                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f,
+                   (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f };
     for (int i = 0; i < 8; i++) {
         float const a = (float)p.a[i];
         float r = 0.0f, g = 0.0f, b = 0.0f, ca = 0.0f;
@@ -78,14 +78,14 @@ static canvas2d_px8 unpremul_encode_to_unorm8(canvas2d_px8 p) {
 // The OKLAB readback: un-premultiply, take the unpremultiplied colour
 // working->linear->Oklab, and quantize (L, a, b, alpha) to bytes via the
 // convention above.  Scalar per lane (the Oklab pipeline is f32 transcendental
-// math, no half8 spelling; correctness over speed, like the linear encode).  A
+// math, no f16x8 spelling; correctness over speed, like the linear encode).  A
 // transparent lane stays all-zero, and alpha takes no transfer (coverage, not
 // colour) -- both as in the other readbacks.  `linear_canvas` says the STORED
 // colour is already linear (skip the sRGB decode); otherwise the stored colour
 // is encoded sRGB and decodes first.
 static canvas2d_px8 unpremul_to_oklab_unorm8(canvas2d_px8 p, bool linear_canvas) {
-    canvas2d_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
-                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f,
+                   (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f };
     for (int i = 0; i < 8; i++) {
         float const a = (float)p.a[i];
         float qL = 0.0f, qa = 0.0f, qb = 0.0f, ca = 0.0f;
@@ -119,8 +119,8 @@ static canvas2d_px8 unpremul_to_oklab_unorm8(canvas2d_px8 p, bool linear_canvas)
 // the byte transport has no room for out-of-gamut).  Scalar per lane to share the
 // decode with the sRGB-canvas branch; alpha takes no transfer.
 static canvas2d_px8 unpremul_to_linear_unorm8(canvas2d_px8 p, bool linear_canvas) {
-    canvas2d_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
-                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f,
+                   (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f };
     for (int i = 0; i < 8; i++) {
         float const a = (float)p.a[i];
         float r = 0.0f, g = 0.0f, b = 0.0f, ca = 0.0f;
@@ -151,7 +151,7 @@ static canvas2d_px8 unpremul_to_linear_unorm8(canvas2d_px8 p, bool linear_canvas
 // direct SIMD bypass (no transfer; the stored encoded bytes quantize as-is);
 // off a linear canvas it encodes linear->sRGB scalar.  Either way it is NOT a
 // linear round-trip.  The LINEAR_SRGB and OKLAB branches run scalar too -- the
-// transfer/Oklab math is transcendental and has no half8 spelling.
+// transfer/Oklab math is transcendental and has no f16x8 spelling.
 static canvas2d_px8 read_unorm8(struct canvas2d_context *__single cv,
                             enum canvas2d_color_space space, canvas2d_px8 p) {
     bool const lin = cv->space == CANVAS2D_CS_LINEAR_SRGB;
@@ -217,15 +217,15 @@ void canvas2d_read_rgba(struct canvas2d_context *__single cv, enum canvas2d_colo
 // Eight pixels per slab (no transfer on an sRGB canvas, an encode per lane on a
 // linear one).
 static canvas2d_px8 unpremul_to_srgb_f16(canvas2d_px8 p, bool linear_canvas) {
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    short8 const opaque = p.a > zero;
-    half8 const ca = __builtin_elementwise_min(one,
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
+    i16x8 const opaque = p.a > zero;
+    f16x8 const ca = __builtin_elementwise_min(one,
                          __builtin_elementwise_max(zero, p.a));
     canvas2d_px8 u = { p.r / p.a, p.g / p.a, p.b / p.a, ca };
-    u.r = half8_if_then_else(opaque, u.r, zero);
-    u.g = half8_if_then_else(opaque, u.g, zero);
-    u.b = half8_if_then_else(opaque, u.b, zero);
-    u.a = half8_if_then_else(opaque, ca,  zero);
+    u.r = f16x8_if_then_else(opaque, u.r, zero);
+    u.g = f16x8_if_then_else(opaque, u.g, zero);
+    u.b = f16x8_if_then_else(opaque, u.b, zero);
+    u.a = f16x8_if_then_else(opaque, ca,  zero);
     if (!linear_canvas) {
         return u;  // stored colour already encoded sRGB: hand it back straight
     }
@@ -243,8 +243,8 @@ static canvas2d_px8 unpremul_to_srgb_f16(canvas2d_px8 p, bool linear_canvas) {
 // canvas the stored colour is encoded sRGB and decodes sRGB->linear first.
 // Scalar per lane to share the decode with the sRGB-canvas branch.
 static canvas2d_px8 unpremul_to_linear_f16(canvas2d_px8 p, bool linear_canvas) {
-    canvas2d_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
-                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f,
+                   (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f };
     for (int i = 0; i < 8; i++) {
         float const a = (float)p.a[i];
         if (a > 0.0f) {  // a transparent lane stays all-zero
@@ -269,10 +269,10 @@ static canvas2d_px8 unpremul_to_linear_f16(canvas2d_px8 p, bool linear_canvas) {
 // OKLAB output: un-premultiply, working->linear->Oklab, emit (L, a, b, alpha)
 // straight (NO bias, NO clamp -- the byte convention's window is a transport
 // detail the f16 path doesn't need).  Scalar per lane (the Oklab pipeline is
-// f32 transcendental, no half8 spelling).
+// f32 transcendental, no f16x8 spelling).
 static canvas2d_px8 unpremul_to_oklab_f16(canvas2d_px8 p, bool linear_canvas) {
-    canvas2d_px8 o = { (half8)(_Float16)0.0f, (half8)(_Float16)0.0f,
-                   (half8)(_Float16)0.0f, (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f,
+                   (f16x8)(_Float16)0.0f, (f16x8)(_Float16)0.0f };
     for (int i = 0; i < 8; i++) {
         float const a = (float)p.a[i];
         if (a > 0.0f) {  // a transparent lane stays all-zero
@@ -431,7 +431,7 @@ static canvas2d_px8 px8_decode_rgb(canvas2d_px8 p) {
 // intern_color's non-sRGB branches at the bulk seam: reduce the incoming bytes
 // to linear sRGB, then leave them linear for a LINEAR canvas or encode
 // linear->sRGB for an sRGB canvas.  Scalar per lane (the transfer/Oklab math is
-// f32 transcendental, no half8 spelling); reached only off the CANVAS2D_CS_SRGB
+// f32 transcendental, no f16x8 spelling); reached only off the CANVAS2D_CS_SRGB
 // fast path.  `linear_canvas` says the WORKING space is linear (skip the encode).
 
 // Incoming bytes ARE linear sRGB (CANVAS2D_CS_LINEAR_SRGB input).

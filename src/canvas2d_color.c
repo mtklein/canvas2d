@@ -11,7 +11,7 @@
 //
 // Vectorization deferred: every kernel below is a per-lane transcendental
 // (powf / cbrtf) behind a data-dependent branch, with no portable vector
-// spelling -- libm has no half8 pow or cbrt, and a branch-to-select rewrite
+// spelling -- libm has no f16x8 pow or cbrt, and a branch-to-select rewrite
 // would carry both arms of the transfer through the slow path for no measured
 // benefit (these conversions are not on a profiled hot loop today; the planar
 // pipeline in canvas2d_planar.h is the place to add a slab variant if one ever
@@ -244,29 +244,29 @@ float canvas2d_pq_oetf(float y) {
 // 8-wide forms of the three helpers and the OETF, each a direct transliteration
 // of its scalar twin: identical coefficients in identical Horner order (so the
 // compiler applies the same FMA contraction per lane) and the IEEE bit twiddling
-// as vector reinterpret (memcpy float8<->int8) plus elementwise int ops.  The
+// as vector reinterpret (memcpy f32x8<->i32x8) plus elementwise int ops.  The
 // shifts are masked (&0xFF) or operate on values the domain keeps non-negative
 // and small (n+127 in [106,147], so (n+127)<<23 never reaches bit 31), so signed
 // lanes behave like the scalar's uint32.  Result: bit-identical to the scalar
 // lane for lane -- test_colorspace's pq_oetf8_matches_scalar pins it exactly.
-static float8 pq_log2_wide8(float8 y) {
-    int8 bits;
+static f32x8 pq_log2_wide8(f32x8 y) {
+    i32x8 bits;
     memcpy(&bits, &y, sizeof bits);
-    int8 const e = ((bits >> 23) & 0xFF) - 126;
+    i32x8 const e = ((bits >> 23) & 0xFF) - 126;
     bits = (bits & 0x007FFFFF) | (126 << 23);
-    float8 m;
+    f32x8 m;
     memcpy(&m, &bits, sizeof m);
-    float8 const q = (((( -2.2140944730f  * m
+    f32x8 const q = (((( -2.2140944730f  * m
                         +10.2211130607f) * m
                         -19.7612251545f) * m
                         +20.8321998273f) * m
                         -13.3117024570f) * m
                         + 6.2336918059f;
-    return __builtin_convertvector(e, float8) + (m - 0.5f) * q - 1.0f;
+    return __builtin_convertvector(e, f32x8) + (m - 0.5f) * q - 1.0f;
 }
 
-static float8 pq_log2_frac8(float8 frac) {
-    float8 const r = ((((  -0.2517282200f  * frac
+static f32x8 pq_log2_frac8(f32x8 frac) {
+    f32x8 const r = ((((  -0.2517282200f  * frac
                          + 1.5710494790f) * frac
                          - 4.1226418001f) * frac
                          + 5.9401468216f) * frac
@@ -275,16 +275,16 @@ static float8 pq_log2_frac8(float8 frac) {
     return (frac - 1.0f) * r;
 }
 
-static float8 pq_exp28(float8 x) {
-    int8 const xi = __builtin_convertvector(x, int8);  // (int32_t)x: trunc toward 0
+static f32x8 pq_exp28(f32x8 x) {
+    i32x8 const xi = __builtin_convertvector(x, i32x8);  // (int32_t)x: trunc toward 0
     // floor: the f32 compare yields a 0/-1 mask, so adding it subtracts 1 where
     // x < trunc(x) -- the scalar's `xi - (x < (float)xi ? 1 : 0)`.
-    int8 const n = xi + (x < __builtin_convertvector(xi, float8));
-    float8 const f = x - __builtin_convertvector(n, float8);
-    int8 const pow2_bits = (n + 127) << 23;
-    float8 pow2;
+    i32x8 const n = xi + (x < __builtin_convertvector(xi, f32x8));
+    f32x8 const f = x - __builtin_convertvector(n, f32x8);
+    i32x8 const pow2_bits = (n + 127) << 23;
+    f32x8 pow2;
     memcpy(&pow2, &pow2_bits, sizeof pow2);
-    float8 const g = (((( 0.0002082919f  * f
+    f32x8 const g = (((( 0.0002082919f  * f
                        + 0.0012689354f) * f
                        + 0.0096524405f) * f
                        + 0.0554959362f) * f
@@ -293,21 +293,21 @@ static float8 pq_exp28(float8 x) {
     return (1.0f + f * g) * pow2;
 }
 
-float8 canvas2d_pq_oetf8(float8 y) {
+f32x8 canvas2d_pq_oetf8(f32x8 y) {
     float const m1 = 0.1593017578125f, m2 = 78.84375f;
     float const c1 = 0.8359375f, c2 = 18.8515625f, c3 = 18.6875f;
-    float8 const t = pq_exp28(m1 * pq_log2_wide8(y));
-    float8 const frac = (c1 + c2 * t) / (1.0f + c3 * t);
-    float8 e = pq_exp28(m2 * pq_log2_frac8(frac));
+    f32x8 const t = pq_exp28(m1 * pq_log2_wide8(y));
+    f32x8 const frac = (c1 + c2 * t) / (1.0f + c3 * t);
+    f32x8 e = pq_exp28(m2 * pq_log2_frac8(frac));
     // The scalar returns early outside [0,1]; the vector computes every lane then
     // blends.  Mandatory, not cosmetic: a negative y (a wide-gamut Rec.2020
     // component) computes to a large finite value, not 0, without this select.
     // ext_vector has no `?:` in C, so reinterpret to int lanes and mask-select:
     // y>=1 -> 1.0f bits, y<=0 -> 0 bits (= +0.0f, what the scalar returns).
-    int8 const ge1 = (y >= 1.0f);  // 0 / -1 per lane
-    int8 const le0 = (y <= 0.0f);
-    float8 const onef = (float8)1.0f;
-    int8 eb, ones;
+    i32x8 const ge1 = (y >= 1.0f);  // 0 / -1 per lane
+    i32x8 const le0 = (y <= 0.0f);
+    f32x8 const onef = (f32x8)1.0f;
+    i32x8 eb, ones;
     memcpy(&eb, &e, sizeof eb);
     memcpy(&ones, &onef, sizeof ones);
     eb = (ge1 & ones) | (~ge1 & eb);  // y>=1 -> 1.0f

@@ -33,10 +33,10 @@ static uint16_t q16(float x) {  // [0,1] -> 16-bit unorm
 // 8-wide q16: clamp to [0,1], scale, round, truncate -- the lanewise twin of q16.
 // min/max clamp matches the scalar ternary for the finite [0,1]-ish inputs here,
 // and convertvector truncates toward zero like the (uint16_t) cast.
-static int8 q16x8(float8 x) {
-    float8 const v = __builtin_elementwise_max((float8)0.0f,
-                     __builtin_elementwise_min((float8)1.0f, x));
-    return __builtin_convertvector(v * 65535.0f + 0.5f, int8);
+static i32x8 q16x8(f32x8 x) {
+    f32x8 const v = __builtin_elementwise_max((f32x8)0.0f,
+                     __builtin_elementwise_min((f32x8)1.0f, x));
+    return __builtin_convertvector(v * 65535.0f + 0.5f, i32x8);
 }
 
 // Fill `out` (width*height*4 native-endian uint16) with the surface as BT.2100.
@@ -54,7 +54,7 @@ static void surface_to_pq16(struct canvas2d_context *__single cv,
     // unpremul/matrix stays scalar (data-dependent 1/a, AoS source), bit-exact.
     int i = 0;
     for (; i + 8 <= n; i += 8) {
-        float8 wr = {0}, wg = {0}, wb = {0}, af = {0};
+        f32x8 wr = {0}, wg = {0}, wb = {0}, af = {0};
         for (int j = 0; j < 8; j++) {
             canvas2d_premul const px = cv->target[i + j];
             float const a = (float)px.a;
@@ -71,10 +71,10 @@ static void surface_to_pq16(struct canvas2d_context *__single cv,
                 wb[j] = wide.b * scale;
             }
         }
-        int8 const r = q16x8(canvas2d_pq_oetf8(wr));
-        int8 const g = q16x8(canvas2d_pq_oetf8(wg));
-        int8 const b = q16x8(canvas2d_pq_oetf8(wb));
-        int8 const av = q16x8(af);
+        i32x8 const r = q16x8(canvas2d_pq_oetf8(wr));
+        i32x8 const g = q16x8(canvas2d_pq_oetf8(wg));
+        i32x8 const b = q16x8(canvas2d_pq_oetf8(wb));
+        i32x8 const av = q16x8(af);
         for (int j = 0; j < 8; j++) {
             out[(i + j) * 4 + 0] = (uint16_t)r[j];
             out[(i + j) * 4 + 1] = (uint16_t)g[j];

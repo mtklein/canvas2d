@@ -27,10 +27,10 @@ void canvas2d_verts_free(struct canvas2d_verts *v);
 // affine map is elementwise, so the scalar expression runs per lane bit for
 // bit.
 typedef struct {
-    float8 x, y;
+    f32x8 x, y;
 } foldv8;
 
-foldv8 mat_apply8(canvas2d_mat m, float8 x, float y);
+foldv8 mat_apply8(canvas2d_mat m, f32x8 x, float y);
 
 // Perspective-correct canvas2d_mat_apply, eight pixel centres along one row.  The
 // three homogeneous numerators u = a*x + c*y + e, v = b*x + d*y + f, and
@@ -39,4 +39,4 @@ foldv8 mat_apply8(canvas2d_mat m, float8 x, float y);
 // added work over the affine mat_apply8.  Used only on the !canvas2d_mat_is_affine
 // sampler branches -- the affine branch keeps mat_apply8's divide-free DDA, bit
 // for bit.  This is the 8-wide twin of canvas2d_mat_apply's projective arm.
-foldv8 mat_apply8_persp(canvas2d_mat m, float8 x, float y);
+foldv8 mat_apply8_persp(canvas2d_mat m, f32x8 x, float y);

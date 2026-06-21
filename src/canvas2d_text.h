@@ -13,7 +13,7 @@
 // the arrays; a bad cluster *value* is caught by an explicit range check in the core.
 // See docs/text-boundary.md.
 
-#include "canvas2d_math.h"    // int8, uint16
+#include "canvas2d_math.h"    // i32x8, u32x16
 #include "canvas2d_matrix.h"  // canvas2d_mat, canvas2d_vec2
 #include "canvas2d_path.h"
 
