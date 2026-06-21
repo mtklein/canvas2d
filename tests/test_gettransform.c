@@ -3,12 +3,17 @@
 
 #include <math.h>
 
+// get_transform returns the full 3x3 CTM.  Every transform exercised here is
+// affine, so the bottom row must read (g, h, i) = (0, 0, 1) -- the affine
+// subset on which w == 1 and the (a..f) match the setTransform six.
 static bool mat_near(canvas2d_matrix m, float a, float b, float c, float d,
                      float e, float f) {
     float const tol = 1e-5f;
     return fabsf(m.a - a) < tol && fabsf(m.b - b) < tol &&
            fabsf(m.c - c) < tol && fabsf(m.d - d) < tol &&
-           fabsf(m.e - e) < tol && fabsf(m.f - f) < tol;
+           fabsf(m.e - e) < tol && fabsf(m.f - f) < tol &&
+           fabsf(m.g) < tol && fabsf(m.h) < tol && fabsf(m.i - 1) < tol &&
+           canvas2d_matrix_is_affine(m);
 }
 
 int main(void) {

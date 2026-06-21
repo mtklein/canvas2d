@@ -4,16 +4,13 @@
 // pixels, origin top-left, +y down, matching the web platform.
 
 #include "canvas2d_paint_style.h"  // fill_rule, line_join, line_cap (shared with the leaf modules)
+#include "canvas2d_matrix.h"  // canvas2d_matrix (the 3x3 homography returned by get_transform)
 
 #include <ptrcheck.h>
 #include <stdint.h>
 
 struct canvas2d_context;  // the rendering context: canvas2d() constructs, canvas2d_free() frees
                 // (see canvas2d() below; the working colour space is required)
-
-// The six components of a 2D affine transform: (x,y) maps to
-// (a*x + c*y + e, b*x + d*y + f) -- the argument order of canvas2d_set_transform.
-typedef struct { float a, b, c, d, e, f; } canvas2d_matrix;
 
 // textAlign / textBaseline.  start/end resolve against the direction attribute:
 // start == left and end == right under ltr, the opposite under rtl.
@@ -231,9 +228,10 @@ void canvas2d_set_perspective_quad(struct canvas2d_context *__single cv, float s
                                  float x1, float y1, float x2, float y2,
                                  float x3, float y3);
 
-// The current transform (matching getTransform): the matrix built up by
+// The current transform (matching getTransform): the full CTM built up by
 // translate/scale/rotate/transform and reset by set_transform/reset_transform.
-// Reports only the affine (a..f) part of the CTM.
+// Returns the 3x3 homography; canvas2d_matrix_is_affine reports whether the
+// (g, h, i) bottom row is (0, 0, 1) -- i.e. whether the transform is affine.
 canvas2d_matrix canvas2d_get_transform(struct canvas2d_context *__single cv);
 
 // Solid fill paint.  `space` names the colour space the (r,g,b) are given in

@@ -16,28 +16,28 @@ typedef struct {
 
 typedef struct {
     float a, b, c, d, e, f, g, h, i;
-} canvas2d_mat;
+} canvas2d_matrix;
 
-canvas2d_mat canvas2d_mat_identity(void);
+canvas2d_matrix canvas2d_matrix_identity(void);
 
 // Whether the bottom row is (0, 0, 1) -- the affine subset, on which apply/mul/
 // invert take a divide-free path that reproduces the old 2x3 arithmetic exactly.
-bool canvas2d_mat_is_affine(canvas2d_mat m);
+bool canvas2d_matrix_is_affine(canvas2d_matrix m);
 
-// mat_apply(mat_mul(m, n), p) == apply(m, apply(n, p)): n is applied first, as
-// when Canvas chains translate() then scale().
-canvas2d_mat canvas2d_mat_mul(canvas2d_mat m, canvas2d_mat n);
+// apply(mul(m, n), p) == apply(m, apply(n, p)): n is applied first, as when
+// Canvas chains translate() then scale().
+canvas2d_matrix canvas2d_matrix_mul(canvas2d_matrix m, canvas2d_matrix n);
 
 // translate/scale/rotate build affine matrices (g = h = 0, i = 1); their (a..f)
 // values are unchanged from the 2x3 era.
-canvas2d_mat canvas2d_mat_translate(float tx, float ty);
-canvas2d_mat canvas2d_mat_scale(float sx, float sy);
-canvas2d_mat canvas2d_mat_rotate(float radians);
+canvas2d_matrix canvas2d_matrix_translate(float tx, float ty);
+canvas2d_matrix canvas2d_matrix_scale(float sx, float sy);
+canvas2d_matrix canvas2d_matrix_rotate(float radians);
 
 // Apply to (x, y): affine maps with no divide (bit-identical to the 2x3 era);
 // projective divides by w.
-canvas2d_vec2 canvas2d_mat_apply(canvas2d_mat m, canvas2d_vec2 p);
+canvas2d_vec2 canvas2d_matrix_apply(canvas2d_matrix m, canvas2d_vec2 p);
 
 // Inverse; identity if (near-)singular.  Affine inputs yield the affine inverse
 // bit-identically.
-canvas2d_mat canvas2d_mat_invert(canvas2d_mat m);
+canvas2d_matrix canvas2d_matrix_invert(canvas2d_matrix m);

@@ -7,7 +7,7 @@
 
 #include "canvas2d.h"     // enum canvas2d_color_space, enum canvas2d_alpha_type
 #include "canvas2d_color.h"  // canvas2d_unpremul
-#include "canvas2d_matrix.h" // canvas2d_mat, canvas2d_vec2
+#include "canvas2d_matrix.h" // canvas2d_matrix, canvas2d_vec2
 
 #include <ptrcheck.h>
 
@@ -41,7 +41,7 @@ struct canvas2d_gradient {
     canvas2d_vec2 up0, up1;    // user-space endpoints (perspective path)
     float ur0, ur1;        // user-space radii (perspective path)
     float uangle;          // user-space conic start angle (perspective path)
-    canvas2d_mat to_user;      // device -> user inverse homography (perspective path)
+    canvas2d_matrix to_user;      // device -> user inverse homography (perspective path)
     canvas2d_stop stops[CANVAS2D_STOPS_MAX];
     int stop_count;
     // Interpolation is TWO orthogonal knobs (a 2D grid, not a single mode):

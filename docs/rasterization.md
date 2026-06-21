@@ -63,7 +63,7 @@ Bucketed by pipeline stage:
 
 The shade stage is the biggest bucket at 40 %, no longer scalar, and its
 composition changed. The old pole — `paint_tile` + `canvas2d_premultiply` at 41 % —
-collapsed to `paint_tile`'s 11 %: `canvas2d_premultiply` and `canvas2d_mat_apply` left
+collapsed to `paint_tile`'s 11 %: `canvas2d_premultiply` and `canvas2d_matrix_apply` left
 the leaderboard entirely (their bulk callers now run the planar fold; in
 absolute terms, with the flagship −29 %, paint_tile-shaped work is roughly 4×
 cheaper). The new pole is `draw_image_quad`'s per-lane sampling interior at 25 %
@@ -294,7 +294,7 @@ scenes as the probe.
 
 **Landed (2026-06-10), the f32-fold arm.** Five commits: `paint_tile`
 (solid + gradient rows), `emit_shadow`'s tint loop, `paint_tile_pattern`,
-`draw_image_quad`, then the sampling loops' coordinate chain (`canvas2d_mat_apply`
+`draw_image_quad`, then the sampling loops' coordinate chain (`canvas2d_matrix_apply`
 had surfaced at 4.4 % as an out-of-line call per covered pixel — now eight
 lanes of elementwise vector math). **Zero gallery bytes moved at any commit**:
 the fold stayed f32 with the scalar association per lane, coverage widened

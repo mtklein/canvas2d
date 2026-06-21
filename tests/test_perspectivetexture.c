@@ -73,7 +73,7 @@ static void pixel_at(struct canvas2d_context *__single cv, int w, int h, int x, 
 // used by receding_ctm, recovered by recording the set_transform line --
 // mirrors test_perspective.c's quad recovery, so the predictor uses the EXACT
 // matrix the renderer used.
-static bool recover_ctm(canvas2d_mat *out, float S) {
+static bool recover_ctm(canvas2d_matrix *out, float S) {
     char const *__null_terminated path = "build/test_perspectivetexture_ctm.canvas";
     struct canvas2d_context *__single cv = canvas2d(200, 200, CANVAS2D_CS_SRGB);
     if (!cv) {
@@ -101,7 +101,7 @@ static bool recover_ctm(canvas2d_mat *out, float S) {
         if (sscanf(line, "set_transform %f %f %f %f %f %f %f %f %f",
                    &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7],
                    &v[8]) == 9) {
-            *out = (canvas2d_mat){ .a = v[0], .b = v[1], .c = v[2], .d = v[3],
+            *out = (canvas2d_matrix){ .a = v[0], .b = v[1], .c = v[2], .d = v[3],
                                .e = v[4], .f = v[5], .g = v[6], .h = v[7],
                                .i = v[8] };
             found = true;
@@ -138,9 +138,9 @@ static void test_image_sampling_perspective_correct(void) {
         }
     }
 
-    canvas2d_mat ctm;
+    canvas2d_matrix ctm;
     CHECK(recover_ctm(&ctm, S));
-    canvas2d_mat const inv = canvas2d_mat_invert(ctm);  // device -> user (full 3x3)
+    canvas2d_matrix const inv = canvas2d_matrix_invert(ctm);  // device -> user (full 3x3)
 
     struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
@@ -206,9 +206,9 @@ static void test_gradient_perspective_correct(void) {
     int const W = 200, H = 200;
     float const S = 8.0f;
 
-    canvas2d_mat ctm;
+    canvas2d_matrix ctm;
     CHECK(recover_ctm(&ctm, S));
-    canvas2d_mat const inv = canvas2d_mat_invert(ctm);
+    canvas2d_matrix const inv = canvas2d_matrix_invert(ctm);
 
     struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
@@ -286,9 +286,9 @@ static void test_pattern_perspective_correct(void) {
         }
     }
 
-    canvas2d_mat ctm;
+    canvas2d_matrix ctm;
     CHECK(recover_ctm(&ctm, S));
-    canvas2d_mat const inv = canvas2d_mat_invert(ctm);  // device -> user == device -> pattern
+    canvas2d_matrix const inv = canvas2d_matrix_invert(ctm);  // device -> user == device -> pattern
 
     struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);

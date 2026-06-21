@@ -14,7 +14,7 @@
 // See docs/text-boundary.md.
 
 #include "canvas2d_math.h"    // i32x8, u32x16
-#include "canvas2d_matrix.h"  // canvas2d_mat, canvas2d_vec2
+#include "canvas2d_matrix.h"  // canvas2d_matrix, canvas2d_vec2
 #include "canvas2d_path.h"
 
 #include <ptrcheck.h>
@@ -496,7 +496,7 @@ typedef void (*canvas2d_color_glyph_fn)(void *__single ctx, int fid,
 // it is NULL), and contribute only their advance to the layout.
 float canvas2d_shaped_outline(struct canvas2d_text_cache *__single cache,
                           struct canvas2d_shaped const *__single s, float ox, float oy,
-                          canvas2d_mat to_device, float tol, struct canvas2d_path *__single out,
+                          canvas2d_matrix to_device, float tol, struct canvas2d_path *__single out,
                           canvas2d_color_glyph_fn color, void *__single ctx);
 
 // Draw one glyph of the opaque `font` into an RGBA8 premultiplied buffer at (x,y) in

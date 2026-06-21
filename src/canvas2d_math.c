@@ -4,21 +4,21 @@
 
 #include <math.h>
 
-canvas2d_mat canvas2d_mat_identity(void) {
-    return (canvas2d_mat){ .a = 1.0f, .c = 0.0f, .e = 0.0f,
+canvas2d_matrix canvas2d_matrix_identity(void) {
+    return (canvas2d_matrix){ .a = 1.0f, .c = 0.0f, .e = 0.0f,
                        .b = 0.0f, .d = 1.0f, .f = 0.0f,
                        .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
-bool canvas2d_mat_is_affine(canvas2d_mat m) {
+bool canvas2d_matrix_is_affine(canvas2d_matrix m) {
     return m.g == 0.0f && m.h == 0.0f && m.i == 1.0f;
 }
 
-canvas2d_mat canvas2d_mat_mul(canvas2d_mat m, canvas2d_mat n) {
-    if (canvas2d_mat_is_affine(m) && canvas2d_mat_is_affine(n)) {
+canvas2d_matrix canvas2d_matrix_mul(canvas2d_matrix m, canvas2d_matrix n) {
+    if (canvas2d_matrix_is_affine(m) && canvas2d_matrix_is_affine(n)) {
         // Both affine: the old 2x3 product, expression for expression, so an
         // affine chain stays bit-identical to the pre-homography era.
-        return (canvas2d_mat){
+        return (canvas2d_matrix){
             .a = m.a * n.a + m.c * n.b,
             .c = m.a * n.c + m.c * n.d,
             .e = m.a * n.e + m.c * n.f + m.e,
@@ -29,7 +29,7 @@ canvas2d_mat canvas2d_mat_mul(canvas2d_mat m, canvas2d_mat n) {
         };
     }
     // Full 3x3 product (column vectors: the (a,b,g) etc. layout).
-    return (canvas2d_mat){
+    return (canvas2d_matrix){
         .a = m.a * n.a + m.c * n.b + m.e * n.g,
         .b = m.b * n.a + m.d * n.b + m.f * n.g,
         .g = m.g * n.a + m.h * n.b + m.i * n.g,
@@ -42,28 +42,28 @@ canvas2d_mat canvas2d_mat_mul(canvas2d_mat m, canvas2d_mat n) {
     };
 }
 
-canvas2d_mat canvas2d_mat_translate(float tx, float ty) {
-    return (canvas2d_mat){ .a = 1.0f, .c = 0.0f, .e = tx,
+canvas2d_matrix canvas2d_matrix_translate(float tx, float ty) {
+    return (canvas2d_matrix){ .a = 1.0f, .c = 0.0f, .e = tx,
                        .b = 0.0f, .d = 1.0f, .f = ty,
                        .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
-canvas2d_mat canvas2d_mat_scale(float sx, float sy) {
-    return (canvas2d_mat){ .a = sx,   .c = 0.0f, .e = 0.0f,
+canvas2d_matrix canvas2d_matrix_scale(float sx, float sy) {
+    return (canvas2d_matrix){ .a = sx,   .c = 0.0f, .e = 0.0f,
                        .b = 0.0f, .d = sy,   .f = 0.0f,
                        .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
-canvas2d_mat canvas2d_mat_rotate(float radians) {
+canvas2d_matrix canvas2d_matrix_rotate(float radians) {
     float const s = sinf(radians);
     float c = cosf(radians);
-    return (canvas2d_mat){ .a = c, .c = -s, .e = 0.0f,
+    return (canvas2d_matrix){ .a = c, .c = -s, .e = 0.0f,
                        .b = s, .d =  c, .f = 0.0f,
                        .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
-canvas2d_vec2 canvas2d_mat_apply(canvas2d_mat m, canvas2d_vec2 p) {
-    if (canvas2d_mat_is_affine(m)) {
+canvas2d_vec2 canvas2d_matrix_apply(canvas2d_matrix m, canvas2d_vec2 p) {
+    if (canvas2d_matrix_is_affine(m)) {
         // No divide: identical to the 2x3 apply (w == 1 exactly).
         return (canvas2d_vec2){
             .x = m.a * p.x + m.c * p.y + m.e,
@@ -78,16 +78,16 @@ canvas2d_vec2 canvas2d_mat_apply(canvas2d_mat m, canvas2d_vec2 p) {
     };
 }
 
-canvas2d_mat canvas2d_mat_invert(canvas2d_mat m) {
-    if (canvas2d_mat_is_affine(m)) {
+canvas2d_matrix canvas2d_matrix_invert(canvas2d_matrix m) {
+    if (canvas2d_matrix_is_affine(m)) {
         // The old 2x3 inverse, arithmetic unchanged, so an affine matrix
         // inverts bit-identically (the device->user maps the sampler relies on).
         float const det = m.a * m.d - m.b * m.c;
         if (det < 1e-12f && det > -1e-12f) {
-            return canvas2d_mat_identity();
+            return canvas2d_matrix_identity();
         }
         float const inv = 1.0f / det;
-        canvas2d_mat r = { .a =  m.d * inv, .c = -m.c * inv,
+        canvas2d_matrix r = { .a =  m.d * inv, .c = -m.c * inv,
                        .b = -m.b * inv, .d =  m.a * inv,
                        .g = 0.0f, .h = 0.0f, .i = 1.0f };
         r.e = -(r.a * m.e + r.c * m.f);
@@ -100,11 +100,11 @@ canvas2d_mat canvas2d_mat_invert(canvas2d_mat m) {
     float const C =  (m.b * m.h - m.d * m.g);
     float const det = m.a * A + m.c * B + m.e * C;
     if (det < 1e-12f && det > -1e-12f) {
-        return canvas2d_mat_identity();
+        return canvas2d_matrix_identity();
     }
     float const inv = 1.0f / det;
     // Adjugate (transpose of the cofactor matrix) scaled by 1/det.
-    return (canvas2d_mat){
+    return (canvas2d_matrix){
         .a = A * inv,
         .b = B * inv,
         .g = C * inv,

@@ -220,13 +220,13 @@ static int verb_pts(enum canvas2d_glyph_verb v) {
 // Map one canonical font-unit point to device space: scale to user px (font units
 // are y up, canvas user space is y down), place at the pen, then the CTM.
 struct glyph_place {
-    canvas2d_mat to_device;
+    canvas2d_matrix to_device;
     float ox, oy, scale;
 };
 
 static canvas2d_vec2 place(struct glyph_place const *g, canvas2d_vec2 fu) {
     canvas2d_vec2 const u = { g->ox + fu.x * g->scale, g->oy - fu.y * g->scale };
-    return canvas2d_mat_apply(g->to_device, u);
+    return canvas2d_matrix_apply(g->to_device, u);
 }
 
 // Transform + flatten one glyph's canonical curves into `out`: the shared back
@@ -1003,7 +1003,7 @@ void canvas2d_text_cache_unmark(struct canvas2d_text_cache *__single c) {
 // boundary and run the same checked transform/flatten a cache hit replays --
 // the degradation glyph_outline_cached takes when the cache can't serve.
 static void canvas2d_glyph_outline(void *__single font, uint16_t glyph, float size_px,
-                               float ox, float oy, canvas2d_mat to_device, float tol,
+                               float ox, float oy, canvas2d_matrix to_device, float tol,
                                struct canvas2d_path *__single out) {
     // Stack buffers cover the typical glyph; a rare complex one takes the
     // grow-and-refetch path (canvas2d_glyph_curves reports the true counts).
@@ -1049,7 +1049,7 @@ static void canvas2d_glyph_outline(void *__single font, uint16_t glyph, float si
 static void glyph_outline_cached(struct canvas2d_text_cache *__single c, int fid,
                                  void *__single font, uint16_t glyph,
                                  float size_px, float ox, float oy,
-                                 canvas2d_mat to_device, float tol,
+                                 canvas2d_matrix to_device, float tol,
                                  struct canvas2d_path *__single out) {
     struct canvas2d_glyph_slot *slot = canvas2d_text_cache_glyph(c, fid, font, glyph, size_px);
     if (slot) {
@@ -1068,7 +1068,7 @@ static void glyph_outline_cached(struct canvas2d_text_cache *__single c, int fid
 
 float canvas2d_shaped_outline(struct canvas2d_text_cache *__single cache,
                           struct canvas2d_shaped const *__single s, float ox, float oy,
-                          canvas2d_mat to_device, float tol, struct canvas2d_path *__single out,
+                          canvas2d_matrix to_device, float tol, struct canvas2d_path *__single out,
                           canvas2d_color_glyph_fn color, void *__single ctx) {
     if (!s) {
         return 0.0f;

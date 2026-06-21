@@ -1,5 +1,5 @@
 // Projective (perspective) transforms (docs/decisions/perspective.md, P1):
-// the canvas2d_mat homography math, the quad->homography solve, and projective
+// the canvas2d_matrix homography math, the quad->homography solve, and projective
 // geometry (a fill lands where projection predicts; a fully-behind shape draws
 // nothing; affine behaviour is unchanged; record->replay round-trips).
 
@@ -33,52 +33,52 @@ static bool feq_bits(float a, float b) {
 
 // A representative projective matrix (g,h not both 0): maps (x,y,1) and divides
 // by w = 0.1*x + 0.2*y + 1.
-static canvas2d_mat sample_perspective(void) {
-    return (canvas2d_mat){ .a = 2.0f, .b = 0.3f, .c = 0.5f, .d = 1.5f,
+static canvas2d_matrix sample_perspective(void) {
+    return (canvas2d_matrix){ .a = 2.0f, .b = 0.3f, .c = 0.5f, .d = 1.5f,
                        .e = 4.0f, .f = -1.0f, .g = 0.1f, .h = 0.2f, .i = 1.0f };
 }
 
-// --- canvas2d_mat math ----------------------------------------------------------
+// --- canvas2d_matrix math ----------------------------------------------------------
 
 static void test_is_affine_and_identity(void) {
-    canvas2d_mat const id = canvas2d_mat_identity();
-    CHECK(canvas2d_mat_is_affine(id));
-    CHECK(vnear(canvas2d_mat_apply(id, (canvas2d_vec2){ .x = 3.0f, .y = 4.0f }), 3.0f, 4.0f));
+    canvas2d_matrix const id = canvas2d_matrix_identity();
+    CHECK(canvas2d_matrix_is_affine(id));
+    CHECK(vnear(canvas2d_matrix_apply(id, (canvas2d_vec2){ .x = 3.0f, .y = 4.0f }), 3.0f, 4.0f));
 
-    CHECK(canvas2d_mat_is_affine(canvas2d_mat_translate(2.0f, 3.0f)));
-    CHECK(canvas2d_mat_is_affine(canvas2d_mat_scale(2.0f, 3.0f)));
-    CHECK(canvas2d_mat_is_affine(canvas2d_mat_rotate(0.5f)));
+    CHECK(canvas2d_matrix_is_affine(canvas2d_matrix_translate(2.0f, 3.0f)));
+    CHECK(canvas2d_matrix_is_affine(canvas2d_matrix_scale(2.0f, 3.0f)));
+    CHECK(canvas2d_matrix_is_affine(canvas2d_matrix_rotate(0.5f)));
 
-    CHECK(!canvas2d_mat_is_affine(sample_perspective()));
+    CHECK(!canvas2d_matrix_is_affine(sample_perspective()));
 }
 
 // An affine apply must be bit-identical to the 2x3 expectation (no divide).
 static void test_affine_apply_bit_identical(void) {
-    canvas2d_mat const m = { .a = 1.5f, .b = -0.25f, .c = 0.75f, .d = 2.0f,
+    canvas2d_matrix const m = { .a = 1.5f, .b = -0.25f, .c = 0.75f, .d = 2.0f,
                          .e = 10.0f, .f = -3.0f, .g = 0.0f, .h = 0.0f, .i = 1.0f };
     float const px = 2.0f, py = 5.0f;
     float const want_x = m.a * px + m.c * py + m.e;  // the exact 2x3 expression
     float const want_y = m.b * px + m.d * py + m.f;
-    canvas2d_vec2 const got = canvas2d_mat_apply(m, (canvas2d_vec2){ .x = px, .y = py });
+    canvas2d_vec2 const got = canvas2d_matrix_apply(m, (canvas2d_vec2){ .x = px, .y = py });
     CHECK(feq_bits(got.x, want_x));  // bit-identical, not merely near
     CHECK(feq_bits(got.y, want_y));
 }
 
 // A perspective apply divides by w.
 static void test_perspective_apply_divides(void) {
-    canvas2d_mat const m = sample_perspective();
+    canvas2d_matrix const m = sample_perspective();
     float const px = 3.0f, py = -2.0f;
     float const w = m.g * px + m.h * py + m.i;
     float const wx = (m.a * px + m.c * py + m.e) / w;
     float const wy = (m.b * px + m.d * py + m.f) / w;
-    CHECK(vnear(canvas2d_mat_apply(m, (canvas2d_vec2){ .x = px, .y = py }), wx, wy));
+    CHECK(vnear(canvas2d_matrix_apply(m, (canvas2d_vec2){ .x = px, .y = py }), wx, wy));
 }
 
 // Affine mul/invert are bit-identical to the 2x3 result.
 static void test_affine_mul_invert_bit_identical(void) {
-    canvas2d_mat const t = canvas2d_mat_translate(10.0f, -5.0f);
-    canvas2d_mat const s = canvas2d_mat_scale(2.0f, 3.0f);
-    canvas2d_mat const ts = canvas2d_mat_mul(t, s);
+    canvas2d_matrix const t = canvas2d_matrix_translate(10.0f, -5.0f);
+    canvas2d_matrix const s = canvas2d_matrix_scale(2.0f, 3.0f);
+    canvas2d_matrix const ts = canvas2d_matrix_mul(t, s);
     // The old 2x3 product expressions, term for term.
     CHECK(feq_bits(ts.a, t.a * s.a + t.c * s.b));
     CHECK(feq_bits(ts.c, t.a * s.c + t.c * s.d));
@@ -86,26 +86,26 @@ static void test_affine_mul_invert_bit_identical(void) {
     CHECK(feq_bits(ts.b, t.b * s.a + t.d * s.b));
     CHECK(feq_bits(ts.d, t.b * s.c + t.d * s.d));
     CHECK(feq_bits(ts.f, t.b * s.e + t.d * s.f + t.f));
-    CHECK(canvas2d_mat_is_affine(ts));
+    CHECK(canvas2d_matrix_is_affine(ts));
 
-    canvas2d_mat const m = { .a = 1.5f, .b = -0.25f, .c = 0.75f, .d = 2.0f,
+    canvas2d_matrix const m = { .a = 1.5f, .b = -0.25f, .c = 0.75f, .d = 2.0f,
                          .e = 10.0f, .f = -3.0f, .g = 0.0f, .h = 0.0f, .i = 1.0f };
-    canvas2d_mat const inv = canvas2d_mat_invert(m);
+    canvas2d_matrix const inv = canvas2d_matrix_invert(m);
     float const det = m.a * m.d - m.b * m.c;
     float const di = 1.0f / det;
     CHECK(feq_bits(inv.a, m.d * di));
     CHECK(feq_bits(inv.c, -m.c * di));
     CHECK(feq_bits(inv.b, -m.b * di));
     CHECK(feq_bits(inv.d, m.a * di));
-    CHECK(canvas2d_mat_is_affine(inv));
+    CHECK(canvas2d_matrix_is_affine(inv));
 }
 
 // invert . apply round-trips a point for a perspective matrix.
 static void test_perspective_invert_roundtrip(void) {
-    canvas2d_mat const m = sample_perspective();
-    canvas2d_mat const inv = canvas2d_mat_invert(m);
+    canvas2d_matrix const m = sample_perspective();
+    canvas2d_matrix const inv = canvas2d_matrix_invert(m);
     canvas2d_vec2 const p = { .x = 7.0f, .y = 2.5f };
-    canvas2d_vec2 const back = canvas2d_mat_apply(inv, canvas2d_mat_apply(m, p));
+    canvas2d_vec2 const back = canvas2d_matrix_apply(inv, canvas2d_matrix_apply(m, p));
     CHECK(vnear(back, p.x, p.y));
 }
 
@@ -139,7 +139,7 @@ static void test_quad_maps_corners(void) {
     if (!f) {
         return;
     }
-    canvas2d_mat m = canvas2d_mat_identity();
+    canvas2d_matrix m = canvas2d_matrix_identity();
     bool found = false;
     char buf[256];
     for (;;) {
@@ -152,7 +152,7 @@ static void test_quad_maps_corners(void) {
         float v[9];
         if (sscanf(line, "set_transform %f %f %f %f %f %f %f %f %f",
                    &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8]) == 9) {
-            m = (canvas2d_mat){ .a = v[0], .b = v[1], .c = v[2], .d = v[3], .e = v[4],
+            m = (canvas2d_matrix){ .a = v[0], .b = v[1], .c = v[2], .d = v[3], .e = v[4],
                             .f = v[5], .g = v[6], .h = v[7], .i = v[8] };
             found = true;
             break;
@@ -160,13 +160,13 @@ static void test_quad_maps_corners(void) {
     }
     (void)fclose(f);
     CHECK(found);
-    CHECK(!canvas2d_mat_is_affine(m));  // a real perspective solve
+    CHECK(!canvas2d_matrix_is_affine(m));  // a real perspective solve
 
     // Each source corner maps to its destination point.
-    CHECK(vnear(canvas2d_mat_apply(m, (canvas2d_vec2){ sx, sy }), dx0, dy0));            // TL
-    CHECK(vnear(canvas2d_mat_apply(m, (canvas2d_vec2){ sx + sw, sy }), dx1, dy1));       // TR
-    CHECK(vnear(canvas2d_mat_apply(m, (canvas2d_vec2){ sx + sw, sy + sh }), dx2, dy2));  // BR
-    CHECK(vnear(canvas2d_mat_apply(m, (canvas2d_vec2){ sx, sy + sh }), dx3, dy3));       // BL
+    CHECK(vnear(canvas2d_matrix_apply(m, (canvas2d_vec2){ sx, sy }), dx0, dy0));            // TL
+    CHECK(vnear(canvas2d_matrix_apply(m, (canvas2d_vec2){ sx + sw, sy }), dx1, dy1));       // TR
+    CHECK(vnear(canvas2d_matrix_apply(m, (canvas2d_vec2){ sx + sw, sy + sh }), dx2, dy2));  // BR
+    CHECK(vnear(canvas2d_matrix_apply(m, (canvas2d_vec2){ sx, sy + sh }), dx3, dy3));       // BL
 }
 
 // Read one device pixel (RGBA, sRGB) from a canvas.
