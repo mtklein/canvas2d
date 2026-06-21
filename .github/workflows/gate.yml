@@ -15,6 +15,10 @@ on:
 jobs:
   gate:
     runs-on: macos-26
+    # Hard cap so a runaway step can't burn hours (a clean gate is ~1-2 min; a
+    # 2h+ run in mid-2026 was a regression, not normal).  GitHub cancels the job
+    # at this limit instead of falling back to the 6h default.
+    timeout-minutes: 5
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.5.app
     steps:
