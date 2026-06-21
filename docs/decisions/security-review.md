@@ -427,11 +427,11 @@ The four harnesses the pass recommended now live in [`fuzz/`](../../fuzz/):
 3. **Core Text shim harness** — [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c):
    valid + invalid UTF-8 → `measure_text`/`fill_text`/`stroke_text`. This is the
    one unchecked TU; ASan is its only net (Finding 3).
-4. **PNG decode / inflate harnesses** — [`fuzz/fuzz_pngdec.c`](../../fuzz/fuzz_pngdec.c)
-   and [`fuzz/fuzz_inflate.c`](../../fuzz/fuzz_inflate.c) cover the decode side of
-   the codec arithmetic the original `canvas2d_blit_rgba` clamp idea pointed at
-   ([`canvas2d_image.c:9-21`](../../src/canvas2d_image.c) remains the off-by-one-prone clip
-   math to keep an eye on).
+4. **Inflate harness** — [`fuzz/fuzz_inflate.c`](../../fuzz/fuzz_inflate.c) fuzzes the
+   zlib inflate path's codec arithmetic.  (The project encodes PNGs and has no
+   decoder, so there is no PNG-decode harness; the blit clip math in
+   [`canvas2d_image.c`](../../src/canvas2d_image.c) `canvas2d_blit_rgba` stays the
+   off-by-one-prone spot to keep an eye on.)
 
 The original `overflow_poc.c` that seeded harness #1 has been **retired**: its
 exact scenario (`canvas2d_get_image_data` with `int`-overflowing `w*h*4`) is now a
