@@ -20,12 +20,27 @@ typedef struct {
 } cnvs_stop;
 
 // Coordinates and radii are device space (the CTM is baked in when the gradient
-// is created).
+// is created) -- the affine fast path solves the parameter directly in device
+// space, so the device-space p0/p1/r0/r1/angle drive it.
+//
+// Under a PERSPECTIVE CTM the device->user map is not affine, so a device pixel
+// cannot be mapped to a single user point by a baked-in matrix.  The perspective
+// path instead keeps the gradient in USER space (up0/up1/ur0/ur1/uangle, the raw
+// API arguments, no CTM baked in) plus the device->user inverse homography
+// (to_user); per pixel it maps the device centre back to user space (the
+// perspective-correct u/w, v/w) and solves the parameter there.  `persp` is set
+// when the creating CTM was non-affine and selects that path; affine gradients
+// leave it false and run the device-space solver bit for bit as before.
 struct cnvs_gradient {
     enum cnvs_grad_kind kind;
     cnvs_vec2 p0, p1;
     float r0, r1;
     float angle;   // conic: start angle (radians), device space; unused otherwise
+    bool persp;            // creating CTM was perspective: solve in user space
+    cnvs_vec2 up0, up1;    // user-space endpoints (perspective path)
+    float ur0, ur1;        // user-space radii (perspective path)
+    float uangle;          // user-space conic start angle (perspective path)
+    cnvs_mat to_user;      // device -> user inverse homography (perspective path)
     cnvs_stop stops[CNVS_STOPS_MAX];
     int stop_count;
     // Interpolation is TWO orthogonal knobs (a 2D grid, not a single mode):
@@ -67,6 +82,13 @@ bool cnvs_gradient_paints_nothing(struct cnvs_gradient const *gr);
 // [0,1]).  Returns false when a radial point lies outside the gradient (no
 // circle in the family passes through it) -- such samples paint transparent.
 bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__single t);
+
+// Gradient parameter for a USER-space point, solved against the gradient's
+// user-space def (up0/up1/ur0/ur1/uangle) -- the perspective path, where a
+// device pixel is mapped back to user space (perspective-correct) before the
+// solve.  Same math as cnvs_gradient_param, only the geometry coords differ.
+bool cnvs_gradient_param_user(struct cnvs_gradient const *gr, cnvs_vec2 p,
+                              float *__single t);
 
 // Vectorized parameter solve for a horizontal run of `n` pixel centres
 // (x0 + i + 0.5, y).  Fills t_out[i] with the parameter in [0,1], or -1 where the

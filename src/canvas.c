@@ -782,6 +782,22 @@ static float ctm_scale(cnvs_mat m) {
 // stores the caller-chosen interpolation knobs (space + alpha) directly -- the
 // interpolation is required at creation, with no favoured default among the
 // peer spaces or alpha modes.
+// Stamp the perspective fields shared by every gradient kind: the user-space
+// def (raw args, no CTM baked in) and the device->user inverse, plus the persp
+// flag set when the creating CTM is non-affine.  On the affine path these go
+// unread (the device-space p0/p1/r0/r1/angle solver runs unchanged).
+static void grad_set_persp(struct canvas *__single cv, struct cnvs_gradient *gr,
+                           cnvs_vec2 up0, cnvs_vec2 up1, float ur0, float ur1,
+                           float uangle) {
+    gr->persp = !cnvs_mat_is_affine(cv->cur.ctm);
+    gr->up0 = up0;
+    gr->up1 = up1;
+    gr->ur0 = ur0;
+    gr->ur1 = ur1;
+    gr->uangle = uangle;
+    gr->to_user = cnvs_mat_invert(cv->cur.ctm);
+}
+
 static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr,
                             enum canvas_color_space interp_space,
                             enum canvas_alpha_type interp_alpha,
@@ -796,6 +812,8 @@ static void grad_set_linear(struct canvas *__single cv, struct cnvs_gradient *gr
     gr->interp = interp_space;
     gr->interp_alpha = interp_alpha;
     gr->space = cv->space;
+    grad_set_persp(cv, gr, (cnvs_vec2){ x0, y0 }, (cnvs_vec2){ x1, y1 },
+                   0.0f, 0.0f, 0.0f);
 }
 
 static void grad_set_radial(struct canvas *__single cv, struct cnvs_gradient *gr,
@@ -813,6 +831,8 @@ static void grad_set_radial(struct canvas *__single cv, struct cnvs_gradient *gr
     gr->interp = interp_space;
     gr->interp_alpha = interp_alpha;
     gr->space = cv->space;
+    grad_set_persp(cv, gr, (cnvs_vec2){ x0, y0 }, (cnvs_vec2){ x1, y1 },
+                   r0, r1, 0.0f);
 }
 
 // Rotation angle (radians) of the CTM's x-axis basis, for baking a conic
@@ -836,6 +856,8 @@ static void grad_set_conic(struct canvas *__single cv, struct cnvs_gradient *gr,
     gr->interp = interp_space;
     gr->interp_alpha = interp_alpha;
     gr->space = cv->space;
+    grad_set_persp(cv, gr, (cnvs_vec2){ cx, cy }, (cnvs_vec2){ cx, cy },
+                   0.0f, 0.0f, start_angle);
 }
 
 // Configure `p` to tile `src` (borrowed) with `repeat`, pinned in device space
@@ -1999,6 +2021,21 @@ static foldv8 mat_apply8(cnvs_mat m, float8 x, float y) {
                      .y = m.b * x + m.d * y + m.f };
 }
 
+// Perspective-correct cnvs_mat_apply, eight pixel centres along one row.  The
+// three homogeneous numerators u = a*x + c*y + e, v = b*x + d*y + f, and
+// w = g*x + h*y + i are each LINEAR in x, so they step with the row (computed
+// here 8 wide); the source coord is (u/w, v/w), the per-pixel divide the only
+// added work over the affine mat_apply8.  Used only on the !cnvs_mat_is_affine
+// sampler branches -- the affine branch keeps mat_apply8's divide-free DDA, bit
+// for bit.  This is the 8-wide twin of cnvs_mat_apply's projective arm.
+static foldv8 mat_apply8_persp(cnvs_mat m, float8 x, float y) {
+    float8 const u = m.a * x + m.c * y + m.e;
+    float8 const v = m.b * x + m.d * y + m.f;
+    float8 const w = m.g * x + m.h * y + m.i;
+    float8 const inv = (float8)1.0f / w;
+    return (foldv8){ .x = u * inv, .y = v * inv };
+}
+
 // Does the shade stage fold the op's coverage into the tile's alpha?  The
 // over-family folds exactly (coverage_folds); for every other
 // mode the tile carries the source at full strength and the
@@ -2074,10 +2111,75 @@ static void paint_tile_solid(struct canvas *__single cv, cbbox b, cnvs_unpremul 
 
 // Paint the resolved coverage with a gradient; the same alpha fold as
 // paint_tile_solid, with the colour solved per pixel instead of splatted.
+// Fill t_out with the gradient parameter for a row of pixel centres under a
+// PERSPECTIVE CTM: map each device centre back to user space (perspective-
+// correct, the 8-wide u/w v/w divide), then solve the parameter in user space.
+// The affine row solver (cnvs_gradient_param_row) is divide-free and linear in
+// x; this is its projective twin -- same -1 "outside" sentinel for the radial
+// miss, consumed by the unchanged cnvs_gradient_color_row.
+static void grad_param_row_persp(struct cnvs_gradient const *gr, int x0, float y,
+                                 int n, float *__counted_by(n) t_out) {
+    float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    int i = 0;
+    for (; i + 8 <= n; i += 8) {
+        float8 const xs = (float)x0 + ((float)i + lane) + 0.5f;
+        foldv8 const uv = mat_apply8_persp(gr->to_user, xs, y);
+        for (int l = 0; l < 8; l++) {
+            float t;
+            t_out[i + l] = cnvs_gradient_param_user(
+                               gr, (cnvs_vec2){ uv.x[l], uv.y[l] }, &t)
+                               ? t : -1.0f;
+        }
+    }
+    for (; i < n; i++) {
+        cnvs_vec2 const p = cnvs_mat_apply(gr->to_user,
+            (cnvs_vec2){ .x = (float)x0 + (float)i + 0.5f, .y = y });
+        float t;
+        t_out[i] = cnvs_gradient_param_user(gr, p, &t) ? t : -1.0f;
+    }
+}
+
+// Paint the resolved coverage with a gradient; the same alpha fold as
+// paint_tile_solid, with the colour solved per pixel instead of splatted.
 static void paint_tile_gradient(struct canvas *__single cv, cbbox b,
                                 struct cnvs_gradient const *gr) {
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
+    if (gr->persp && ensure_grad_rows(cv, b.w)) {
+        // Perspective CTM: solve the parameter in user space (the row filler
+        // does the per-pixel device->user divide), then reuse the unchanged
+        // colour + fold stages.  Affine gradients never reach here -- persp is
+        // false -- so the divide-free row solver below stays byte-identical.
+        half8 const gah = (half8)(_Float16)ga;
+        for (int py = 0; py < b.h; py++) {
+            grad_param_row_persp(gr, b.x, (float)b.y + (float)py + 0.5f, b.w,
+                                 cv->trow);
+            cnvs_gradient_color_row(gr, cv->trow, b.w, cv->crow);
+            int const row = py * b.w;
+            int px = 0;
+            for (; px + 8 <= b.w; px += 8) {
+                cnvs_px8 const col = cnvs_px8_load_unpremul(cv->crow + px);
+                half8 alpha = col.a * gah;
+                if (fold) {
+                    alpha = alpha * cover8(cv->cov + row + px);
+                }
+                cnvs_px8_store(cv->tile + row + px,
+                               shade8(col.r, col.g, col.b, alpha));
+            }
+            if (px < b.w) {
+                int const k = b.w - px;
+                cnvs_px8 const col = cnvs_px8_load_unpremul_k(cv->crow + px, k);
+                half8 alpha = col.a * gah;
+                if (fold) {
+                    alpha = alpha * cover8_k(cv->cov + row + px, k);
+                }
+                cnvs_px8_store_k(cv->tile + row + px, k,
+                                 shade8(col.r, col.g, col.b, alpha));
+            }
+        }
+        blend_tile(cv, b, fold);
+        return;
+    }
     if (ensure_grad_rows(cv, b.w)) {
         // Evaluate the gradient a row at a time, all three stages vectorized:
         // solve the parameters (cnvs_gradient_param_row), lerp the stop
@@ -2114,14 +2216,23 @@ static void paint_tile_gradient(struct canvas *__single cv, cbbox b,
         }
     } else {
         // OOM fallback: the row buffers couldn't grow, so run the scalar
-        // per-pixel parameter solve + stop lerp.
+        // per-pixel parameter solve + stop lerp.  Under perspective the device
+        // centre maps back to user space (perspective-correct) and the
+        // parameter solves there; affine solves directly in device space.
         for (int py = 0; py < b.h; py++) {
             for (int px = 0; px < b.w; px++) {
                 int const i = py * b.w + px;
                 float t;
-                cnvs_vec2 p = { .x = (float)b.x + (float)px + 0.5f,
-                                .y = (float)b.y + (float)py + 0.5f };
-                cnvs_unpremul col = cnvs_gradient_param(gr, p, &t)
+                cnvs_vec2 const dp = { .x = (float)b.x + (float)px + 0.5f,
+                                       .y = (float)b.y + (float)py + 0.5f };
+                bool got;
+                if (gr->persp) {
+                    cnvs_vec2 const up = cnvs_mat_apply(gr->to_user, dp);
+                    got = cnvs_gradient_param_user(gr, up, &t);
+                } else {
+                    got = cnvs_gradient_param(gr, dp, &t);
+                }
+                cnvs_unpremul col = got
                                         ? cnvs_gradient_color_at(gr, t)
                                         : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
                 // Fold global alpha (and, for folding modes, coverage) into
@@ -2207,6 +2318,10 @@ static void paint_tile_pattern(struct canvas *__single cv, cbbox b, struct cnvs_
     float const ga = cv->cur.global_alpha;
     bool const fold = shade_folds_coverage(cv);
     bool const smooth = cv->cur.image_smoothing_enabled;
+    // to_pattern is the device->pattern inverse of the CTM in force at creation;
+    // it is non-affine exactly when that CTM was perspective, which is the per-
+    // pixel-divide branch.  Affine patterns keep mat_apply8's linear DDA.
+    bool const persp = !cnvs_mat_is_affine(p->to_pattern);
     float8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const dy = (float)b.y + (float)py + 0.5f;
@@ -2216,7 +2331,8 @@ static void paint_tile_pattern(struct canvas *__single cv, cbbox b, struct cnvs_
             // Pixel-centre x per lane: integer-exact f32 sums, so the grouping
             // can't differ from the scalar (float)b.x + (float)(px+l) + 0.5f.
             float8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
-            foldv8 const uv = mat_apply8(p->to_pattern, xs, dy);
+            foldv8 const uv = persp ? mat_apply8_persp(p->to_pattern, xs, dy)
+                                    : mat_apply8(p->to_pattern, xs, dy);
             float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
                    sa = (float8)0.0f;
             for (int l = 0; l < k; l++) {
@@ -4567,6 +4683,7 @@ static void draw_image_quad(struct canvas *__single cv,
     // (emoji captures, mip and cubic samples) has no premultiply: every
     // channel narrows and scales by ga x coverage in f16.
     cnvs_mat const inv = cnvs_mat_invert(cv->cur.ctm);  // device -> user
+    bool const persp = !cnvs_mat_is_affine(cv->cur.ctm);  // per-pixel divide?
     float const ga = cv->cur.global_alpha;
     half8 const gah = (half8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
@@ -4657,7 +4774,8 @@ static void draw_image_quad(struct canvas *__single cv,
             // integer-exact f32, so the grouping can't differ from the
             // scalar (float)b.x + (float)(px+l) + 0.5f.
             float8 const xs = (float)b.x + ((float)px + lane) + 0.5f;
-            foldv8 const u = mat_apply8(inv, xs, devy);
+            foldv8 const u = persp ? mat_apply8_persp(inv, xs, devy)
+                                   : mat_apply8(inv, xs, devy);
             float8 const fsx = sx + ((u.x - dx) / dw) * sww;
             float8 const fsy = sy + ((u.y - dy) / dh) * shh;
             float8 sr = (float8)0.0f, sg = (float8)0.0f, sb = (float8)0.0f,
