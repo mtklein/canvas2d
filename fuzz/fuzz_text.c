@@ -1,4 +1,4 @@
-// Fuzzes the UNCHECKED Core Text shim (src/cnvs_text_ct.c -- BOUNDARY_C, built
+// Fuzzes the UNCHECKED Core Text shim (src/canvas2d_text_ct.c -- BOUNDARY_C, built
 // WITHOUT -fbounds-safety) through the public text API.  This is the highest-risk
 // remaining surface: a bug here is real corruption, not a trap, and ASan is the
 // only memory-safety net in that TU.  The harness drives, on adversarial bytes:
@@ -11,7 +11,7 @@
 // Text is NUL-terminated, per the API's __null_terminated contract.  A transform
 // and font-size are mixed in so the outline-emit coordinate mapping is exercised.
 
-#include "canvas.h"
+#include "canvas2d.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -19,7 +19,7 @@
 #include <string.h>
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
-    struct canvas *__single cv = canvas(96, 48, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(96, 48, CANVAS2D_CS_SRGB);
     if (!cv) {
         return 0;
     }
@@ -27,8 +27,8 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     size_t at = 0;
     uint8_t const b0 = at < size ? data[at++] : 0;
     uint8_t const b1 = at < size ? data[at++] : 0;
-    canvas_set_font_size(cv, (float)(b0 % 48) + 4.0f);
-    canvas_rotate(cv, (float)((int)b1 - 128) * 0.01f);  // exercise emit()'s gpt() mapping
+    canvas2d_set_font_size(cv, (float)(b0 % 48) + 4.0f);
+    canvas2d_rotate(cv, (float)((int)b1 - 128) * 0.01f);  // exercise emit()'s gpt() mapping
 
     // Remaining bytes are the UTF-8 string, NUL-terminated (the API contract;
     // an embedded NUL just ends the string early -- a valid case for utf8_next).
@@ -39,13 +39,13 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             memcpy(text, data + at, tlen);
         }
         text[tlen] = '\0';
-        (void)canvas_measure_text(cv, text);      // utf8_next + glyph lookup + advances
-        canvas_fill_text(cv, text, 4.0f, 30.0f);  // + CTFontCreatePathForGlyph + emit()
-        canvas_stroke_text(cv, text, 4.0f, 30.0f);
+        (void)canvas2d_measure_text(cv, text);      // utf8_next + glyph lookup + advances
+        canvas2d_fill_text(cv, text, 4.0f, 30.0f);  // + CTFontCreatePathForGlyph + emit()
+        canvas2d_stroke_text(cv, text, 4.0f, 30.0f);
         free(text);
     }
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     return 0;
 }
 

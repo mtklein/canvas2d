@@ -1,20 +1,20 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_util.h"
 
 #include <math.h>
 
 int main(void) {
-    struct canvas *__single cv = canvas(64, 64, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(64, 64, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return TEST_REPORT();
     }
-    canvas_set_font_size(cv, 20.0f);
+    canvas2d_set_font_size(cv, 20.0f);
 
     // width matches the simple measureText, and a non-empty string is positive.
-    canvas_text_metrics const h = canvas_measure_text_full(cv, "H");
+    canvas2d_text_metrics const h = canvas2d_measure_text_full(cv, "H");
     CHECK(h.width > 0.0f);
-    CHECK(fabsf(h.width - canvas_measure_text(cv, "H")) < 1e-3f);
+    CHECK(fabsf(h.width - canvas2d_measure_text(cv, "H")) < 1e-3f);
 
     // Every field is finite.
     CHECK(isfinite(h.actual_bounding_box_left));
@@ -38,16 +38,16 @@ int main(void) {
     CHECK(h.ideographic_baseline <= 0.0f);
 
     // Repeating the same glyph doubles the advance exactly.
-    canvas_text_metrics const hh = canvas_measure_text_full(cv, "HH");
+    canvas2d_text_metrics const hh = canvas2d_measure_text_full(cv, "HH");
     CHECK(fabsf(hh.width - 2.0f * h.width) < 0.05f);
 
     // A longer run has a wider actual bounding box.
-    canvas_text_metrics const h4 = canvas_measure_text_full(cv, "HHHH");
+    canvas2d_text_metrics const h4 = canvas2d_measure_text_full(cv, "HHHH");
     CHECK(h4.actual_bounding_box_right > h.actual_bounding_box_right);
 
     // Empty string: zero advance and a zero *actual* box, but the font-wide
     // metrics still describe the current font.
-    canvas_text_metrics const e = canvas_measure_text_full(cv, "");
+    canvas2d_text_metrics const e = canvas2d_measure_text_full(cv, "");
     CHECK(e.width == 0.0f);
     CHECK(e.actual_bounding_box_ascent == 0.0f);
     CHECK(e.actual_bounding_box_descent == 0.0f);
@@ -55,6 +55,6 @@ int main(void) {
     CHECK(e.actual_bounding_box_right == 0.0f);
     CHECK(e.font_bounding_box_ascent > 0.0f);
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     return TEST_REPORT();
 }

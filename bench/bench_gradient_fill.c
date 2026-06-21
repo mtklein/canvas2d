@@ -5,7 +5,7 @@
 // row kernels buy over the naive per-pixel scan.
 #include "bench_reps.h"
 
-#include "cnvs_gradient.h"
+#include "canvas2d_gradient.h"
 
 #include <stdio.h>
 
@@ -13,30 +13,30 @@
 #define DIM 384
 
 int main(void) {
-    struct cnvs_gradient gr = {
-        .kind = CNVS_GRAD_RADIAL,
+    struct canvas2d_gradient gr = {
+        .kind = CANVAS2D_GRAD_RADIAL,
         .p0 = { .x = (float)DIM * 0.4f, .y = (float)DIM * 0.45f },
         .p1 = { .x = (float)DIM * 0.5f, .y = (float)DIM * 0.5f },
         .r0 = 4.0f,
         .r1 = (float)DIM * 0.6f,
         .stop_count = 0,
     };
-    cnvs_gradient_add_stop(&gr, 0.00f, cnvs_unpremul_of(1.0f, 1.0f, 1.0f, 1.0f));
-    cnvs_gradient_add_stop(&gr, 0.35f, cnvs_unpremul_of(0.3f, 0.6f, 0.95f, 1.0f));
-    cnvs_gradient_add_stop(&gr, 0.70f, cnvs_unpremul_of(0.9f, 0.3f, 0.4f, 1.0f));
-    cnvs_gradient_add_stop(&gr, 1.00f, cnvs_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
+    canvas2d_gradient_add_stop(&gr, 0.00f, canvas2d_unpremul_of(1.0f, 1.0f, 1.0f, 1.0f));
+    canvas2d_gradient_add_stop(&gr, 0.35f, canvas2d_unpremul_of(0.3f, 0.6f, 0.95f, 1.0f));
+    canvas2d_gradient_add_stop(&gr, 0.70f, canvas2d_unpremul_of(0.9f, 0.3f, 0.4f, 1.0f));
+    canvas2d_gradient_add_stop(&gr, 1.00f, canvas2d_unpremul_of(0.05f, 0.1f, 0.3f, 1.0f));
 
     static float trow[DIM];
-    static cnvs_unpremul crow[DIM];
+    static canvas2d_unpremul crow[DIM];
     double sink = 0.0;
     int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             for (int y = 0; y < DIM; y++) {
-                cnvs_gradient_param_row(&gr, 0, (float)y + 0.5f, DIM, trow);
-                cnvs_gradient_color_row(&gr, trow, DIM, crow);
+                canvas2d_gradient_param_row(&gr, 0, (float)y + 0.5f, DIM, trow);
+                canvas2d_gradient_color_row(&gr, trow, DIM, crow);
                 for (int x = 0; x < DIM; x++) {
-                    cnvs_unpremul const c = crow[x];  // outside is transparent black
+                    canvas2d_unpremul const c = crow[x];  // outside is transparent black
                     sink += (double)c.r + (double)c.g + (double)c.b + (double)c.a;
                 }
             }

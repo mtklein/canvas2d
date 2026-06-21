@@ -1,4 +1,4 @@
-#include "blur.h"
+#include "canvas2d_blur.h"
 #include "test_util.h"
 
 #include <stdlib.h>
@@ -39,7 +39,7 @@ static void ref_blur_v_col(uint8_t *__counted_by(h) dst,
     }
 }
 
-// blur_box_v must match the brute-force reference bit-for-bit across awkward
+// canvas2d_blur_box_v must match the brute-force reference bit-for-bit across awkward
 // shapes: widths off the 8-column lane grid (tail columns), heights of 1 and 2,
 // radii of 0, >= h, and crossing the height.
 static void check_v_vs_ref(void) {
@@ -55,7 +55,7 @@ static void check_v_vs_ref(void) {
                 for (int i = 0; i < n; i++) {
                     src[i] = (uint8_t)((i * 73 + (int)hi * 57 + (int)wi * 31 + (int)ri * 11) & 0xFF);
                 }
-                blur_box_v(dst, src, w, h, r);
+                canvas2d_blur_box_v(dst, src, w, h, r);
                 bool same = true;
                 for (int x = 0; x < w; x++) {
                     ref_blur_v_col(want, src, w, h, x, r);
@@ -71,7 +71,7 @@ static void check_v_vs_ref(void) {
     }
 }
 
-// blur_box_h must match the brute-force reference bit-for-bit across awkward
+// canvas2d_blur_box_h must match the brute-force reference bit-for-bit across awkward
 // shapes: widths off the vector-block grid, radii of 0, >= w, and crossing the
 // width, single-pixel rows.
 static void check_h_vs_ref(void) {
@@ -87,7 +87,7 @@ static void check_h_vs_ref(void) {
                 // arithmetic so the debug build's integer sanitizer stays quiet.
                 src[i] = (uint8_t)((i * 73 + (int)wi * 31 + (int)ri * 11) & 0xFF);
             }
-            blur_box_h(dst, src, w, H, r);
+            canvas2d_blur_box_h(dst, src, w, H, r);
             bool same = true;
             for (int y = 0; y < H; y++) {
                 ref_blur_h_row(want, src + y * w, w, r);
@@ -120,8 +120,8 @@ int main(void) {
     for (int i = 0; i < n; i++) {
         src[i] = 200;
     }
-    blur_box_h(dst, src, w, h, r);
-    blur_box_v(dst2, dst, w, h, r);
+    canvas2d_blur_box_h(dst, src, w, h, r);
+    canvas2d_blur_box_v(dst2, dst, w, h, r);
     bool flat = true;
     for (int i = 0; i < n; i++) {
         if (dst2[i] != 200) {
@@ -137,7 +137,7 @@ int main(void) {
     }
     int cx = 16, cy = 12;
     src[cy * w + cx] = 255;
-    blur_box_h(dst, src, w, h, r);
+    canvas2d_blur_box_h(dst, src, w, h, r);
     uint8_t const lvl = (uint8_t)((255 + win / 2) / win);
     CHECK(dst[cy * w + cx] == lvl);
     CHECK(dst[cy * w + cx - r] == lvl && dst[cy * w + cx + r] == lvl);  // window edge

@@ -5,7 +5,7 @@
 > `-fbounds-safety` hold and where does it end." It is kept here as the record of
 > that pass and as a map from each finding to the living test/fuzzer that now
 > guards it. It has been **lightly refreshed** to stay true to today's tree:
-> file renames are fixed (`cnvs_font_ct.c` → [`cnvs_text_ct.c`](../../src/cnvs_text_ct.c)),
+> file renames are fixed (`canvas2d_font_ct.c` → [`canvas2d_text_ct.c`](../../src/canvas2d_text_ct.c)),
 > and Finding 3 is rewritten because the Metal backend was deleted this week (see
 > [metal-backend.md](metal-backend.md) and [backend-differential.md](backend-differential.md)),
 > so there is now exactly **one** unchecked boundary TU, not two. Each finding
@@ -27,15 +27,15 @@ tools at the seams.
 
 ## 1. The threat model
 
-**Trust boundary.** The public API in [`include/canvas.h`](../../include/canvas.h)
+**Trust boundary.** The public API in [`include/canvas2d.h`](../../include/canvas2d.h)
 is the boundary. Everything a caller controls is untrusted input:
 
 | Input | Entry points | Notes |
 |---|---|---|
-| Canvas dimensions | `canvas_create(w,h)` | **no upper bound** (only `> 0`) |
+| Canvas dimensions | `canvas2d_create(w,h)` | **no upper bound** (only `> 0`) |
 | Geometry / coords | `move_to`, `bezier_curve_to`, `arc`, … | floats → path point counts grow |
 | Pixel buffers + dims | `get/put_image_data`, `draw_image*`, `read_rgba` | caller passes `(ptr, len, w, h)` |
-| Gradient stops | `add_*_color_stop` | fixed `CNVS_MAX_STOPS` array |
+| Gradient stops | `add_*_color_stop` | fixed `CANVAS2D_MAX_STOPS` array |
 | Dash pattern | `set_line_dash(ptr, count)` | `__counted_by(count)` |
 | Text + font name | `fill_text`, `measure_text`, `set_font` | UTF-8 across the Core Text shim |
 
@@ -49,7 +49,7 @@ feature is *spatial only*. It converts an out-of-bounds `ptr[i]` into a
    present in this codebase (see Finding 1).
 2. **Temporal safety** — use-after-free, double-free. (ASan covers this in the
    debug build; nothing covers it in release.)
-3. **The one unchecked translation unit** — [`cnvs_text_ct.c`](../../src/cnvs_text_ct.c)
+3. **The one unchecked translation unit** — [`canvas2d_text_ct.c`](../../src/canvas2d_text_ct.c)
    (`BOUNDARY_C`, the Core Text font shim), built without `-fbounds-safety` to
    bind the un-annotated system headers. Here a wrong bound *is* corruption. ASan
    instruments it in debug; it is unchecked in release. (At the time of the
@@ -76,13 +76,13 @@ That is why Finding 1 lands as "trap, not corruption" in release.
 controlled trap (DoS), but it is **undefined behavior** that is *fatal in the
 debug/sanitizer build* and makes the documented API contract unenforceable.
 **Confidence: verified, end-to-end PoC.**
-**Status: FIXED** — `canvas_create` clamps to `CANVAS_MAX_DIM`, and `rgba8_dims_ok()`
+**Status: FIXED** — `canvas2d_create` clamps to `CANVAS2D_MAX_DIM`, and `rgba8_dims_ok()`
 validates caller dims in 64-bit at the three image entry points
 ([`canvas.c`](../../src/canvas.c)); regression test [`tests/test_dims.c`](../../tests/test_dims.c).
 **Now guarded by:** [`tests/test_dims.c`](../../tests/test_dims.c) — it pins
-`canvas_create(23171, 23171) == NULL` (the genuinely dangerous wrap, see below)
-*and* the `16385`/boundary-`16384` clamp, and drives `canvas_get_image_data`
-/ `canvas_put_image_data` with the overflowing region to confirm the guard
+`canvas2d_create(23171, 23171) == NULL` (the genuinely dangerous wrap, see below)
+*and* the `16385`/boundary-`16384` clamp, and drives `canvas2d_get_image_data`
+/ `canvas2d_put_image_data` with the overflowing region to confirm the guard
 rejects before any write. Under the debug variant's UBSan the whole test aborts
 if the `w*h*4` arithmetic regresses to signed-int. (The original
 proof-of-concept, which drove the public API as an external consumer, has been
@@ -94,12 +94,12 @@ in `int` before any widening:
 
 - [`canvas.c:900`](../../src/canvas.c) `read_unpremul`: `len < cv->width * cv->height * 4`
 - [`canvas.c:903`](../../src/canvas.c) `int const n = cv->width * cv->height`
-- [`canvas.c:924`](../../src/canvas.c) `canvas_write_png`: `int const len = cv->width * cv->height * 4`
-- [`canvas.c:937`](../../src/canvas.c) `canvas_get_image_data`: `len < w * h * 4`
+- [`canvas.c:924`](../../src/canvas.c) `canvas2d_write_png`: `int const len = cv->width * cv->height * 4`
+- [`canvas.c:937`](../../src/canvas.c) `canvas2d_get_image_data`: `len < w * h * 4`
 - [`canvas.c:941`](../../src/canvas.c) `int const clen = cv->width * cv->height * 4`
-- [`canvas.c:954`](../../src/canvas.c) `canvas_put_image_data`: `len < w * h * 4`
+- [`canvas.c:954`](../../src/canvas.c) `canvas2d_put_image_data`: `len < w * h * 4`
 
-`canvas_create` validates only `w > 0 && h > 0` — **no upper bound** — so these
+`canvas2d_create` validates only `w > 0 && h > 0` — **no upper bound** — so these
 products overflow. The overflow makes the bounds guard `len < w*h*4` depend on
 the specific input:
 
@@ -115,7 +115,7 @@ since retired in favor of the gated [`tests/test_dims.c`](../../tests/test_dims.
 
 | Build | Result |
 |---|---|
-| `unsafe` (feature off) + ASan | **`heap-buffer-overflow` WRITE** in `cnvs_blit_rgba ← canvas_get_image_data` — a real OOB write (CWE-787) |
+| `unsafe` (feature off) + ASan | **`heap-buffer-overflow` WRITE** in `canvas2d_blit_rgba ← canvas2d_get_image_data` — a real OOB write (CWE-787) |
 | `release` (`-Os`, `-fbounds-safety`) | **`SIGTRAP`, exit 133** — OOB write converted to a deterministic trap; no corruption |
 | `debug` (`-fbounds-safety` + UBSan) | **fatal** at `canvas.c:937` — signed-overflow caught at the source |
 
@@ -126,24 +126,24 @@ the feature: with it off it is an exploitable heap overflow; with
 it on, it is a controlled abort.
 
 **Fix.** The PNG *encoder*
-already does this — [`cnvs_png.c:122-128`](../../src/cnvs_png.c) clamps
+already does this — [`canvas2d_png.c:122-128`](../../src/canvas2d_png.c) clamps
 `width,height ≤ 16384` and does its size math in `size_t`. Apply the same at the
-root, `canvas_create`, and re-derive byte sizes in `size_t`/`int64_t` at the
+root, `canvas2d_create`, and re-derive byte sizes in `size_t`/`int64_t` at the
 six sites above. One bound at creation closes the class.
 
-### Finding 2 — Unbounded doubling in `cnvs_grow_cap` (by inspection)
+### Finding 2 — Unbounded doubling in `canvas2d_grow_cap` (by inspection)
 
 **Severity:** UB; same containment as Finding 1 (trap in release, UBSan-fatal in
 debug). **Confidence: medium, not PoC'd.**
-**Status: FIXED** — the doubling loop in [`cnvs_mem.c`](../../src/cnvs_mem.c) now
+**Status: FIXED** — the doubling loop in [`canvas2d_mem.c`](../../src/canvas2d_mem.c) now
 guards `n > INT_MAX / 2` and falls back to the exact `need` (callers null-check
 the realloc); regression test [`tests/test_mem.c`](../../tests/test_mem.c).
 **Now guarded by:** [`tests/test_mem.c`](../../tests/test_mem.c) — it calls
-`cnvs_grow_cap` right at the top of the range (`INT_MAX - 1`, `1<<30`,
+`canvas2d_grow_cap` right at the top of the range (`INT_MAX - 1`, `1<<30`,
 `INT_MAX/2 + 1`) where the unguarded `n *= 2` would have overflowed, asserting
 the result never drops below `need`; UBSan-fatal in debug if the guard regresses.
 
-[`cnvs_mem.c:3-9`](../../src/cnvs_mem.c): `int n = ...; while (n < need) n *= 2;` —
+[`canvas2d_mem.c:3-9`](../../src/canvas2d_mem.c): `int n = ...; while (n < need) n *= 2;` —
 if `need > 2^30`, `n *= 2` overflows `int` (signed → UB). Reachable by driving a
 path to hundreds of millions of points (`line_to` in a loop). The downstream
 store is `__counted_by`-checked, so in release the consequence traps rather than
@@ -163,7 +163,7 @@ That leaves **exactly one** unchecked boundary TU. The finding's lesson is
 unchanged: the boundary shim is the one place a future edit has no compile-time
 net, so it carries the heaviest fuzzing.)*
 
-`-fbounds-safety` is off in exactly one place — [`cnvs_text_ct.c`](../../src/cnvs_text_ct.c)
+`-fbounds-safety` is off in exactly one place — [`canvas2d_text_ct.c`](../../src/canvas2d_text_ct.c)
 (`BOUNDARY_C` in [`configure.py`](../../configure.py)), the Core Text font shim,
 built without the flag because it binds the un-annotated CoreText/CoreGraphics
 headers. Read closely:
@@ -174,9 +174,9 @@ headers. Read closely:
   not one more (so the adversarial-UTF-8 case is structural, not a hand decoder
   that could walk off the end). `CGPathElement.points` is indexed by element type
   per CG's contract (move/line = 1, quad = 2, cubic = 3) in
-  [`cnvs_text_ct.c:129`](../../src/cnvs_text_ct.c) `emit` — correct, and
+  [`canvas2d_text_ct.c:129`](../../src/canvas2d_text_ct.c) `emit` — correct, and
   ASan-instrumented in debug. Each shaped run is copied into a checked-owned
-  `cnvs_glyph_run` array before it re-enters the checked core. **No bug found**,
+  `canvas2d_glyph_run` array before it re-enters the checked core. **No bug found**,
   and **fuzzed**: [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c) drives
   `measure/fill/stroke_text` with adversarial UTF-8 (truncated, lone-continuation,
   astral, mixed) under ASan, so the counted-slice property is exercised
@@ -212,7 +212,7 @@ check, and the device-space transform plus the `(int)` casts overflow on
 non-finite/huge values. It is a **class spanning multiple sites**, two confirmed:
 [`points_bbox`](../../src/canvas.c) at [`canvas.c:334`](../../src/canvas.c)
 (`int x0 = (int)fx0; ...`) and the transform helper `xf` at
-[`canvas.c:504`](../../src/canvas.c) (reached via `canvas_ellipse`/`draw_image`).
+[`canvas.c:504`](../../src/canvas.c) (reached via `canvas2d_ellipse`/`draw_image`).
 Found by the Role-A API fuzzer ([`fuzz/`](../../fuzz/)) — first on the second random
 input (coverage-less), then re-found by the libFuzzer build with coverage in
 seconds — and reproduced under the diagnostic build:
@@ -221,19 +221,19 @@ seconds — and reproduced under the diagnostic build:
 src/canvas.c:334:29: runtime error: 9.35078e+13 is outside the range of
                      representable values of type 'int'
     #0 points_bbox        canvas.c:334
-    #1 canvas_clear_rect  canvas.c:418   (any fill/clip/rect path reaches it)
+    #1 canvas2d_clear_rect  canvas.c:418   (any fill/clip/rect path reaches it)
 ```
 
 The class turned out broader than the first two sites: float→int casts also live
-in the coverage rasterizer ([`cnvs_cover.c`](../../src/cnvs_cover.c): 56, 81, 82,
-119, 120), the stroker ([`cnvs_stroke.c`](../../src/cnvs_stroke.c):36), and the
+in the coverage rasterizer ([`canvas2d_cover.c`](../../src/canvas2d_cover.c): 56, 81, 82,
+119, 120), the stroker ([`canvas2d_stroke.c`](../../src/canvas2d_stroke.c):36), and the
 float→uint8 colour quantization ([`canvas.c`](../../src/canvas.c) read-back, and
-`cnvs_cover.c`:152). Stroke vertices in particular bypass the transform chokepoint
+`canvas2d_cover.c`:152). Stroke vertices in particular bypass the transform chokepoint
 `xf` (they are width×miter offsets), so a per-entry non-finite check alone would
 miss them — and the crash value was *finite*-huge anyway.
 
 **Fix (the saturating-conversion approach):** a shared
-`cnvs_f2i`/`cnvs_f2u8` ([`cnvs_math.c`](../../src/cnvs_math.c)) makes every float→int
+`canvas2d_f2i`/`canvas2d_f2u8` ([`canvas2d_math.c`](../../src/canvas2d_math.c)) makes every float→int
 and float→uint8 conversion in the renderer total (NaN→0, out-of-range clamps) —
 this is exactly Rust's `as`-cast semantics, hand-written. Colour components clamp
 to `[0,1]` at the public setters ([`canvas.c`](../../src/canvas.c) `clamp01`). The
@@ -255,27 +255,27 @@ of spinning/OOMing. The dash path is also exercised continuously by
 with fuzzed spans).
 
 A pathological dashed stroke drives the vertex buffer to ~2^28 elements (a ~2 GB
-`realloc`): `cnvs_stroke_dashed` → `emit_quad` → `cnvs_verts_tri` →
-`verts_reserve` ([`cnvs_geom.c:12`](../../src/cnvs_geom.c)). Surfaced by libFuzzer
+`realloc`): `canvas2d_stroke_dashed` → `emit_quad` → `canvas2d_verts_tri` →
+`verts_reserve` ([`canvas2d_geom.c:12`](../../src/canvas2d_geom.c)). Surfaced by libFuzzer
 *after* the Finding 4 fix unlocked deeper coverage (`malloc(2147483648)`). With
 [[Finding 2]] fixed the growth no longer overflows, so it cleanly reaches the OOM
-rather than wrapping. **Fix:** a span cap in `cnvs_stroke_dashed`
-([`cnvs_stroke.c`](../../src/cnvs_stroke.c)) bounds the inner dash loop (it also
+rather than wrapping. **Fix:** a span cap in `canvas2d_stroke_dashed`
+([`canvas2d_stroke.c`](../../src/canvas2d_stroke.c)) bounds the inner dash loop (it also
 stops the CPU spin from the "off" spans), truncating a pathological dash after a
 bounded amount instead of allocating ~2 GB. Regression test in
 [`tests/test_sanitize.c`](../../tests/test_sanitize.c).
 
-### Finding 6 — Infinite loop in `canvas_ellipse` angle normalization (fuzzer-found)
+### Finding 6 — Infinite loop in `canvas2d_ellipse` angle normalization (fuzzer-found)
 
 **Severity:** non-termination DoS (hang). **Confidence: verified, found by the
 Finding-4 regression test.** **Status: FIXED.**
 **Now guarded by:** [`tests/test_sanitize.c`](../../tests/test_sanitize.c) — the
-same loop that feeds `±INFINITY`/`-3e30`/huge end angles into `canvas_ellipse`
+same loop that feeds `±INFINITY`/`-3e30`/huge end angles into `canvas2d_ellipse`
 (the input that originally hung); it now returns instead of spinning. The arc/
 ellipse path is also fuzzed via [`fuzz/fuzz_api.c`](../../fuzz/fuzz_api.c)
 `OP_ELLIPSE` with raw-float angles.
 
-[`canvas_ellipse`](../../src/canvas.c) normalized the sweep with
+[`canvas2d_ellipse`](../../src/canvas.c) normalized the sweep with
 `while (sweep < 0) sweep += 2π` / `while (sweep > 0) sweep -= 2π`. For a
 huge-magnitude or infinite angle the step falls below the float ULP (and `±inf`
 never crosses zero), so the loop never terminates — a hang on any thread that
@@ -301,7 +301,7 @@ the pre-clamp `int eexp` accumulator and is UBSan-fatal in the debug variant if
 the saturation regresses; the replay parser is also fuzzed under ASan+UBSan by
 [`fuzz/fuzz_replay.c`](../../fuzz/fuzz_replay.c) with exponent-seeded inputs.
 
-The hand float parser added when [`cnvs_replay.c`](../../src/cnvs_replay.c) went
+The hand float parser added when [`canvas2d_replay.c`](../../src/canvas2d_replay.c) went
 forge-free accumulated the decimal exponent with `eexp = eexp*10 + d` and no
 bound. A numeric token like `1e99999999999` (within the line cap, and accepted by
 the strict whole-token check) overflows `int eexp` — signed-overflow **UB** —
@@ -323,37 +323,37 @@ silently wrap in release.
 
 ### Non-findings (checked, clean)
 
-- **PNG encoder** ([`cnvs_png.c`](../../src/cnvs_png.c)): every byte goes through a
+- **PNG encoder** ([`canvas2d_png.c`](../../src/canvas2d_png.c)): every byte goes through a
   cursor (`put8 → buf[at]`) into a
   pre-sized `__counted_by(cap)` buffer, so *any* size-estimate error traps at the
   write instead of corrupting the heap; a too-large estimate fails the final
   `w.at == total` check. Checked specifically for an alloc-size vs.
   write-extent divergence; found none. Now **fuzzed**:
-  [`fuzz/fuzz_png.c`](../../fuzz/fuzz_png.c) drives `cnvs_png_write` on fuzzed
+  [`fuzz/fuzz_png.c`](../../fuzz/fuzz_png.c) drives `canvas2d_png_write` on fuzzed
   dimensions + pixels with `-fbounds-safety` off, so ASan alone must witness the
   cursor stays in bounds — 83k execs, **clean**.
 - **Temporal safety of `save`/`restore` clip masks**
   ([`canvas.c:151-180`](../../src/canvas.c)): `save` deep-copies the mask into the
   stack entry; `restore` frees `cur`'s then adopts the stack entry's. No alias,
   no double-free. (Not covered by bounds-safety; ASan would catch a regression.)
-- **Gradient stops**: fixed `CNVS_MAX_STOPS` array, `add_stop` guards the count.
+- **Gradient stops**: fixed `CANVAS2D_MAX_STOPS` array, `add_stop` guards the count.
 - **CPU compositor** ([`compositor_cpu.c`](../../src/compositor_cpu.c)): fully
   checked; keeps `target/__counted_by(tn)` consistent, so overflowed dimensions
   trap on access rather than corrupt.
-- **Text-program parser** ([`cnvs_replay.c`](../../src/cnvs_replay.c), behind the new
-  public `canvas_replay_from`): a fresh untrusted-input surface (tokenizing,
+- **Text-program parser** ([`canvas2d_replay.c`](../../src/canvas2d_replay.c), behind the new
+  public `canvas2d_replay_from`): a fresh untrusted-input surface (tokenizing,
   number parsing, line handling). Parsed by index over a `__counted_by(len)`
   buffer with a line-length cap and strict rejection, and it reaches **zero forges
   and zero `__null_terminated`** — numbers go through an in-place hand float parser
   (no `strtof`) and the text tail is passed as a `__counted_by` slice to the
-  length-counted `canvas_*_text_n` (no copy/NUL/forge). Fuzzed by
+  length-counted `canvas2d_*_text_n` (no copy/NUL/forge). Fuzzed by
   [`fuzz/fuzz_replay.c`](../../fuzz/fuzz_replay.c) under ASan+UBSan, **clean**, plus a
   round-trip + malformed-rejection test ([`tests/test_replay.c`](../../tests/test_replay.c)).
   The `-fbounds-safety` ease/friction is written up in
   [docs/bounds-safety.md](../bounds-safety.md).
 
-- **Text-program recorder** ([`cnvs_record.c`](../../src/cnvs_record.c), behind the
-  new public `canvas_record_to`): the write-side inverse of the parser — each
+- **Text-program recorder** ([`canvas2d_record.c`](../../src/canvas2d_record.c), behind the
+  new public `canvas2d_record_to`): the write-side inverse of the parser — each
   recordable public op appends its line as it runs. No new *untrusted-input*
   surface (it emits, it doesn't consume), and notably **zero forges**: emission is
   `__counted_by(n)` float runs plus `__null_terminated` names/text handed straight
@@ -418,19 +418,19 @@ The four harnesses the pass recommended now live in [`fuzz/`](../../fuzz/):
    (+ [`fuzz/fuzz_state.c`](../../fuzz/fuzz_state.c) over the shared
    [`fuzz/fuzz_ops.h`](../../fuzz/fuzz_ops.h) op stream). Highest coverage of the
    trust boundary; it re-finds Finding 4.
-2. **`cnvs_png_write` harness** — [`fuzz/fuzz_png.c`](../../fuzz/fuzz_png.c):
+2. **`canvas2d_png_write` harness** — [`fuzz/fuzz_png.c`](../../fuzz/fuzz_png.c):
    dimensions + pixel buffer in, ASan witnesses the cursor never leaves `total`.
 3. **Core Text shim harness** — [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c):
    valid + invalid UTF-8 → `measure_text`/`fill_text`/`stroke_text`. This is the
    one unchecked TU; ASan is its only net (Finding 3).
 4. **PNG decode / inflate harnesses** — [`fuzz/fuzz_pngdec.c`](../../fuzz/fuzz_pngdec.c)
    and [`fuzz/fuzz_inflate.c`](../../fuzz/fuzz_inflate.c) cover the decode side of
-   the codec arithmetic the original `cnvs_blit_rgba` clamp idea pointed at
-   ([`cnvs_image.c:9-21`](../../src/cnvs_image.c) remains the off-by-one-prone clip
+   the codec arithmetic the original `canvas2d_blit_rgba` clamp idea pointed at
+   ([`canvas2d_image.c:9-21`](../../src/canvas2d_image.c) remains the off-by-one-prone clip
    math to keep an eye on).
 
 The original `overflow_poc.c` that seeded harness #1 has been **retired**: its
-exact scenario (`canvas_get_image_data` with `int`-overflowing `w*h*4`) is now a
+exact scenario (`canvas2d_get_image_data` with `int`-overflowing `w*h*4`) is now a
 gated regression case in [`tests/test_dims.c`](../../tests/test_dims.c), which pins
 the more dangerous wrap-negative dimension (`23171 × 23171`) inside the suite
 rather than as standalone, never-compiled dead code.

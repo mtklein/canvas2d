@@ -3,7 +3,7 @@
 // ZERO Core Text boundary calls -- every scene, the format's whole surface.
 //
 // Every scene records a self-contained program alongside its PNG
-// (examples/gallery.c's record_scene; src/cnvs_record.c serializes the
+// (examples/gallery.c's record_scene; src/canvas2d_record.c serializes the
 // font/glyph/bitmap/shape blocks the text needs, the image blocks behind
 // drawImage/putImageData/patterns, and the path blocks behind the Path2D
 // draws).  This test is the determinism gate: for each program it
@@ -34,8 +34,8 @@
 
 #include "test_util.h"
 
-#include "canvas.h"
-#include "cnvs_text.h"
+#include "canvas2d.h"
+#include "canvas2d_text.h"
 
 #include <dirent.h>
 #include <ptrcheck.h>
@@ -160,14 +160,14 @@ static void check_scene(scene_pair s) {
         return;
     }
 
-    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(w, h, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(want);
         return;
     }
 
-    bool const ok = canvas_replay_from(cv, s.canvas);
+    bool const ok = canvas2d_replay_from(cv, s.canvas);
     CHECK(ok);
     if (!ok) {
         (void)fprintf(stderr, "  replay failed: %s\n", s.canvas);
@@ -177,7 +177,7 @@ static void check_scene(scene_pair s) {
     // captures bump glyph_misses on a boundary fetch) came from the program's
     // embedded blocks.  A nonzero miss is a Core Text fallback -- exactly what a
     // fontless machine cannot do.  (Trivially zero for a scene with no text.)
-    struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+    struct canvas2d_text_cache *__single c = canvas2d_canvas_text_cache(cv);
     CHECK(c->shaping_misses == 0);
     CHECK(c->glyph_misses == 0);
     if (s.text) {
@@ -193,7 +193,7 @@ static void check_scene(scene_pair s) {
     // Re-encode the replayed canvas through the real save path, then byte-compare
     // to the committed PNG file.
     int elen = 0;
-    uint8_t *enc = canvas_encode_png(cv, &elen);
+    uint8_t *enc = canvas2d_encode_png(cv, &elen);
     CHECK(enc != NULL);
     CHECK(elen == fsz);
     if (enc && elen == fsz) {
@@ -210,7 +210,7 @@ static void check_scene(scene_pair s) {
 
     free(enc);
     free(want);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // The scene list covers every committed gallery/*.canvas (and the directory

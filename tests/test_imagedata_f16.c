@@ -1,4 +1,4 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_util.h"
 
 #include <math.h>
@@ -38,7 +38,7 @@ static bool px_near_f16(struct f16px p, float r, float g, float b, float a,
 static void extended_roundtrip_linear(void) {
     enum { W = 4, H = 4 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_LINEAR_SRGB);
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -50,8 +50,8 @@ static void extended_roundtrip_linear(void) {
             in[i * 4 + 2] = (_Float16)1.0f;
             in[i * 4 + 3] = (_Float16)1.0f;
         }
-        canvas_put_image_data_f16(cv, CANVAS_CS_LINEAR_SRGB, in, len, W, H, 0, 0);
-        canvas_get_image_data_f16(cv, CANVAS_CS_LINEAR_SRGB, 0, 0, W, H, out, len);
+        canvas2d_put_image_data_f16(cv, CANVAS2D_CS_LINEAR_SRGB, in, len, W, H, 0, 0);
+        canvas2d_get_image_data_f16(cv, CANVAS2D_CS_LINEAR_SRGB, 0, 0, W, H, out, len);
         // Extended range preserved: scaled tolerance for the HDR component.
         CHECK(px_near_f16(f16_at(out, len, W, 0, 0), 3.5f, -0.12f, 1.0f, 1.0f, 0.02f));
         CHECK(px_near_f16(f16_at(out, len, W, 3, 3), 3.5f, -0.12f, 1.0f, 1.0f, 0.02f));
@@ -61,7 +61,7 @@ static void extended_roundtrip_linear(void) {
     }
     free(in);
     free(out);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // 2. An sRGB canvas in sRGB space, [0,1] values: tight tolerance round trip
@@ -69,7 +69,7 @@ static void extended_roundtrip_linear(void) {
 static void roundtrip_srgb(void) {
     enum { W = 3, H = 2 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);  // sRGB working space
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);  // sRGB working space
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -80,14 +80,14 @@ static void roundtrip_srgb(void) {
                 in[i * 4 + c] = (_Float16)vals[c];
             }
         }
-        canvas_put_image_data_f16(cv, CANVAS_CS_SRGB, in, len, W, H, 0, 0);
-        canvas_get_image_data_f16(cv, CANVAS_CS_SRGB, 0, 0, W, H, out, len);
+        canvas2d_put_image_data_f16(cv, CANVAS2D_CS_SRGB, in, len, W, H, 0, 0);
+        canvas2d_get_image_data_f16(cv, CANVAS2D_CS_SRGB, 0, 0, W, H, out, len);
         CHECK(px_near_f16(f16_at(out, len, W, 0, 0), 0.25f, 0.5f, 0.75f, 1.0f, 0.01f));
         CHECK(px_near_f16(f16_at(out, len, W, 2, 1), 0.25f, 0.5f, 0.75f, 1.0f, 0.01f));
     }
     free(in);
     free(out);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // 3. Cross-space: put LINEAR-space f16 onto an sRGB canvas, read it back in the
@@ -100,7 +100,7 @@ static void cross_space(void) {
     int const len = W * H * 4;
     // 3a. LINEAR-space f16 onto an sRGB canvas, read back LINEAR.
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);  // sRGB working space
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);  // sRGB working space
         _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
         _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
         CHECK(cv && in && out);
@@ -109,18 +109,18 @@ static void cross_space(void) {
             for (int i = 0; i < W * H; i++) {
                 for (int c = 0; c < 4; c++) { in[i * 4 + c] = (_Float16)vals[c]; }
             }
-            canvas_put_image_data_f16(cv, CANVAS_CS_LINEAR_SRGB, in, len, W, H, 0, 0);
-            canvas_get_image_data_f16(cv, CANVAS_CS_LINEAR_SRGB, 0, 0, W, H, out, len);
+            canvas2d_put_image_data_f16(cv, CANVAS2D_CS_LINEAR_SRGB, in, len, W, H, 0, 0);
+            canvas2d_get_image_data_f16(cv, CANVAS2D_CS_LINEAR_SRGB, 0, 0, W, H, out, len);
             // Through the sRGB surface (linear->sRGB->linear): a bit looser.
             CHECK(px_near_f16(f16_at(out, len, W, 0, 0), 0.2f, 0.6f, 0.9f, 1.0f, 0.02f));
         }
         free(in);
         free(out);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
     // 3b. OKLAB-space f16 onto a LINEAR canvas, read back OKLAB.
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_LINEAR_SRGB);
         _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
         _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
         CHECK(cv && in && out);
@@ -130,20 +130,20 @@ static void cross_space(void) {
             for (int i = 0; i < W * H; i++) {
                 for (int c = 0; c < 4; c++) { in[i * 4 + c] = (_Float16)vals[c]; }
             }
-            canvas_put_image_data_f16(cv, CANVAS_CS_OKLAB, in, len, W, H, 0, 0);
-            canvas_get_image_data_f16(cv, CANVAS_CS_OKLAB, 0, 0, W, H, out, len);
+            canvas2d_put_image_data_f16(cv, CANVAS2D_CS_OKLAB, in, len, W, H, 0, 0);
+            canvas2d_get_image_data_f16(cv, CANVAS2D_CS_OKLAB, 0, 0, W, H, out, len);
             CHECK(px_near_f16(f16_at(out, len, W, 0, 0), 0.6f, 0.02f, -0.04f, 1.0f, 0.02f));
         }
         free(in);
         free(out);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 
 // 4. create_image_data_f16: correct *len, zeroed; bad dims -> NULL / *len = 0.
 static void create_image_data(void) {
     int len = -1;
-    _Float16 *buf = canvas_create_image_data_f16(5, 3, &len);
+    _Float16 *buf = canvas2d_create_image_data_f16(5, 3, &len);
     CHECK(buf != NULL);
     CHECK(len == 5 * 3 * 4);
     if (buf) {
@@ -156,10 +156,10 @@ static void create_image_data(void) {
     }
     // Bad dims: NULL, *len = 0.
     len = 123;
-    CHECK(canvas_create_image_data_f16(0, 4, &len) == NULL);
+    CHECK(canvas2d_create_image_data_f16(0, 4, &len) == NULL);
     CHECK(len == 0);
     len = 123;
-    CHECK(canvas_create_image_data_f16(4, -1, &len) == NULL);
+    CHECK(canvas2d_create_image_data_f16(4, -1, &len) == NULL);
     CHECK(len == 0);
 }
 
@@ -168,7 +168,7 @@ static void create_image_data(void) {
 static void dirty_and_subrect(void) {
     enum { W = 4, H = 4 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -180,9 +180,9 @@ static void dirty_and_subrect(void) {
             in[i * 4 + 2] = (_Float16)0.0f;
             in[i * 4 + 3] = (_Float16)1.0f;
         }
-        canvas_put_image_data_dirty_f16(cv, CANVAS_CS_SRGB, in, len, W, H, 0, 0,
+        canvas2d_put_image_data_dirty_f16(cv, CANVAS2D_CS_SRGB, in, len, W, H, 0, 0,
                                         1, 1, 1, 1);
-        canvas_get_image_data_f16(cv, CANVAS_CS_SRGB, 0, 0, W, H, out, len);
+        canvas2d_get_image_data_f16(cv, CANVAS2D_CS_SRGB, 0, 0, W, H, out, len);
         // Only (1,1) painted green; everywhere else stays transparent black.
         CHECK(px_near_f16(f16_at(out, len, W, 1, 1), 0.0f, 1.0f, 0.0f, 1.0f, 0.01f));
         CHECK(px_near_f16(f16_at(out, len, W, 0, 0), 0.0f, 0.0f, 0.0f, 0.0f, 0.01f));
@@ -195,7 +195,7 @@ static void dirty_and_subrect(void) {
         _Float16 *__counted_by(slen) sub = malloc((size_t)slen * sizeof *sub);
         CHECK(sub != NULL);
         if (sub) {
-            canvas_get_image_data_f16(cv, CANVAS_CS_SRGB, 3, 0, SW, SH, sub, slen);
+            canvas2d_get_image_data_f16(cv, CANVAS2D_CS_SRGB, 3, 0, SW, SH, sub, slen);
             // (0,0) maps to canvas (3,0) -> transparent; (1,0) maps to canvas
             // (4,0) which is out of the canvas -> zero.
             CHECK(px_near_f16(f16_at(sub, slen, SW, 0, 0), 0.0f, 0.0f, 0.0f, 0.0f, 0.01f));
@@ -205,7 +205,7 @@ static void dirty_and_subrect(void) {
     }
     free(in);
     free(out);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // 6. Recording determinism: drive a recording LINEAR canvas with put_f16
@@ -227,21 +227,21 @@ static void recording_roundtrip(void) {
             in[i * 4 + 3] = (_Float16)1.0f;
         }
         // Record a put_f16 to disk, capturing the live surface.
-        struct canvas *__single rec = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas2d_context *__single rec = canvas2d(W, H, CANVAS2D_CS_LINEAR_SRGB);
         CHECK(rec != NULL);
         if (rec) {
-            CHECK(canvas_record_to(rec, path));
-            canvas_put_image_data_f16(rec, CANVAS_CS_LINEAR_SRGB, in, len, W, H, 0, 0);
-            canvas_get_image_data_f16(rec, CANVAS_CS_LINEAR_SRGB, 0, 0, W, H, direct, len);
-            canvas_free(rec);  // flush + close
+            CHECK(canvas2d_record_to(rec, path));
+            canvas2d_put_image_data_f16(rec, CANVAS2D_CS_LINEAR_SRGB, in, len, W, H, 0, 0);
+            canvas2d_get_image_data_f16(rec, CANVAS2D_CS_LINEAR_SRGB, 0, 0, W, H, direct, len);
+            canvas2d_free(rec);  // flush + close
         }
         // Replay onto a fresh canvas; the surface must match.
-        struct canvas *__single rep = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas2d_context *__single rep = canvas2d(W, H, CANVAS2D_CS_LINEAR_SRGB);
         CHECK(rep != NULL);
         if (rep) {
-            CHECK(canvas_replay_from(rep, path));
-            canvas_get_image_data_f16(rep, CANVAS_CS_LINEAR_SRGB, 0, 0, W, H, replayed, len);
-            canvas_free(rep);
+            CHECK(canvas2d_replay_from(rep, path));
+            canvas2d_get_image_data_f16(rep, CANVAS2D_CS_LINEAR_SRGB, 0, 0, W, H, replayed, len);
+            canvas2d_free(rep);
         }
         for (int i = 0; i < len; i++) {
             CHECK(near_f((float)direct[i], (float)replayed[i], 0.02f));
@@ -259,7 +259,7 @@ static void recording_roundtrip(void) {
 static void guards(void) {
     enum { W = 2, H = 2 };
     int const len = W * H * 4;
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     _Float16 *__counted_by(len) in = malloc((size_t)len * sizeof *in);
     _Float16 *__counted_by(len) out = malloc((size_t)len * sizeof *out);
     CHECK(cv && in && out);
@@ -267,24 +267,24 @@ static void guards(void) {
         for (int i = 0; i < len; i++) { in[i] = (_Float16)0.5f; }
         for (int i = 0; i < len; i++) { out[i] = (_Float16)7.0f; }  // sentinel
         // len too small: no-op (the byte path's contract).
-        canvas_put_image_data_f16(cv, CANVAS_CS_SRGB, in, len - 1, W, H, 0, 0);
+        canvas2d_put_image_data_f16(cv, CANVAS2D_CS_SRGB, in, len - 1, W, H, 0, 0);
         // Non-positive dims: no-op.
-        canvas_put_image_data_f16(cv, CANVAS_CS_SRGB, in, len, 0, H, 0, 0);
-        canvas_put_image_data_f16(cv, CANVAS_CS_SRGB, in, len, W, -1, 0, 0);
+        canvas2d_put_image_data_f16(cv, CANVAS2D_CS_SRGB, in, len, 0, H, 0, 0);
+        canvas2d_put_image_data_f16(cv, CANVAS2D_CS_SRGB, in, len, W, -1, 0, 0);
         // get with a too-small out buffer leaves it untouched (no write, no crash).
-        canvas_get_image_data_f16(cv, CANVAS_CS_SRGB, 0, 0, W, H, out, len - 1);
+        canvas2d_get_image_data_f16(cv, CANVAS2D_CS_SRGB, 0, 0, W, H, out, len - 1);
         CHECK((float)out[0] == 7.0f);  // sentinel intact: get was a no-op
         // get with bad dims: no-op.
-        canvas_get_image_data_f16(cv, CANVAS_CS_SRGB, 0, 0, 0, H, out, len);
+        canvas2d_get_image_data_f16(cv, CANVAS2D_CS_SRGB, 0, 0, 0, H, out, len);
         CHECK((float)out[0] == 7.0f);
         // The canvas is still drawable: a valid put then get works.
-        canvas_put_image_data_f16(cv, CANVAS_CS_SRGB, in, len, W, H, 0, 0);
-        canvas_get_image_data_f16(cv, CANVAS_CS_SRGB, 0, 0, W, H, out, len);
+        canvas2d_put_image_data_f16(cv, CANVAS2D_CS_SRGB, in, len, W, H, 0, 0);
+        canvas2d_get_image_data_f16(cv, CANVAS2D_CS_SRGB, 0, 0, W, H, out, len);
         CHECK(px_near_f16(f16_at(out, len, W, 0, 0), 0.5f, 0.5f, 0.5f, 0.5f, 0.01f));
     }
     free(in);
     free(out);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 int main(void) {

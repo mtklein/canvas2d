@@ -1,4 +1,4 @@
-// Fuzzes the strict zlib inflate (src/cnvs_zlib.c) on adversarial bytes -- the
+// Fuzzes the strict zlib inflate (src/canvas2d_zlib.c) on adversarial bytes -- the
 // most CVE-scarred parser class in C: Huffman table construction from untrusted
 // code lengths, 16/17/18 repeat handling, window back-references (overlapping
 // copies included), stored-block length fields, and the bit reader's
@@ -15,7 +15,7 @@
 // corpus first so libFuzzer's discoveries don't pollute the seed dir:
 //   ./build/fuzz/fuzz_inflate -max_len=4096 /tmp/zlib_corpus fuzz/seeds_zlib
 
-#include "cnvs_zlib.h"
+#include "canvas2d_zlib.h"
 
 #include <assert.h>
 #include <ptrcheck.h>
@@ -32,15 +32,15 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     if (!out) {
         return 0;
     }
-    int const got = cnvs_zlib_inflate(out, cap, data, (int)size);
+    int const got = canvas2d_zlib_inflate(out, cap, data, (int)size);
     if (got >= 0) {
-        int const zcap = cnvs_zlib_bound(got);
+        int const zcap = canvas2d_zlib_bound(got);
         uint8_t *z = malloc((size_t)zcap);
         uint8_t *back = malloc(got > 0 ? (size_t)got : 1);  // exact-size: redzones bite
         if (z && back) {
-            int const zn = cnvs_zlib_deflate(z, zcap, out, got);
+            int const zn = canvas2d_zlib_deflate(z, zcap, out, got);
             assert(zn > 0);
-            int const bn = cnvs_zlib_inflate(back, got, z, zn);
+            int const bn = canvas2d_zlib_inflate(back, got, z, zn);
             assert(bn == got);
             assert(got == 0 || memcmp(back, out, (size_t)got) == 0);
         }

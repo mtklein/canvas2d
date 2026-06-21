@@ -7,23 +7,23 @@ the text API grows from "draw a string" to real shaping — RTL, ligatures, emoj
 font fallback — what crosses that boundary and how the flag shapes it.
 
 > The two boundary shims this doc develops separately — the per-codepoint
-> `cnvs_font_ct.c` and the shaping `cnvs_shape_ct.c` — have since been unified into a
-> single text module, `src/cnvs_text_ct.c` (with checked core `src/cnvs_text.c` and
-> header `src/cnvs_text.h`). The split below is the design narrative; the file names
+> `canvas2d_font_ct.c` and the shaping `canvas2d_shape_ct.c` — have since been unified into a
+> single text module, `src/canvas2d_text_ct.c` (with checked core `src/canvas2d_text.c` and
+> header `src/canvas2d_text.h`). The split below is the design narrative; the file names
 > in links point at the merged module.
 
 ## Today's boundary is narrow and value-typed
 
-`cnvs_text_ct.c` processes text *one codepoint → one glyph* (`CTFontGetGlyphsForCharacters(..., 1)`),
+`canvas2d_text_ct.c` processes text *one codepoint → one glyph* (`CTFontGetGlyphsForCharacters(..., 1)`),
 does all the Core Text array work internally with fixed count-1 buffers, and hands the
-checked core only *finished* `cnvs_path` outlines and `float` metrics. **No glyph
+checked core only *finished* `canvas2d_path` outlines and `float` metrics. **No glyph
 array ever crosses the boundary.** That keeps the checked side forge-free, but it also
 means every bit of text logic lives in the *unsafe* TU — acceptable while that
 logic is trivial, a liability once it is shaping.
 
 ## Real shaping produces runtime-count runs
 
-[../src/cnvs_text_ct.c](../src/cnvs_text_ct.c) shapes a UTF-8 string with Core Text
+[../src/canvas2d_text_ct.c](../src/canvas2d_text_ct.c) shapes a UTF-8 string with Core Text
 (`CTLine` → `CTRun`s) and, for each run, hands back a glyph count, the glyph ids, the
 advances, and a **cluster map** (`cluster[i]` = the logical UTF-16 index in the source
 for glyph `i`). Real CT output shows why each feature matters:
@@ -37,12 +37,12 @@ for glyph `i`). Real CT output shows why each feature matters:
 
 ## The run crosses by `(pointer, count)` — no forge
 
-[../src/cnvs_text.h](../src/cnvs_text.h) declares the run as a struct of
+[../src/canvas2d_text.h](../src/canvas2d_text.h) declares the run as a struct of
 `__counted_by(count)` pointers plus a sibling `int count`. That struct is **the same
 layout in both TUs** — `__counted_by` ties the bound to the existing `count` field and
 adds no hidden member — so the unsafe shim fills it (the attribute is a no-op there)
 and the checked core reads it (the attribute is enforced there), with no marshalling
-in between. Every `glyph[i]`, `xadv[i]`, `cluster[i]` in [../src/cnvs_text.c](../src/cnvs_text.c)
+in between. Every `glyph[i]`, `xadv[i]`, `cluster[i]` in [../src/canvas2d_text.c](../src/canvas2d_text.c)
 is bounds-checked against the count the boundary supplied.
 
 The cost of this boundary compared with the others:
@@ -100,7 +100,7 @@ copy), and grows with feature richness far slower than the per-codepoint design 
 The shim holds no state of its own — no cached `CTFont`, no lazily built
 `CFString`, no file-scope mutable anything; every call creates, uses, and
 releases its CF objects locally, and anything that outlives a call (a retained
-run font, a `cnvs_shaped`) is owned by one canvas's cache. That matches Core
+run font, a `canvas2d_shaped`) is owned by one canvas's cache. That matches Core
 Text's documented contract: individual functions are thread-safe and font
 objects (`CTFont`, `CTFontDescriptor`) may be used from multiple threads
 simultaneously, but *layout* objects (`CTLine`, `CTRun`, `CTTypesetter`) must
@@ -120,9 +120,9 @@ be outlined or measured later, which adds two more boundary shapes.
   `void *__single font` and passed back to the boundary for CT calls. It needs **no
   forge** — an opaque handle carries no bounds metadata to lose, so it isn't an
   `__unsafe_indexable` problem. Its only cost is *lifetime*: `CFRetain` when
-  copied out of the `CTLine`, `CFRelease` in `cnvs_shaped_free`. (Contrast the tagged
+  copied out of the `CTLine`, `CFRelease` in `canvas2d_shaped_free`. (Contrast the tagged
   pointer, where the *value* was the bound and the round-trip destroyed it.)
-- **Output buffers cross the other direction, same ABI.** `cnvs_run_font_name` hands
+- **Output buffers cross the other direction, same ABI.** `canvas2d_run_font_name` hands
   the boundary `(buf, cap)` and the boundary fills within `cap` (`CFStringGetCString`
   respects it). It is the mirror of the glyph-run hand-off: `(ptr, count)` in, the
   unchecked side trusting the caller's `cap`. Bounded data crosses cleanly in *both*
@@ -141,14 +141,14 @@ be outlined or measured later, which adds two more boundary shapes.
 
 ## Positioned outlines: layout checked, the outline at the boundary
 
-`cnvs_shaped_outline` renders a shaped line by walking the runs and outlining each
+`canvas2d_shaped_outline` renders a shaped line by walking the runs and outlining each
 glyph at its pen position. The split falls out naturally:
 
 - **Layout is checked.** The pen advance — `pen += run.xadv[i]` over the visual-order
   glyphs — runs in the core, every `xadv[i]` bounds-checked. (Visual order means the
   same left-to-right sweep places RTL runs correctly, no special case.)
 - **The outline is the thin boundary op.** Per glyph, the core calls back to
-  `cnvs_glyph_outline(run.font, glyph, x, y, …)`, which does the two things that need
+  `canvas2d_glyph_outline(run.font, glyph, x, y, …)`, which does the two things that need
   the un-annotated headers: `CTFontCreatePathForGlyph` and the `CGPathApply` walk. The
   opaque font handle is finally *used* here (passed back to CT), confirming the
   handle-plus-lifetime model end to end. The `CGPathApply` callback takes a `void *`
@@ -172,7 +172,7 @@ fills), taken up next.
 ## Color emoji: the bitmap boundary
 
 Since a color glyph has no outline, it is rendered into a pixel buffer.
-`cnvs_glyph_draw` is the second boundary shape: the checked core owns a
+`canvas2d_glyph_draw` is the second boundary shape: the checked core owns a
 `uint8_t *__counted_by(w * h * 4)` RGBA8 buffer and hands `(px, w, h)` to the boundary,
 which wraps it in a `CGBitmapContext` (`bytesPerRow = w*4`, `h` rows) and draws the
 glyph with `CTFontDrawGlyphs`.
@@ -196,17 +196,17 @@ index-heavy logic on the checked side and its irreducibly-CT work (shaping, glyp
 paths, glyph rasterization) on the unsafe side, with every crossing a plain
 `(pointer, count)` and no forges.
 
-**Wired into the public API.** `canvas_fill_text`/`stroke_text` now lay out through
-`cnvs_shape`: outline runs accumulate into one device-space path and fill/stroke as
+**Wired into the public API.** `canvas2d_fill_text`/`stroke_text` now lay out through
+`canvas2d_shape`: outline runs accumulate into one device-space path and fill/stroke as
 before (so a fallback run for a missing script renders too, not a `.notdef` box),
-while a *color* run's glyphs are drawn with `cnvs_glyph_draw` into a checked RGBA8
+while a *color* run's glyphs are drawn with `canvas2d_glyph_draw` into a checked RGBA8
 buffer and composited through the CTM by the very same code as `drawImage` — so an
 emoji takes the transform, clip, global alpha, and shadow like any other image.
 (`CGBitmapContext` hands back premultiplied, top-row-first RGBA, so the core only
 unpremultiplies before that hand-off — no row flip is needed.)  Measurement is
 unified onto the same path:
 `measureText`, the advance used for `textAlign`, and the `maxWidth` condense all read
-the shaped line (`cnvs_shaped_metrics` measures each glyph in its own fallback font),
+the shaped line (`canvas2d_shaped_metrics` measures each glyph in its own fallback font),
 so a string measures the way it draws.  Only the font-wide metrics
 (ascent/descent/em/baselines) still come from the primary font handle — cheap, and
 text-independent.
@@ -214,8 +214,8 @@ text-independent.
 ## Bidi caret and selection: no added boundary
 
 Caret placement and selection are the most index-heavy text feature, and they
-add zero unsafe surface. `cnvs_shaped_x_at_index` (logical index → visual x) and
-`cnvs_shaped_selection` (logical range → visual spans) are pure cross-indexing
+add zero unsafe surface. `canvas2d_shaped_x_at_index` (logical index → visual x) and
+`canvas2d_shaped_selection` (logical range → visual spans) are pure cross-indexing
 over the cluster map the boundary already handed across — no CT call, no new
 crossing.
 
@@ -238,13 +238,13 @@ real text never grew past shape + outline + draw.
 ## The outline boundary, re-cut: canonical curves in font units
 
 The positioned-outline design above had the boundary emit a *finished* outline:
-`cnvs_glyph_outline` took the pen origin, the device transform, and a flatness
+`canvas2d_glyph_outline` took the pen origin, the device transform, and a flatness
 tolerance, and the `CGPathApply` walk wrote already-transformed, already-flattened
-line segments straight into the `cnvs_path`. Correct, but the boundary's output was
+line segments straight into the `canvas2d_path`. Correct, but the boundary's output was
 device- and call-specific — the bytes that crossed were useless for any other pen,
 size, or transform.
 
-The boundary now speaks canonical data. `cnvs_glyph_curves` hands across one glyph's
+The boundary now speaks canonical data. `canvas2d_glyph_curves` hands across one glyph's
 outline as verb + point arrays (move/line/quad/cubic/close) in **font units** — the
 font's design grid, `units_per_em` units to the em, y up, baseline-relative — plus
 that `units_per_em` as the only metadata. Core Text's `CGPathApply` reports points at
@@ -253,14 +253,14 @@ out, and nothing call-specific survives the crossing: the same bytes describe th
 glyph at every size, pen, and transform.
 
 Everything that used to run in the shim moved to the checked side
-(`cnvs_glyph_outline`, now in [../src/cnvs_text.c](../src/cnvs_text.c)): scale by
+(`canvas2d_glyph_outline`, now in [../src/canvas2d_text.c](../src/canvas2d_text.c)): scale by
 `size_px / units_per_em` (the shaped line records the size it was shaped at), flip y
 into canvas's y-down user space, place at the pen, map through the CTM, and flatten
 quads/cubics with the same adaptive flattener every other path in the system takes,
 at the same device-space tolerance as before. The flattening maths didn't change —
 only which TU runs it, and now every index in it is bounds-checked.
 
-The hand-off reuses the `cnvs_glyph_draw` pattern, twice over: the checked caller
+The hand-off reuses the `canvas2d_glyph_draw` pattern, twice over: the checked caller
 owns the verb and point buffers and passes `(ptr, cap)` pairs; the boundary fills
 within the caps and reports the *true* counts, which may exceed them — the caller
 grows and fetches again (stack buffers cover the typical glyph, so the retry is
@@ -277,14 +277,14 @@ at any transform — which device-space flattened points cannot be.
 
 ## The lookup in front: the boundary becomes a cache-miss path
 
-That lookup now exists ([../src/cnvs_text.h](../src/cnvs_text.h)'s `cnvs_text_cache`,
+That lookup now exists ([../src/canvas2d_text.h](../src/canvas2d_text.h)'s `canvas2d_text_cache`,
 one per canvas): a params → derived-data memo consulted **before** every Core Text
 call and populated live from what the boundary hands back. Two maps, mirroring the
 two things that cross:
 
 - **Shaped lines**, keyed by `(size_px bits, paragraph direction, text bytes)`.
   `fillText`, `strokeText`, and both measure paths used to shape and free a
-  `cnvs_shaped` per call; they now *borrow* the cached line (the cache owns it,
+  `canvas2d_shaped` per call; they now *borrow* the cached line (the cache owns it,
   retained `CTFontRef`s and all), so the measure-then-draw pattern shapes
   once. The direction bit is in the key because the same bytes shape differently
   under ltr and rtl paragraph bases (run order, neutral resolution) — the canvas
@@ -296,7 +296,7 @@ two things that cross:
   pen, and transform, so one entry serves every draw — including the rare overflow
   glyph, whose grow-and-refetch now happens once per glyph with its exact-size
   buffers donated to the cache. The key is the *interned font name* (one
-  `cnvs_run_font_name` fetch per run), not the `CTFontRef` pointer: names are stable
+  `canvas2d_run_font_name` fetch per run), not the `CTFontRef` pointer: names are stable
   across processes, which the serialized half of this lookup needs. Blanks cache
   too — "no outline" is itself a boundary answer, so a space costs one fetch ever.
 
@@ -321,10 +321,10 @@ are already the wire format.
 
 ## The serialized half: one self-contained file per program
 
-A recorded canvas program ([canvas.h](../include/canvas.h)'s
-`canvas_record_to`/`canvas_replay_from`) now carries the lookup's contents inline —
+A recorded canvas program ([canvas2d.h](../include/canvas2d.h)'s
+`canvas2d_record_to`/`canvas2d_replay_from`) now carries the lookup's contents inline —
 no sidecar, one file. Before each text op that first needs them, the recorder
-([../src/cnvs_record.c](../src/cnvs_record.c)) emits block lines straight from the
+([../src/canvas2d_record.c](../src/canvas2d_record.c)) emits block lines straight from the
 cache entries the op is about to use:
 
 - **`font <id> <ascent> <descent> <name…>`** — an interned font name (the rest of
@@ -342,7 +342,7 @@ cache entries the op is about to use:
   ("known to have no outline" serializes like it caches).
 - **`shape <size_px> <rtl> <utf16-len> <nruns> <byte-len> <text…>`** followed by
   `nruns` **`run <font-id|-1> <rtl> <color> <nglyphs> (gid adv cluster)*`** lines —
-  everything `cnvs_shaped` carries, keyed exactly as the live cache keys it
+  everything `canvas2d_shaped` carries, keyed exactly as the live cache keys it
   (`size_px` bits + paragraph direction + raw text bytes, length-prefixed to end
   of line). The shape-level `rtl` is the paragraph base direction the line was
   shaped under: it must ride the block because it is half the cache key — the
@@ -354,7 +354,7 @@ Blocks are deduplicated within the file by per-slot `emitted` marks (a new
 recording clears them), so a frame's repeated label costs one block set and then
 one op line per draw.
 
-Replay ([../src/cnvs_replay.c](../src/cnvs_replay.c)) parses the blocks **strictly**
+Replay ([../src/canvas2d_replay.c](../src/canvas2d_replay.c)) parses the blocks **strictly**
 — the slice-A "untrusted verb stream" posture, now at the parser: ids
 range-checked and declared-before-use, verb tokens validated with their point
 counts, cluster indices checked against the shape's UTF-16 length, counts bounded
@@ -390,7 +390,7 @@ an allocation failure while rebuilding a block returns false.
 
 ## Emoji canonicalization: the bitmap boundary crosses once
 
-The original color-glyph path (`cnvs_glyph_draw` above) crossed the bitmap
+The original color-glyph path (`canvas2d_glyph_draw` above) crossed the bitmap
 boundary **per draw**: every `fillText` with an emoji asked Core Text to
 rasterize the glyph at device size into a fresh checked buffer. Correct, but
 the boundary's output was call-specific — the same problem the outline re-cut
@@ -399,14 +399,14 @@ no stable artifact to record.
 
 A color glyph now has a **canonical capture**: one premultiplied RGBA8 render
 per (font name, glyph id), rasterized by the boundary at a fixed, documented
-size — `CNVS_CAPTURE_EM` = 160 px to the em, AppleColorEmoji's largest bitmap
+size — `CANVAS2D_CAPTURE_EM` = 160 px to the em, AppleColorEmoji's largest bitmap
 strike, so the capture loses nothing the font has to give. The capture is a
 square 160x160 buffer placed by the same machinery the per-draw path used:
-`cnvs_glyph_bounds` (at the capture size, via a `cnvs_font_resized` handle)
-gives the ink box in capture px, and `cnvs_glyph_draw` renders with the ink
+`canvas2d_glyph_bounds` (at the capture size, via a `canvas2d_font_resized` handle)
+gives the ink box in capture px, and `canvas2d_glyph_draw` renders with the ink
 box's bottom-left pinned to the buffer's corner. The ink box rides along in
 the glyph slot, so placement and `measureText` both derive from cached data —
-scale by `size_px / CNVS_CAPTURE_EM`, the exact analogue of the outline path's
+scale by `size_px / CANVAS2D_CAPTURE_EM`, the exact analogue of the outline path's
 `size_px / units_per_em`. The boundary crossing is the same `(ptr, w, h)`
 hand-off as before; it just happens **once per glyph ever** instead of once
 per draw.
@@ -414,7 +414,7 @@ per draw.
 Everything derived from the capture is checked C:
 
 - **The mip pyramid.** Repeated 2x2 box halving of the premultiplied capture
-  down to 1x1 (`cnvs_mip_halve`), ceil-halving odd dimensions with the edge
+  down to 1x1 (`canvas2d_mip_halve`), ceil-halving odd dimensions with the edge
   row/column replicated. One shared rounding (`(sum + 2) >> 2`) keeps the
   premul invariant `r,g,b <= a` exact at every level. Levels are separate
   `__counted_by(w*h*4)` allocations rather than offsets into one arena: each
@@ -427,7 +427,7 @@ Everything derived from the capture is checked C:
 - **Drawing.** The glyph quad's device footprint (its longer CTM-mapped edge)
   selects the level *pair* around it — the smallest level still >= the
   footprint plus the next one down — and the existing transform-aware image
-  path samples both and lerps (`cnvs_glyph_mip_pair`, the same
+  path samples both and lerps (`canvas2d_glyph_mip_pair`, the same
   doubling-plus-exact-fraction rule as drawImage's trilinear minification, no
   log2f for replay's sake). The finer level's taps never downscale by more
   than 2x, which box-halved sources handle without visible softness or
@@ -444,7 +444,7 @@ Everything derived from the capture is checked C:
 - **Serialization.** The capture is the recorded form, deflated: a `bitmap`
   block (`bitmap <font-id> <gid> <w> <h> <ink box> <zlen> <nlines>`) followed
   by exactly `nlines` base64 `bits` lines carrying a `zlen`-byte zlib stream
-  (the in-house `cnvs_zlib`, the same compressor under the PNG encoder) that
+  (the in-house `canvas2d_zlib`, the same compressor under the PNG encoder) that
   must inflate back to exactly `w*h*4` bytes. The chunking is forced by
   arithmetic — 160x160x4 = 102,400 raw bytes would be ~137 KB encoded, against
   the parser's 64 KiB line cap — so the recorder emits 12,288-byte
@@ -454,7 +454,7 @@ Everything derived from the capture is checked C:
   matcher): a one-emoji program that measured ~137 KB raw records at ~57 KB
   (🍕), with the spectrum spanning roughly 40–70 KB. The strict parser extends
   through the new layer: declared-before-use ids, capped dimensions (bounding
-  the decoded allocation at 1 MiB), `zlen` capped by `cnvs_zlib_bound(w*h*4)`
+  the decoded allocation at 1 MiB), `zlen` capped by `canvas2d_zlib_bound(w*h*4)`
   and `nlines` by `ceil(zlen/3)` — both checked *before* either buffer is
   allocated — exact chunk counts, padding legal only in the final group of the
   final line, the decoded total required to equal `zlen` exactly, and the
@@ -517,15 +517,15 @@ one onto a fresh canvas and proves **both directions**:
 
 Closing the format for the (then) seven text scenes took two ops the recorder didn't
 yet cover — `textmetrics`'s `stroke_rect` and `textmaxwidth`'s `fill_text_max`
-(the latter a slice-only variant, `canvas_fill_text_max_n`, so the parser stays
+(the latter a slice-only variant, `canvas2d_fill_text_max_n`, so the parser stays
 in the counted world; `max_width` rides the op line, since the shaped line keys
 on size+text alone) — plus the four shadow setters the `emoji` scene's drop
 shadow needs, all serialized as plain floats and parsed strictly. With them,
 all seven replayed byte-identically with zero boundary calls — emoji captures
 included, under the gallery's transforms, shadows, and global alpha.
 
-The format has since closed over the **whole pixel-affecting API** (canvas.h's
-`canvas_record_to` doc is the authoritative statement): drawImage /
+The format has since closed over the **whole pixel-affecting API** (canvas2d.h's
+`canvas2d_record_to` doc is the authoritative statement): drawImage /
 putImageData / pattern sources ride numbered `image` blocks through the very
 machinery the emoji captures built (deflate + base64 `bits` lines, deduplicated
 by content within a file), Path2D draws ride numbered `path` blocks (one verb

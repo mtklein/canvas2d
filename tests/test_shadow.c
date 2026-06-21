@@ -1,4 +1,4 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
@@ -13,7 +13,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas(W, W, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, W, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -22,13 +22,13 @@ int main(void) {
 
     // Sharp (no blur) offset shadow: a red rect [8,24) casts a blue shadow at
     // +12,+12 -> [20,36).  The shadow sits under the shape.
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_set_shadow_offset_x(cv, 12.0f);
-    canvas_set_shadow_offset_y(cv, 12.0f);
-    canvas_set_shadow_blur(cv, 0.0f);
-    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas2d_set_shadow_offset_x(cv, 12.0f);
+    canvas2d_set_shadow_offset_y(cv, 12.0f);
+    canvas2d_set_shadow_blur(cv, 0.0f);
+    canvas2d_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // shape only
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 22, 22), 255, 0, 0, 255, 2));  // shape over shadow
@@ -36,12 +36,12 @@ int main(void) {
 
     // Blur spreads the shadow beyond the shape: with zero offset a sharp shadow
     // would hide entirely under the shape, but a blurred one leaks past the edges.
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_offset_x(cv, 0.0f);
-    canvas_set_shadow_offset_y(cv, 0.0f);
-    canvas_set_shadow_blur(cv, 16.0f);
-    canvas_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);  // shape [16,32)
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_shadow_offset_x(cv, 0.0f);
+    canvas2d_set_shadow_offset_y(cv, 0.0f);
+    canvas2d_set_shadow_blur(cv, 16.0f);
+    canvas2d_fill_rect(cv, 16.0f, 16.0f, 16.0f, 16.0f);  // shape [16,32)
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 24, 24), 255, 0, 0, 255, 2));  // shape on top
     struct rgba leak = pixel_at(px, len, W, 36, 24);                   // 4px past the edge
     CHECK(leak.a > 20);          // blurred shadow leaked out
@@ -52,35 +52,35 @@ int main(void) {
     CHECK(pixel_at(px, len, W, 42, 24).a > 5);
 
     // A transparent shadow colour casts no shadow even with an offset set.
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_blur(cv, 0.0f);
-    canvas_set_shadow_offset_x(cv, 12.0f);
-    canvas_set_shadow_offset_y(cv, 12.0f);
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.0f);  // transparent
-    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_shadow_blur(cv, 0.0f);
+    canvas2d_set_shadow_offset_x(cv, 12.0f);
+    canvas2d_set_shadow_offset_y(cv, 12.0f);
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.0f);  // transparent
+    canvas2d_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 0, 0, 2));      // no shadow
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // shape still there
 
     // The shadow colour's alpha carries through (a 50% blue shadow).
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.5f);
-    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.5f);
+    canvas2d_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% blue
 
     // Strokes cast shadows too.
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);  // green shadow
-    canvas_set_shadow_offset_x(cv, 12.0f);
-    canvas_set_shadow_offset_y(cv, 0.0f);
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_line_width(cv, 8.0f);
-    canvas_begin_path(cv);
-    canvas_move_to(cv, 8.0f, 24.0f);
-    canvas_line_to(cv, 24.0f, 24.0f);  // stroke x[8,24], y[20,28]
-    canvas_stroke(cv);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.0f, 1.0f);  // green shadow
+    canvas2d_set_shadow_offset_x(cv, 12.0f);
+    canvas2d_set_shadow_offset_y(cv, 0.0f);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_line_width(cv, 8.0f);
+    canvas2d_begin_path(cv);
+    canvas2d_move_to(cv, 8.0f, 24.0f);
+    canvas2d_line_to(cv, 24.0f, 24.0f);  // stroke x[8,24], y[20,28]
+    canvas2d_stroke(cv);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 32, 24), 0, 255, 0, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 12, 24), 255, 0, 0, 255, 2));  // stroke only
 
@@ -88,12 +88,12 @@ int main(void) {
     // opaque red image scaled to [8,24) casts a blue shadow at +12,+12 -> [20,36).
     uint8_t img[16] = { 255, 0, 0, 255, 255, 0, 0, 255,
                         255, 0, 0, 255, 255, 0, 0, 255 };
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_set_shadow_offset_x(cv, 12.0f);
-    canvas_set_shadow_offset_y(cv, 12.0f);
-    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas2d_set_shadow_offset_x(cv, 12.0f);
+    canvas2d_set_shadow_offset_y(cv, 12.0f);
+    canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, img, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // image only
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 255, 2));  // shadow only
     CHECK(px_near(pixel_at(px, len, W, 45, 45), 0, 0, 0, 0, 2));      // neither
@@ -104,11 +104,11 @@ int main(void) {
     // seam crisp, so only the left half [8,16) shadows, at +12 -> [20,28).
     uint8_t sprite[16] = { 255, 0, 0, 255, 0, 0, 0, 0,
                            255, 0, 0, 255, 0, 0, 0, 0 };
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_image_smoothing_enabled(cv, false);
-    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, sprite, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_set_image_smoothing_enabled(cv, true);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_image_smoothing_enabled(cv, false);
+    canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, sprite, 2, 2, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_set_image_smoothing_enabled(cv, true);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 12, 12), 255, 0, 0, 255, 2));  // opaque half
     CHECK(px_near(pixel_at(px, len, W, 20, 12), 0, 0, 0, 0, 2));      // transparent half
     CHECK(px_near(pixel_at(px, len, W, 22, 30), 0, 0, 255, 255, 2));  // its shadow
@@ -116,27 +116,27 @@ int main(void) {
 
     // Translucent paint shadows at its own strength: a 50% fill's shadow
     // carries 50% alpha (shadow = blur(A's alpha), not its coverage).
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 0.5f);
-    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 0.5f);
+    canvas2d_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 30, 30), 0, 0, 255, 128, 4));  // 50% shadow
 
     // Subpixel offsets: a half-pixel offset splits the sharp shadow's edge
     // columns 50/50 instead of snapping to the grid.  Offset x 12.5 on the
     // rect [8,24) lands the shadow on x [20.5, 36.5): its first and last
     // columns carry half alpha, the interior full strength.
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_shadow_offset_x(cv, 12.5f);
-    canvas_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_shadow_offset_x(cv, 12.5f);
+    canvas2d_fill_rect(cv, 8.0f, 8.0f, 16.0f, 16.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(px_near(pixel_at(px, len, W, 20, 30), 0, 0, 255, 128, 2));  // leading half
     CHECK(px_near(pixel_at(px, len, W, 28, 30), 0, 0, 255, 255, 2));  // interior
     CHECK(px_near(pixel_at(px, len, W, 36, 30), 0, 0, 255, 128, 2));  // trailing half
     CHECK(px_near(pixel_at(px, len, W, 37, 30), 0, 0, 0, 0, 2));      // past it
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     free(px);
     return TEST_REPORT();
 }

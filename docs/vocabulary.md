@@ -8,58 +8,48 @@ the web spec's names where the project implements it, OpenCL's names for
 lane/vector vocabulary, Mike's len rule (size = bytes, nfoo/foo_count = element
 counts, len = spatial).
 
-## Prefixes: two axes -- domain and visibility
+## Prefixes: one namespace, visibility by location
 
-Two prefixes, two axes.  **Domain (the prefix):** `canvas_` is the
-rendering-context API and its companion objects (Path2D, canvas_image) --
-everything *about* a canvas; `cnvs_` is everything else -- the project's
-standalone utilities and its internal implementation.  **Visibility (the header
-location):** a header in include/ is public, one in src/ is internal.  So a
-`cnvs_` header in include/ is a deliberately-exposed utility (the zlib codec, the
-PNG encoder, colour-space conversion, the matrix/homography math); a `cnvs_`
-header in src/ is internal.  `cnvs_` (disemvowelled "canvas") stays visually
-distinct from `canvas_` so the two domains never blur; it is not a rename
-candidate.
+One prefix.  Every C identifier in the project carries `canvas2d_` (macros
+`CANVAS2D_`): the rendering context, its companion objects, the standalone
+utilities, and the internal implementation alike.  Visibility is the header
+*location*, not the name: a header in include/ is public, one in src/ is
+internal.  So the same prefix spans both layers, and `-Iinclude -Isrc` lets a
+bare `#include "canvas2d_x.h"` resolve wherever the file sits.
 
-New symbols: context API + its objects -> `canvas_` in include/; a freestanding
-utility meant for callers -> `cnvs_` in include/; internal implementation ->
-`cnvs_` in src/.
+Anchors: the main type is `struct canvas2d_context`; the constructor is
+`canvas2d()`; companion objects are `struct canvas2d_path2d` and `struct
+canvas2d_image`.
 
-History: this began as "canvas_ public, cnvs_ internal, airtight at the public
-header."  Mike chose the **full utility belt** (2026-06-21).
+Public utilities live in include/, each a standalone `canvas2d_` header: zlib
+(`canvas2d_zlib.h`), the PNG encoder (`canvas2d_png.h` -- buffer-based:
+`canvas2d_png_encode` takes a raw uint16 RGBA buffer, not a canvas),
+colour-space conversion (`canvas2d_color.h`), the matrix/homography math
+(`canvas2d_matrix.h`), and the fill/stroke style enums (`canvas2d_paint_style.h`,
+re-included by `canvas2d.h`).  Internal implementation headers (the context
+state, the rasterizer, the stroker, the recorder/replay, the blit and the
+internal Path2D representation) sit in src/.  Two src/ headers carry domain
+names that disambiguate them from a same-stem public header: `canvas2d_blit.h`
+(the RGBA/f16 row copiers, distinct from the public image objects in
+`canvas2d_image.h`) and `canvas2d_path2d_internal.h` (the recorded-command
+representation, distinct from the public builder in `canvas2d_path2d.h`).
 
-Landed: the utility belt is public.  `include/` carries zlib (`cnvs_zlib.h`), the
-PNG encoder (`cnvs_png.h` -- already buffer-based: `cnvs_png_encode` takes a raw
-uint16 RGBA buffer, not a canvas), colour-space conversion (`cnvs_color.h`), and
-the matrix/homography math (`cnvs_matrix.h`), each a `cnvs_` header, so `cnvs_`
-now spans public-utility and internal, split by location.  The moves were
-low-churn: the build is `-Iinclude -Isrc`, so a bare `#include "cnvs_x.h"`
-resolves wherever the file sits.  cnvs_math.h had been a grab-bag (matrix + lane
-vocab + colour types + clamp/convert); the split exposed only the geometry (to
-`cnvs_matrix.h`: `cnvs_vec2`, `cnvs_mat`, and the `cnvs_mat_*` operators) and the
-colour value-types colour-space needs (to `cnvs_color.h`: `cnvs_unpremul`,
-`cnvs_premul`, and `cnvs_unpremul_of` / `cnvs_premultiply` / `cnvs_unpremultiply`).
-The lane/compute vocabulary (the SIMD lane types, `cnvs_clamp01` / `float8_clamp01`
-/ `cnvs_f2i` / `cnvs_f2u8`) stayed internal in `src/cnvs_math.h`.  The Path2D and
-image objects split out of `canvas.h` into `include/canvas_path2d.h` and
-`include/canvas_image.h`; `canvas.h` stays the context API and forward-declares
-both structs for the methods that take or produce one.
-
-Still pending: normalize `blur_*` / `blur.{c,h}` -> `cnvs_blur_*` (internal);
-internal helpers wearing the public `canvas_` prefix -> `cnvs_`.  `canvas_free`,
-`canvas_record_to`, `canvas_replay_from` are legitimately public.
+The single exception is the SIMD lane vocabulary -- the unprefixed lane vector
+types (`half4`, `float8`, `uint16`, `short8`, `uchar4`, ...) and the lane helpers
+that live with them in `src/canvas2d_math.h`.  These keep their bare names
+pending a separate normalization pass; they are not part of this namespace.
 
 ## Collisions (same word, different meanings)
 
 ### C1. `cap` — four meanings
-- capacity (cnvs_verts.cap, pt_cap/sp_cap, stack_cap, cov_cap, tile_cap,
+- capacity (canvas2d_verts.cap, pt_cap/sp_cap, stack_cap, cov_cap, tile_cap,
   bitwr.cap, vcap/pcap, get_line_dash(out, cap)) — Go/stb-standard usage
-- line cap (canvas_line_cap, emit_cap) — W3C term, immovable
-- capture (cnvs_glyph_slot.cap_w/cap_h/cap_len) — `cap_len` reads as
+- line cap (canvas2d_line_cap, emit_cap) — W3C term, immovable
+- capture (canvas2d_glyph_slot.cap_w/cap_h/cap_len) — `cap_len` reads as
   "capacity length", means "capture byte size"
 - upper limit (read_uint(..., cap), "the 64 KiB line cap", REPLAY_*_MAX
   prose)
-All but line-cap coexist inside cnvs_text.h/cnvs_replay.c simultaneously.
+All but line-cap coexist inside canvas2d_text.h/canvas2d_replay.c simultaneously.
 
 When working with line-cap, always keep the words line-cap in it.  If needed to
 abbreviate, lc is better than cap.  Let's try to have "cap" refer a buffer's
@@ -70,12 +60,12 @@ Landed: cap is capacity only.  The capture fields spell capture out
 keeps its full name.
 
 ### C2. `len` — one name, four units
-- bytes: canvas_read_rgba(out, len), owned_image.len, shape_slot.len,
+- bytes: canvas2d_read_rgba(out, len), owned_image.len, shape_slot.len,
   replay text_len, zlen/blen/glen/slen...
 - pixels: compositor_read(out, len) — the direct seam partner of
   read_rgba's byte len; same name changes unit across one call
-- elements: cnvs_verts.len, pt_len/sp_len, path2d.len, stack_len
-- UTF-16 units: cnvs_shaped.text_len — while cnvs_shape()'s text_len
+- elements: canvas2d_verts.len, pt_len/sp_len, path2d.len, stack_len
+- UTF-16 units: canvas2d_shaped.text_len — while canvas2d_shape()'s text_len
   parameter four lines away is UTF-8 BYTES
 
 Try to keep geometric length spelled out as length, and avoid len otherwise...
@@ -83,7 +73,7 @@ byte counts should be "foo_size", counts of other things "nfoo" or "foo_count"
 (you pick which you like and use it everywhere)
 
 Landed: element counts are nfoo (npts, nsubs, nverts, ncmds, nsaved);
-cnvs_shaped.utf16s names its UTF-16 unit; cnvs_blend_read counts pixels by
+canvas2d_shaped.utf16s names its UTF-16 unit; canvas2d_blend_read counts pixels by
 name; byte counts keep the __counted_by-int len dialect (capture_size where
 the brief named it).
 
@@ -91,7 +81,7 @@ the brief named it).
 ### C3. `quant8` — two unrelated operations
 - blur.c quant8: exact rounded integer divide via reciprocal+snap
 - canvas.c unpremul_quant8: float -> unorm8 conversion
-- (cover_to_u8 IS the unorm8 quantize, named _to_u8; cnvs_f2u8 is a
+- (cover_to_u8 IS the unorm8 quantize, named _to_u8; canvas2d_f2u8 is a
   saturating convert of an already-0..255 value, NOT unorm)
 Field standard: unorm8 (Vulkan/D3D/Metal UNORM) for [0,1]->u8.
 
@@ -120,12 +110,12 @@ Landed: holds as ruled; cross-context mentions say clip mask / shadow mask.
 
 ### C6. `block` — 8-pixel planar block / .canvas format block / DEFLATE
 block (RFC-fixed) / staged vertex block / 2x2 mip block.  Planar-vs-format
-collide hard in cnvs_record/replay comments.
+collide hard in canvas2d_record/replay comments.
 
 Hmm sometimes I've used `slab` for the idea of an 8-pixel block.  Does that
 conflict with anything else?
 
-Landed: slab is the 8-pixel planar unit (defined in cnvs_planar.h: a cnvs_px8 IS
+Landed: slab is the 8-pixel planar unit (defined in canvas2d_planar.h: a canvas2d_px8 IS
 one slab); format, DEFLATE, staged-vertex, and mip blocks keep "block".
 
 ### C7. `half` — the f16 type family vs win/2 rounding bias (blur quant8)
@@ -145,16 +135,16 @@ then disambiguate with glyph run, running sum, etc should it ever come up.
 
 Landed: holds as ruled, in-context uses stay.
 
-### C9. `shape` — text shaping (cnvs_shape, shape blocks) vs geometric
+### C9. `shape` — text shaping (canvas2d_shape, shape blocks) vs geometric
 shape (prose); `shade8` sits one letter away in the same file.
 Yeah, this one I think we should probably use `shaping` for text shaping and
 `shape` to mean the geometric concept.
 
-Landed: shaping it is -- cnvs_shape_text, struct cnvs_shaping_slot,
-cnvs_text_cache.shaping[], CNVS_SHAPING_CACHE_N, shaping_hits/misses,
-cnvs_text_cache_shaping(_slot)/put_shaping, tests/test_shaping.c, and the
+Landed: shaping it is -- canvas2d_shape_text, struct canvas2d_shaping_slot,
+canvas2d_text_cache.shaping[], CANVAS2D_SHAPING_CACHE_N, shaping_hits/misses,
+canvas2d_text_cache_shaping(_slot)/put_shaping, tests/test_shaping.c, and the
 FORMAT token `shaping` (re-recorded everywhere; the strict parser rejects the
-old spelling).  struct cnvs_shaped stays: a shaped line is shaping's result.
+old spelling).  struct canvas2d_shaped stays: a shaped line is shaping's result.
 
 ### C10. `filter` — CSS filter vs PNG row filter.  Both spec-fixed;
 unavoidable at the spec edge.
@@ -162,7 +152,7 @@ No big deal I think.  Not super ambiguous in context.
 
 Landed: no action, as ruled.
 
-### C11. `saturate`/`sat` — clamping conversion (cnvs_f2i docs) / CSS
+### C11. `saturate`/`sat` — clamping conversion (canvas2d_f2i docs) / CSS
 saturate() / HSL saturation (sat8, set_sat8 — reads as "saturating 8-bit",
 is not).
 Let's leave sat/saturate to only where it corresponds to something external
@@ -174,21 +164,21 @@ Landed: the HSL pair is saturation8/set_saturation8; sat/saturate appear only at
 external seams (CSS saturate(), saturating converts).
 
 ### C12. `op` — composite op (public) / "the op" (a draw) / path verb
-(p2d_op) / fuzz opcode + recorder command (cnvs_rec_op).  p2d_op vs
-cnvs_glyph_verb: same concept, two axis nouns.
+(p2d_op) / fuzz opcode + recorder command (canvas2d_rec_op).  p2d_op vs
+canvas2d_glyph_verb: same concept, two axis nouns.
 I think op is just too short and ambiguous to use outside very local settings.
 As you've written, compositing operation, a draw, a path verb.. these things
 kind of are better spelled out in broad contexts, all fine short in local
 contexts.  Definitely pick verb over op if we're using both for paths.
 
 Landed: paths speak verb on both axes -- enum p2d_verb with p2d_cmd.verb beside
-enum cnvs_glyph_verb; the public enum canvas_composite_op keeps the web's term.
+enum canvas2d_glyph_verb; the public enum canvas2d_composite_op keeps the web's term.
 
 ### C13. `stamp` — LRU last-use tick (shape_slot.stamp, fed by cache.tick)
 vs stamping coverage into a mask (verb).
 Last-use or timestamp I guess?
 
-Landed: the LRU pair is (tick, last_use): cnvs_shaping_slot.last_use, fed by
+Landed: the LRU pair is (tick, last_use): canvas2d_shaping_slot.last_use, fed by
 cache.tick.  stamp survives only as the prose verb.
 
 ### C14. `bitmap` — format token vs the canvas backing store; and the
@@ -201,7 +191,7 @@ Landed: audited -- every bitmap (backing store, capture, strike, glyph bitmap
 space, the format token) is a dense pixel rectangle.  No renames needed.
 
 ### C15. `px` — buffer pointer / font size px / blur stdDev px / loop
-index / cnvs_px8 (8 pixels) vs tests' px4 (4 channels of ONE pixel —
+index / canvas2d_px8 (8 pixels) vs tests' px4 (4 channels of ONE pixel —
 numeric suffix counts different things).
 
 px should always at least refer to a pixel.  It's okay as both a "this pixel"
@@ -216,7 +206,7 @@ Landed: the tests' one-pixel record is struct rgba (was px4).
 - a: alpha / matrix entry / first operand / quadratic coefficient (in a
   function also holding colour alpha)
 - k: tail count / coverage fraction / scale factor / COSINE
-  (cnvs_mat_rotate) — count is dominant
+  (canvas2d_mat_rotate) — count is dominant
 - q: quarter-pi / quotient / query point / staged pixel
 
 This is pretty much unavoidable.  r,g,b,a are going to be color channels, x,y
@@ -229,7 +219,7 @@ Also worth mentioning that 'd' and 'dst' are good for things dealing with
 the underlying destination buffer, 's' or 'src' for the source colors we're
 working on.  s' = blend(s,d), d' = lerp(d,s',cov), that sort of thing.
 
-Landed: cov_lerp8 takes cov (with icov = 1 - cov); cnvs_mat_rotate pairs c with
+Landed: cov_lerp8 takes cov (with icov = 1 - cov); canvas2d_mat_rotate pairs c with
 s; emit_shadow's radius is spelled out beside the colour channels; i/j/k keep
 their index/count roles; s/d destination-source letters hold.
 
@@ -244,9 +234,9 @@ interned-id map (b->map[file_id] = fid).
 ## Drift (different words, one meaning)
 
 ### D1. clamp family — clamp01 DEFINED TWICE with DIFFERENT NaN behavior
-(canvas.c NaN->0 via !(v>0); cnvs_gradient.c plain min/max lets NaN
+(canvas.c NaN->0 via !(v>0); canvas2d_gradient.c plain min/max lets NaN
 through).  Bug-adjacent.  Plus clamp_lo, clampi, vclamp01,
-cnvs_px8_clamp_premul (whose comment says "pins").  "pin" = clamp in
+canvas2d_px8_clamp_premul (whose comment says "pins").  "pin" = clamp in
 prose only; "pin" also means anchor-in-place (patterns, fonts) — two
 concepts sharing the prose word.
 
@@ -255,12 +245,12 @@ will be between the requested bounds no matter what.  clamp01(NaN) needs to
 return _some_ value in [0,1], etc.  (of course if NaN is one of the boundaries
 this is a meaningless promise but why would we ever do that)
 
-Landed: one clamp01, one home -- cnvs_clamp01 + float8_clamp01 in cnvs_math.h,
+Landed: one clamp01, one home -- canvas2d_clamp01 + float8_clamp01 in canvas2d_math.h,
 both NaN-laundering; the gradient's NaN-passing copy and its vclamp01 are
 gone, clamp_lo joined the guarantee, and "pins" no longer means clamp in
 prose.  Zero pixels moved (gallery byte-identical, oracles green).
 
-### D2. Composite axis — "op" (public canvas_composite_op, CANVAS_OP_*,
+### D2. Composite axis — "op" (public canvas2d_composite_op, CANVAS2D_OP_*,
 SOURCE/DESTINATION) vs "blend mode" (compositor_blend_mode,
 COMPOSITOR_SRC_*/DST_*) vs "composite" (state field cur.composite).
 Mirrored by static_asserts.  Skia says blend mode; the web says composite
@@ -272,7 +262,7 @@ porter duff, separable, non-separable, user-defined, whatever.  Of course at
 the interface we want to hew to canvas 2D's terms, but I don't mind switching
 right away to blend-type names inside.
 
-Landed: the compositor is gone; inside it is blend everywhere (cnvs_blend,
+Landed: the compositor is gone; inside it is blend everywhere (canvas2d_blend,
 blend8, blend_term8, tests/test_blend.c), with the web's composite-operation
 name at the public enum.
 
@@ -297,20 +287,20 @@ I do like begin/end to mark boundaries rather than open/close.
 begin_recording, end_recording.  open and close sound too close to FILE* operations,
 and also too close to path2d.
 
-Landed: constructors are the type name with a NULL-ok _free -- canvas()/
-canvas_free(), canvas_path2d()/canvas_path2d_free(), cnvs_font()/
-cnvs_font_free() -- and the recorder begins/ends (cnvs_recorder_begin/
-cnvs_recorder_end).
+Landed: constructors are the type name with a NULL-ok _free -- canvas2d()/
+canvas2d_free(), canvas2d_path2d()/canvas2d_path2d_free(), canvas2d_font()/
+canvas2d_font_free() -- and the recorder begins/ends (canvas2d_recorder_begin/
+canvas2d_recorder_end).
 
 ### D4. reset/clear — empty-keep-storage is `reset` 3x and `clear` 1x
 (pattern_clear); free-everything is `clear` (text_cache) and `free`
-elsewhere.  canvas_reset/clear_rect are web-fixed.
+elsewhere.  canvas2d_reset/clear_rect are web-fixed.
 
 clear for places where we're doing something like bzero, reset for things that
 are managing memory and state tracking.  There's some overlap probably, but
 that should be the general gist.
 
-Landed: cnvs_text_cache_reset (frees and reinits) and pattern_reset; clear keeps
+Landed: canvas2d_text_cache_reset (frees and reinits) and pattern_reset; clear keeps
 the bzero-ish web-fixed uses (clear_rect, the bitmap clears).
 
 ### D5. Write verbs — store (reg->mem), write (->file), put (web API /
@@ -328,13 +318,13 @@ just keep evolving on rather than needing a whole holistic fix all at once.
 
 Landed: evolving as ruled; no holistic rename.
 
-### D6. Read verbs — load (mem->reg AND file->mem: canvas_load_png),
-read (bulk copy-out AND parse AND cnvs_png_read = file), get (web +
+### D6. Read verbs — load (mem->reg AND file->mem: canvas2d_load_png),
+read (bulk copy-out AND parse AND canvas2d_png_read = file), get (web +
 accessors + getbits), fetch/peek (prose).  File I/O is load publicly,
 read internally, for the same operation.
 
-Landed: file I/O reads were named canvas_read_png / cnvs_png_read (matching
-canvas_write_png), then removed with the PNG decoder -- canvas_write_png is now
+Landed: file I/O reads were named canvas2d_read_png / canvas2d_png_read (matching
+canvas2d_write_png), then removed with the PNG decoder -- canvas2d_write_png is now
 the only file verb.  load/store stay register traffic.
 
 ### D7. premul family — coherent rule emerges: abbreviated
@@ -397,7 +387,7 @@ strategies for sampling are nearest neighbor, bilerp, etc.
 Landed: holds as ruled; no renames forced.
 
 ### D14. row/tile/plane/target — clean; "scanline" appears twice
-(cnvs_cover.c) as a stray synonym for row.
+(canvas2d_cover.c) as a stray synonym for row.
 Don't mind scanline or framebuffer, since they dont' really mean
 anything else, but in general row is just as clear I think.
 
@@ -445,8 +435,8 @@ means slots in TABLE_N but insert-cap in CACHE_N) vs lowercase.
 
 I like a MAX suffix, uppercase for #defines.
 
-Landed: CANVAS_DIM_MAX, CANVAS_DASH_MAX, CNVS_STOPS_MAX join the already-suffixed
-REPLAY_*_MAX / CNVS_REC_*_MAX.
+Landed: CANVAS2D_DIM_MAX, CANVAS2D_DASH_MAX, CANVAS2D_STOPS_MAX join the already-suffixed
+REPLAY_*_MAX / CANVAS2D_REC_*_MAX.
 
 ### D20. slot (storage cell) vs entry (occupied slot) — held in practice,
 unstated.  tick (counter) vs stamp (per-slot snapshot).
@@ -455,12 +445,20 @@ empty slots.  Another term we've used for tick and stamp is generation ID.
 
 Landed: slot/entry hold; the counter pair is (tick, last_use) -- see C13.
 
-### D21. parallel public/internal enums — five mirrored vocabularies
-(fill_rule, line_join, line_cap, composite/blend, matrix), each pinned at
-the seam.  Deliberate layering; the cost is sync.
-I don't mind this and think it's healthy, especially with asserts that keep them lockstep.
+### D21. parallel public/internal enums — formerly five mirrored
+vocabularies (fill_rule, line_join, line_cap, composite/blend, matrix).
 
-Landed: the leaf-module enum mirrors stay, asserts pinning the seams.
+Landed: the single namespace removed the prefix split that justified the
+mirror, so `fill_rule`, `line_join`, and `line_cap` are now one enum each
+(`enum canvas2d_fill_rule`, `enum canvas2d_line_join`, `enum
+canvas2d_line_cap`), defined once in `include/canvas2d_paint_style.h` and
+consumed directly by both the public API and the leaf modules (the
+rasterizer, the stroker).  The seam `_Static_assert`s and the
+public-to-internal conversion casts are gone -- they were identities.
+`composite/blend` and `matrix` remain distinct types: `enum
+canvas2d_composite_op` (the public, web-named operator) versus the internal
+blend enum, and `canvas2d_matrix` (the public affine row) versus the internal
+`canvas2d_mat` -- distinct base names, not mirrors, so no merge applies.
 
 ### D22. guard/select/discard — consistent.  half8_if_then_else (renamed
 from _sel); vsel_bits is the stray spelling (vsel_ prefix vs _sel suffix
@@ -475,9 +473,9 @@ The project's dominant convention is nfoo (nruns, nfonts, nimg, npath,
 nverbs, npts, ncmds, nlines, npix...).  A consistent "len = bytes (int)"
 dialect exists, largely forced by __counted_by wanting int sibling fields
 (size_t is rare by construction).  True offenders — element counts named
-len: cnvs_verts.len, pt_len/sp_len, path2d.len (replay already calls the
+len: canvas2d_verts.len, pt_len/sp_len, path2d.len (replay already calls the
 same quantity ncmds), rec_path.len, stack_len; the unit-colliding
-cnvs_shaped.text_len (UTF-16 units beside UTF-8-byte text_lens, C2); and
+canvas2d_shaped.text_len (UTF-16 units beside UTF-8-byte text_lens, C2); and
 compositor_read(out, len) counting PIXELS one seam from byte lens.
 compositor.tn/cn are cryptic counts.  `cnt` is a third count spelling
 (geom append, zlib bits).  Notably: nothing spatial is named len — the
@@ -524,30 +522,30 @@ for new code.
   large files.
 - 2026-06-11 (types): enums always `enum foo`, never typedef'd.  Structs
   split by LITERAL C usage, read off the call signatures: worked with
-  almost always by copying values -> typedef (float8, cnvs_vec2, cnvs_px8,
-  cnvs_mat); worked with almost always through pointer indirection ->
-  tagged `struct foo`, no typedef, spelled at every use (struct canvas,
-  struct cnvs_gradient -- its functions all take pointers, the occasional
+  almost always by copying values -> typedef (float8, canvas2d_vec2, canvas2d_px8,
+  canvas2d_mat); worked with almost always through pointer indirection ->
+  tagged `struct foo`, no typedef, spelled at every use (struct canvas2d_context,
+  struct canvas2d_gradient -- its functions all take pointers, the occasional
   save/restore copy notwithstanding).  Anything with a constructor or free
   is tagged by nature.  Constructors are the bare type name
-  (`struct canvas *canvas(...)`); destructors are `foo_free()`,
+  (`struct canvas2d_context *canvas2d(...)`); destructors are `foo_free()`,
   NULL-accepting like free() itself.
 - 2026-06-11 (implementation): all of the above is in the tree.  Tagged:
-  struct canvas, canvas_path2d, cnvs_recorder, cnvs_gradient, cnvs_pattern,
-  cnvs_shaped, cnvs_cover, cnvs_verts, cnvs_path, cnvs_text_cache,
-  cnvs_font, cnvs_glyph_slot, cnvs_shaping_slot, cnvs_font_name, rec_image,
-  rec_path.  Typedefs kept (value types): cnvs_vec2, cnvs_mat, cbbox,
-  cnvs_premul, cnvs_unpremul, cnvs_px8, gradpx8, rgb8, foldv8, the lane
-  types, cnvs_stop, cnvs_subpath, cnvs_filter, cnvs_mip, cnvs_xspan,
-  p2d_cmd, canvas_matrix, canvas_text_metrics, cnvs_text_metrics.
-  AWAITING RULING: cnvs_glyph_run -- genuinely mixed (~50/50; the checked
+  struct canvas2d_context, canvas2d_path2d, canvas2d_recorder, canvas2d_gradient, canvas2d_pattern,
+  canvas2d_shaped, canvas2d_cover, canvas2d_verts, canvas2d_path, canvas2d_text_cache,
+  canvas2d_font, canvas2d_glyph_slot, canvas2d_shaping_slot, canvas2d_font_name, rec_image,
+  rec_path.  Typedefs kept (value types): canvas2d_vec2, canvas2d_mat, cbbox,
+  canvas2d_premul, canvas2d_unpremul, canvas2d_px8, gradpx8, rgb8, foldv8, the lane
+  types, canvas2d_stop, canvas2d_subpath, canvas2d_filter, canvas2d_mip, canvas2d_xspan,
+  p2d_cmd, canvas2d_matrix, canvas2d_text_metrics, canvas2d_shaped_metrics.
+  AWAITING RULING: canvas2d_glyph_run -- genuinely mixed (~50/50; the checked
   core copies whole runs by value per loop, the recorder/replay walk them
   by pointer inside a __counted_by array); keeps its typedef until called.
-  The per-call structural ruling is live too: canvas_fill(cv, rule) and
-  canvas_clip(cv, rule), set_fill_rule and its state field gone, the
+  The per-call structural ruling is live too: canvas2d_fill(cv, rule) and
+  canvas2d_clip(cv, rule), set_fill_rule and its state field gone, the
   format's fill/clip tokens carrying the rule by name, and
-  canvas_create_image_data taking no canvas.
-- 2026-06-11: cnvs_glyph_run is TAGGED (`struct cnvs_glyph_run`) — the punted
+  canvas2d_create_image_data taking no canvas.
+- 2026-06-11: canvas2d_glyph_run is TAGGED (`struct canvas2d_glyph_run`) — the punted
   50/50 resolved by Mike: "it's complex, got internal pointers."  Internal
   pointers join the criterion: a by-value copy of such a struct is shallow
   (copies share the arrays), so it is reference-flavored even where loops

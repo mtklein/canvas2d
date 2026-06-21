@@ -1,9 +1,9 @@
 # Memo: gradient evaluation — the 1024-entry ramp vs brute-force stop iteration, vectorized across pixels
 
-**Scope read:** `src/cnvs_gradient.{h,c}` (the shipping path: a 1024-entry colour ramp built
+**Scope read:** `src/canvas2d_gradient.{h,c}` (the shipping path: a 1024-entry colour ramp built
 per fill, nearest-entry lookup per pixel; the README documents it as "within 1/255 of the
 exact piecewise-linear colour"), `src/canvas.c` (paint_tile: the ramp threshold + per-pixel
-loop), `src/cnvs_planar.h` (the house planar/SoA kernel vocabulary), `docs/decisions/
+loop), `src/canvas2d_planar.h` (the house planar/SoA kernel vocabulary), `docs/decisions/
 color-axis.md` (both addenda — the f16 stop lerp and the planar layout this memo's kernel
 extends to the gradient), `docs/decisions/opt-level.md` (paired-bench methodology),
 `bench/bench_gradient{,_fill}.c`, `tests/test_gradient_solve.c` (the tolerance-0 ramp
@@ -15,7 +15,7 @@ during timing.  A re-pairing of the two flagship benches at sweep end reproduced
 to 0.5 %; a sentinel re-run of `bench_gradient_fill` drifted +4 % in absolute time but its
 *paired ratio* moved 1.242 → 1.23 — the ratio, not the wall clock, is what's quoted.  A
 15-cell stop-count × fill-size sweep ran as a separate /tmp harness against a library copy
-whose only delta is `CNVS_MAX_STOPS` raised to 32 (the pathological case doesn't fit the
+whose only delta is `CANVAS2D_MAX_STOPS` raised to 32 (the pathological case doesn't fit the
 shipping cap).  Quality: ~11M-sample parameter sweeps per gradient (dense uniform t plus
 every stop offset and its f32 neighbours and every LUT cell boundary) against an exact
 double-precision piecewise-linear reference over the f16 stop colours; gallery pixels via a
@@ -32,13 +32,13 @@ selects over the sorted stops, no gathers, no table.
 
 ## 1. The two designs
 
-**(L) the LUT, shipping:** per gradient fill, `cnvs_gradient_build_ramp` runs the scalar
-stop scan 1024 times into an 8 KB `cnvs_unpremul` array living in the canvas struct; the
+**(L) the LUT, shipping:** per gradient fill, `canvas2d_gradient_build_ramp` runs the scalar
+stop scan 1024 times into an 8 KB `canvas2d_unpremul` array living in the canvas struct; the
 paint loop turns each solved parameter into `ramp[(int)(t * 1023 + 0.5)]` — a scalar
 multiply-add, a convert, an 8-byte load.  Fills under 1024 px skip the build and scan stops
 per pixel, scalar.  Colour error: nearest-entry quantization, documented ≤1/255.
 
-**(R) brute force, the prototype:** `cnvs_gradient_color_row` — after the existing 8-wide
+**(R) brute force, the prototype:** `canvas2d_gradient_color_row` — after the existing 8-wide
 parameter solve, a second row kernel evaluates colours eight pixels per step.  Per stop
 (interior stops only): one f32 compare of the eight parameters against the stop offset, the
 mask narrowed once to 16 bits, then ten bitwise lane selects advance each lane's
@@ -46,8 +46,8 @@ lo/hi offset (f32) and lo/hi colour planes (f16, four channels each).  The epilo
 scalar lerp's exact arithmetic eight wide — u in f32 with the same true divide and the same
 1e-9 span guard, narrowed once to f16, one multiply-add per channel plane — plus three
 selects for the first/last/outside edge lanes, then a `vst4q_f16` store through a
-`__counted_by(8)` seam (one bounds check per block, the cnvs_planar.h idiom).  The result is
-**bit-identical to `cnvs_gradient_color_at`, lane for lane** — verified at zero mismatches
+`__counted_by(8)` seam (one bounds check per block, the canvas2d_planar.h idiom).  The result is
+**bit-identical to `canvas2d_gradient_color_at`, lane for lane** — verified at zero mismatches
 over every sweep below, including stop offsets, their ±1-ulp neighbours, coincident-offset
 ties, and the n%8 scalar tail — so the scalar scan stays the semantic reference and the row
 kernel computes the same semantics eight at a time.  No setup, no table, no threshold.
@@ -91,7 +91,7 @@ in-place lookup); `row` mirrors the new one (colour row buffer, then read back).
 | 16 | lut 7.1 / row 24.0 — **3.38** | lut 16.9 / row 25.2 — **1.49** | lut 44.4 / row 27.1 — **0.61** |
 | 32* | lut 7.3 / row 40.5 — **5.51** | lut 24.3 / row 42.3 — **1.74** | lut 73.8 / row 44.7 — **0.61** |
 
-*32 stops needs `CNVS_MAX_STOPS` raised; the shipping API caps at 16, so the in-API worst
+*32 stops needs `CANVAS2D_MAX_STOPS` raised; the shipping API caps at 16, so the in-API worst
 case is the 3.38 row.
 
 The shape follows the algorithm: the row kernel costs O(stops) per pixel (≈0.45 ns/px per
@@ -166,7 +166,7 @@ readback pixels).
 
 ## 5. Setup cost and memory
 
-Ramp build (`cnvs_gradient_build_ramp`, 1024 scalar evaluations, self-timed median):
+Ramp build (`canvas2d_gradient_build_ramp`, 1024 scalar evaluations, self-timed median):
 **2.3 µs** at 2 stops, 3.0 µs at 5, 3.8 µs at 8, 6.4 µs at 16, 13.0 µs at 32 — paid per
 gradient fill ≥1024 px, so a UI-shaped workload of many short-lived gradients pays it over
 and over (§3's 32²-fill column is that workload: the build is half the LUT's wall clock).

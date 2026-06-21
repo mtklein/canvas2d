@@ -1,21 +1,21 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
 #include <stdlib.h>
 
 // Fill a fresh red round-rect-radii path and read the canvas back.
-static void draw(struct canvas *__single cv, uint8_t *__counted_by(len) px, int len,
+static void draw(struct canvas2d_context *__single cv, uint8_t *__counted_by(len) px, int len,
                  float x, float y, float w, float h,
                  float tl_x, float tl_y, float tr_x, float tr_y,
                  float br_x, float br_y, float bl_x, float bl_y) {
-    canvas_clear_rect(cv, 0.0f, 0.0f, 40.0f, 40.0f);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_begin_path(cv);
-    canvas_round_rect_radii(cv, x, y, w, h, tl_x, tl_y, tr_x, tr_y,
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, 40.0f, 40.0f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_begin_path(cv);
+    canvas2d_round_rect_radii(cv, x, y, w, h, tl_x, tl_y, tr_x, tr_y,
                             br_x, br_y, bl_x, bl_y);
-    canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
 }
 
 static bool red(uint8_t const *__counted_by(len) px, int len, int x, int y) {
@@ -32,7 +32,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas(w, h, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(w, h, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -71,7 +71,7 @@ int main(void) {
     CHECK(red(px, len, 20, 5));     // top of the inscribed circle
     CHECK(clear(px, len, 6, 6));    // corner well outside the circle
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     free(px);
     return TEST_REPORT();
 }

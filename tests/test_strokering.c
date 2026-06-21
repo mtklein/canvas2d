@@ -1,4 +1,4 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
@@ -16,7 +16,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas(W, W, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, W, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -24,13 +24,13 @@ int main(void) {
     }
 
     float const cx = 80.0f, cy = 80.0f, r = 46.0f, half_width = 7.5f;  // ring radius +/- half_width
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_line_width(cv, 2.0f * half_width);
-    canvas_begin_path(cv);
-    canvas_arc(cv, cx, cy, r, 0.0f, 2.0f * (float)M_PI, false);
-    canvas_close_path(cv);
-    canvas_stroke(cv);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_line_width(cv, 2.0f * half_width);
+    canvas2d_begin_path(cv);
+    canvas2d_arc(cv, cx, cy, r, 0.0f, 2.0f * (float)M_PI, false);
+    canvas2d_close_path(cv);
+    canvas2d_stroke(cv);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
 
     // A point on the ring centreline at several angles, including the seam at
     // theta=0; all should be fully covered (the notch left the seam partial).
@@ -48,7 +48,7 @@ int main(void) {
     // the coverage back.
     CHECK(pixel_at(px, len, W, (int)(cx + r + half_width - 2.0f), 80).a > 250);
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     free(px);
     return TEST_REPORT();
 }

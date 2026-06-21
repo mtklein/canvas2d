@@ -1,12 +1,12 @@
 # Memo: perspective (projective) transforms
 
-**Scope read:** `src/cnvs_math.{h,c}` (`cnvs_mat` — the 2×3 affine CTM and its
+**Scope read:** `src/canvas2d_math.{h,c}` (`canvas2d_mat` — the 2×3 affine CTM and its
 `mul`/`apply`/`invert`/`translate`/`scale`/`rotate`), `src/canvas.c` (path baking
-`cnvs_mat_apply` ~1069, the 8-wide sampler row DDA ~1908 "only x varies", the
+`canvas2d_mat_apply` ~1069, the 8-wide sampler row DDA ~1908 "only x varies", the
 device→source inverse ~4255, pattern inverse ~773, `ctm_scale` ~691,
 `ctm_rotation` ~740, `set_transform` ~582, the text transform ~3360/3494),
-`src/cnvs_stroke.c`, `src/cnvs_path.c` (flattening), `src/cnvs_record.c` /
-`src/cnvs_replay.c`.
+`src/canvas2d_stroke.c`, `src/canvas2d_path.c` (flattening), `src/canvas2d_record.c` /
+`src/canvas2d_replay.c`.
 
 ## Goal
 
@@ -28,9 +28,9 @@ projecting vertices; only *sampling* needs the per-pixel divide.
 
 ## Decisions
 
-1. **API: a 3×3 primitive + a quad helper.** `canvas_set_transform_3x3` /
-   `canvas_transform_3x3` (the nine-element setter and concat) for the general
-   homography, plus `canvas_set_perspective_quad` (map a source rect to four
+1. **API: a 3×3 primitive + a quad helper.** `canvas2d_set_transform_3x3` /
+   `canvas2d_transform_3x3` (the nine-element setter and concat) for the general
+   homography, plus `canvas2d_set_perspective_quad` (map a source rect to four
    destination corners — computes the homography from the four correspondences)
    for the common "project onto a quad" case.
 2. **Full scope, including sampling.** Both projective geometry AND
@@ -41,7 +41,7 @@ projecting vertices; only *sampling* needs the per-pixel divide.
 
 ## The three pieces
 
-- **Geometry (P1).** Extend `cnvs_mat` to nine terms; `apply` divides by `w`
+- **Geometry (P1).** Extend `canvas2d_mat` to nine terms; `apply` divides by `w`
   (fast path when affine); `mul`/`invert` become 3×3. Flatten curves in user
   space, project the vertices, scanline-fill as today. The real subtlety is
   **w≤0 clipping**: a vertex behind the projection plane projects to garbage, so

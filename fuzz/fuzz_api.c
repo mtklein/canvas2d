@@ -1,6 +1,6 @@
 // canvas2d public-API state-machine fuzzer (Role A).
 //
-// Maps the fuzz input to a sequence of public canvas_* calls via a *total*
+// Maps the fuzz input to a sequence of public canvas2d_* calls via a *total*
 // streaming decoder: any byte string is a valid program (opcodes and counts are
 // taken modulo their range, a short read just ends the program), so a coverage
 // fuzzer drives deep into the renderer instead of bouncing off input validation.
@@ -18,8 +18,8 @@
 // Text shim is a separate target).  Image dimensions are clamped small so the
 // fuzzer probes clip/clamp logic without OOMing on multi-GB allocations.
 
-#include "canvas.h"
-#include "canvas_image.h"
+#include "canvas2d.h"
+#include "canvas2d_image.h"
 #include "fuzz_ops.h"
 
 #include <ptrcheck.h>
@@ -64,27 +64,27 @@ static int rd_range(struct cursor *c, int lo, int hi) {
 // A fuzzed INPUT colour space: any of the three authoring spaces (sRGB, linear,
 // Oklab) -- exercises intern_color / the gradient-stop conversion paths, not just
 // the sRGB default.
-static enum canvas_color_space rd_cs(struct cursor *c) {
-    return (enum canvas_color_space)rd_range(c, 0, 2);
+static enum canvas2d_color_space rd_cs(struct cursor *c) {
+    return (enum canvas2d_color_space)rd_range(c, 0, 2);
 }
 
 // A fuzzed alpha mode (unpremul / premul), for the gradient interpolation knob.
-static enum canvas_alpha_type rd_alpha(struct cursor *c) {
-    return (enum canvas_alpha_type)rd_range(c, 0, 1);
+static enum canvas2d_alpha_type rd_alpha(struct cursor *c) {
+    return (enum canvas2d_alpha_type)rd_range(c, 0, 1);
 }
 
-static void do_image_get(struct canvas *__single cv, struct cursor *c, int W, int H) {
+static void do_image_get(struct canvas2d_context *__single cv, struct cursor *c, int W, int H) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int x = rd_range(c, -8, W + 8), y = rd_range(c, -8, H + 8);
     int const len = w * h * 4;                       // w,h <= 64 -> fits int
     uint8_t *__counted_by(len) out = malloc(len > 0 ? (size_t)len : 1);
     if (out) {
-        canvas_get_image_data(cv, CANVAS_CS_SRGB, x, y, w, h, out, len);
+        canvas2d_get_image_data(cv, CANVAS2D_CS_SRGB, x, y, w, h, out, len);
     }
     free(out);
 }
 
-static void do_image_put(struct canvas *__single cv, struct cursor *c) {
+static void do_image_put(struct canvas2d_context *__single cv, struct cursor *c) {
     int w = rd_range(c, 0, 64), h = rd_range(c, 0, 64);
     int dx = rd_range(c, -8, 64), dy = rd_range(c, -8, 64);
     int const len = w * h * 4;
@@ -93,12 +93,12 @@ static void do_image_put(struct canvas *__single cv, struct cursor *c) {
         for (int i = 0; i < len; i++) {
             data[i] = rd_u8(c);
         }
-        canvas_put_image_data(cv, CANVAS_CS_SRGB, data, len, w, h, dx, dy);
+        canvas2d_put_image_data(cv, CANVAS2D_CS_SRGB, data, len, w, h, dx, dy);
     }
     free(data);
 }
 
-static void do_image_draw(struct canvas *__single cv, struct cursor *c) {
+static void do_image_draw(struct canvas2d_context *__single cv, struct cursor *c) {
     int sw = rd_range(c, 1, 32), sh = rd_range(c, 1, 32);
     int const slen = sw * sh * 4;
     uint8_t *__counted_by(slen) src = malloc((size_t)slen);
@@ -106,24 +106,24 @@ static void do_image_draw(struct canvas *__single cv, struct cursor *c) {
         for (int i = 0; i < slen; i++) {
             src[i] = rd_u8(c);
         }
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, sw, sh, rd_f32(c), rd_f32(c),
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, sw, sh, rd_f32(c), rd_f32(c),
                                  rd_f32(c), rd_f32(c));
     }
     free(src);
 }
 
-// A reified canvas_image in one of the four formats, optionally with mips, drawn
+// A reified canvas2d_image in one of the four formats, optionally with mips, drawn
 // scaled at a chosen smoothing quality -- so the structured fuzzer reaches the
 // trilinear chain, the Catmull-Rom magnifier, and the whole f16 sampler family
 // (the bitmap path do_image_draw above never builds an image object).
-static void do_image_obj(struct canvas *__single cv, struct cursor *c) {
+static void do_image_obj(struct canvas2d_context *__single cv, struct cursor *c) {
     int const sw = rd_range(c, 1, 32), sh = rd_range(c, 1, 32);
     int const fmt = rd_range(c, 0, 3);  // 0:u8 unpremul 1:u8 premul 2:f16 unpremul 3:f16 premul
     bool const f16 = fmt >= 2;
-    enum canvas_alpha_type const at = (fmt & 1) ? CANVAS_ALPHA_PREMUL
-                                                : CANVAS_ALPHA_UNPREMUL;
+    enum canvas2d_alpha_type const at = (fmt & 1) ? CANVAS2D_ALPHA_PREMUL
+                                                : CANVAS2D_ALPHA_UNPREMUL;
     int const npx = sw * sh;
-    struct canvas_image *__single img = NULL;
+    struct canvas2d_image *__single img = NULL;
     if (f16) {
         int const n = npx * 4;
         _Float16 *__counted_by(n) px = malloc((size_t)n * sizeof *px);
@@ -133,7 +133,7 @@ static void do_image_obj(struct canvas *__single cv, struct cursor *c) {
                 // sampler must tolerate any data (the total-decoder contract).
                 px[i] = (_Float16)((float)rd_u8(c) / 255.0f);
             }
-            img = canvas_image_f16(CANVAS_CS_SRGB, px, sw, sh, at);
+            img = canvas2d_image_f16(CANVAS2D_CS_SRGB, px, sw, sh, at);
         }
         free(px);
     } else {
@@ -143,7 +143,7 @@ static void do_image_obj(struct canvas *__single cv, struct cursor *c) {
             for (int i = 0; i < n; i++) {
                 px[i] = rd_u8(c);
             }
-            img = canvas_image_unorm8(CANVAS_CS_SRGB, px, sw, sh, at);
+            img = canvas2d_image_unorm8(CANVAS2D_CS_SRGB, px, sw, sh, at);
         }
         free(px);
     }
@@ -151,19 +151,19 @@ static void do_image_obj(struct canvas *__single cv, struct cursor *c) {
         return;
     }
     if (rd_u8(c) & 1) {
-        (void)canvas_image_build_mips(img);  // half the time: the cached chain
+        (void)canvas2d_image_build_mips(img);  // half the time: the cached chain
     }
-    canvas_set_image_smoothing_enabled(cv, (rd_u8(c) & 1) != 0);
-    canvas_set_image_smoothing_quality(cv,
-        (enum canvas_image_smoothing_quality)rd_range(c, 0, 2));
+    canvas2d_set_image_smoothing_enabled(cv, (rd_u8(c) & 1) != 0);
+    canvas2d_set_image_smoothing_quality(cv,
+        (enum canvas2d_image_smoothing_quality)rd_range(c, 0, 2));
     // Pick a draw overload: scaled (minify/magnify chosen by the dims) or subrect.
     if (rd_u8(c) & 1) {
-        canvas_draw_image_scaled(cv, img, rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c));
+        canvas2d_draw_image_scaled(cv, img, rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c));
     } else {
-        canvas_draw_image_subrect(cv, img, rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c),
+        canvas2d_draw_image_subrect(cv, img, rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c),
                                   rd_f32(c), rd_f32(c), rd_f32(c), rd_f32(c));
     }
-    canvas_image_free(img);
+    canvas2d_image_free(img);
 }
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
@@ -172,103 +172,103 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     int W = rd_range(&c, 1, 256), H = rd_range(&c, 1, 256);
     // Vary the working space: sRGB or extended linear sRGB (Oklab is not a
     // compositing space).  Fuzzes the linear decode/encode + extended-range paths.
-    enum canvas_color_space const ws =
-        (rd_u8(&c) & 1) ? CANVAS_CS_LINEAR_SRGB : CANVAS_CS_SRGB;
-    struct canvas *__single cv = canvas(W, H, ws);
+    enum canvas2d_color_space const ws =
+        (rd_u8(&c) & 1) ? CANVAS2D_CS_LINEAR_SRGB : CANVAS2D_CS_SRGB;
+    struct canvas2d_context *__single cv = canvas2d(W, H, ws);
     if (!cv) {
         return 0;
     }
 
     float stops[4];  // scratch reused for color components
-    enum canvas_fill_rule rule = CANVAS_NONZERO;  // per-call: OP_SET_FILL_RULE
+    enum canvas2d_fill_rule rule = CANVAS2D_NONZERO;  // per-call: OP_SET_FILL_RULE
                                                   // picks what OP_FILL/OP_CLIP pass
 
     int budget = 0;
     while (!c.eof && budget++ < 2000) {
         switch ((int)((unsigned)rd_u8(&c) % (unsigned)FUZZ_OP_COUNT)) {
-            case OP_BEGIN_PATH: canvas_begin_path(cv); break;
-            case OP_MOVE_TO:    canvas_move_to(cv, rd_f32(&c), rd_f32(&c)); break;
-            case OP_LINE_TO:    canvas_line_to(cv, rd_f32(&c), rd_f32(&c)); break;
-            case OP_RECT:       canvas_rect(cv, rd_f32(&c), rd_f32(&c),
+            case OP_BEGIN_PATH: canvas2d_begin_path(cv); break;
+            case OP_MOVE_TO:    canvas2d_move_to(cv, rd_f32(&c), rd_f32(&c)); break;
+            case OP_LINE_TO:    canvas2d_line_to(cv, rd_f32(&c), rd_f32(&c)); break;
+            case OP_RECT:       canvas2d_rect(cv, rd_f32(&c), rd_f32(&c),
                                             rd_f32(&c), rd_f32(&c)); break;
-            case OP_QUAD_TO:    canvas_quadratic_curve_to(cv, rd_f32(&c), rd_f32(&c),
+            case OP_QUAD_TO:    canvas2d_quadratic_curve_to(cv, rd_f32(&c), rd_f32(&c),
                                                           rd_f32(&c), rd_f32(&c)); break;
-            case OP_CUBIC_TO:  canvas_bezier_curve_to(cv, rd_f32(&c), rd_f32(&c),
+            case OP_CUBIC_TO:  canvas2d_bezier_curve_to(cv, rd_f32(&c), rd_f32(&c),
                                                        rd_f32(&c), rd_f32(&c),
                                                        rd_f32(&c), rd_f32(&c)); break;
-            case OP_ARC:        canvas_arc(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),
+            case OP_ARC:        canvas2d_arc(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),
                                            rd_f32(&c), rd_f32(&c), rd_u8(&c) & 1); break;
-            case OP_ELLIPSE:    canvas_ellipse(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),
+            case OP_ELLIPSE:    canvas2d_ellipse(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),
                                                rd_f32(&c), rd_f32(&c), rd_f32(&c),
                                                rd_f32(&c), rd_u8(&c) & 1); break;
-            case OP_ROUND_RECT: canvas_round_rect(cv, rd_f32(&c), rd_f32(&c),
+            case OP_ROUND_RECT: canvas2d_round_rect(cv, rd_f32(&c), rd_f32(&c),
                                                   rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
-            case OP_ARC_TO:     canvas_arc_to(cv, rd_f32(&c), rd_f32(&c),
+            case OP_ARC_TO:     canvas2d_arc_to(cv, rd_f32(&c), rd_f32(&c),
                                               rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
-            case OP_CLOSE_PATH: canvas_close_path(cv); break;
+            case OP_CLOSE_PATH: canvas2d_close_path(cv); break;
 
-            case OP_FILL:       canvas_fill(cv, rule); break;
-            case OP_STROKE:     canvas_stroke(cv); break;
-            case OP_CLIP:       canvas_clip(cv, rule); break;
-            case OP_FILL_RECT:  canvas_fill_rect(cv, rd_f32(&c), rd_f32(&c),
+            case OP_FILL:       canvas2d_fill(cv, rule); break;
+            case OP_STROKE:     canvas2d_stroke(cv); break;
+            case OP_CLIP:       canvas2d_clip(cv, rule); break;
+            case OP_FILL_RECT:  canvas2d_fill_rect(cv, rd_f32(&c), rd_f32(&c),
                                                  rd_f32(&c), rd_f32(&c)); break;
-            case OP_CLEAR_RECT: canvas_clear_rect(cv, rd_f32(&c), rd_f32(&c),
+            case OP_CLEAR_RECT: canvas2d_clear_rect(cv, rd_f32(&c), rd_f32(&c),
                                                   rd_f32(&c), rd_f32(&c)); break;
 
-            case OP_SET_FILL_RGBA:   canvas_set_fill_rgba(cv, rd_cs(&c), rd_f32(&c), rd_f32(&c),
+            case OP_SET_FILL_RGBA:   canvas2d_set_fill_rgba(cv, rd_cs(&c), rd_f32(&c), rd_f32(&c),
                                                           rd_f32(&c), rd_f32(&c)); break;
-            case OP_SET_STROKE_RGBA: canvas_set_stroke_rgba(cv, rd_cs(&c), rd_f32(&c), rd_f32(&c),
+            case OP_SET_STROKE_RGBA: canvas2d_set_stroke_rgba(cv, rd_cs(&c), rd_f32(&c), rd_f32(&c),
                                                             rd_f32(&c), rd_f32(&c)); break;
-            case OP_SET_GLOBAL_ALPHA: canvas_set_global_alpha(cv, rd_f32(&c)); break;
-            case OP_SET_LINE_WIDTH:  canvas_set_line_width(cv, rd_f32(&c)); break;
-            case OP_SET_LINE_JOIN:   canvas_set_line_join(cv,
-                                         (enum canvas_line_join)rd_range(&c, 0, 2)); break;
-            case OP_SET_LINE_CAP:    canvas_set_line_cap(cv,
-                                         (enum canvas_line_cap)rd_range(&c, 0, 2)); break;
-            case OP_SET_MITER_LIMIT: canvas_set_miter_limit(cv, rd_f32(&c)); break;
+            case OP_SET_GLOBAL_ALPHA: canvas2d_set_global_alpha(cv, rd_f32(&c)); break;
+            case OP_SET_LINE_WIDTH:  canvas2d_set_line_width(cv, rd_f32(&c)); break;
+            case OP_SET_LINE_JOIN:   canvas2d_set_line_join(cv,
+                                         (enum canvas2d_line_join)rd_range(&c, 0, 2)); break;
+            case OP_SET_LINE_CAP:    canvas2d_set_line_cap(cv,
+                                         (enum canvas2d_line_cap)rd_range(&c, 0, 2)); break;
+            case OP_SET_MITER_LIMIT: canvas2d_set_miter_limit(cv, rd_f32(&c)); break;
             case OP_SET_FILL_RULE:   rule =
-                                         (enum canvas_fill_rule)rd_range(&c, 0, 1); break;
-            case OP_SET_COMPOSITE:   canvas_set_global_composite_operation(cv,
-                                         (enum canvas_composite_op)rd_range(&c, 0, 25)); break;
+                                         (enum canvas2d_fill_rule)rd_range(&c, 0, 1); break;
+            case OP_SET_COMPOSITE:   canvas2d_set_global_composite_operation(cv,
+                                         (enum canvas2d_composite_op)rd_range(&c, 0, 25)); break;
             case OP_SET_LINE_DASH: {
                 int const n = rd_range(&c, 0, 8);
                 float dash[8];
                 for (int i = 0; i < n; i++) {
                     dash[i] = rd_f32(&c);
                 }
-                canvas_set_line_dash(cv, dash, n);
+                canvas2d_set_line_dash(cv, dash, n);
                 break;
             }
-            case OP_SET_DASH_OFFSET: canvas_set_line_dash_offset(cv, rd_f32(&c)); break;
+            case OP_SET_DASH_OFFSET: canvas2d_set_line_dash_offset(cv, rd_f32(&c)); break;
 
-            case OP_FILL_LINEAR_GRAD: canvas_set_fill_linear_gradient(cv, rd_cs(&c), rd_alpha(&c),
+            case OP_FILL_LINEAR_GRAD: canvas2d_set_fill_linear_gradient(cv, rd_cs(&c), rd_alpha(&c),
                                           rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
-            case OP_FILL_RADIAL_GRAD: canvas_set_fill_radial_gradient(cv, rd_cs(&c), rd_alpha(&c),
+            case OP_FILL_RADIAL_GRAD: canvas2d_set_fill_radial_gradient(cv, rd_cs(&c), rd_alpha(&c),
                                           rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c),
                                           rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_FILL_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
-                canvas_add_fill_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
+                canvas2d_add_fill_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
                                            stops[2], stops[3]);
                 break;
-            case OP_STROKE_LINEAR_GRAD: canvas_set_stroke_linear_gradient(cv, rd_cs(&c), rd_alpha(&c),
+            case OP_STROKE_LINEAR_GRAD: canvas2d_set_stroke_linear_gradient(cv, rd_cs(&c), rd_alpha(&c),
                                             rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
             case OP_ADD_STROKE_STOP:
                 for (int i = 0; i < 4; i++) { stops[i] = rd_f32(&c); }
-                canvas_add_stroke_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
+                canvas2d_add_stroke_color_stop(cv, rd_cs(&c), rd_f32(&c), stops[0], stops[1],
                                              stops[2], stops[3]);
                 break;
 
-            case OP_SAVE:    canvas_save(cv); break;
-            case OP_RESTORE: canvas_restore(cv); break;
-            case OP_TRANSLATE: canvas_translate(cv, rd_f32(&c), rd_f32(&c)); break;
-            case OP_SCALE:     canvas_scale(cv, rd_f32(&c), rd_f32(&c)); break;
-            case OP_ROTATE:    canvas_rotate(cv, rd_f32(&c)); break;
-            case OP_TRANSFORM: canvas_transform(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),
+            case OP_SAVE:    canvas2d_save(cv); break;
+            case OP_RESTORE: canvas2d_restore(cv); break;
+            case OP_TRANSLATE: canvas2d_translate(cv, rd_f32(&c), rd_f32(&c)); break;
+            case OP_SCALE:     canvas2d_scale(cv, rd_f32(&c), rd_f32(&c)); break;
+            case OP_ROTATE:    canvas2d_rotate(cv, rd_f32(&c)); break;
+            case OP_TRANSFORM: canvas2d_transform(cv, rd_f32(&c), rd_f32(&c), rd_f32(&c),
                                                 rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
-            case OP_SET_TRANSFORM: canvas_set_transform(cv, rd_f32(&c), rd_f32(&c),
+            case OP_SET_TRANSFORM: canvas2d_set_transform(cv, rd_f32(&c), rd_f32(&c),
                                        rd_f32(&c), rd_f32(&c), rd_f32(&c), rd_f32(&c)); break;
-            case OP_RESET_TRANSFORM: canvas_reset_transform(cv); break;
+            case OP_RESET_TRANSFORM: canvas2d_reset_transform(cv); break;
 
             case OP_GET_IMAGE_DATA: do_image_get(cv, &c, W, H); break;
             case OP_PUT_IMAGE_DATA: do_image_put(cv, &c); break;
@@ -276,13 +276,13 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
             case OP_DRAW_IMAGE_OBJ: do_image_obj(cv, &c); break;
             case OP_ENCODE: {  // the BT.2100 16-bit encode path; discard the bytes
                 int n = 0;
-                free(canvas_encode_png(cv, &n));
+                free(canvas2d_encode_png(cv, &n));
             } break;
             default: break;
         }
     }
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     return 0;
 }
 

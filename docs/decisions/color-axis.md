@@ -4,8 +4,8 @@
 production benchmark" is the open item this memo addresses), `docs/decisions/metal-backend.md` (the D1
 ruling: Metal and the RTZ hack are gone, so there is no shader left to bit-match — both
 non-status-quo arms are clean to run), `docs/decisions/opt-level.md` (methodology),
-`src/cnvs_math.{h,c}`, `src/compositor_cpu.c`, `src/blur.{h,c}`, `src/cnvs_filter.c`,
-`src/cnvs_gradient.{h,c}`, `src/canvas.c` (paint_tile / read_unpremul / put_image_sub flows),
+`src/canvas2d_math.{h,c}`, `src/compositor_cpu.c`, `src/blur.{h,c}`, `src/canvas2d_filter.c`,
+`src/canvas2d_gradient.{h,c}`, `src/canvas.c` (paint_tile / read_unpremul / put_image_sub flows),
 `bench/` (the 8 reported benches), `tests/test_gradient_solve.c`, `tests/test_replay_gallery.c`.
 **Measured (this machine, Apple M4 Max, Darwin 25.5, Apple clang 21.0.0, hyperfine 1.20):**
 3 arms × 8 benches, `hyperfine -N --warmup 3 --min-runs 20` (fast benches got 65–290 runs from
@@ -38,10 +38,10 @@ and the roadmap has carried a three-way fork since:
 The numbers only mean what the prototypes did.
 
 **Arm (a)** was a *total* mechanical retype: `_Float16` → `float` across 9 files (46 lines —
-`cnvs_math.{h,c}`, `compositor_cpu.c`, `blur.{h,c}`, `canvas.c`, `cnvs_filter.c`,
-`cnvs_gradient.{h,c}`).  The two structs, every vector typedef, every cast; the
+`canvas2d_math.{h,c}`, `compositor_cpu.c`, `blur.{h,c}`, `canvas.c`, `canvas2d_filter.c`,
+`canvas2d_gradient.{h,c}`).  The two structs, every vector typedef, every cast; the
 `__builtin_convertvector` widen/narrow sites become same-type no-ops the compiler deletes.
-Nothing was left in f16 — `cnvs_premul`/`cnvs_unpremul` are 16 B, the tile, target, and
+Nothing was left in f16 — `canvas2d_premul`/`canvas2d_unpremul` are 16 B, the tile, target, and
 gradient ramp double in footprint.  Builds `-Weverything`-clean with no other change.
 
 **Arm (c)** was three hand edits (~80 lines), covering the kernels the flagship profile
@@ -52,14 +52,14 @@ actually passes through:
   f16, clamp f16, store f16, zero converts; clip attenuation in f16 too (note: this trades
   away the float32 attenuation the metal-backend ruling kept; see §6's counter-argument);
   odd-width tail does one pixel at 4 lanes.
-- `cnvs_premultiply`: multiply and clamp in f16 directly (was: widen, f32 multiply, narrow).
+- `canvas2d_premultiply`: multiply and clamp in f16 directly (was: widen, f32 multiply, narrow).
 - `read_unpremul`: un-premultiply divide, clamp, and 255-quantize in f16 (was: f32 divide
   with an f16 double-round before quantizing).
 
 **Left in f32 under arm (c), deliberately:** the generic blend modes (`blend`/`blend_term`/
 the non-separable HSL path — still scalar f32 with widen/narrow at the edges), the filter
-color-matrix loop (`cnvs_filter_apply`), the f16 blur passes' f32 accumulation, the gradient
-stop interpolation (`cnvs_gradient_color_at`, which narrows per `cnvs_unpremul_of` as today),
+color-matrix loop (`canvas2d_filter_apply`), the f16 blur passes' f32 accumulation, the gradient
+stop interpolation (`canvas2d_gradient_color_at`, which narrows per `canvas2d_unpremul_of` as today),
 paint_tile's scalar coverage/alpha fold, and the shadow tint loop.  None of these are
 SRC_OVER-shaped hot paths, but the generic modes are not negligible: a `sample` of the
 status-quo flagship attributes ~9 % of top-of-stack time to `blend_term` (the MULTIPLY/
@@ -67,14 +67,14 @@ SCREEN/LIGHTEN composites in the scene).  So arm (c)'s flagship number is a lowe
 a full conversion has that headroom left.
 
 For attribution: the same sample puts ~50 % of `bench_render_large`'s top-of-stack time in
-the kernels arm (c) converted (`compositor_blend` 34 %, `cnvs_premultiply` 12 %,
+the kernels arm (c) converted (`compositor_blend` 34 %, `canvas2d_premultiply` 12 %,
 `read_unpremul` 4 %), ~26 % in `paint_tile` (the f32 coverage fold + ramp lookup, untouched),
 and the rest in rasterization/gradient/clip, which no arm touches.
 
 ## 2. Wall clock
 
 Median ± σ in ms; ratio columns are each arm's median over status quo (b).  The last four
-rows never touch a `cnvs_premul` (the u8 blit, the coverage rasterizer, the u8 blurs, the
+rows never touch a `canvas2d_premul` (the u8 blit, the coverage rasterizer, the u8 blurs, the
 ramp+solve loop with f16-storage entries) and serve as controls: their spread (≤1.7 %,
 both directions) is the noise floor, and the blur rows in particular confirm the arms'
 library-wide retypes didn't perturb untouched kernels.
@@ -240,7 +240,7 @@ gallery deltas in §4 — max 1/255 across 3.3M rendered pixels — corroborate 
 4. **It matches the README's story to the code instead of rewording it.**  The float16 memo found the
    "lingua franca, native on this hardware" line described code that didn't exist — f16 never
    computed.  Arm (c) is that code.  After the switch, the line is true, and the
-   `cnvs_math.h` comment's "compute happens in f32" clause updates to match.
+   `canvas2d_math.h` comment's "compute happens in f32" clause updates to match.
 
 **Execution notes for the real change (beyond this memo's prototype):** convert the generic
 blend modes too (or document the kernel as two-language); decide clip attenuation
@@ -268,7 +268,7 @@ degrade gracefully.
 
 **Fork for Mike:**
 - **(c) — this memo's pick:** pervasive f16, −8 % flagship, re-baseline 32 PNGs + 2 .canvas,
-  one test re-render; accept the 4.8 % off-by-one band and update `cnvs_math.h`/README to the
+  one test re-render; accept the 4.8 % off-by-one band and update `canvas2d_math.h`/README to the
   now-accurate story.
 - **(a) — the correctness fork:** f32 everywhere, −5 % flagship, same re-baseline churn plus
   the `test_gradient_solve` 1-ULP fix; buy bit-exactness against a double oracle and the
@@ -307,15 +307,15 @@ prototype scope:
   step), the generic kernel — all 26 composite/blend modes, Porter-Duff and separable
   vectorized over the four channels, the HSL/divide/sqrt modes scalar f16 — the filter
   colour-matrix loop (8-wide, two pixels per step), the gradient stop lerp (the
-  parameter solve stays f32: it is geometry, not colour), `cnvs_premultiply`,
-  `cnvs_unpremultiply`, and `read_unpremul`.  Clip attenuation went f16 per §7's
+  parameter solve stays f32: it is geometry, not colour), `canvas2d_premultiply`,
+  `canvas2d_unpremultiply`, and `read_unpremul`.  Clip attenuation went f16 per §7's
   execution note, deliberately reversing the float32-attenuation choice the Metal era
   kept (noted in the kernel).
 - **Left f32, measured:** the blur passes' running-sum accumulation.  Re-rounding the
   accumulator to f16 at every add/subtract drifts up to ~0.9/255 per pass over a 512 px
   row (f32: 0.06/255), compounding over the three h+v passes — it cannot hold
   test_filter's 2/255 brute-force reference, and no profile puts these passes on a hot
-  path that would pay for it (the rationale lives in `blur.h`).  Also left f32:
+  path that would pay for it (the rationale lives in `canvas2d_blur.h`).  Also left f32:
   paint_tile's scalar coverage/alpha fold and the drop-shadow tint/under-composite
   loops — per-pixel scalar paths off the §1 attribution.
 - **§5's gates are now committed tests:** `test_image` runs the exhaustive 65,280-pair
@@ -342,7 +342,7 @@ refactor (task #21) re-shaped every bulk f16 kernel to **planar (SoA)**: eight
 pixels per step as four 8-lane channel planes, deinterleaved at the buffer seams by
 explicit `vld4q_f16`/`vst4q_f16` (and `vld4_u8`/`vst4_u8` at the RGBA8 seams) --
 there is no portable spelling for those, and the f16 ruling already spent
-portability.  The shared vocabulary lives in `src/cnvs_planar.h`; stages pass
+portability.  The shared vocabulary lives in `src/canvas2d_planar.h`; stages pass
 whole blocks as a four-vector HVA, in registers (q0-q3), so the pipeline stays
 factored as small functions with vector ABIs rather than fused into one function.
 

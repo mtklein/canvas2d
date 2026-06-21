@@ -1,17 +1,17 @@
-// canvas_record_to: a drawing session recorded to text and replayed back is
+// canvas2d_record_to: a drawing session recorded to text and replayed back is
 // identical, two ways.  (1) Pixel identity: record a program, replay the file
 // onto a fresh canvas, the bitmaps match byte-for-byte.  (2) Text idempotence:
 // replaying the file while recording reproduces the file byte-for-byte -- so the
 // recorder and the replay parser agree on every command's spelling and argument
 // order (a drift guard).  Built under -fbounds-safety like the rest of the suite;
-// the recorder is the write-side counterpart to cnvs_replay.c.  See
+// the recorder is the write-side counterpart to canvas2d_replay.c.  See
 // docs/decisions/security-review.md.
 
 #include "test_util.h"
 
-#include "canvas.h"
-#include "canvas_path2d.h"
-#include "cnvs_replay.h"
+#include "canvas2d.h"
+#include "canvas2d_path2d.h"
+#include "canvas2d_replay.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -26,107 +26,107 @@
 // Every recordable command, and each enum value, at least once.  Coordinates and
 // colours are integers / simple decimals that round-trip exactly through %.9g and
 // the parser's number reader, so record -> replay is bit-identical.
-static void draw_program(struct canvas *__single cv) {
-    canvas_save(cv);
+static void draw_program(struct canvas2d_context *__single cv) {
+    canvas2d_save(cv);
 
     // reset + resize first: both record as themselves (resize swallows the
     // reset it expands to), both clear the bitmap, and the rest of the
     // program then proves drawing state and pixels rebuild identically after
     // them.  Same dimensions, so the pixel-identity buffers stay W x H.
-    canvas_fill_rect(cv, 0.0f, 0.0f, 8.0f, 8.0f);  // something for reset to wipe
-    canvas_reset(cv);
-    canvas_resize(cv, W, H);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, 8.0f, 8.0f);  // something for reset to wipe
+    canvas2d_reset(cv);
+    canvas2d_resize(cv, W, H);
 
     // An opaque source-over fill up front, so the bitmap is non-trivial before
     // any later clip or blend mode narrows things.
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.25f, 0.75f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.5f, 0.25f, 0.75f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
     // Transforms.
-    canvas_translate(cv, 4.0f, 8.0f);
-    canvas_scale(cv, 2.0f, 2.0f);
-    canvas_rotate(cv, 0.5f);
-    canvas_transform(cv, 1.0f, 0.0f, 0.0f, 1.0f, 3.0f, 5.0f);
-    canvas_set_transform(cv, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
-    canvas_reset_transform(cv);
+    canvas2d_translate(cv, 4.0f, 8.0f);
+    canvas2d_scale(cv, 2.0f, 2.0f);
+    canvas2d_rotate(cv, 0.5f);
+    canvas2d_transform(cv, 1.0f, 0.0f, 0.0f, 1.0f, 3.0f, 5.0f);
+    canvas2d_set_transform(cv, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+    canvas2d_reset_transform(cv);
 
     // Global state + blend mode + fill rule.
-    canvas_set_global_alpha(cv, 0.75f);
-    canvas_set_global_composite_operation(cv, CANVAS_OP_MULTIPLY);
+    canvas2d_set_global_alpha(cv, 0.75f);
+    canvas2d_set_global_composite_operation(cv, CANVAS2D_OP_MULTIPLY);
 
-    canvas_clear_rect(cv, 1.0f, 1.0f, 2.0f, 2.0f);
+    canvas2d_clear_rect(cv, 1.0f, 1.0f, 2.0f, 2.0f);
 
     // Fill gradients (linear + radial) with stops.
-    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 8.0f, 8.0f, 0.0f, 8.0f, 8.0f, 16.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_set_fill_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.5f, 16.0f, 12.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.5f, 1.0f, 1.0f);
+    canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas2d_set_fill_radial_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 8.0f, 8.0f, 0.0f, 8.0f, 8.0f, 16.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas2d_set_fill_conic_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.5f, 16.0f, 12.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.5f, 0.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.5f, 1.0f, 1.0f);
 
     // Stroke paints (solid, then both gradient forms) + line styles.
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 32.0f, 0.0f);
-    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_set_stroke_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 4.0f, 4.0f, 1.0f, 4.0f, 4.0f, 8.0f);
-    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f);
-    canvas_set_stroke_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.25f, 16.0f, 12.0f);
-    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f);
-    canvas_set_line_width(cv, 2.0f);
-    canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
-    canvas_set_line_cap(cv, CANVAS_CAP_SQUARE);
-    canvas_set_miter_limit(cv, 4.0f);
-    canvas_set_line_dash(cv, (float[]){ 4.0f, 2.0f, 1.0f, 3.0f }, 4);
-    canvas_set_line_dash_offset(cv, 1.0f);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_stroke_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, 32.0f, 0.0f);
+    canvas2d_add_stroke_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas2d_set_stroke_radial_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 4.0f, 4.0f, 1.0f, 4.0f, 4.0f, 8.0f);
+    canvas2d_add_stroke_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f);
+    canvas2d_set_stroke_conic_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.25f, 16.0f, 12.0f);
+    canvas2d_add_stroke_color_stop(cv, CANVAS2D_CS_SRGB, 0.5f, 1.0f, 1.0f, 0.0f, 1.0f);
+    canvas2d_set_line_width(cv, 2.0f);
+    canvas2d_set_line_join(cv, CANVAS2D_JOIN_ROUND);
+    canvas2d_set_line_cap(cv, CANVAS2D_CAP_SQUARE);
+    canvas2d_set_miter_limit(cv, 4.0f);
+    canvas2d_set_line_dash(cv, (float[]){ 4.0f, 2.0f, 1.0f, 3.0f }, 4);
+    canvas2d_set_line_dash_offset(cv, 1.0f);
 
     // Path building: every segment kind plus the compound helpers (arc,
     // round_rect, arc_to) that record as themselves and swallow their expansion.
-    canvas_begin_path(cv);
-    canvas_move_to(cv, 2.0f, 2.0f);
-    canvas_line_to(cv, 30.0f, 2.0f);
-    canvas_quadratic_curve_to(cv, 31.0f, 12.0f, 30.0f, 22.0f);
-    canvas_bezier_curve_to(cv, 20.0f, 24.0f, 10.0f, 24.0f, 2.0f, 22.0f);
-    canvas_rect(cv, 5.0f, 5.0f, 4.0f, 4.0f);
-    canvas_arc(cv, 16.0f, 12.0f, 6.0f, 0.0f, 3.0f, false);
-    canvas_ellipse(cv, 16.0f, 12.0f, 8.0f, 4.0f, 0.25f, 0.0f, 3.0f, true);
-    canvas_arc_to(cv, 2.0f, 2.0f, 8.0f, 2.0f, 3.0f);
-    canvas_round_rect(cv, 1.0f, 1.0f, 10.0f, 10.0f, 2.0f);
-    canvas_round_rect_radii(cv, 34.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
+    canvas2d_begin_path(cv);
+    canvas2d_move_to(cv, 2.0f, 2.0f);
+    canvas2d_line_to(cv, 30.0f, 2.0f);
+    canvas2d_quadratic_curve_to(cv, 31.0f, 12.0f, 30.0f, 22.0f);
+    canvas2d_bezier_curve_to(cv, 20.0f, 24.0f, 10.0f, 24.0f, 2.0f, 22.0f);
+    canvas2d_rect(cv, 5.0f, 5.0f, 4.0f, 4.0f);
+    canvas2d_arc(cv, 16.0f, 12.0f, 6.0f, 0.0f, 3.0f, false);
+    canvas2d_ellipse(cv, 16.0f, 12.0f, 8.0f, 4.0f, 0.25f, 0.0f, 3.0f, true);
+    canvas2d_arc_to(cv, 2.0f, 2.0f, 8.0f, 2.0f, 3.0f);
+    canvas2d_round_rect(cv, 1.0f, 1.0f, 10.0f, 10.0f, 2.0f);
+    canvas2d_round_rect_radii(cv, 34.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
                             4.0f, 2.0f, 0.0f, 0.0f, 5.0f, 5.0f);
-    canvas_close_path(cv);
-    canvas_fill(cv, CANVAS_NONZERO);
-    canvas_stroke(cv);
+    canvas2d_close_path(cv);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
+    canvas2d_stroke(cv);
 
     // The filter list: every function once (the chain applies to the fill),
     // then cleared.
-    canvas_set_filter_none(cv);
-    canvas_add_filter_brightness(cv, 1.25f);
-    canvas_add_filter_contrast(cv, 1.5f);
-    canvas_add_filter_grayscale(cv, 0.5f);
-    canvas_add_filter_hue_rotate(cv, 0.5f);
-    canvas_add_filter_invert(cv, 0.25f);
-    canvas_add_filter_opacity(cv, 0.75f);
-    canvas_add_filter_saturate(cv, 2.0f);
-    canvas_add_filter_sepia(cv, 0.5f);
-    canvas_add_filter_blur(cv, 1.5f);
-    canvas_add_filter_drop_shadow(cv, CANVAS_CS_SRGB, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.6f, 0.2f, 0.8f);
-    canvas_fill_rect(cv, 36.0f, 14.0f, 8.0f, 8.0f);
-    canvas_set_filter_none(cv);
+    canvas2d_set_filter_none(cv);
+    canvas2d_add_filter_brightness(cv, 1.25f);
+    canvas2d_add_filter_contrast(cv, 1.5f);
+    canvas2d_add_filter_grayscale(cv, 0.5f);
+    canvas2d_add_filter_hue_rotate(cv, 0.5f);
+    canvas2d_add_filter_invert(cv, 0.25f);
+    canvas2d_add_filter_opacity(cv, 0.75f);
+    canvas2d_add_filter_saturate(cv, 2.0f);
+    canvas2d_add_filter_sepia(cv, 0.5f);
+    canvas2d_add_filter_blur(cv, 1.5f);
+    canvas2d_add_filter_drop_shadow(cv, CANVAS2D_CS_SRGB, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.9f, 0.6f, 0.2f, 0.8f);
+    canvas2d_fill_rect(cv, 36.0f, 14.0f, 8.0f, 8.0f);
+    canvas2d_set_filter_none(cv);
 
     // Text (Latin + CJK, no leading whitespace / newline so it round-trips).
     // The text ops also emit their font/glyph/shape blocks (see canvas.h), so
     // this pins the blocks' spellings against the parser too.
-    canvas_set_font_size(cv, 12.0f);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
-    canvas_fill_text(cv, "Hi 隸", 4.0f, 20.0f);
-    canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
-    canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
-    canvas_stroke_text(cv, "yo", 4.0f, 30.0f);
-    canvas_fill_text_max(cv, "squeeze", 24.0f, 20.0f, 12.0f);
-    canvas_stroke_text_max(cv, "squeeze", 24.0f, 30.0f, 12.0f);
+    canvas2d_set_font_size(cv, 12.0f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_fill_text(cv, "Hi 隸", 4.0f, 20.0f);
+    canvas2d_set_text_align(cv, CANVAS2D_ALIGN_CENTER);
+    canvas2d_set_text_baseline(cv, CANVAS2D_BASELINE_MIDDLE);
+    canvas2d_stroke_text(cv, "yo", 4.0f, 30.0f);
+    canvas2d_fill_text_max(cv, "squeeze", 24.0f, 20.0f, 12.0f);
+    canvas2d_stroke_text_max(cv, "squeeze", 24.0f, 30.0f, 12.0f);
 
     // Image ops: one 4x3 source through every form -- the three draw_image
     // overloads, both putImageData forms, and both pattern paints.  The same
@@ -136,62 +136,62 @@ static void draw_program(struct canvas *__single cv) {
     for (int i = 0; i < (int)sizeof img; i++) {
         img[i] = (uint8_t)(i * 5);
     }
-    canvas_set_image_smoothing_enabled(cv, false);
-    canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-    canvas_draw_bitmap(cv, CANVAS_CS_SRGB, img, 4, 3, 2.0f, 2.0f);
-    canvas_set_image_smoothing_enabled(cv, true);
-    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
-    canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
+    canvas2d_set_image_smoothing_enabled(cv, false);
+    canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_HIGH);
+    canvas2d_draw_bitmap(cv, CANVAS2D_CS_SRGB, img, 4, 3, 2.0f, 2.0f);
+    canvas2d_set_image_smoothing_enabled(cv, true);
+    canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, img, 4, 3, 8.0f, 2.0f, 8.0f, 6.0f);
+    canvas2d_draw_bitmap_subrect(cv, CANVAS2D_CS_SRGB, img, 4, 3, 1.0f, 1.0f, 2.0f, 2.0f,
                               18.0f, 2.0f, 6.0f, 6.0f);
-    canvas_put_image_data(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 4, 3, 26, 2);
-    canvas_put_image_data_dirty(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 4, 3, 32, 2,
+    canvas2d_put_image_data(cv, CANVAS2D_CS_SRGB, img, (int)sizeof img, 4, 3, 26, 2);
+    canvas2d_put_image_data_dirty(cv, CANVAS2D_CS_SRGB, img, (int)sizeof img, 4, 3, 32, 2,
                                 1, 1, 2, 2);
-    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, img, 4, 3, CANVAS_REPEAT);
-    canvas_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
-    canvas_set_stroke_pattern(cv, CANVAS_CS_SRGB, img, 4, 3, CANVAS_REPEAT_X);
-    canvas_stroke_rect(cv, 16.0f, 24.0f, 10.0f, 6.0f);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f, 0.6f, 0.4f, 1.0f);
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_fill_pattern(cv, CANVAS2D_CS_SRGB, img, 4, 3, CANVAS2D_REPEAT);
+    canvas2d_fill_rect(cv, 2.0f, 24.0f, 10.0f, 6.0f);
+    canvas2d_set_stroke_pattern(cv, CANVAS2D_CS_SRGB, img, 4, 3, CANVAS2D_REPEAT_X);
+    canvas2d_stroke_rect(cv, 16.0f, 24.0f, 10.0f, 6.0f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.2f, 0.6f, 0.4f, 1.0f);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
 
     // Path2D: every builder command in one path, drawn by all three ops --
     // twice each for fill/stroke, so the content dedupe pins ONE `path` block
     // (the idempotence compare again) -- plus the two hit-test overloads,
     // which are queries and must record nothing.
-    struct canvas_path2d *__single p2 = canvas_path2d();
+    struct canvas2d_path2d *__single p2 = canvas2d_path2d();
     if (p2) {
-        canvas_path2d_move_to(p2, 20.0f, 4.0f);
-        canvas_path2d_line_to(p2, 30.0f, 4.0f);
-        canvas_path2d_quadratic_curve_to(p2, 32.0f, 8.0f, 30.0f, 12.0f);
-        canvas_path2d_bezier_curve_to(p2, 28.0f, 14.0f, 24.0f, 14.0f,
+        canvas2d_path2d_move_to(p2, 20.0f, 4.0f);
+        canvas2d_path2d_line_to(p2, 30.0f, 4.0f);
+        canvas2d_path2d_quadratic_curve_to(p2, 32.0f, 8.0f, 30.0f, 12.0f);
+        canvas2d_path2d_bezier_curve_to(p2, 28.0f, 14.0f, 24.0f, 14.0f,
                                       22.0f, 12.0f);
-        canvas_path2d_arc_to(p2, 20.0f, 12.0f, 20.0f, 8.0f, 2.0f);
-        canvas_path2d_close_path(p2);
-        canvas_path2d_arc(p2, 25.0f, 8.0f, 2.0f, 0.0f, 3.0f, true);
-        canvas_path2d_ellipse(p2, 25.0f, 8.0f, 4.0f, 2.0f, 0.25f, 0.0f, 3.0f,
+        canvas2d_path2d_arc_to(p2, 20.0f, 12.0f, 20.0f, 8.0f, 2.0f);
+        canvas2d_path2d_close_path(p2);
+        canvas2d_path2d_arc(p2, 25.0f, 8.0f, 2.0f, 0.0f, 3.0f, true);
+        canvas2d_path2d_ellipse(p2, 25.0f, 8.0f, 4.0f, 2.0f, 0.25f, 0.0f, 3.0f,
                               false);
-        canvas_path2d_rect(p2, 21.0f, 5.0f, 3.0f, 3.0f);
-        canvas_path2d_round_rect(p2, 26.0f, 5.0f, 4.0f, 4.0f, 1.0f);
-        canvas_fill_path(cv, p2, CANVAS_EVENODD);
-        canvas_fill_path(cv, p2, CANVAS_NONZERO);
-        canvas_set_line_width(cv, 1.0f);
-        canvas_stroke_path(cv, p2);
-        canvas_stroke_path(cv, p2);
-        (void)canvas_is_point_in_path2d(cv, p2, 25.0f, 8.0f, CANVAS_NONZERO);
-        (void)canvas_is_point_in_stroke_path(cv, p2, 20.0f, 4.0f);
-        canvas_save(cv);
-        canvas_clip_path(cv, p2, CANVAS_NONZERO);
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.4f, 0.1f, 1.0f);
-        canvas_fill_rect(cv, 18.0f, 2.0f, 16.0f, 14.0f);
-        canvas_restore(cv);
-        canvas_path2d_free(p2);
+        canvas2d_path2d_rect(p2, 21.0f, 5.0f, 3.0f, 3.0f);
+        canvas2d_path2d_round_rect(p2, 26.0f, 5.0f, 4.0f, 4.0f, 1.0f);
+        canvas2d_fill_path(cv, p2, CANVAS2D_EVENODD);
+        canvas2d_fill_path(cv, p2, CANVAS2D_NONZERO);
+        canvas2d_set_line_width(cv, 1.0f);
+        canvas2d_stroke_path(cv, p2);
+        canvas2d_stroke_path(cv, p2);
+        (void)canvas2d_is_point_in_path2d(cv, p2, 25.0f, 8.0f, CANVAS2D_NONZERO);
+        (void)canvas2d_is_point_in_stroke_path(cv, p2, 20.0f, 4.0f);
+        canvas2d_save(cv);
+        canvas2d_clip_path(cv, p2, CANVAS2D_NONZERO);
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.9f, 0.4f, 0.1f, 1.0f);
+        canvas2d_fill_rect(cv, 18.0f, 2.0f, 16.0f, 14.0f);
+        canvas2d_restore(cv);
+        canvas2d_path2d_free(p2);
     }
 
     // A clip last, so a non-empty path region is exercised by the clip command.
-    canvas_begin_path(cv);
-    canvas_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_clip(cv, CANVAS_NONZERO);
+    canvas2d_begin_path(cv);
+    canvas2d_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_clip(cv, CANVAS2D_NONZERO);
 
-    canvas_restore(cv);
+    canvas2d_restore(cv);
 }
 
 // Read up to cap bytes of `path` into buf; byte count, or -1 if it won't open.
@@ -253,23 +253,23 @@ static bool has_no_substr_n(char const *__counted_by(n) hay, int n,
 // then close.  Kept tiny and free of any other op so the file is easy to assert
 // against line by line.
 static void record_colors(char const *__null_terminated path,
-                          enum canvas_color_space space) {
-    struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
+                          enum canvas2d_color_space space) {
+    struct canvas2d_context *__single cv = canvas2d(16, 16, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
-    CHECK(canvas_record_to(cv, path));
-    canvas_set_fill_rgba(cv, space, 0.25f, 0.5f, 0.75f, 1.0f);
-    canvas_set_stroke_rgba(cv, space, 0.125f, 0.25f, 0.375f, 0.5f);
-    canvas_set_shadow_color_rgba(cv, space, 0.5f, 0.5f, 0.5f, 0.25f);
-    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
-    canvas_add_fill_color_stop(cv, space, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 0.0f);
-    canvas_add_stroke_color_stop(cv, space, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_add_filter_drop_shadow(cv, space, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
+    CHECK(canvas2d_record_to(cv, path));
+    canvas2d_set_fill_rgba(cv, space, 0.25f, 0.5f, 0.75f, 1.0f);
+    canvas2d_set_stroke_rgba(cv, space, 0.125f, 0.25f, 0.375f, 0.5f);
+    canvas2d_set_shadow_color_rgba(cv, space, 0.5f, 0.5f, 0.5f, 0.25f);
+    canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
+    canvas2d_add_fill_color_stop(cv, space, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_stroke_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 0.0f);
+    canvas2d_add_stroke_color_stop(cv, space, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas2d_add_filter_drop_shadow(cv, space, 2.0f, 2.0f, 1.0f, 0.25f, 0.5f, 0.75f, 0.5f);
     // put_image_data: its colour space rides the BLOCK's tag.
     uint8_t img[2 * 2 * 4];
     for (int i = 0; i < (int)sizeof img; i++) { img[i] = (uint8_t)(i * 9); }
-    canvas_put_image_data(cv, space, img, (int)sizeof img, 2, 2, 1, 1);
-    canvas_free(cv);  // flush + close
+    canvas2d_put_image_data(cv, space, img, (int)sizeof img, 2, 2, 1, 1);
+    canvas2d_free(cv);  // flush + close
 }
 
 int main(void) {
@@ -280,21 +280,21 @@ int main(void) {
 
     // Opening an unwritable path records nothing and reports failure.
     {
-        struct canvas *__single bad = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single bad = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(bad != NULL);
-        CHECK(!canvas_record_to(bad, "build/no_such_dir_xyzzy/out.canvas"));
-        canvas_free(bad);
+        CHECK(!canvas2d_record_to(bad, "build/no_such_dir_xyzzy/out.canvas"));
+        canvas2d_free(bad);
     }
 
     // 1. Record a program to p1, capturing its pixels before destroy closes p1.
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_record_to(cv, p1));
+        CHECK(canvas2d_record_to(cv, p1));
         draw_program(cv);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
-        canvas_free(cv);  // flush + close p1
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded_px, (int)sizeof recorded_px);
+        canvas2d_free(cv);  // flush + close p1
     }
 
     // The program actually drew something (not a blank bitmap).
@@ -308,23 +308,23 @@ int main(void) {
 
     // 2. Pixel identity: replay p1 onto a fresh canvas; bitmaps match exactly.
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_replay_from(cv, p1));
+        CHECK(canvas2d_replay_from(cv, p1));
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 
     // 3. Text idempotence: replay p1 while recording into p2; p1 == p2 byte-for-
     // byte, proving record/replay are inverse on the canonical text form.
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_record_to(cv, p2));
-        CHECK(canvas_replay_from(cv, p1));
-        canvas_free(cv);  // flush + close p2
+        CHECK(canvas2d_record_to(cv, p2));
+        CHECK(canvas2d_replay_from(cv, p1));
+        canvas2d_free(cv);  // flush + close p2
 
         char a[1 << 14];
         char b[1 << 14];
@@ -349,12 +349,12 @@ int main(void) {
     char const *__null_terminated lp2 = "build/test_record_lin_b.canvas";
     uint8_t lin_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_LINEAR_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_LINEAR_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_record_to(cv, lp1));
+        CHECK(canvas2d_record_to(cv, lp1));
         draw_program(cv);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, lin_px, (int)sizeof lin_px);
-        canvas_free(cv);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, lin_px, (int)sizeof lin_px);
+        canvas2d_free(cv);
     }
     {
         // The leading line is present and names linear, and the linear render
@@ -368,21 +368,21 @@ int main(void) {
     {
         // Pixel identity: a fresh sRGB canvas, replay flips it to linear via the
         // leading line, and the bitmap matches the recorded linear render.
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_replay_from(cv, lp1));
+        CHECK(canvas2d_replay_from(cv, lp1));
         uint8_t replayed[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed, (int)sizeof replayed);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed, (int)sizeof replayed);
         CHECK(memcmp(lin_px, replayed, sizeof lin_px) == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
     {
         // Byte idempotence: replay lp1 while recording lp2; lp1 == lp2.
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_record_to(cv, lp2));
-        CHECK(canvas_replay_from(cv, lp1));
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, lp2));
+        CHECK(canvas2d_replay_from(cv, lp1));
+        canvas2d_free(cv);
 
         char a[1 << 14];
         char b[1 << 14];
@@ -411,7 +411,7 @@ int main(void) {
         // put_image_data image block carries it too (the block line ends
         // `... <nlines> srgb`).  The file leads with the unconditional
         // working-space line, naming srgb here.
-        record_colors(cp_srgb, CANVAS_CS_SRGB);
+        record_colors(cp_srgb, CANVAS2D_CS_SRGB);
         char buf[1 << 13];
         int const n = slurp(cp_srgb, buf, (int)sizeof buf);
         CHECK(n > 0 && n < (int)sizeof buf);
@@ -448,16 +448,16 @@ int main(void) {
         CHECK(HAS_NO_SUBSTR(buf, n, " linear\n"));
         CHECK(HAS_NO_SUBSTR(buf, n, " oklab\n"));
         // It replays without error onto a fresh canvas.
-        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(16, 16, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_replay_from(cv, cp_srgb));
-        canvas_free(cv);
+        CHECK(canvas2d_replay_from(cv, cp_srgb));
+        canvas2d_free(cv);
     }
 
     {
         // (b) Tagged linear: every colour op line carries the ` linear` token,
         // and the put_image_data image block carries it too.
-        record_colors(cp_lin, CANVAS_CS_LINEAR_SRGB);
+        record_colors(cp_lin, CANVAS2D_CS_LINEAR_SRGB);
         char buf[1 << 13];
         int const n = slurp(cp_lin, buf, (int)sizeof buf);
         CHECK(n > 0 && n < (int)sizeof buf);
@@ -489,11 +489,11 @@ int main(void) {
 
         // Byte idempotence: replay while recording reproduces the file exactly,
         // so record and replay agree on the token's spelling and placement.
-        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(16, 16, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_record_to(cv, cp_re));
-        CHECK(canvas_replay_from(cv, cp_lin));
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, cp_re));
+        CHECK(canvas2d_replay_from(cv, cp_lin));
+        canvas2d_free(cv);
         char buf2[1 << 13];
         int const n2 = slurp(cp_re, buf2, (int)sizeof buf2);
         CHECK(n2 == n);
@@ -506,24 +506,24 @@ int main(void) {
         // (b') Tagged Oklab on the op-line colour ops (Oklab is a valid input
         // space; put_image_data, which only carries the working-space-like block
         // tag, is exercised by the linear case above).
-        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(16, 16, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
-        CHECK(canvas_record_to(cv, cp_okl));
-        canvas_set_fill_rgba(cv, CANVAS_CS_OKLAB, 0.5f, 0.25f, 0.75f, 1.0f);
-        canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_add_fill_color_stop(cv, CANVAS_CS_OKLAB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, cp_okl));
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_OKLAB, 0.5f, 0.25f, 0.75f, 1.0f);
+        canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_OKLAB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+        canvas2d_free(cv);
         char buf[1 << 13];
         int const n = slurp(cp_okl, buf, (int)sizeof buf);
         CHECK(n > 0 && n < (int)sizeof buf);
         CHECK(HAS_LINE(buf, n, "set_fill_rgba 0.5 0.25 0.75 1 oklab\n"));
         CHECK(HAS_LINE(buf, n, "add_fill_color_stop 0 1 0 0 1 oklab\n"));
         // Round-trips byte-identically.
-        struct canvas *__single cv2 = canvas(16, 16, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv2 = canvas2d(16, 16, CANVAS2D_CS_SRGB);
         CHECK(cv2 != NULL);
-        CHECK(canvas_record_to(cv2, cp_re));
-        CHECK(canvas_replay_from(cv2, cp_okl));
-        canvas_free(cv2);
+        CHECK(canvas2d_record_to(cv2, cp_re));
+        CHECK(canvas2d_replay_from(cv2, cp_okl));
+        canvas2d_free(cv2);
         char buf2[1 << 13];
         int const n2 = slurp(cp_re, buf2, (int)sizeof buf2);
         CHECK(n2 == n);
@@ -533,22 +533,22 @@ int main(void) {
     }
 
     // 7. Recording SUSPEND: each compound op records its own line, then brackets
-    // the public sub-calls it expands into with cnvs_rec_enter/leave so those
+    // the public sub-calls it expands into with canvas2d_rec_enter/leave so those
     // sub-calls emit NOTHING while suspend != 0.  Record each compound op in
     // isolation and assert: its own line is present, and the expansion's lines
     // are absent (proving the suspend arms swallowed them).  This drives the
-    // suspend != 0 branch in every cnvs_rec_* emitter.
+    // suspend != 0 branch in every canvas2d_rec_* emitter.
     {
         char const *__null_terminated sp = "build/test_record_suspend.canvas";
         // Helper: record one drawing closure to sp via a tiny inline scope.
-        // arc -> records `arc`, swallows the canvas_ellipse it expands to.
+        // arc -> records `arc`, swallows the canvas2d_ellipse it expands to.
         {
-            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+            struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
             CHECK(cv != NULL);
-            CHECK(canvas_record_to(cv, sp));
-            canvas_begin_path(cv);
-            canvas_arc(cv, 16.0f, 12.0f, 6.0f, 0.0f, 3.0f, false);
-            canvas_free(cv);
+            CHECK(canvas2d_record_to(cv, sp));
+            canvas2d_begin_path(cv);
+            canvas2d_arc(cv, 16.0f, 12.0f, 6.0f, 0.0f, 3.0f, false);
+            canvas2d_free(cv);
             char b[1 << 13];
             int const n = slurp(sp, b, (int)sizeof b);
             CHECK(n > 0 && n < (int)sizeof b);
@@ -557,12 +557,12 @@ int main(void) {
         }
         // round_rect -> records `round_rect`, swallows move_to/arc/close_path.
         {
-            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+            struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
             CHECK(cv != NULL);
-            CHECK(canvas_record_to(cv, sp));
-            canvas_begin_path(cv);
-            canvas_round_rect(cv, 1.0f, 1.0f, 10.0f, 10.0f, 2.0f);
-            canvas_free(cv);
+            CHECK(canvas2d_record_to(cv, sp));
+            canvas2d_begin_path(cv);
+            canvas2d_round_rect(cv, 1.0f, 1.0f, 10.0f, 10.0f, 2.0f);
+            canvas2d_free(cv);
             char b[1 << 13];
             int const n = slurp(sp, b, (int)sizeof b);
             CHECK(n > 0 && n < (int)sizeof b);
@@ -573,13 +573,13 @@ int main(void) {
         }
         // round_rect_radii -> records itself, swallows its arc_to expansion.
         {
-            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+            struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
             CHECK(cv != NULL);
-            CHECK(canvas_record_to(cv, sp));
-            canvas_begin_path(cv);
-            canvas_round_rect_radii(cv, 1.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
+            CHECK(canvas2d_record_to(cv, sp));
+            canvas2d_begin_path(cv);
+            canvas2d_round_rect_radii(cv, 1.0f, 1.0f, 12.0f, 10.0f, 2.0f, 3.0f,
                                     4.0f, 2.0f, 0.0f, 0.0f, 5.0f, 5.0f);
-            canvas_free(cv);
+            canvas2d_free(cv);
             char b[1 << 13];
             int const n = slurp(sp, b, (int)sizeof b);
             CHECK(n > 0 && n < (int)sizeof b);
@@ -590,13 +590,13 @@ int main(void) {
         }
         // arc_to -> records `arc_to`, swallows the line_to/arc its impl issues.
         {
-            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+            struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
             CHECK(cv != NULL);
-            CHECK(canvas_record_to(cv, sp));
-            canvas_begin_path(cv);
-            canvas_move_to(cv, 2.0f, 2.0f);   // the only move_to expected
-            canvas_arc_to(cv, 2.0f, 2.0f, 8.0f, 2.0f, 3.0f);
-            canvas_free(cv);
+            CHECK(canvas2d_record_to(cv, sp));
+            canvas2d_begin_path(cv);
+            canvas2d_move_to(cv, 2.0f, 2.0f);   // the only move_to expected
+            canvas2d_arc_to(cv, 2.0f, 2.0f, 8.0f, 2.0f, 3.0f);
+            canvas2d_free(cv);
             char b[1 << 13];
             int const n = slurp(sp, b, (int)sizeof b);
             CHECK(n > 0 && n < (int)sizeof b);
@@ -608,20 +608,20 @@ int main(void) {
         // fill_path -> records `path` block + `fill_path`, swallows p2d_replay's
         // path methods AND the nested current-path build.
         {
-            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+            struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
             CHECK(cv != NULL);
-            CHECK(canvas_record_to(cv, sp));
-            struct canvas_path2d *__single p = canvas_path2d();
+            CHECK(canvas2d_record_to(cv, sp));
+            struct canvas2d_path2d *__single p = canvas2d_path2d();
             CHECK(p != NULL);
             if (p) {
-                canvas_path2d_move_to(p, 4.0f, 4.0f);
-                canvas_path2d_line_to(p, 20.0f, 4.0f);
-                canvas_path2d_line_to(p, 12.0f, 18.0f);
-                canvas_path2d_close_path(p);
-                canvas_fill_path(cv, p, CANVAS_NONZERO);
-                canvas_path2d_free(p);
+                canvas2d_path2d_move_to(p, 4.0f, 4.0f);
+                canvas2d_path2d_line_to(p, 20.0f, 4.0f);
+                canvas2d_path2d_line_to(p, 12.0f, 18.0f);
+                canvas2d_path2d_close_path(p);
+                canvas2d_fill_path(cv, p, CANVAS2D_NONZERO);
+                canvas2d_path2d_free(p);
             }
-            canvas_free(cv);
+            canvas2d_free(cv);
             char b[1 << 13];
             int const n = slurp(sp, b, (int)sizeof b);
             CHECK(n > 0 && n < (int)sizeof b);
@@ -635,11 +635,11 @@ int main(void) {
         }
         // resize -> records `resize`, swallows the reset it expands to.
         {
-            struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+            struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
             CHECK(cv != NULL);
-            CHECK(canvas_record_to(cv, sp));
-            canvas_resize(cv, W, H);
-            canvas_free(cv);
+            CHECK(canvas2d_record_to(cv, sp));
+            canvas2d_resize(cv, W, H);
+            canvas2d_free(cv);
             char b[1 << 13];
             int const n = slurp(sp, b, (int)sizeof b);
             CHECK(n > 0 && n < (int)sizeof b);
@@ -652,9 +652,9 @@ int main(void) {
     // line (the spaces are peers), so a missing token is malformed (replay
     // returns false) just like an unknown one.  A well-formed leading subset
     // already applied; the canvas stays valid.
-#define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
+#define REPLAY(cv, s) canvas2d_replay_text((cv), (s), sizeof(s) - 1)
     {
-        struct canvas *__single cv = canvas(16, 16, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(16, 16, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         // The valid tokens parse.
         CHECK(REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 srgb\n"));     // tagged sRGB
@@ -679,7 +679,7 @@ int main(void) {
         CHECK(!REPLAY(cv, "set_fill_rgba 0.25 0.5 0.75 1 linear extra\n"));
         // An image block missing its required colour-space token is malformed.
         CHECK(!REPLAY(cv, "image 0 unorm8 unpremul 1 1 8 1\nbits eJxjYGD4DwABBAEB\n"));
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 #undef REPLAY
 

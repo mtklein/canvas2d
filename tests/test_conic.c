@@ -1,17 +1,17 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
 #include <stdlib.h>
 
 // A conic at (cx,cy): red @0, green @0.25, blue @0.5, white @0.75, red @1.
-static void setup_conic(struct canvas *__single cv, float start, float cx, float cy) {
-    canvas_set_fill_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, start, cx, cy);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.00f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.25f, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.50f, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.75f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.00f, 1.0f, 0.0f, 0.0f, 1.0f);
+static void setup_conic(struct canvas2d_context *__single cv, float start, float cx, float cy) {
+    canvas2d_set_fill_conic_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, start, cx, cy);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.00f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.25f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.50f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.75f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.00f, 1.0f, 0.0f, 0.0f, 1.0f);
 }
 
 static bool dom_red(struct rgba p)   { return p.r > 180 && p.g < 90 && p.b < 90; }
@@ -26,7 +26,7 @@ int main(void) {
     if (!px) {
         return TEST_REPORT();
     }
-    struct canvas *__single cv = canvas(W, W, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, W, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -35,10 +35,10 @@ int main(void) {
 
     // No transform: t=0 (red) at +x, sweeping clockwise (canvas y is down) through
     // green (down), blue (left), white (up).
-    canvas_reset_transform(cv);
+    canvas2d_reset_transform(cv);
     setup_conic(cv, 0.0f, 16.0f, 16.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(dom_red(pixel_at(px, len, W, 28, 16)));    // right
     CHECK(dom_green(pixel_at(px, len, W, 16, 28)));  // down
     CHECK(dom_blue(pixel_at(px, len, W, 4, 16)));    // left
@@ -48,16 +48,16 @@ int main(void) {
     // rotation matrix mapping the origin to the centre) carries red from +x round
     // to +y.  The gradient is baked into device space, so we reset the transform
     // before filling to cover the whole canvas.
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_set_transform(cv, 0.0f, 1.0f, -1.0f, 0.0f, 16.0f, 16.0f);  // rotate +pi/2
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_set_transform(cv, 0.0f, 1.0f, -1.0f, 0.0f, 16.0f, 16.0f);  // rotate +pi/2
     setup_conic(cv, 0.0f, 0.0f, 0.0f);   // centre -> device (16,16), angle += pi/2
-    canvas_reset_transform(cv);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_reset_transform(cv);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)W);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     CHECK(dom_red(pixel_at(px, len, W, 16, 28)));    // red moved to "down"
     CHECK(dom_white(pixel_at(px, len, W, 28, 16)));  // "right" is now white
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     free(px);
     return TEST_REPORT();
 }

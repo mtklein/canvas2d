@@ -1,4 +1,4 @@
-// Fuzzes the PNG encoder (src/cnvs_png.c) directly via cnvs_png_write, writing to
+// Fuzzes the PNG encoder (src/canvas2d_png.c) directly via canvas2d_png_write, writing to
 // /dev/null so the full in-memory encode runs without real file I/O.  The encoder
 // is the most-audited code in the tree (a cursor sized up front, every write
 // checked against __counted_by(cap)), so this is lower-yield -- but it closes the
@@ -10,7 +10,7 @@
 // dimensions and pixel content.  (There is no decode-side harness: PNG is output
 // only.)
 
-#include "cnvs_png.h"
+#include "canvas2d_png.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -39,7 +39,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
         px[i] = (uint16_t)(((unsigned)hi << 8) | lo);
     }
 
-    (void)cnvs_png_write("/dev/null", px, w, h);
+    (void)canvas2d_png_write("/dev/null", px, w, h);
     free(px);
     return 0;
 }

@@ -7,11 +7,11 @@
 // while the affine path stays byte-identical, and a perspective image draw
 // round-trips through record/replay.
 
-#include "cnvs_math.h"
-#include "cnvs_matrix.h"
+#include "canvas2d_math.h"
+#include "canvas2d_matrix.h"
 #include "test_util.h"
 
-#include "canvas.h"
+#include "canvas2d.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -30,8 +30,8 @@
 // AXIS the tests probe and the LINEAR reference interpolate over.
 enum { QY_FAR = 40, QY_NEAR = 170 };
 
-static void receding_ctm(struct canvas *__single cv, float S) {
-    canvas_set_perspective_quad(cv, 0.0f, 0.0f, S, S,
+static void receding_ctm(struct canvas2d_context *__single cv, float S) {
+    canvas2d_set_perspective_quad(cv, 0.0f, 0.0f, S, S,
                                 70.0f,  (float)QY_FAR,    // TL (far-left)
                                 130.0f, (float)QY_FAR,    // TR (far-right)
                                 180.0f, (float)QY_NEAR,   // BR (near-right)
@@ -51,7 +51,7 @@ static float linear_source_y(float devy, float S) {
 }
 
 // Read one device pixel (RGBA, sRGB) from a canvas.
-static void pixel_at(struct canvas *__single cv, int w, int h, int x, int y,
+static void pixel_at(struct canvas2d_context *__single cv, int w, int h, int x, int y,
                      uint8_t out[4]) {
     int const len = w * h * 4;
     uint8_t *px = malloc((size_t)len);
@@ -60,7 +60,7 @@ static void pixel_at(struct canvas *__single cv, int w, int h, int x, int y,
         out[0] = out[1] = out[2] = out[3] = 0;
         return;
     }
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
     int const i = (y * w + x) * 4;
     out[0] = px[i + 0];
     out[1] = px[i + 1];
@@ -73,18 +73,18 @@ static void pixel_at(struct canvas *__single cv, int w, int h, int x, int y,
 // used by receding_ctm, recovered by recording the set_transform line --
 // mirrors test_perspective.c's quad recovery, so the predictor uses the EXACT
 // matrix the renderer used.
-static bool recover_ctm(cnvs_mat *out, float S) {
+static bool recover_ctm(canvas2d_mat *out, float S) {
     char const *__null_terminated path = "build/test_perspectivetexture_ctm.canvas";
-    struct canvas *__single cv = canvas(200, 200, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(200, 200, CANVAS2D_CS_SRGB);
     if (!cv) {
         return false;
     }
-    if (!canvas_record_to(cv, path)) {
-        canvas_free(cv);
+    if (!canvas2d_record_to(cv, path)) {
+        canvas2d_free(cv);
         return false;
     }
     receding_ctm(cv, S);
-    canvas_free(cv);  // flush + close
+    canvas2d_free(cv);  // flush + close
 
     FILE *f = fopen(path, "r");
     if (!f) {
@@ -101,7 +101,7 @@ static bool recover_ctm(cnvs_mat *out, float S) {
         if (sscanf(line, "set_transform %f %f %f %f %f %f %f %f %f",
                    &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7],
                    &v[8]) == 9) {
-            *out = (cnvs_mat){ .a = v[0], .b = v[1], .c = v[2], .d = v[3],
+            *out = (canvas2d_mat){ .a = v[0], .b = v[1], .c = v[2], .d = v[3],
                                .e = v[4], .f = v[5], .g = v[6], .h = v[7],
                                .i = v[8] };
             found = true;
@@ -138,18 +138,18 @@ static void test_image_sampling_perspective_correct(void) {
         }
     }
 
-    cnvs_mat ctm;
+    canvas2d_mat ctm;
     CHECK(recover_ctm(&ctm, S));
-    cnvs_mat const inv = cnvs_mat_invert(ctm);  // device -> user (full 3x3)
+    canvas2d_mat const inv = canvas2d_mat_invert(ctm);  // device -> user (full 3x3)
 
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
     receding_ctm(cv, S);
-    canvas_set_image_smoothing_enabled(cv, false);  // nearest taps
-    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, tex, T, T, 0.0f, 0.0f, S, S);
+    canvas2d_set_image_smoothing_enabled(cv, false);  // nearest taps
+    canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, tex, T, T, 0.0f, 0.0f, S, S);
 
     // Scan device rows down the quad's centre column.  At each, compute the
     // perspective-correct source y (u/w v/w) and the LINEAR reference source y
@@ -159,7 +159,7 @@ static void test_image_sampling_perspective_correct(void) {
     int const cx = W / 2;
     bool found_disagreement = false;
     for (int dy = QY_FAR + 1; dy < QY_NEAR; dy++) {
-        cnvs_vec2 const dev = { .x = (float)cx + 0.5f, .y = (float)dy + 0.5f };
+        canvas2d_vec2 const dev = { .x = (float)cx + 0.5f, .y = (float)dy + 0.5f };
 
         // Perspective-correct: divide by w.
         float const w = inv.g * dev.x + inv.h * dev.y + inv.i;
@@ -172,8 +172,8 @@ static void test_image_sampling_perspective_correct(void) {
         if (uy < 0.0f || uy >= S || ly < 0.0f || ly >= S) {
             continue;
         }
-        int const prow = cnvs_f2i(floorf((uy / S) * (float)T));  // perspective band
-        int const lrow = cnvs_f2i(floorf((ly / S) * (float)T));  // linear band
+        int const prow = canvas2d_f2i(floorf((uy / S) * (float)T));  // perspective band
+        int const lrow = canvas2d_f2i(floorf((ly / S) * (float)T));  // linear band
         bool const ptop = prow < T / 2;
         bool const ltop = lrow < T / 2;
         if (ptop == ltop) {
@@ -193,7 +193,7 @@ static void test_image_sampling_perspective_correct(void) {
         break;
     }
     CHECK(found_disagreement);  // the quad really foreshortens enough to differ
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // --- gradient sampling ------------------------------------------------------
@@ -206,11 +206,11 @@ static void test_gradient_perspective_correct(void) {
     int const W = 200, H = 200;
     float const S = 8.0f;
 
-    cnvs_mat ctm;
+    canvas2d_mat ctm;
     CHECK(recover_ctm(&ctm, S));
-    cnvs_mat const inv = cnvs_mat_invert(ctm);
+    canvas2d_mat const inv = canvas2d_mat_invert(ctm);
 
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -218,11 +218,11 @@ static void test_gradient_perspective_correct(void) {
     receding_ctm(cv, S);
     // Two-stop linear gradient along source y: green at y=0, magenta at y=S.
     // The parameter t = uy/S, so the colour reads out the source y directly.
-    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL,
+    canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL,
                                     0.0f, 0.0f, 0.0f, S);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, S, S);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 1.0f, 0.0f, 1.0f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, S, S);
 
     // Probe a row roughly two-thirds down the quad; the perspective t and the
     // linear t differ there.  Predict the green/magenta mix from each and
@@ -230,7 +230,7 @@ static void test_gradient_perspective_correct(void) {
     int const cx = W / 2;
     bool checked = false;
     for (int dy = (QY_FAR + QY_NEAR) / 2; dy < QY_NEAR; dy++) {
-        cnvs_vec2 const dev = { .x = (float)cx + 0.5f, .y = (float)dy + 0.5f };
+        canvas2d_vec2 const dev = { .x = (float)cx + 0.5f, .y = (float)dy + 0.5f };
         float const w = inv.g * dev.x + inv.h * dev.y + inv.i;
         float const uy = (inv.b * dev.x + inv.d * dev.y + inv.f) / w;
         float const ly = linear_source_y(dev.y, S);  // affine-warp reference
@@ -258,7 +258,7 @@ static void test_gradient_perspective_correct(void) {
         break;
     }
     CHECK(checked);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // --- pattern sampling -------------------------------------------------------
@@ -286,36 +286,36 @@ static void test_pattern_perspective_correct(void) {
         }
     }
 
-    cnvs_mat ctm;
+    canvas2d_mat ctm;
     CHECK(recover_ctm(&ctm, S));
-    cnvs_mat const inv = cnvs_mat_invert(ctm);  // device -> user == device -> pattern
+    canvas2d_mat const inv = canvas2d_mat_invert(ctm);  // device -> user == device -> pattern
 
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
     receding_ctm(cv, S);
-    canvas_set_image_smoothing_enabled(cv, false);
+    canvas2d_set_image_smoothing_enabled(cv, false);
     // Set the pattern under the perspective CTM directly: to_pattern is its
     // inverse (device->user), and with S == T one user unit is one pattern
     // texel, so the device->pattern map IS inv.
-    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, tex, T, T, CANVAS_REPEAT);
-    canvas_fill_rect(cv, 0.0f, 0.0f, S, S);
+    canvas2d_set_fill_pattern(cv, CANVAS2D_CS_SRGB, tex, T, T, CANVAS2D_REPEAT);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, S, S);
 
     // Find a row where the perspective band and the linear-reference band differ.
     int const cx = W / 2;
     bool found = false;
     for (int dy = QY_FAR + 1; dy < QY_NEAR; dy++) {
-        cnvs_vec2 const dev = { .x = (float)cx + 0.5f, .y = (float)dy + 0.5f };
+        canvas2d_vec2 const dev = { .x = (float)cx + 0.5f, .y = (float)dy + 0.5f };
         float const w = inv.g * dev.x + inv.h * dev.y + inv.i;
         float const uy = (inv.b * dev.x + inv.d * dev.y + inv.f) / w;
         float const ly = linear_source_y(dev.y, S);  // affine-warp reference
         if (uy < 0.0f || uy >= S || ly < 0.0f || ly >= S) {
             continue;
         }
-        int const prow = cnvs_f2i(floorf((uy / S) * (float)T));
-        int const lrow = cnvs_f2i(floorf((ly / S) * (float)T));
+        int const prow = canvas2d_f2i(floorf((uy / S) * (float)T));
+        int const lrow = canvas2d_f2i(floorf((ly / S) * (float)T));
         bool const ptop = prow < T / 2;
         bool const ltop = lrow < T / 2;
         if (ptop == ltop) {
@@ -333,7 +333,7 @@ static void test_pattern_perspective_correct(void) {
         break;
     }
     CHECK(found);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // --- affine unchanged -------------------------------------------------------
@@ -358,33 +358,33 @@ static void test_affine_sampling_unchanged(void) {
         }
     }
 
-    struct canvas *__single ca = canvas(W, H, CANVAS_CS_SRGB);
-    struct canvas *__single cb = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single ca = canvas2d(W, H, CANVAS2D_CS_SRGB);
+    struct canvas2d_context *__single cb = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(ca != NULL && cb != NULL);
     if (!ca || !cb) {
-        canvas_free(ca);
-        canvas_free(cb);
+        canvas2d_free(ca);
+        canvas2d_free(cb);
         return;
     }
-    canvas_set_transform(ca, 1.4f, 0.25f, -0.35f, 1.2f, 10.0f, 6.0f);
-    canvas_set_transform_3x3(cb, 1.4f, 0.25f, -0.35f, 1.2f, 10.0f, 6.0f,
+    canvas2d_set_transform(ca, 1.4f, 0.25f, -0.35f, 1.2f, 10.0f, 6.0f);
+    canvas2d_set_transform_3x3(cb, 1.4f, 0.25f, -0.35f, 1.2f, 10.0f, 6.0f,
                              0.0f, 0.0f, 1.0f);
     for (int k = 0; k < 2; k++) {
-        struct canvas *__single c = k == 0 ? ca : cb;
+        struct canvas2d_context *__single c = k == 0 ? ca : cb;
         // An image draw (bilinear), then a linear gradient fill.
-        canvas_draw_bitmap_scaled(c, CANVAS_CS_SRGB, tex, T, T,
+        canvas2d_draw_bitmap_scaled(c, CANVAS2D_CS_SRGB, tex, T, T,
                                   4.0f, 4.0f, 40.0f, 40.0f);
-        canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL,
+        canvas2d_set_fill_linear_gradient(c, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL,
                                         0.0f, 48.0f, 48.0f, 88.0f);
-        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.9f, 0.2f, 0.3f, 1.0f);
-        canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.1f, 0.4f, 0.9f, 1.0f);
-        canvas_fill_rect(c, 8.0f, 50.0f, 60.0f, 36.0f);
+        canvas2d_add_fill_color_stop(c, CANVAS2D_CS_SRGB, 0.0f, 0.9f, 0.2f, 0.3f, 1.0f);
+        canvas2d_add_fill_color_stop(c, CANVAS2D_CS_SRGB, 1.0f, 0.1f, 0.4f, 0.9f, 1.0f);
+        canvas2d_fill_rect(c, 8.0f, 50.0f, 60.0f, 36.0f);
     }
-    canvas_read_rgba(ca, CANVAS_CS_SRGB, a, NPX);
-    canvas_read_rgba(cb, CANVAS_CS_SRGB, b, NPX);
+    canvas2d_read_rgba(ca, CANVAS2D_CS_SRGB, a, NPX);
+    canvas2d_read_rgba(cb, CANVAS2D_CS_SRGB, b, NPX);
     CHECK(memcmp(a, b, (size_t)NPX) == 0);
-    canvas_free(ca);
-    canvas_free(cb);
+    canvas2d_free(ca);
+    canvas2d_free(cb);
 }
 
 // --- record / replay --------------------------------------------------------
@@ -411,28 +411,28 @@ static void test_record_replay_image(void) {
     }
 
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
+        CHECK(canvas2d_record_to(cv, path));
         receding_ctm(cv, S);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, tex, T, T, 0.0f, 0.0f, S, S);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded, NPX);
-        canvas_free(cv);  // flush + close
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, tex, T, T, 0.0f, 0.0f, S, S);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded, NPX);
+        canvas2d_free(cv);  // flush + close
     }
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_replay_from(cv, path));
+        CHECK(canvas2d_replay_from(cv, path));
         uint8_t replayed[200 * 200 * 4];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed, NPX);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed, NPX);
         CHECK(memcmp(recorded, replayed, (size_t)NPX) == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 

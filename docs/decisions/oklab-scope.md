@@ -1,19 +1,19 @@
 # Memo: Oklab's scope — interpolation only, or inputs and images too?
 
-**Scope read:** `include/canvas.h` (the `canvas_color_space` enum doc; the gradient-interp
-and image-source space parameters), `src/canvas.c` (`canvas_in_space` working-space
-validation, `intern_color`, `gradient_interp_ok`, `sample_to_working`), `src/cnvs_color.{h,c}`
-(`cnvs_linear_srgb_to_oklab` / `cnvs_oklab_to_linear_srgb`), `tests/test_gradient_interp.c`,
+**Scope read:** `include/canvas.h` (the `canvas2d_color_space` enum doc; the gradient-interp
+and image-source space parameters), `src/canvas.c` (`canvas2d_in_space` working-space
+validation, `intern_color`, `gradient_interp_ok`, `sample_to_working`), `src/canvas2d_color.{h,c}`
+(`canvas2d_linear_srgb_to_oklab` / `canvas2d_oklab_to_linear_srgb`), `tests/test_gradient_interp.c`,
 `tests/test_colorspace.c`.
 
 ## The question
 
-`CANVAS_CS_OKLAB` can name a colour in four roles:
+`CANVAS2D_CS_OKLAB` can name a colour in four roles:
 
 1. **input** — `set_fill_rgba` / `set_stroke_rgba` speaking a colour in Oklab;
 2. **gradient interpolation** — the space colour stops blend in;
-3. **image source** — `canvas_image_*` / `draw_bitmap` tagging an image's pixels;
-4. **working space** — `canvas_in_space`, the space the surface stores and composites in.
+3. **image source** — `canvas2d_image_*` / `draw_bitmap` tagging an image's pixels;
+4. **working space** — `canvas2d_in_space`, the space the surface stores and composites in.
 
 The choice was minimal ("Oklab interpolates gradients, nothing else") vs maximal ("Oklab
 everywhere, working surfaces included").
@@ -21,7 +21,7 @@ everywhere, working surfaces included").
 ## Ruling (2026-06-20)
 
 Oklab is valid as an **input, gradient-interpolation, and image-source** space (roles 1–3),
-and is **not** a working/compositing space (role 4). `canvas_in_space(CANVAS_CS_OKLAB)`
+and is **not** a working/compositing space (role 4). `canvas2d_in_space(CANVAS2D_CS_OKLAB)`
 returns NULL.
 
 ## Why
@@ -44,11 +44,11 @@ returns NULL.
 
 ## Implementation & coverage
 
-- **input:** `intern_color` (`src/canvas.c`), `case CANVAS_CS_OKLAB`.
+- **input:** `intern_color` (`src/canvas.c`), `case CANVAS2D_CS_OKLAB`.
 - **gradient:** `gradient_interp_ok` (`src/canvas.c`); premultiplied-Oklab stop lerp,
   covered by `tests/test_gradient_interp.c`.
-- **image:** `sample_to_working` (`src/canvas.c`), `case CANVAS_CS_OKLAB`; covered by
+- **image:** `sample_to_working` (`src/canvas.c`), `case CANVAS2D_CS_OKLAB`; covered by
   `tests/test_colorspace.c` `oklab_image_sample_deposit` (an Oklab f16 image deposited
   through both the sRGB and linear arms).
-- **not a working space:** `canvas_in_space` returns NULL for Oklab; asserted in the same
+- **not a working space:** `canvas2d_in_space` returns NULL for Oklab; asserted in the same
   test.

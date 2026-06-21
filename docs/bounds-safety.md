@@ -42,8 +42,8 @@ pixel, every `src[(y*sw + x)*4 + k]` guarded.
 **Slicing.** To hand one subpath to the stroker:
 
 ```c
-cnvs_vec2 *poly = cv->path.pts + sp.start;          // pts is __counted_by(pt_cap)
-cnvs_stroke_polyline(poly, sp.count, ...);          // param is __counted_by(n)
+canvas2d_vec2 *poly = cv->path.pts + sp.start;          // pts is __counted_by(pt_cap)
+canvas2d_stroke_polyline(poly, sp.count, ...);          // param is __counted_by(n)
 ```
 
 `pts + sp.start` decays the counted pointer to a `__bidi_indexable` that keeps
@@ -130,18 +130,18 @@ refer to declaration of a different lifetime`. The rules:
 
 - A counted local works if its count is a **`const`** declared immediately
   adjacent (`int const n = ...; int *__counted_by(n) p = ...;`). Used in
-  `canvas_write_png` and the PNG buffer.
+  `canvas2d_write_png` and the PNG buffer.
 - A *mutable* counted local drags its pointer along on every assignment to the
   count. Capacity math is instead done on a plain `int` with no pointer
-  attached (`cnvs_grow_cap`), and the result stored into a struct field.
+  attached (`canvas2d_grow_cap`), and the result stored into a struct field.
 
 The net effect is that dynamic arrays go in structs and arrays pass as
 `(ptr, count)` params; the error messages are cryptic until the cause is
 internalized.
 
 **Pointers to incomplete types must be `__single`, which leaks to consumers.**
-The public handle is `typedef struct canvas canvas;`. A consumer who writes
-`canvas *cv = canvas_create(...)` under `-fbounds-safety` gets an error —
+The public handle is `typedef struct canvas2d_context canvas;`. A consumer who writes
+`canvas *cv = canvas2d_create(...)` under `-fbounds-safety` gets an error —
 `__bidi_indexable` (the default for a local pointer to a complete type) is
 illegal for an incomplete type, so they must write `canvas *__single cv`. It is
 a one-word fix the compiler suggests, and consumers *not* using
@@ -208,7 +208,7 @@ Hit while factoring the glyph-curve fetch; the struct return was used.
 ## Antialiasing
 
 Coverage is computed analytically on the CPU
-([cnvs_cover.c](../src/cnvs_cover.c)): each edge deposits the exact fractional
+([canvas2d_cover.c](../src/canvas2d_cover.c)): each edge deposits the exact fractional
 area it leaves to its right into a per-pixel accumulation buffer, and a per-row
 prefix sum turns that into winding-weighted coverage the fill rule folds to
 `[0,1]` — exact in both axes. Clipping is a per-pixel coverage mask, gradients
@@ -301,7 +301,7 @@ Rust and where it does not. Each row is a bug the project hit (see
 |---|---|---|---|
 | **Spatial OOB** (a bad `__counted_by` bound → out-of-bounds index) | `-fbounds-safety` traps (`SIGTRAP`) in every build | mandatory bounds-check **panic** in every build | **parity** |
 | **Integer overflow** in a size/count (Findings 1, 2) | UB; UBSan catches in debug; the resulting OOB then traps under `-fbounds-safety` | debug build **panics**; release **wraps** (defined), and the OOB it causes still panics on index | **comparable at runtime**; neither catches it at compile time |
-| **float→int / float→uint8** conversion (Finding 4) | UB; a saturating `cnvs_f2i`/`cnvs_f2u8` (NaN→0, clamp) written by hand | `as` is **saturating by default** (the same semantics) | **Rust stronger** — safe by construction, no opt-in |
+| **float→int / float→uint8** conversion (Finding 4) | UB; a saturating `canvas2d_f2i`/`canvas2d_f2u8` (NaN→0, clamp) written by hand | `as` is **saturating by default** (the same semantics) | **Rust stronger** — safe by construction, no opt-in |
 | **Temporal** (use-after-free, double-free) | *not covered* — `-fbounds-safety` is spatial-only; ASan catches it in debug, nothing in release | **borrow checker, at compile time** | **Rust stronger** |
 | **Resource / termination** (Findings 5, 6: unbounded alloc, infinite loop) | found by fuzzing | found by fuzzing (or timeouts) | **same** — outside both type systems |
 
@@ -427,16 +427,16 @@ changes nothing for the two friction points:
   rather than stack, so an included header resets the ambient state.
 
 So checked binding costs about two forges plus one scoped pragma, and buys no
-real safety: the only buffer that grows (the output `cnvs_path`) is owned by
+real safety: the only buffer that grows (the output `canvas2d_path`) is owned by
 checked code regardless; the one genuinely unbounded read is
 `CGPathElement.points`, whose length is encoded in a sibling enum
 (`type` → 0–3 points) that `__counted_by` cannot name.
 
 **The design chosen** — and the one that mirrored the (now removed) Metal
-boundary — is an unchecked C shim ([cnvs_text_ct.c](../src/cnvs_text_ct.c))
-behind a bounds-safe ABI ([cnvs_text.h](../src/cnvs_text.h)). With the flag
+boundary — is an unchecked C shim ([canvas2d_text_ct.c](../src/canvas2d_text_ct.c))
+behind a bounds-safe ABI ([canvas2d_text.h](../src/canvas2d_text.h)). With the flag
 off, the FFI is plain C — no forges, no pragma — and the glyphs flow back as
-ordinary device-space `cnvs_path`s the existing coverage rasterizer fills. A C
+ordinary device-space `canvas2d_path`s the existing coverage rasterizer fills. A C
 shim still takes the debug sanitizers, so that unbounded `points[i]` read is
 ASan-instrumented in debug — the boundary is unchecked at compile time but not
 at run time. The forges-in-checked-code alternative was viable and is closer to
@@ -446,8 +446,8 @@ essentially nothing.
 
 ## Writing a text parser: the `__null_terminated` seam
 
-`canvas_replay_from()` reads a text *canvas program* (one `canvas_*` command per
-line) and replays it; the parser ([src/cnvs_replay.c](../src/cnvs_replay.c)) is
+`canvas2d_replay_from()` reads a text *canvas program* (one `canvas2d_*` command per
+line) and replays it; the parser ([src/canvas2d_replay.c](../src/canvas2d_replay.c)) is
 a hostile-input target, so it probes what `-fbounds-safety` requires for
 tokenizing untrusted text.
 
@@ -484,7 +484,7 @@ The seam is avoidable entirely, and removing both forges:
   every `%.9g` the recorder emits reparses to the identical float32 — the
   text-block format made that round-trip a correctness requirement; see
   [text-boundary.md](text-boundary.md).)
-- **Text:** give the engine a length-counted `canvas_fill_text_n` /
+- **Text:** give the engine a length-counted `canvas2d_fill_text_n` /
   `stroke_text_n` (`__counted_by(len)`), and the parser hands the tail through
   as a slice — `data + j` carries its own remaining count — with no copy, no
   NUL, no forge. The NUL-terminated `fill_text` stays as a convenience that
@@ -510,7 +510,7 @@ world. Fuzzed under ASan+UBSan with nothing found.
 
 ### The other direction: the recorder (zero forges)
 
-`canvas_record_to()` ([src/cnvs_record.c](../src/cnvs_record.c)) is the
+`canvas2d_record_to()` ([src/canvas2d_record.c](../src/canvas2d_record.c)) is the
 write-side inverse: it installs a recorder on the canvas, and each recordable
 public op appends its line, so a live session is serialized to the same text
 format the parser reads. Round-tripping is pinned by
@@ -551,7 +551,7 @@ designs keep paying for their own checks.
   the contract in the signature and the check at every access, so
   "let the user own the allocation" becomes a safe-and-fast design — no
   defensive copy, no internal allocation, no trust required.
-  `canvas_read_rgba(cv, out, len)` is the shape; the resource doctrine ("the
+  `canvas2d_read_rgba(cv, out, len)` is the shape; the resource doctrine ("the
   library should be excellent at graphics and let the user make the mundane
   calls — memory, threads") is C-hostile without the annotation and safe with
   it.
@@ -565,13 +565,13 @@ designs keep paying for their own checks.
 - **The counted seam.** The NEON `ld4`/`st4` intrinsics take unannotated
   pointers; wrapping each in a `static inline` helper whose parameter is
   `__counted_by(8)` makes the implicit conversion at every call site the bounds
-  check — one per 8-pixel block ([cnvs_planar.h](../src/cnvs_planar.h)). The
+  check — one per 8-pixel block ([canvas2d_planar.h](../src/canvas2d_planar.h)). The
   safety annotation and the efficient factoring are the same line of code.
 - **The trap that forced the faster shape.** Appending vertices through
   `v->data` made the compiler reload and re-check every step (the stores might
   alias `*v`); the fix the model required — hoist to a `__counted_by` local, one
   check per block — is the code a performance engineer would write
-  ([cnvs_geom.c](../src/cnvs_geom.c)). The check model pushes toward the
+  ([canvas2d_geom.c](../src/canvas2d_geom.c)). The check model pushes toward the
   efficient idiom.
 - **Planar vector ABIs.** Pipeline stages passing channel planes in registers
   have no pointers in flight, hence no bounds — the safety surface concentrates
@@ -580,7 +580,7 @@ designs keep paying for their own checks.
 
 ## Choices to reconsider
 
-- **Hand-rolled per-type vectors.** `cnvs_verts` and the `cnvs_cover`/clip-mask
+- **Hand-rolled per-type vectors.** `canvas2d_verts` and the `canvas2d_cover`/clip-mask
   buffers are copy-paste-shaped growable arrays. A generic macro would remove
   the duplication, but generic containers interact awkwardly with
   `-fbounds-safety` (you can't take the address of a `__counted_by` field and

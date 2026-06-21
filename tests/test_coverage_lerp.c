@@ -40,7 +40,7 @@
 // PREMULTIPLIED space (readback u8 is re-premultiplied), so low-alpha pixels
 // don't amplify quantization noise.
 
-#include "cnvs_blend.h"
+#include "canvas2d_blend.h"
 #include "test_util.h"
 
 #include <math.h>
@@ -59,27 +59,27 @@ static double dmax(double a, double b) { return a > b ? a : b; }
 // Separable blend B(cb, cs), unpremultiplied.
 static double sep_ref(int mode, double cb, double cs) {
     switch (mode) {
-        case CANVAS_OP_MULTIPLY:   return cb * cs;
-        case CANVAS_OP_SCREEN:     return cb + cs - cb * cs;
-        case CANVAS_OP_OVERLAY:
+        case CANVAS2D_OP_MULTIPLY:   return cb * cs;
+        case CANVAS2D_OP_SCREEN:     return cb + cs - cb * cs;
+        case CANVAS2D_OP_OVERLAY:
             return 2.0 * cb <= 1.0 ? 2.0 * cb * cs
                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
-        case CANVAS_OP_DARKEN:     return dmin(cb, cs);
-        case CANVAS_OP_LIGHTEN:    return dmax(cb, cs);
-        case CANVAS_OP_COLOR_DODGE:
+        case CANVAS2D_OP_DARKEN:     return dmin(cb, cs);
+        case CANVAS2D_OP_LIGHTEN:    return dmax(cb, cs);
+        case CANVAS2D_OP_COLOR_DODGE:
             return cb <= 0.0 ? 0.0 : (cs >= 1.0 ? 1.0 : dmin(1.0, cb / (1.0 - cs)));
-        case CANVAS_OP_COLOR_BURN:
+        case CANVAS2D_OP_COLOR_BURN:
             return cb >= 1.0 ? 1.0
                              : (cs <= 0.0 ? 0.0 : 1.0 - dmin(1.0, (1.0 - cb) / cs));
-        case CANVAS_OP_HARD_LIGHT:
+        case CANVAS2D_OP_HARD_LIGHT:
             return 2.0 * cs <= 1.0 ? 2.0 * cb * cs
                                    : 1.0 - 2.0 * (1.0 - cb) * (1.0 - cs);
-        case CANVAS_OP_SOFT_LIGHT: {
+        case CANVAS2D_OP_SOFT_LIGHT: {
             double const dd = cb <= 0.25 ? ((16.0 * cb - 12.0) * cb + 4.0) * cb : sqrt(cb);
             return cs <= 0.5 ? cb - (1.0 - 2.0 * cs) * cb * (1.0 - cb)
                              : cb + (2.0 * cs - 1.0) * (dd - cb);
         }
-        case CANVAS_OP_DIFFERENCE: return fabs(cb - cs);
+        case CANVAS2D_OP_DIFFERENCE: return fabs(cb - cs);
         default:                    return cb + cs - 2.0 * cb * cs;  // exclusion
     }
 }
@@ -134,14 +134,14 @@ static drgb set_sat_ref(drgb c, double s) {
 
 static drgb nonsep_ref(int mode, drgb cb, drgb cs) {
     switch (mode) {
-        case CANVAS_OP_HUE:        return set_lum_ref(set_sat_ref(cs, sat_ref(cb)), lum_ref(cb));
-        case CANVAS_OP_SATURATION: return set_lum_ref(set_sat_ref(cb, sat_ref(cs)), lum_ref(cb));
-        case CANVAS_OP_COLOR:      return set_lum_ref(cs, lum_ref(cb));
+        case CANVAS2D_OP_HUE:        return set_lum_ref(set_sat_ref(cs, sat_ref(cb)), lum_ref(cb));
+        case CANVAS2D_OP_SATURATION: return set_lum_ref(set_sat_ref(cb, sat_ref(cs)), lum_ref(cb));
+        case CANVAS2D_OP_COLOR:      return set_lum_ref(cs, lum_ref(cb));
         default:                    return set_lum_ref(cb, lum_ref(cs));  // luminosity
     }
 }
 
-// The output clamp, lane-wise cnvs_px8_clamp_premul.
+// The output clamp, lane-wise canvas2d_px8_clamp_premul.
 static dpx clamp_premul_ref(dpx c) {
     double const ao = dmin(c.a, 1.0);
     return (dpx){ dmax(0.0, dmin(ao, c.r)), dmax(0.0, dmin(ao, c.g)),
@@ -152,19 +152,19 @@ static dpx clamp_premul_ref(dpx c) {
 static dpx blend_ref(int mode, dpx s, dpx d) {
     double sa = s.a, da = d.a;
     dpx co;
-    if (mode <= CANVAS_OP_COPY) {
+    if (mode <= CANVAS2D_OP_COPY) {
         double fa, fb;
         switch (mode) {
-            case CANVAS_OP_SOURCE_IN:   fa = da;       fb = 0.0;      break;
-            case CANVAS_OP_SOURCE_OUT:  fa = 1.0 - da; fb = 0.0;      break;
-            case CANVAS_OP_SOURCE_ATOP: fa = da;       fb = 1.0 - sa; break;
-            case CANVAS_OP_DESTINATION_OVER: fa = 1.0 - da; fb = 1.0;      break;
-            case CANVAS_OP_DESTINATION_IN:   fa = 0.0;      fb = sa;       break;
-            case CANVAS_OP_DESTINATION_OUT:  fa = 0.0;      fb = 1.0 - sa; break;
-            case CANVAS_OP_DESTINATION_ATOP: fa = 1.0 - da; fb = sa;       break;
-            case CANVAS_OP_XOR:      fa = 1.0 - da; fb = 1.0 - sa; break;
-            case CANVAS_OP_LIGHTER:  fa = 1.0;      fb = 1.0;      break;
-            case CANVAS_OP_COPY:     fa = 1.0;      fb = 0.0;      break;
+            case CANVAS2D_OP_SOURCE_IN:   fa = da;       fb = 0.0;      break;
+            case CANVAS2D_OP_SOURCE_OUT:  fa = 1.0 - da; fb = 0.0;      break;
+            case CANVAS2D_OP_SOURCE_ATOP: fa = da;       fb = 1.0 - sa; break;
+            case CANVAS2D_OP_DESTINATION_OVER: fa = 1.0 - da; fb = 1.0;      break;
+            case CANVAS2D_OP_DESTINATION_IN:   fa = 0.0;      fb = sa;       break;
+            case CANVAS2D_OP_DESTINATION_OUT:  fa = 0.0;      fb = 1.0 - sa; break;
+            case CANVAS2D_OP_DESTINATION_ATOP: fa = 1.0 - da; fb = sa;       break;
+            case CANVAS2D_OP_XOR:      fa = 1.0 - da; fb = 1.0 - sa; break;
+            case CANVAS2D_OP_LIGHTER:  fa = 1.0;      fb = 1.0;      break;
+            case CANVAS2D_OP_COPY:     fa = 1.0;      fb = 0.0;      break;
             default:                  fa = 1.0;      fb = 1.0 - sa; break;  // src-over
         }
         co = (dpx){ fa * s.r + fb * d.r, fa * s.g + fb * d.g,
@@ -175,7 +175,7 @@ static dpx blend_ref(int mode, dpx s, dpx d) {
         drgb cb = da > 0.0 ? (drgb){ d.r / da, d.g / da, d.b / da }
                            : (drgb){ 0.0, 0.0, 0.0 };
         drgb t;
-        if (mode >= CANVAS_OP_HUE) {
+        if (mode >= CANVAS2D_OP_HUE) {
             t = nonsep_ref(mode, cb, cs);
         } else {
             t = (drgb){ sep_ref(mode, cb.r, cs.r), sep_ref(mode, cb.g, cs.g),
@@ -195,7 +195,7 @@ static dpx cov_lerp_ref(dpx d, dpx co, double k) {
                   co.b * k + d.b * (1.0 - k), co.a * k + d.a * (1.0 - k) };
 }
 
-static dpx dpx_of(cnvs_premul p) {
+static dpx dpx_of(canvas2d_premul p) {
     return (dpx){ (double)p.r, (double)p.g, (double)p.b, (double)p.a };
 }
 
@@ -219,12 +219,12 @@ static void err_acc(errs *e, dpx got, dpx want) {
 // than the old fold.
 static bool expect_closer(int mode) {
     switch (mode) {
-        case CANVAS_OP_SOURCE_IN:
-        case CANVAS_OP_SOURCE_OUT:
-        case CANVAS_OP_DESTINATION_IN:
-        case CANVAS_OP_DESTINATION_ATOP:
-        case CANVAS_OP_COPY:
-        case CANVAS_OP_LIGHTER:
+        case CANVAS2D_OP_SOURCE_IN:
+        case CANVAS2D_OP_SOURCE_OUT:
+        case CANVAS2D_OP_DESTINATION_IN:
+        case CANVAS2D_OP_DESTINATION_ATOP:
+        case CANVAS2D_OP_COPY:
+        case CANVAS2D_OP_LIGHTER:
             return true;
         default:
             return false;
@@ -250,11 +250,11 @@ enum { NSRC = (int)(sizeof SRCS / sizeof SRCS[0]),
 
 static void part_a(void) {
     enum { N = 256 };  // one pixel per coverage byte
-    struct canvas *__single c = canvas(N, 1, CANVAS_CS_SRGB);
-    cnvs_premul *dstt = malloc((size_t)N * sizeof *dstt);
-    cnvs_premul *full = malloc((size_t)N * sizeof *full);
-    cnvs_premul *fold = malloc((size_t)N * sizeof *fold);
-    cnvs_premul *out = malloc((size_t)N * sizeof *out);
+    struct canvas2d_context *__single c = canvas2d(N, 1, CANVAS2D_CS_SRGB);
+    canvas2d_premul *dstt = malloc((size_t)N * sizeof *dstt);
+    canvas2d_premul *full = malloc((size_t)N * sizeof *full);
+    canvas2d_premul *fold = malloc((size_t)N * sizeof *fold);
+    canvas2d_premul *out = malloc((size_t)N * sizeof *out);
     uint8_t *covp = malloc((size_t)N);
     CHECK(c && dstt && full && fold && out && covp);
     if (!c || !dstt || !full || !fold || !out || !covp) {
@@ -264,16 +264,16 @@ static void part_a(void) {
         covp[i] = (uint8_t)i;
     }
 
-    for (int mode = 0; mode < CNVS_BLEND_MODE_COUNT; mode++) {
+    for (int mode = 0; mode < CANVAS2D_BLEND_MODE_COUNT; mode++) {
         errs en = { 0 }, eo = { 0 };
         for (int si = 0; si < NSRC; si++) {
-            cnvs_unpremul su = cnvs_unpremul_of(SRCS[si][0], SRCS[si][1],
+            canvas2d_unpremul su = canvas2d_unpremul_of(SRCS[si][0], SRCS[si][1],
                                                 SRCS[si][2], SRCS[si][3]);
             for (int di = 0; di < NDST; di++) {
-                cnvs_unpremul du = cnvs_unpremul_of(DSTS[di][0], DSTS[di][1],
+                canvas2d_unpremul du = canvas2d_unpremul_of(DSTS[di][0], DSTS[di][1],
                                                     DSTS[di][2], DSTS[di][3]);
-                cnvs_premul const dp = cnvs_premultiply(du);
-                cnvs_premul const sp = cnvs_premultiply(su);
+                canvas2d_premul const dp = canvas2d_premultiply(du);
+                canvas2d_premul const sp = canvas2d_premultiply(su);
                 for (int i = 0; i < N; i++) {
                     dstt[i] = dp;
                     full[i] = sp;
@@ -281,16 +281,16 @@ static void part_a(void) {
                     // widened and divided in f32, folded into the paint's
                     // alpha, one narrow to f16, then the f16 premultiply.
                     float const af = (float)su.a * ((float)i / 255.0f);
-                    fold[i] = cnvs_premultiply((cnvs_unpremul){
+                    fold[i] = canvas2d_premultiply((canvas2d_unpremul){
                         .r = su.r, .g = su.g, .b = su.b, .a = (_Float16)af });
                 }
                 dpx s_d = dpx_of(sp), d_d = dpx_of(dp);
 
                 // NEW: full-strength tile + the coverage plane.
-                cnvs_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS_OP_COPY);
-                cnvs_blend(c, 0, 0, N, 1, full, covp, NULL, 0,
-                           (enum canvas_composite_op)mode);
-                cnvs_blend_read(c, out, N);
+                canvas2d_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS2D_OP_COPY);
+                canvas2d_blend(c, 0, 0, N, 1, full, covp, NULL, 0,
+                           (enum canvas2d_composite_op)mode);
+                canvas2d_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
                     dpx want = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
                                            (double)i / 255.0);
@@ -298,10 +298,10 @@ static void part_a(void) {
                 }
 
                 // OLD: pre-folded tile, no plane.
-                cnvs_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS_OP_COPY);
-                cnvs_blend(c, 0, 0, N, 1, fold, NULL, NULL, 0,
-                           (enum canvas_composite_op)mode);
-                cnvs_blend_read(c, out, N);
+                canvas2d_blend(c, 0, 0, N, 1, dstt, NULL, NULL, 0, CANVAS2D_OP_COPY);
+                canvas2d_blend(c, 0, 0, N, 1, fold, NULL, NULL, 0,
+                           (enum canvas2d_composite_op)mode);
+                canvas2d_blend_read(c, out, N);
                 for (int i = 0; i < N; i++) {
                     dpx want = cov_lerp_ref(d_d, blend_ref(mode, s_d, d_d),
                                            (double)i / 255.0);
@@ -335,7 +335,7 @@ static void part_a(void) {
         }
     }
 done:
-    canvas_free(c);
+    canvas2d_free(c);
     free(dstt);
     free(full);
     free(fold);
@@ -399,35 +399,35 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
                         float const *__counted_by(4) sc,
                         double const *__counted_by(W * H) cov,
                         errs *en, errs *eo) {
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     uint8_t *px = malloc((size_t)(W * H * 4));
     CHECK(cv && px);
     if (!cv || !px) {
-        canvas_free(cv);
+        canvas2d_free(cv);
         free(px);
         return;
     }
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, DL[0], DL[1], DL[2], DL[3]);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W / 2.0f, (float)H);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, DR[0], DR[1], DR[2], DR[3]);
-    canvas_fill_rect(cv, (float)W / 2.0f, 0.0f, (float)W / 2.0f, (float)H);
-    canvas_set_global_composite_operation(cv, (enum canvas_composite_op)mode);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, sc[0], sc[1], sc[2], sc[3]);
-    canvas_begin_path(cv);
-    canvas_move_to(cv, vx[0], vy[0]);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, DL[0], DL[1], DL[2], DL[3]);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W / 2.0f, (float)H);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, DR[0], DR[1], DR[2], DR[3]);
+    canvas2d_fill_rect(cv, (float)W / 2.0f, 0.0f, (float)W / 2.0f, (float)H);
+    canvas2d_set_global_composite_operation(cv, (enum canvas2d_composite_op)mode);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, sc[0], sc[1], sc[2], sc[3]);
+    canvas2d_begin_path(cv);
+    canvas2d_move_to(cv, vx[0], vy[0]);
     for (int i = 1; i < n; i++) {
-        canvas_line_to(cv, vx[i], vy[i]);
+        canvas2d_line_to(cv, vx[i], vy[i]);
     }
-    canvas_close_path(cv);
-    canvas_fill(cv, CANVAS_NONZERO);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, W * H * 4);
+    canvas2d_close_path(cv);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, W * H * 4);
 
     // Pixel-aligned source-over rect fills onto transparent land the exact
     // premultiplied paint; mirror that for the reference's destination.
-    dpx const dl = dpx_of(cnvs_premultiply(cnvs_unpremul_of(DL[0], DL[1], DL[2], DL[3])));
-    dpx const dr = dpx_of(cnvs_premultiply(cnvs_unpremul_of(DR[0], DR[1], DR[2], DR[3])));
+    dpx const dl = dpx_of(canvas2d_premultiply(canvas2d_unpremul_of(DL[0], DL[1], DL[2], DL[3])));
+    dpx const dr = dpx_of(canvas2d_premultiply(canvas2d_unpremul_of(DR[0], DR[1], DR[2], DR[3])));
     // The non-folding shade tile is the premultiplied paint at full strength.
-    dpx const s_d = dpx_of(cnvs_premultiply(cnvs_unpremul_of(sc[0], sc[1], sc[2], sc[3])));
+    dpx const s_d = dpx_of(canvas2d_premultiply(canvas2d_unpremul_of(sc[0], sc[1], sc[2], sc[3])));
 
     for (int y = 0; y < H; y++) {
         for (int x = 0; x < W; x++) {
@@ -449,7 +449,7 @@ static void check_scene(int mode, float const *__counted_by(n) vx,
             err_acc(eo, old, want);
         }
     }
-    canvas_free(cv);
+    canvas2d_free(cv);
     free(px);
 }
 
@@ -479,7 +479,7 @@ static void part_b(void) {
     if (covd && covq) {
         coverage_ss(dx, dy, NV, covd);
         coverage_ss(qx, qy, 4, covq);
-        for (int mode = 0; mode < CNVS_BLEND_MODE_COUNT; mode++) {
+        for (int mode = 0; mode < CANVAS2D_BLEND_MODE_COUNT; mode++) {
             errs en = { 0 }, eo = { 0 };
             check_scene(mode, dx, dy, NV, SDISC, covd, &en, &eo);
             check_scene(mode, qx, qy, 4, SQUAD, covq, &en, &eo);

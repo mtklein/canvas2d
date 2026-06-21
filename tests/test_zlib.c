@@ -1,4 +1,4 @@
-#include "cnvs_zlib.h"
+#include "canvas2d_zlib.h"
 #include "test_util.h"
 
 #include <stdlib.h>
@@ -156,27 +156,27 @@ static void bw_eob(struct bw *w) {
 static void expect_reject(struct bw *w) {
     uint8_t out[64];
     bw_align(w);
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, w->buf, w->at) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, w->buf, w->at) == -1);
 }
 
 // Deflate + inflate must reproduce src exactly; deflate twice must be
 // byte-identical (determinism); the deflated size must respect the bound.
 static void round_trip(uint8_t const *__counted_by(n) src, int n) {
-    int const zcap = cnvs_zlib_bound(n);
+    int const zcap = canvas2d_zlib_bound(n);
     int const bcap = n > 0 ? n : 1;
     uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
     uint8_t *__counted_by_or_null(zcap) z2 = malloc((size_t)zcap);
     uint8_t *__counted_by_or_null(bcap) back = malloc((size_t)bcap);
     CHECK(z != NULL && z2 != NULL && back != NULL);
     if (z && z2 && back) {
-        int const zn = cnvs_zlib_deflate(z, zcap, src, n);
+        int const zn = canvas2d_zlib_deflate(z, zcap, src, n);
         CHECK(zn > 0);
         CHECK(zn <= zcap);
-        int const zn2 = cnvs_zlib_deflate(z2, zcap, src, n);
+        int const zn2 = canvas2d_zlib_deflate(z2, zcap, src, n);
         CHECK(zn2 == zn);
         if (zn > 0 && zn2 == zn) {
             CHECK(memcmp(z, z2, (size_t)zn) == 0);
-            CHECK(cnvs_zlib_inflate(back, n, z, zn) == n);  // exact-size dst
+            CHECK(canvas2d_zlib_inflate(back, n, z, zn) == n);  // exact-size dst
             CHECK(n == 0 || memcmp(back, src, (size_t)n) == 0);
         }
     }
@@ -196,22 +196,22 @@ static void fixture_check(uint8_t const *__counted_by(zn) zs, int zn,
     uint8_t *__counted_by_or_null(gn) g = malloc((size_t)gn);
     CHECK(out != NULL && g != NULL);
     if (out && g) {
-        CHECK(cnvs_zlib_inflate(out, pn, zs, zn) == pn);
+        CHECK(canvas2d_zlib_inflate(out, pn, zs, zn) == pn);
         CHECK(memcmp(out, plain, (size_t)pn) == 0);
-        CHECK(cnvs_zlib_inflate(out, cap, zs, zn) == pn);  // dst larger than needed
+        CHECK(canvas2d_zlib_inflate(out, cap, zs, zn) == pn);  // dst larger than needed
         CHECK(memcmp(out, plain, (size_t)pn) == 0);
-        CHECK(cnvs_zlib_inflate(out, pn - 1, zs, zn) == -1);  // dst one byte short
+        CHECK(canvas2d_zlib_inflate(out, pn - 1, zs, zn) == -1);  // dst one byte short
         for (int k = 0; k < zn; k++) {  // every truncation fails cleanly
-            CHECK(cnvs_zlib_inflate(out, cap, zs, k) == -1);
+            CHECK(canvas2d_zlib_inflate(out, cap, zs, k) == -1);
         }
         memcpy(g, zs, (size_t)zn);  // trailing garbage
         g[zn] = 0x00;
-        CHECK(cnvs_zlib_inflate(out, cap, g, gn) == -1);
+        CHECK(canvas2d_zlib_inflate(out, cap, g, gn) == -1);
         g[zn - 1] ^= 0x01;  // bad adler, low byte
-        CHECK(cnvs_zlib_inflate(out, cap, g, zn) == -1);
+        CHECK(canvas2d_zlib_inflate(out, cap, g, zn) == -1);
         g[zn - 1] ^= 0x01;
         g[zn - 4] ^= 0x80;  // bad adler, high byte
-        CHECK(cnvs_zlib_inflate(out, cap, g, zn) == -1);
+        CHECK(canvas2d_zlib_inflate(out, cap, g, zn) == -1);
     }
     free(g);
     free(out);
@@ -278,9 +278,9 @@ static void test_round_trips(void) {
 
 static void test_deflate_dst_too_small(void) {
     uint8_t z[8];
-    CHECK(cnvs_zlib_deflate(z, (int)sizeof z, fix_fixed_plain,
+    CHECK(canvas2d_zlib_deflate(z, (int)sizeof z, fix_fixed_plain,
                             (int)sizeof fix_fixed_plain) == -1);
-    CHECK(cnvs_zlib_deflate(z, 0, fix_fixed_plain, (int)sizeof fix_fixed_plain) == -1);
+    CHECK(canvas2d_zlib_deflate(z, 0, fix_fixed_plain, (int)sizeof fix_fixed_plain) == -1);
 }
 
 static void test_fixtures(void) {
@@ -292,7 +292,7 @@ static void test_fixtures(void) {
                   fix_fixed_plain, (int)sizeof fix_fixed_plain);
 }
 
-// A multi-block stored stream, the exact shape cnvs_png's stored-block emitter
+// A multi-block stored stream, the exact shape canvas2d_png's stored-block emitter
 // wrote for every gallery PNG before real compression landed: 65535-byte
 // blocks, last one final.  Kept: inflate must keep decoding old files.
 static void test_multiblock_stored(void) {
@@ -325,13 +325,13 @@ static void test_multiblock_stored(void) {
         zs[at++] = (uint8_t)(nrest >> 8);
         memcpy(zs + at, plain + 65535, (size_t)rest);
         at += rest;
-        uint32_t const adler = cnvs_zlib_adler32(plain, pn);
+        uint32_t const adler = canvas2d_zlib_adler32(plain, pn);
         zs[at++] = (uint8_t)(adler >> 24);
         zs[at++] = (uint8_t)(adler >> 16);
         zs[at++] = (uint8_t)(adler >> 8);
         zs[at++] = (uint8_t)adler;
         CHECK(at == zn);
-        CHECK(cnvs_zlib_inflate(out, pn, zs, zn) == pn);
+        CHECK(canvas2d_zlib_inflate(out, pn, zs, zn) == pn);
         CHECK(memcmp(out, plain, pn) == 0);
     }
     free(out);
@@ -360,11 +360,11 @@ static void test_crafted_fixed(void) {
         for (int i = 0; i < 22; i++) {
             want[i] = (uint8_t)((i & 1) ? 'b' : 'a');
         }
-        bw_be32(&w, cnvs_zlib_adler32(want, sizeof want));
-        CHECK(cnvs_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 22);
+        bw_be32(&w, canvas2d_zlib_adler32(want, sizeof want));
+        CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 22);
         CHECK(memcmp(out, want, sizeof want) == 0);
-        CHECK(cnvs_zlib_inflate(out, 21, w.buf, w.at) == -1);  // cap mid-copy
-        CHECK(cnvs_zlib_inflate(out, 2, w.buf, w.at) == -1);   // cap before copy
+        CHECK(canvas2d_zlib_inflate(out, 21, w.buf, w.at) == -1);  // cap mid-copy
+        CHECK(canvas2d_zlib_inflate(out, 2, w.buf, w.at) == -1);   // cap before copy
     }
     {  // 'x' + match(len 3, dist 1) -> "xxxx": dist == bytes written, legal
         struct bw w = { 0 };
@@ -377,8 +377,8 @@ static void test_crafted_fixed(void) {
         bw_eob(&w);
         bw_align(&w);
         uint8_t const want[4] = { 'x', 'x', 'x', 'x' };
-        bw_be32(&w, cnvs_zlib_adler32(want, sizeof want));
-        CHECK(cnvs_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 4);
+        bw_be32(&w, canvas2d_zlib_adler32(want, sizeof want));
+        CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 4);
         CHECK(memcmp(out, want, sizeof want) == 0);
     }
     {  // two fixed blocks, "Hi" then "!": output runs across the block seam
@@ -395,8 +395,8 @@ static void test_crafted_fixed(void) {
         bw_eob(&w);
         bw_align(&w);
         uint8_t const want[3] = { 'H', 'i', '!' };
-        bw_be32(&w, cnvs_zlib_adler32(want, sizeof want));
-        CHECK(cnvs_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 3);
+        bw_be32(&w, canvas2d_zlib_adler32(want, sizeof want));
+        CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 3);
         CHECK(memcmp(out, want, sizeof want) == 0);
     }
 }
@@ -408,37 +408,37 @@ static void test_bad_header(void) {
 
     memcpy(z, fix_fixed_zlib, sizeof z);
     z[0] = 0x77;  // CM != 8
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
 
     memcpy(z, fix_fixed_zlib, sizeof z);
     z[0] = 0x88;  // CINFO > 7 (window beyond 32K)
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
 
     memcpy(z, fix_fixed_zlib, sizeof z);
     z[1] ^= 0x01;  // FCHECK no longer a multiple of 31
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
 
     memcpy(z, fix_fixed_zlib, sizeof z);
     z[1] = 0x20;  // FDICT set; 0x7820 IS a multiple of 31, so only FDICT trips
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, z, zn) == -1);
 
     uint8_t tiny[2] = { 0x78, 0x01 };  // header only: no block bits at all
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, tiny, 0) == -1);
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, tiny, 1) == -1);
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, tiny, 2) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, tiny, 0) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, tiny, 1) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, tiny, 2) == -1);
 
     uint8_t reserved[3] = { 0x78, 0x01, 0x07 };  // BFINAL=1, BTYPE=11
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, reserved, 3) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, reserved, 3) == -1);
 }
 
 static void test_bad_stored(void) {
     uint8_t out[16];
     // NLEN is not ~LEN.
     uint8_t bad[11] = { 0x78, 0x01, 0x01, 0x05, 0x00, 0xFB, 0xFF, 'a', 'b', 'c', 'd' };
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, bad, (int)sizeof bad) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, bad, (int)sizeof bad) == -1);
     // LEN = 5 but only 2 payload bytes present.
     uint8_t cut[9] = { 0x78, 0x01, 0x01, 0x05, 0x00, 0xFA, 0xFF, 'a', 'b' };
-    CHECK(cnvs_zlib_inflate(out, (int)sizeof out, cut, (int)sizeof cut) == -1);
+    CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, cut, (int)sizeof cut) == -1);
 }
 
 static void test_bad_distances(void) {
@@ -656,8 +656,8 @@ static void test_dynamic_single_dist(void) {
         bw_code(&w, 2, 2);  // EOB
         bw_align(&w);
         uint8_t const want[4] = { 'a', 'a', 'a', 'a' };
-        bw_be32(&w, cnvs_zlib_adler32(want, sizeof want));
-        CHECK(cnvs_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 4);
+        bw_be32(&w, canvas2d_zlib_adler32(want, sizeof want));
+        CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, w.buf, w.at) == 4);
         CHECK(memcmp(out, want, sizeof want) == 0);
     }
 }

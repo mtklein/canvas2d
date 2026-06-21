@@ -1,13 +1,13 @@
-#include "cnvs_cover.h"
+#include "canvas2d_cover.h"
 #include "test_util.h"
 
 #include <stdlib.h>
 
-static void add_poly(struct cnvs_cover *c, int w, int h,
+static void add_poly(struct canvas2d_cover *c, int w, int h,
                      float const *__counted_by(2 * n) pts, int n) {
     for (int i = 0; i < n; i++) {
         int const j = (i + 1) % n;
-        cnvs_cover_add_edge(c, w, h, pts[2 * i], pts[2 * i + 1],
+        canvas2d_cover_add_edge(c, w, h, pts[2 * i], pts[2 * i + 1],
                             pts[2 * j], pts[2 * j + 1]);
     }
 }
@@ -18,7 +18,7 @@ static int cov(uint8_t const *__counted_by(len) px, int len, int w, int x, int y
 }
 
 int main(void) {
-    struct cnvs_cover c = { .acc = NULL, .cap = 0 };
+    struct canvas2d_cover c = { .acc = NULL, .cap = 0 };
 
     // Right triangle (0,0)-(16,0)-(0,16): inside is x+y <= 16.
     {
@@ -27,9 +27,9 @@ int main(void) {
         CHECK(out != NULL);
         if (out) {
             float tri[6] = { 0, 0, 16, 0, 0, 16 };
-            CHECK(cnvs_cover_reset(&c, w, h));
+            CHECK(canvas2d_cover_reset(&c, w, h));
             add_poly(&c, w, h, tri, 3);
-            cnvs_cover_resolve(&c, w, h, CNVS_NONZERO, out);
+            canvas2d_cover_resolve(&c, w, h, CANVAS2D_NONZERO, out);
             CHECK(abs(cov(out, len, w, 3, 3) - 255) <= 1);    // interior
             CHECK(abs(cov(out, len, w, 0, 0) - 255) <= 1);    // corner interior
             CHECK(abs(cov(out, len, w, 8, 7) - 128) <= 2);    // 45° edge: half covered
@@ -47,9 +47,9 @@ int main(void) {
         CHECK(out != NULL);
         if (out) {
             float r[8] = { 2.5f, 2, 6, 2, 6, 6, 2.5f, 6 };
-            CHECK(cnvs_cover_reset(&c, w, h));
+            CHECK(canvas2d_cover_reset(&c, w, h));
             add_poly(&c, w, h, r, 4);
-            cnvs_cover_resolve(&c, w, h, CNVS_NONZERO, out);
+            canvas2d_cover_resolve(&c, w, h, CANVAS2D_NONZERO, out);
             CHECK(cov(out, len, w, 1, 3) <= 1);               // left of the edge
             CHECK(abs(cov(out, len, w, 2, 3) - 128) <= 2);    // half-covered column
             CHECK(abs(cov(out, len, w, 3, 3) - 255) <= 1);    // interior
@@ -72,9 +72,9 @@ int main(void) {
         if (out) {
             // Hypotenuse x(y) = 0.8 - 0.6*y crosses x=0 at y = 4/3.
             float tri[6] = { -4, 0, 0.8f, 0, -4, 8 };
-            CHECK(cnvs_cover_reset(&c, w, h));
+            CHECK(canvas2d_cover_reset(&c, w, h));
             add_poly(&c, w, h, tri, 3);
-            cnvs_cover_resolve(&c, w, h, CNVS_NONZERO, out);
+            canvas2d_cover_resolve(&c, w, h, CANVAS2D_NONZERO, out);
             CHECK(abs(cov(out, len, w, 0, 0) - 128) <= 2);    // half-covered, unclipped row
             CHECK(cov(out, len, w, 1, 0) <= 1);               // right of the edge
             CHECK(abs(cov(out, len, w, 0, 1) - 9) <= 2);      // clipped row: area only to y=4/3
@@ -91,19 +91,19 @@ int main(void) {
         if (out) {
             float outer[8] = { 1, 1, 7, 1, 7, 7, 1, 7 };
             float inner[8] = { 3, 3, 5, 3, 5, 5, 3, 5 };
-            CHECK(cnvs_cover_reset(&c, w, h));
+            CHECK(canvas2d_cover_reset(&c, w, h));
             add_poly(&c, w, h, outer, 4);
             add_poly(&c, w, h, inner, 4);
-            cnvs_cover_resolve(&c, w, h, CNVS_EVENODD, out);
+            canvas2d_cover_resolve(&c, w, h, CANVAS2D_EVENODD, out);
             CHECK(abs(cov(out, len, w, 2, 4) - 255) <= 1);    // ring
             CHECK(cov(out, len, w, 4, 4) <= 1);               // hole
             // Same accumulation under nonzero fills the centre solid.
-            cnvs_cover_resolve(&c, w, h, CNVS_NONZERO, out);
+            canvas2d_cover_resolve(&c, w, h, CANVAS2D_NONZERO, out);
             CHECK(abs(cov(out, len, w, 4, 4) - 255) <= 1);
             free(out);
         }
     }
 
-    cnvs_cover_free(&c);
+    canvas2d_cover_free(&c);
     return TEST_REPORT();
 }

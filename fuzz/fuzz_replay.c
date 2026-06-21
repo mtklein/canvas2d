@@ -1,23 +1,23 @@
-// Fuzzes the text canvas-program parser (src/cnvs_replay.c) on adversarial bytes.
+// Fuzzes the text canvas-program parser (src/canvas2d_replay.c) on adversarial bytes.
 // The parser reads untrusted text by index, copies numeric/text leaves across the
-// __null_terminated seam, and dispatches to canvas_* -- a classic C text-parsing
+// __null_terminated seam, and dispatches to canvas2d_* -- a classic C text-parsing
 // attack surface (tokenizing, number parsing, line handling).  ASan is the
 // oracle; the input is raw fuzz bytes (need not be valid UTF-8 or NUL-terminated).
 
-#include "canvas.h"
-#include "cnvs_replay.h"
+#include "canvas2d.h"
+#include "canvas2d_replay.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
 #include <stddef.h>
 
 int LLVMFuzzerTestOneInput(uint8_t const *data, size_t size) {
-    struct canvas *cv = canvas(64, 48, CANVAS_CS_SRGB);
+    struct canvas2d_context *cv = canvas2d(64, 48, CANVAS2D_CS_SRGB);
     if (!cv) {
         return 0;
     }
-    cnvs_replay_text(cv, (char const *)data, size);
-    canvas_free(cv);
+    canvas2d_replay_text(cv, (char const *)data, size);
+    canvas2d_free(cv);
     return 0;
 }
 

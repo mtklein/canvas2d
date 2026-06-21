@@ -1,7 +1,7 @@
 // Isolated benchmark: PNG encoding.  /dev/null keeps disk I/O out of the timing.
 #include "bench_reps.h"
 
-#include "cnvs_png.h"
+#include "canvas2d_png.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -26,7 +26,7 @@ int main(void) {
     int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
-            if (cnvs_png_write("/dev/null", px, w, h)) {
+            if (canvas2d_png_write("/dev/null", px, w, h)) {
                 sink += 1.0;
             }
         }

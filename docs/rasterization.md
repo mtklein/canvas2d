@@ -15,7 +15,7 @@ in [decisions/opt-level.md](decisions/opt-level.md),
 (planarize the shade stage) landed; the pre-landing table this document was
 written around is in git history.
 
-Touched 2026-06-20 (SIMD pass): the `canvas_clip` bbox-limit landed and the
+Touched 2026-06-20 (SIMD pass): the `canvas2d_clip` bbox-limit landed and the
 bilinear-sampler vectorization was tried and reverted (kill condition) — both in
 §4. The §1 table predates them; the clip line is gone from the leaderboard and
 the image-sampling bucket is unchanged (sampler reverted), so the §1 shares hold
@@ -31,19 +31,19 @@ outside the sample window). The script prints the top 15 lines; everything below
 | function | samples | share | stage |
 |---|---|---|---|
 | `draw_image_quad` | 577 | 25.0 % | shade (per-lane sampling taps; the fold around them is planar) |
-| `cnvs_cover_add_edge` | 297 | 12.9 % | coverage accumulate (accum_row/deposit inlined) |
+| `canvas2d_cover_add_edge` | 297 | 12.9 % | coverage accumulate (accum_row/deposit inlined) |
 | `compositor_blend` | 276 | 12.0 % | composite |
 | `paint_tile` | 253 | 11.0 % | shade (planar fold, solid + gradient) |
-| `canvas_clip` | 245 | 10.6 % | clip-mask intersect (full-canvas scalar loop) |
-| `cnvs_cover_resolve` | 212 | 9.2 % | coverage resolve |
+| `canvas2d_clip` | 245 | 10.6 % | clip-mask intersect (full-canvas scalar loop) |
+| `canvas2d_cover_resolve` | 212 | 9.2 % | coverage resolve |
 | `src_over8` | 90 | 3.9 % | composite |
-| `cnvs_mip_halve` | 72 | 3.1 % | image (emoji mips) |
+| `canvas2d_mip_halve` | 72 | 3.1 % | image (emoji mips) |
 | `???` (unsymbolized `-Os` outlined code) | 49 | 2.1 % | unattributed |
-| `cnvs_px8_store_k` | 49 | 2.1 % | planar tails (shade + composite) |
+| `canvas2d_px8_store_k` | 49 | 2.1 % | planar tails (shade + composite) |
 | `paint_tile_pattern` | 48 | 2.1 % | shade |
-| `cnvs_gradient_color_row` | 47 | 2.0 % | shade |
-| `cnvs_verts_tri` | 33 | 1.4 % | stroke geometry |
-| `blur_box_h_f16` | 29 | 1.3 % | filters |
+| `canvas2d_gradient_color_row` | 47 | 2.0 % | shade |
+| `canvas2d_verts_tri` | 33 | 1.4 % | stroke geometry |
+| `canvas2d_blur_box_h_f16` | 29 | 1.3 % | filters |
 | `blend8` | 27 | 1.2 % | composite |
 
 Bucketed by pipeline stage:
@@ -62,15 +62,15 @@ Bucketed by pipeline stage:
 | **flattening** | absent from the top 15: **< 1 %** |
 
 The shade stage is the biggest bucket at 40 %, no longer scalar, and its
-composition changed. The old pole — `paint_tile` + `cnvs_premultiply` at 41 % —
-collapsed to `paint_tile`'s 11 %: `cnvs_premultiply` and `cnvs_mat_apply` left
+composition changed. The old pole — `paint_tile` + `canvas2d_premultiply` at 41 % —
+collapsed to `paint_tile`'s 11 %: `canvas2d_premultiply` and `canvas2d_mat_apply` left
 the leaderboard entirely (their bulk callers now run the planar fold; in
 absolute terms, with the flagship −29 %, paint_tile-shaped work is roughly 4×
 cheaper). The new pole is `draw_image_quad`'s per-lane sampling interior at 25 %
 — the data-dependent taps (four gathers per bilinear pixel, index clamp/wrap,
 and the in-sample lerp arithmetic, all still scalar per lane inside
 `sample_src`) — followed by coverage at 22 %, composite at 17 %, and
-`canvas_clip`'s scalar intersect at 10.6 %. The distribution is flat: no single
+`canvas2d_clip`'s scalar intersect at 10.6 %. The distribution is flat: no single
 fix buys 20 %.
 
 Caveats on these numbers:
@@ -89,11 +89,11 @@ Caveats on these numbers:
   text-heavy: zero-coverage skipping has little to bite on in the flagship
   mixes, which is why the §3.8 block predicates priced ~flat there.
 - Attribution is smeared by inlining at `-Os`: `accum_row`/`deposit` fold into
-  `cnvs_cover_add_edge`, the prefix sum and fill-rule fold into
-  `cnvs_cover_resolve`, and the planar shade helpers (`cover8`/`shade8`/
-  `cnvs_px8_premultiply`) fold into their callers — `paint_tile`'s 11 % is the
+  `canvas2d_cover_add_edge`, the prefix sum and fill-rule fold into
+  `canvas2d_cover_resolve`, and the planar shade helpers (`cover8`/`shade8`/
+  `canvas2d_px8_premultiply`) fold into their callers — `paint_tile`'s 11 % is the
   whole planar fold, not a remnant of the old scalar loop. The scalar
-  `cnvs_premultiply` still exists for true single-pixel callers (shadow/filter
+  `canvas2d_premultiply` still exists for true single-pixel callers (shadow/filter
   tint setup) and is invisible here.
 - `src/` spawns **zero threads**. Nothing in the tree calls dispatch/pthreads —
   the blur included (it is plain single-threaded loops). The `__workq_kernreturn`
@@ -105,15 +105,15 @@ Caveats on these numbers:
 One pipeline, per op, over the op's device-space bounding box
 ([canvas.c](../src/canvas.c)):
 
-1. **Flatten** at path-build time ([cnvs_path.c](../src/cnvs_path.c)): curves
+1. **Flatten** at path-build time ([canvas2d_path.c](../src/canvas2d_path.c)): curves
    subdivide adaptively (`cross_chord2` flatness, depth-capped, NaN-as-flat) into
    device-space line segments. Cost is invisible in the profile (< 1 %).
-2. **Accumulate** ([cnvs_cover.c](../src/cnvs_cover.c)): for each edge, walk its
+2. **Accumulate** ([canvas2d_cover.c](../src/canvas2d_cover.c)): for each edge, walk its
    scanline rows; per row, deposit exact signed trapezoid areas into a dense
    per-bbox `float` buffer — two partial-column deposits at the span ends, and the
    interior **telescoped** into a contiguous constant-add done 8-wide with one
    whole-vector bounds check per block. The buffer is memset per op
-   (`cnvs_cover_reset`).
+   (`canvas2d_cover_reset`).
 3. **Resolve**: per row, an 8-wide in-register Hillis-Steele prefix sum (+ scalar
    carry between blocks) turns area deltas into winding, folds by fill rule
    (nonzero = clamp |run|; evenodd = triangle wave), and quantizes once to a
@@ -130,10 +130,10 @@ One pipeline, per op, over the op's device-space bounding box
    is the source at full
    strength (paint alpha × global alpha only) and the op's u8 coverage buffer
    rides to composite as its own plane. Either way: one narrowing convert to
-   f16, then the planar premultiply (`cnvs_px8_premultiply`) and an st4 into
+   f16, then the planar premultiply (`canvas2d_px8_premultiply`) and an st4 into
    the premultiplied RGBA16F tile. One seam shortcut (the §3.8 efficiency
    pass, landed): a lerp-family **solid** paint writes no tile at all — the
-   one premultiplied colour goes to `cnvs_blend_solid` as a splat (so
+   one premultiplied colour goes to `canvas2d_blend_solid` as a splat (so
    do clearRect/reset's unit-alpha erase and the full-strength shadow tint).
    Gradients get their parameters and
    colors solved 8-wide per row
@@ -143,19 +143,19 @@ One pipeline, per op, over the op's device-space bounding box
    with the device→source coordinate chain vectorized (elementwise, bit-exact
    per lane).
 5. **Blend** ([canvas.c](../src/canvas.c)'s blend kernels +
-   [cnvs_planar.h](../src/cnvs_planar.h)): 8 pixels per step as four f16 channel
+   [canvas2d_planar.h](../src/canvas2d_planar.h)): 8 pixels per step as four f16 channel
    planes, ld4/st4 at the seams, all 26 modes straight-line vector code,
    compositing onto the canvas's own premultiplied RGBA16F target.  There is
    no compositor: the old object, its ABI, and its copies (the per-clip-change
    mask copy, the per-readback target copy) dissolved into canvas.c — the
-   kernels read the canvas's clip mask directly (`cnvs_blend.h` is the
+   kernels read the canvas's clip mask directly (`canvas2d_blend.h` is the
    internal seam the oracle tests drive) and readback un-premultiplies
    straight off the target.  Effective coverage (op plane × clip mask)
    applies per the §3.8 ruling: folded into src for the over-family,
    `lerp(dst, blend, cov)` after the full-strength blend for everything
    else.
 
-Strokes go through the same path: [cnvs_stroke.c](../src/cnvs_stroke.c) expands
+Strokes go through the same path: [canvas2d_stroke.c](../src/canvas2d_stroke.c) expands
 the polyline to triangles, `stroke_device_path` feeds each triangle's edges with
 consistent winding, and one nonzero resolve unions them. Clips rasterize coverage
 the same way, then intersect into a full-canvas u8 mask with a scalar
@@ -220,7 +220,7 @@ the same way, then intersect into a full-canvas u8 mask with a scalar
 - **One core.** Everything above is serial. The op stream is inherently ordered
   (each op read-modify-writes the shared target), but within an op every stage
   is row-independent, and across ops disjoint bboxes commute byte-exactly.
-- **Per-clip full-canvas work.** `canvas_clip` allocates and walks width×height
+- **Per-clip full-canvas work.** `canvas2d_clip` allocates and walks width×height
   scalar per `clip()` call, and the mask is copied by value into saved states.
 - **The u8 round-trip between resolve and shade.** Resolve quantizes to u8;
   shade immediately reloads and divides by 255. Two passes over the bbox where
@@ -256,9 +256,9 @@ Each entry: the idea, what it buys, what it costs, how it composes with
 
 **Idea.** `paint_tile`'s inner loop, 8 pixels per step: load 8 coverage bytes as
 one f16 plane (`half8_from_u8` — exists), fold `paint_alpha × global_alpha ×
-coverage` as plane math, `cnvs_px8_premultiply` (exists), `cnvs_px8_store`
+coverage` as plane math, `canvas2d_px8_premultiply` (exists), `canvas2d_px8_store`
 (exists). For solid paint the whole loop is a color splat, ~4 multiplies, and an
-st4 per 8 pixels. For gradients, `cnvs_gradient_color_row` already produces a row
+st4 per 8 pixels. For gradients, `canvas2d_gradient_color_row` already produces a row
 of colors — it needs a planar seam (ld4 over the `crow` buffer) instead of the
 scalar pickup. `draw_image_quad` gets the same treatment on its premultiply/fold
 half (the bilinear sample stays gather-shaped, but the fold around it
@@ -294,12 +294,12 @@ scenes as the probe.
 
 **Landed (2026-06-10), the f32-fold arm.** Five commits: `paint_tile`
 (solid + gradient rows), `emit_shadow`'s tint loop, `paint_tile_pattern`,
-`draw_image_quad`, then the sampling loops' coordinate chain (`cnvs_mat_apply`
+`draw_image_quad`, then the sampling loops' coordinate chain (`canvas2d_mat_apply`
 had surfaced at 4.4 % as an out-of-line call per covered pixel — now eight
 lanes of elementwise vector math). **Zero gallery bytes moved at any commit**:
 the fold stayed f32 with the scalar association per lane, coverage widened
-exactly, one narrow to f16, and `cnvs_px8_premultiply` is lane-wise the scalar
-`cnvs_premultiply`. Measured (paired hyperfine, copies in /tmp, medians):
+exactly, one narrow to f16, and `canvas2d_px8_premultiply` is lane-wise the scalar
+`canvas2d_premultiply`. Measured (paired hyperfine, copies in /tmp, medians):
 `bench_render` 17.7 → 12.5 ms (**−29.4 %**), `bench_render_large` 175.7 →
 106.9 ms (**−39.2 %**) — beating the −15–25 % prediction — with e2e `bench`,
 `bench_fill`, `bench_gradient_fill`, `bench_blit`, and `bench_blur_h` all flat
@@ -310,7 +310,7 @@ became per-block seam checks), holding at ~1.18× relative. What stayed scalar,
 per site: the sampling taps in `draw_image_quad`/`paint_tile_pattern`
 (data-dependent gathers — see §1's new pole), the gradient OOM fallback
 (per-pixel solve, cold by construction), and the single-pixel
-`cnvs_premultiply` API for true single-pixel callers. Not taken: fusing the
+`canvas2d_premultiply` API for true single-pixel callers. Not taken: fusing the
 gradient row buffer away (the st4/ld4 round trip over `crow` is noise next to
 the stop search — fusion would buy a registers-only handoff at the cost of
 restructuring the gradient module's API; re-look only if `paint_tile`'s
@@ -388,7 +388,7 @@ losing the telescoped dense path's wins on filled content.
 bounds check per pointer-chase, on a path that is already latency-bound chasing.
 The least flattering shape for the flag in this codebase.
 
-**Experiment.** A standalone `cnvs_cover_aet` with the same
+**Experiment.** A standalone `canvas2d_cover_aet` with the same
 add-edges/resolve-to-u8 contract; `bench_fill` (stars/convex) + a text-heavy
 scene bench; compare coverage output to the dense rasterizer at ±1 tolerance and
 the gallery at byte level (expect churn; count it); memo. **Kill condition:**
@@ -472,7 +472,7 @@ A third refinement (Mike, same conversation): the essential spot may be better
 only half-reifies coverage — `Path2D` is the geometry half, `clip()` re-derives
 the mask per canvas — and stops short of "one thread makes a mask, many draw
 through it." The project already augments the spec elsewhere (the typed filter
-API, the counted `_n` text entries, record/replay, `canvas_load_png`). A
+API, the counted `_n` text entries, record/replay, `canvas2d_load_png`). A
 first-class immutable mask object — rasterize a path's coverage once,
 then fill/stroke/image-draw *through* it from any canvas on any thread, the
 sharing safe precisely because the object is frozen after build — would export
@@ -528,7 +528,7 @@ fork/join overhead eats the win below ~1.5× at 4 workers on
 
 ### 3.6 Targeted small fixes (cheap, do alongside)
 
-- **Vectorize `canvas_clip`'s intersect loop.** 7.3 % of the profile is a scalar
+- **Vectorize `canvas2d_clip`'s intersect loop.** 7.3 % of the profile is a scalar
   full-canvas `old * pc / 255`. 8-wide u8→f16→u8 (or integer (a*b*0x8081)>>23
   style) with the planar seams; bbox-limit the intersect (outside the path's
   bbox, `new = 0` — that's a memset, and `old` only needs multiplying inside).
@@ -616,7 +616,7 @@ premultiplied f16 **tile**, written by shade and re-read by composite — a
 ~16 B/px round trip that exists only because these were once different
 machines. The experiment: evolve the structure literally to the model, racing
 both shapes Mike named — (a) staged planar row buffers between stages, vs (b) a
-fused per-block register pipeline (`cnvs_px8` is an HVA, so stage functions
+fused per-block register pipeline (`canvas2d_px8` is an HVA, so stage functions
 compose through q0–q3 without fusing the *code*) — and let paired benches pick.
 The fused shape deletes the tile on the no-filter path outright.
 
@@ -632,7 +632,7 @@ Two things the model surfaces that a refactor must not blur past:
   pass): source-over, destination-over, destination-out, source-atop, xor,
   AND all 15 blend modes fold; copy, the in/out family, destination-atop,
   and **lighter** lerp — shade skips its coverage fold for those, the op's
-  u8 coverage buffer rides to `cnvs_blend` as its own plane, and the
+  u8 coverage buffer rides to `canvas2d_blend` as its own plane, and the
   kernel computes `out = lerp(dst, blend(src,dst), op_cov × clip_cov)` (clip
   coverage was the same bug and takes the same lerp). Two findings sharpened
   the ruling while implementing, both pinned by the oracle
@@ -667,7 +667,7 @@ byte-still except the licensed re-fold:
 
 1. **The splat:** lerp-family solid paints (and clearRect/reset's unit-alpha
    erase, and the full-strength shadow tint) write no tile —
-   `cnvs_blend_solid` takes the one premultiplied colour and the region
+   `canvas2d_blend_solid` takes the one premultiplied colour and the region
    walk splats it, deleting a ~16 B/px round trip that carried zero
    information.  Byte-identical by construction and by test
    (test_blend's solid_vs_tile pins all 26 modes × coverage shapes
@@ -715,15 +715,15 @@ win has to come from deleting the handoff, not rescheduling it.
 
 **Landed (2026-06-11, task #36): the compositor was removed.**  The object, its
 ABI (compositor.h), and compositor_cpu.c are gone; the kernels moved verbatim
-into canvas.c, dispatching on the public web-named `canvas_composite_op` (the
+into canvas.c, dispatching on the public web-named `canvas2d_composite_op` (the
 COMPOSITOR_* mirror and the static_asserts that pinned it retired).  Two copies
 were removed with it: the full-canvas clip copy (per clip change AND per restore
 — the kernels now take the canvas's own mask as a call parameter, so
 putImageData's ignore-the-clip is just passing NULL) and the readback staging
-copy (canvas_read_rgba un-premultiplies straight off the target the canvas now
+copy (canvas2d_read_rgba un-premultiplies straight off the target the canvas now
 owns).  Byte-still at
 every commit; the oracle tests retargeted to the internal seam
-([cnvs_blend.h](../src/cnvs_blend.h)) with every bound intact.  Paired
+([canvas2d_blend.h](../src/canvas2d_blend.h)) with every bound intact.  Paired
 hyperfine (deleted-copy traffic, same kernels): `bench_render_large`
 95.6→89.5 ms (−6.4 %, the 1024² per-frame readback + clip copies),
 `bench_render` 10.6→10.3 ms (−2.8 %, ≈1σ), e2e `bench` and `bench_blit`
@@ -765,9 +765,9 @@ attempt can re-price before committing. Lesson: profile-scene's "`sample_src`
 self-time halved" was redistribution into `draw_image_quad`, not a speedup —
 proportions located it, only hyperfine priced it.)
 
-(#2, `canvas_clip` bbox-limit, **landed 2026-06-20** — the cheap half of §3.6.
+(#2, `canvas2d_clip` bbox-limit, **landed 2026-06-20** — the cheap half of §3.6.
 The intersect now memsets the mask and multiplies only the path's canvas-clamped
-bbox; `canvas_clip` dropped off the profile-scene top-15 (was 10.6 %), byte-exact.
+bbox; `canvas2d_clip` dropped off the profile-scene top-15 (was 10.6 %), byte-exact.
 The `old*pc/255` stayed the scalar mul+shift the compiler already emits — the
 8-wide inner multiply is the remaining, now-smaller half, below.)
 
@@ -779,10 +779,10 @@ composite are now the largest buckets the gallery still pays per pixel):
    now; tile classification attacks both via the solid-tile fast path. *Kill:*
    < 5 % flagship, or a regression on concave/small-op content; if killed, keep
    the binning design notes as the threading load-balancer fallback.
-2. **Vectorize `canvas_clip`'s in-bbox multiply 8-wide** (the remaining half of
+2. **Vectorize `canvas2d_clip`'s in-bbox multiply 8-wide** (the remaining half of
    the bbox-limit landing). 16-wide `(old*pc*0x8081)>>23` — the mul+shift the
    compiler already emits scalar — with planar seams; keep /255 integer-exact.
-   Smaller now that the bbox-limit landed and `canvas_clip` left the top.
+   Smaller now that the bbox-limit landed and `canvas2d_clip` left the top.
    No memo; the byte-gate is the gate.
 
 Below the line, in order: the conflation oracle scenes (§3.7 — quality bound,
