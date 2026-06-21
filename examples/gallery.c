@@ -3156,6 +3156,78 @@ static void perspective_scene(void) {
     save(c, "gallery/perspective.png");
 }
 
+// Perspective-correct SAMPLING (P2): an image and a gradient mapped onto receding
+// quads via set_perspective_quad.  The left quad textures an 8x8 checkerboard
+// onto a floor that recedes toward the top -- the squares foreshorten (they get
+// smaller toward the far edge), the giveaway of perspective-correct sampling: an
+// affine warp would keep every row the same size.  The right quad fills a linear
+// gradient running along the source's depth axis; the gradient bands likewise
+// crowd toward the horizon (the parameter is solved in user space per pixel, not
+// linearly across the device row).
+static void perspectivetexture(void) {
+    struct canvas *__single c = canvas(360, 240, CANVAS_CS_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/perspectivetexture.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.07f, 0.08f, 0.11f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 360.0f, 240.0f);
+
+    // An 8x8 checkerboard texture, one device-ish texel per source cell so the
+    // foreshortening reads as the cells shrinking, not as filtering.
+    int const T = 64;  // 8 cells * 8 px
+    uint8_t tex[64 * 64 * 4];
+    for (int y = 0; y < T; y++) {
+        for (int x = 0; x < T; x++) {
+            int const i = (y * T + x) * 4;
+            bool const dark = (((x / 8) + (y / 8)) & 1) != 0;
+            tex[i + 0] = dark ? 40  : 230;
+            tex[i + 1] = dark ? 70  : 210;
+            tex[i + 2] = dark ? 130 : 120;
+            tex[i + 3] = 255;
+        }
+    }
+
+    // Left half: the checkerboard on a floor receding toward the top.  The CTM
+    // maps the texture's own 0..T source rect onto the destination quad, so a
+    // plain 1:1 draw paints the whole texture across it, sampled perspective-
+    // correctly.
+    canvas_save(c);
+    canvas_set_perspective_quad(c, 0.0f, 0.0f, (float)T, (float)T,
+                                55.0f,  60.0f,    // TL (far-left)
+                                135.0f, 60.0f,    // TR (far-right)
+                                165.0f, 215.0f,   // BR (near-right)
+                                20.0f,  215.0f);  // BL (near-left)
+    canvas_draw_bitmap(c, CANVAS_CS_SRGB, tex, T, T, 0.0f, 0.0f);
+    canvas_restore(c);
+
+    // Right half: a linear gradient down the source depth axis on a matching
+    // receding quad.  The gradient is defined in source space (0..T along y),
+    // so its bands foreshorten with the plane.
+    canvas_save(c);
+    canvas_set_perspective_quad(c, 0.0f, 0.0f, (float)T, (float)T,
+                                225.0f, 60.0f,    // TL (far-left)
+                                305.0f, 60.0f,    // TR (far-right)
+                                340.0f, 215.0f,   // BR (near-right)
+                                195.0f, 215.0f);  // BL (near-left)
+    canvas_set_fill_linear_gradient(c, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL,
+                                    0.0f, 0.0f, 0.0f, (float)T);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.0f, 0.95f, 0.85f, 0.30f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 0.5f, 0.85f, 0.25f, 0.35f, 1.0f);
+    canvas_add_fill_color_stop(c, CANVAS_CS_SRGB, 1.0f, 0.20f, 0.30f, 0.75f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, (float)T, (float)T);
+    canvas_restore(c);
+
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.95f, 1.0f, 1.0f);
+    canvas_set_font_family(c, "Libian TC");
+    canvas_set_font_size(c, 14.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "perspectivetexture", 180.0f, 232.0f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/perspectivetexture.png");
+}
+
 // fontFamily: the same line drawn in the default Libian TC plus three macOS
 // system fonts.  Each family records its own glyph curves into the program (the
 // Libian model), so the scene replays on a fontless machine; an unavailable
@@ -3424,6 +3496,7 @@ static void render_all(void) {
     ellipserot();
     nestedclip();
     perspective_scene();
+    perspectivetexture();
     fontfamily();
     fontstyle();
     fonttoggles();

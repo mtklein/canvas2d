@@ -240,6 +240,21 @@ bool cnvs_gradient_param(struct cnvs_gradient const *gr, cnvs_vec2 p, float *__s
     return true;
 }
 
+bool cnvs_gradient_param_user(struct cnvs_gradient const *gr, cnvs_vec2 p,
+                              float *__single t) {
+    // The perspective path solves the parameter in USER space.  Reuse the
+    // device-space solver verbatim by handing it a shallow copy whose geometry
+    // fields are the user-space def (up0/up1/ur0/ur1/uangle): one solver, so the
+    // user-space and device-space parameter math are identical by construction.
+    struct cnvs_gradient u = *gr;
+    u.p0 = gr->up0;
+    u.p1 = gr->up1;
+    u.r0 = gr->ur0;
+    u.r1 = gr->ur1;
+    u.angle = gr->uangle;
+    return cnvs_gradient_param(&u, p, t);
+}
+
 cnvs_unpremul cnvs_gradient_sample(struct cnvs_gradient const *gr, cnvs_vec2 p, float alpha) {
     float t;
     cnvs_unpremul c;
