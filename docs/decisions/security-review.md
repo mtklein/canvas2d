@@ -6,7 +6,11 @@
 > that pass and as a map from each finding to the living test/fuzzer that now
 > guards it. It has been **lightly refreshed** to stay true to today's tree:
 > file renames are fixed (`canvas2d_font_ct.c` → [`canvas2d_text_ct.c`](../../src/canvas2d_text_ct.c)),
-> and Finding 3 is rewritten because the Metal backend was deleted this week (see
+> the references are brought current with the `canvas.c` split (image-data →
+> [`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c), PNG encode →
+> [`canvas2d_encode.c`](../../src/canvas2d_encode.c), the rest renamed
+> `canvas.c` → [`canvas2d.c`](../../src/canvas2d.c)) and the `canvas2d_` namespace
+> rename, and Finding 3 is rewritten because the Metal backend was deleted this week (see
 > [metal-backend.md](metal-backend.md) and [backend-differential.md](backend-differential.md)),
 > so there is now exactly **one** unchecked boundary TU, not two. Each finding
 > carries a **"Now guarded by"** line pointing at its regression guard. The
@@ -76,9 +80,9 @@ That is why Finding 1 lands as "trap, not corruption" in release.
 controlled trap (DoS), but it is **undefined behavior** that is *fatal in the
 debug/sanitizer build* and makes the documented API contract unenforceable.
 **Confidence: verified, end-to-end PoC.**
-**Status: FIXED** — `canvas2d_create` clamps to `CANVAS2D_MAX_DIM`, and `rgba8_dims_ok()`
-validates caller dims in 64-bit at the three image entry points
-([`canvas.c`](../../src/canvas.c)); regression test [`tests/test_dims.c`](../../tests/test_dims.c).
+**Status: FIXED** — `canvas2d_create` clamps to `CANVAS2D_MAX_DIM`, and `canvas2d_rgba8_dims_ok()`
+([`canvas2d.c`](../../src/canvas2d.c)) validates caller dims in 64-bit at the three image entry points
+([`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c)); regression test [`tests/test_dims.c`](../../tests/test_dims.c).
 **Now guarded by:** [`tests/test_dims.c`](../../tests/test_dims.c) — it pins
 `canvas2d_create(23171, 23171) == NULL` (the genuinely dangerous wrap, see below)
 *and* the `16385`/boundary-`16384` clamp, and drives `canvas2d_get_image_data`
@@ -92,12 +96,12 @@ wrap-negative case, inside the gated suite.)
 Multiple canvas entry points compute `width * height * 4` (and `width * height`)
 in `int` before any widening:
 
-- [`canvas.c:900`](../../src/canvas.c) `read_unpremul`: `len < cv->width * cv->height * 4`
-- [`canvas.c:903`](../../src/canvas.c) `int const n = cv->width * cv->height`
-- [`canvas.c:924`](../../src/canvas.c) `canvas2d_write_png`: `int const len = cv->width * cv->height * 4`
-- [`canvas.c:937`](../../src/canvas.c) `canvas2d_get_image_data`: `len < w * h * 4`
-- [`canvas.c:941`](../../src/canvas.c) `int const clen = cv->width * cv->height * 4`
-- [`canvas.c:954`](../../src/canvas.c) `canvas2d_put_image_data`: `len < w * h * 4`
+- [`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c) `read_unpremul`: `len < cv->width * cv->height * 4`
+- [`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c) `int const n = cv->width * cv->height`
+- [`canvas2d_encode.c`](../../src/canvas2d_encode.c) `canvas2d_write_png`: `int const len = cv->width * cv->height * 4`
+- [`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c) `canvas2d_get_image_data`: `len < w * h * 4`
+- [`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c) `int const clen = cv->width * cv->height * 4`
+- [`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c) `canvas2d_put_image_data`: `len < w * h * 4`
 
 `canvas2d_create` validates only `w > 0 && h > 0` — **no upper bound** — so these
 products overflow. The overflow makes the bounds guard `len < w*h*4` depend on
@@ -117,7 +121,7 @@ since retired in favor of the gated [`tests/test_dims.c`](../../tests/test_dims.
 |---|---|
 | `unsafe` (feature off) + ASan | **`heap-buffer-overflow` WRITE** in `canvas2d_blit_rgba ← canvas2d_get_image_data` — a real OOB write (CWE-787) |
 | `release` (`-Os`, `-fbounds-safety`) | **`SIGTRAP`, exit 133** — OOB write converted to a deterministic trap; no corruption |
-| `debug` (`-fbounds-safety` + UBSan) | **fatal** at `canvas.c:937` — signed-overflow caught at the source |
+| `debug` (`-fbounds-safety` + UBSan) | **fatal** in `canvas2d_imagedata.c` `canvas2d_get_image_data` — signed-overflow caught at the source |
 
 **Interpretation.** This is both (a) a bug — the API's "`len`
 must be `w*h*4`" contract cannot be enforced for large dimensions, and the debug
@@ -126,7 +130,7 @@ the feature: with it off it is an exploitable heap overflow; with
 it on, it is a controlled abort.
 
 **Fix.** The PNG *encoder*
-already does this — [`canvas2d_png.c:122-128`](../../src/canvas2d_png.c) clamps
+already does this — [`canvas2d_png.c`](../../src/canvas2d_png.c) `canvas2d_png_encode` clamps
 `width,height ≤ 16384` and does its size math in `size_t`. Apply the same at the
 root, `canvas2d_create`, and re-derive byte sizes in `size_t`/`int64_t` at the
 six sites above. One bound at creation closes the class.
@@ -155,8 +159,8 @@ for the same reason as Finding 1: don't rely on "UB happens to trap downstream."
 *(Rewritten 2026-06-10: the original pass found two TUs built without
 `-fbounds-safety` — the Objective-C Metal compositor shim and the Core Text font
 shim. The Metal backend was deleted this week, taking `compositor_metal.m` and
-`shaders/compositor.metal` with it; the compositor is now
-[`compositor_cpu.c`](../../src/compositor_cpu.c), plain checked core under the flag
+`shaders/compositor.metal` with it; the compositor is now in
+[`canvas2d.c`](../../src/canvas2d.c), plain checked core under the flag
 like the rest of the renderer — no longer a boundary at all. See
 [metal-backend.md](metal-backend.md) and [backend-differential.md](backend-differential.md).
 That leaves **exactly one** unchecked boundary TU. The finding's lesson is
@@ -174,7 +178,7 @@ headers. Read closely:
   not one more (so the adversarial-UTF-8 case is structural, not a hand decoder
   that could walk off the end). `CGPathElement.points` is indexed by element type
   per CG's contract (move/line = 1, quad = 2, cubic = 3) in
-  [`canvas2d_text_ct.c:129`](../../src/canvas2d_text_ct.c) `emit` — correct, and
+  [`canvas2d_text_ct.c`](../../src/canvas2d_text_ct.c) `emit` — correct, and
   ASan-instrumented in debug. Each shaped run is copied into a checked-owned
   `canvas2d_glyph_run` array before it re-enters the checked core. **No bug found**,
   and **fuzzed**: [`fuzz/fuzz_text.c`](../../fuzz/fuzz_text.c) drives
@@ -210,24 +214,24 @@ math, run under ASan+UBSan with the flag stubbed) and
 The public path/rect API takes coordinates as `float` with no finiteness or range
 check, and the device-space transform plus the `(int)` casts overflow on
 non-finite/huge values. It is a **class spanning multiple sites**, two confirmed:
-[`points_bbox`](../../src/canvas.c) at [`canvas.c:334`](../../src/canvas.c)
-(`int x0 = (int)fx0; ...`) and the transform helper `xf` at
-[`canvas.c:504`](../../src/canvas.c) (reached via `canvas2d_ellipse`/`draw_image`).
+[`points_bbox`](../../src/canvas2d.c)
+(`int x0 = (int)fx0; ...`) and the transform helper `xf`
+([`canvas2d.c`](../../src/canvas2d.c), reached via `canvas2d_ellipse`/`draw_image`).
 Found by the Role-A API fuzzer ([`fuzz/`](../../fuzz/)) — first on the second random
 input (coverage-less), then re-found by the libFuzzer build with coverage in
 seconds — and reproduced under the diagnostic build:
 
 ```
-src/canvas.c:334:29: runtime error: 9.35078e+13 is outside the range of
+src/canvas2d.c:334:29: runtime error: 9.35078e+13 is outside the range of
                      representable values of type 'int'
-    #0 points_bbox        canvas.c:334
-    #1 canvas2d_clear_rect  canvas.c:418   (any fill/clip/rect path reaches it)
+    #0 points_bbox        canvas2d.c:334
+    #1 canvas2d_clear_rect  canvas2d.c:418   (any fill/clip/rect path reaches it)
 ```
 
 The class turned out broader than the first two sites: float→int casts also live
 in the coverage rasterizer ([`canvas2d_cover.c`](../../src/canvas2d_cover.c): 56, 81, 82,
 119, 120), the stroker ([`canvas2d_stroke.c`](../../src/canvas2d_stroke.c):36), and the
-float→uint8 colour quantization ([`canvas.c`](../../src/canvas.c) read-back, and
+float→uint8 colour quantization ([`canvas2d_imagedata.c`](../../src/canvas2d_imagedata.c) read-back, and
 `canvas2d_cover.c`:152). Stroke vertices in particular bypass the transform chokepoint
 `xf` (they are width×miter offsets), so a per-entry non-finite check alone would
 miss them — and the crash value was *finite*-huge anyway.
@@ -236,7 +240,7 @@ miss them — and the crash value was *finite*-huge anyway.
 `canvas2d_f2i`/`canvas2d_f2u8` ([`canvas2d_math.c`](../../src/canvas2d_math.c)) makes every float→int
 and float→uint8 conversion in the renderer total (NaN→0, out-of-range clamps) —
 this is exactly Rust's `as`-cast semantics, hand-written. Colour components clamp
-to `[0,1]` at the public setters ([`canvas.c`](../../src/canvas.c) `clamp01`). The
+to `[0,1]` at the public setters ([`canvas2d_math.h`](../../src/canvas2d_math.h) `canvas2d_clamp01`). The
 gradient evaluator is already NaN-robust (returns a finite stop). Regression test
 [`tests/test_sanitize.c`](../../tests/test_sanitize.c). (A strict per-entry no-op on
 non-finite args, for exact Canvas-spec parity, remains an optional refinement on
@@ -275,7 +279,7 @@ same loop that feeds `±INFINITY`/`-3e30`/huge end angles into `canvas2d_ellipse
 ellipse path is also fuzzed via [`fuzz/fuzz_api.c`](../../fuzz/fuzz_api.c)
 `OP_ELLIPSE` with raw-float angles.
 
-[`canvas2d_ellipse`](../../src/canvas.c) normalized the sweep with
+[`canvas2d_ellipse`](../../src/canvas2d.c) normalized the sweep with
 `while (sweep < 0) sweep += 2π` / `while (sweep > 0) sweep -= 2π`. For a
 huge-magnitude or infinite angle the step falls below the float ULP (and `±inf`
 never crosses zero), so the loop never terminates — a hang on any thread that
@@ -333,12 +337,12 @@ silently wrap in release.
   dimensions + pixels with `-fbounds-safety` off, so ASan alone must witness the
   cursor stays in bounds — 83k execs, **clean**.
 - **Temporal safety of `save`/`restore` clip masks**
-  ([`canvas.c:151-180`](../../src/canvas.c)): `save` deep-copies the mask into the
+  ([`canvas2d.c`](../../src/canvas2d.c) `canvas2d_save`/`canvas2d_restore`): `save` deep-copies the mask into the
   stack entry; `restore` frees `cur`'s then adopts the stack entry's. No alias,
   no double-free. (Not covered by bounds-safety; ASan would catch a regression.)
 - **Gradient stops**: fixed `CANVAS2D_MAX_STOPS` array, `add_stop` guards the count.
-- **CPU compositor** ([`compositor_cpu.c`](../../src/compositor_cpu.c)): fully
-  checked; keeps `target/__counted_by(tn)` consistent, so overflowed dimensions
+- **CPU compositor** ([`canvas2d.c`](../../src/canvas2d.c) `src_over8` and the generic-mode
+  kernels): fully checked; keeps `target/__counted_by(tn)` consistent, so overflowed dimensions
   trap on access rather than corrupt.
 - **Text-program parser** ([`canvas2d_replay.c`](../../src/canvas2d_replay.c), behind the new
   public `canvas2d_replay_from`): a fresh untrusted-input surface (tokenizing,
