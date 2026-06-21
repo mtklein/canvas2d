@@ -44,7 +44,7 @@ bool canvas2d_rgba8_dims_ok(int w, int h) {
 }
 
 static canvas2d_vec2 xf(struct canvas2d_context *__single cv, float x, float y);
-static void clip_project_contour(canvas2d_mat m, canvas2d_vec2 const *__counted_by(n) src,
+static void clip_project_contour(canvas2d_matrix m, canvas2d_vec2 const *__counted_by(n) src,
                                  int n, bool closed, struct canvas2d_path *__single out);
 static void fill_device_path(struct canvas2d_context *__single cv, struct canvas2d_path const *p,
                              enum canvas2d_fill_rule rule);
@@ -72,7 +72,7 @@ static void pattern_reset(struct canvas2d_pattern *p) {
     p->h = 0;
     p->repeat = CANVAS2D_NO_REPEAT;
     p->space = CANVAS2D_CS_SRGB;
-    p->to_pattern = canvas2d_mat_identity();
+    p->to_pattern = canvas2d_matrix_identity();
 }
 
 // The initial drawing state (Canvas defaults): identity transform, opaque black
@@ -84,7 +84,7 @@ static void pattern_reset(struct canvas2d_pattern *p) {
 // (read only when the kind is GRADIENT), but the patterns must be cleared so the
 // borrowed-buffer (data, len) pair stays consistent when the state is copied.
 static void state_defaults(struct canvas2d_state *s) {
-    s->ctm = canvas2d_mat_identity();
+    s->ctm = canvas2d_matrix_identity();
     s->fill = canvas2d_unpremul_of(0.0f, 0.0f, 0.0f, 1.0f);
     s->fill_kind = CANVAS2D_PAINT_SOLID;
     pattern_reset(&s->fill_pattern);
@@ -389,17 +389,17 @@ bool canvas2d_resize(struct canvas2d_context *__single cv, int width, int height
 
 void canvas2d_translate(struct canvas2d_context *__single cv, float tx, float ty) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "translate", (float[]){ tx, ty }, 2); }
-    cv->cur.ctm = canvas2d_mat_mul(cv->cur.ctm, canvas2d_mat_translate(tx, ty));
+    cv->cur.ctm = canvas2d_matrix_mul(cv->cur.ctm, canvas2d_matrix_translate(tx, ty));
 }
 
 void canvas2d_scale(struct canvas2d_context *__single cv, float sx, float sy) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "scale", (float[]){ sx, sy }, 2); }
-    cv->cur.ctm = canvas2d_mat_mul(cv->cur.ctm, canvas2d_mat_scale(sx, sy));
+    cv->cur.ctm = canvas2d_matrix_mul(cv->cur.ctm, canvas2d_matrix_scale(sx, sy));
 }
 
 void canvas2d_rotate(struct canvas2d_context *__single cv, float radians) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "rotate", (float[]){ radians }, 1); }
-    cv->cur.ctm = canvas2d_mat_mul(cv->cur.ctm, canvas2d_mat_rotate(radians));
+    cv->cur.ctm = canvas2d_matrix_mul(cv->cur.ctm, canvas2d_matrix_rotate(radians));
 }
 
 void canvas2d_transform(struct canvas2d_context *__single cv,
@@ -407,30 +407,30 @@ void canvas2d_transform(struct canvas2d_context *__single cv,
     // Recording is unconditional nine numbers (docs/decisions/perspective.md): the
     // affine setter logs its six plus the implicit affine bottom row 0 0 1.
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f, 0.0f, 0.0f, 1.0f }, 9); }
-    canvas2d_mat const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+    canvas2d_matrix const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
                          .g = 0.0f, .h = 0.0f, .i = 1.0f };
-    cv->cur.ctm = canvas2d_mat_mul(cv->cur.ctm, m);
+    cv->cur.ctm = canvas2d_matrix_mul(cv->cur.ctm, m);
 }
 
 void canvas2d_transform_3x3(struct canvas2d_context *__single cv, float a, float b, float c,
                           float d, float e, float f, float g, float h, float i) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f, g, h, i }, 9); }
-    canvas2d_mat const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+    canvas2d_matrix const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
                          .g = g, .h = h, .i = i };
-    cv->cur.ctm = canvas2d_mat_mul(cv->cur.ctm, m);
+    cv->cur.ctm = canvas2d_matrix_mul(cv->cur.ctm, m);
 }
 
 void canvas2d_set_transform(struct canvas2d_context *__single cv,
                           float a, float b, float c, float d, float e, float f) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f, 0.0f, 0.0f, 1.0f }, 9); }
-    cv->cur.ctm = (canvas2d_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+    cv->cur.ctm = (canvas2d_matrix){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
                               .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
 void canvas2d_set_transform_3x3(struct canvas2d_context *__single cv, float a, float b, float c,
                               float d, float e, float f, float g, float h, float i) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f, g, h, i }, 9); }
-    cv->cur.ctm = (canvas2d_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+    cv->cur.ctm = (canvas2d_matrix){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
                               .g = g, .h = h, .i = i };
 }
 
@@ -455,7 +455,7 @@ void canvas2d_set_perspective_quad(struct canvas2d_context *__single cv, float s
     float const dy1 = y1 - y2, dy2 = y3 - y2;
     float const sX = x0 - x1 + x2 - x3;
     float const sY = y0 - y1 + y2 - y3;
-    canvas2d_mat unit;
+    canvas2d_matrix unit;
     float const den = dx1 * dy2 - dx2 * dy1;
     if (den == 0.0f) {
         return;  // collinear destination corners: no homography
@@ -463,18 +463,18 @@ void canvas2d_set_perspective_quad(struct canvas2d_context *__single cv, float s
     float const g = (sX * dy2 - dx2 * sY) / den;
     float const h = (dx1 * sY - sX * dy1) / den;
     // Columns: a,b,g | c,d,h | e,f,i, applied to (u,v,1).
-    unit = (canvas2d_mat){
+    unit = (canvas2d_matrix){
         .a = x1 - x0 + g * x1,  .b = y1 - y0 + g * y1,  .g = g,
         .c = x3 - x0 + h * x3,  .d = y3 - y0 + h * y3,  .h = h,
         .e = x0,                .f = y0,                .i = 1.0f,
     };
     // Source rect -> unit square: u = (x - sx)/sw, v = (y - sy)/sh.
-    canvas2d_mat const to_unit = {
+    canvas2d_matrix const to_unit = {
         .a = 1.0f / sw, .c = 0.0f,       .e = -sx / sw,
         .b = 0.0f,      .d = 1.0f / sh,  .f = -sy / sh,
         .g = 0.0f,      .h = 0.0f,       .i = 1.0f,
     };
-    canvas2d_mat const m = canvas2d_mat_mul(unit, to_unit);
+    canvas2d_matrix const m = canvas2d_matrix_mul(unit, to_unit);
     if (cv->rec) {
         canvas2d_rec_floats(cv->rec, "set_transform",
                         (float[]){ m.a, m.b, m.c, m.d, m.e, m.f, m.g, m.h, m.i }, 9);
@@ -484,13 +484,11 @@ void canvas2d_set_perspective_quad(struct canvas2d_context *__single cv, float s
 
 void canvas2d_reset_transform(struct canvas2d_context *__single cv) {
     if (cv->rec) { canvas2d_rec_op(cv->rec, "reset_transform"); }
-    cv->cur.ctm = canvas2d_mat_identity();
+    cv->cur.ctm = canvas2d_matrix_identity();
 }
 
 canvas2d_matrix canvas2d_get_transform(struct canvas2d_context *__single cv) {
-    canvas2d_mat const m = cv->cur.ctm;
-    return (canvas2d_matrix){ .a = m.a, .b = m.b, .c = m.c,
-                            .d = m.d, .e = m.e, .f = m.f };
+    return cv->cur.ctm;
 }
 
 // Intern one boundary colour into the canvas's working space -- the single
@@ -588,7 +586,7 @@ void canvas2d_set_fill_rgba(struct canvas2d_context *__single cv, enum canvas2d_
 }
 
 // Average CTM scale, used to bake user-space radii into device space.
-static float ctm_scale(canvas2d_mat m) {
+static float ctm_scale(canvas2d_matrix m) {
     float const det = m.a * m.d - m.b * m.c;
     return sqrtf(fabsf(det));
 }
@@ -607,13 +605,13 @@ static float ctm_scale(canvas2d_mat m) {
 static void grad_set_persp(struct canvas2d_context *__single cv, struct canvas2d_gradient *gr,
                            canvas2d_vec2 up0, canvas2d_vec2 up1, float ur0, float ur1,
                            float uangle) {
-    gr->persp = !canvas2d_mat_is_affine(cv->cur.ctm);
+    gr->persp = !canvas2d_matrix_is_affine(cv->cur.ctm);
     gr->up0 = up0;
     gr->up1 = up1;
     gr->ur0 = ur0;
     gr->ur1 = ur1;
     gr->uangle = uangle;
-    gr->to_user = canvas2d_mat_invert(cv->cur.ctm);
+    gr->to_user = canvas2d_matrix_invert(cv->cur.ctm);
 }
 
 static void grad_set_linear(struct canvas2d_context *__single cv, struct canvas2d_gradient *gr,
@@ -656,7 +654,7 @@ static void grad_set_radial(struct canvas2d_context *__single cv, struct canvas2
 // Rotation angle (radians) of the CTM's x-axis basis, for baking a conic
 // gradient's start angle into device space.  Exact for similarity transforms;
 // skew / non-uniform scale distort the angles (as they do the radial circles).
-static float ctm_rotation(canvas2d_mat m) {
+static float ctm_rotation(canvas2d_matrix m) {
     return atan2f(m.b, m.a);
 }
 
@@ -692,7 +690,7 @@ static void pattern_set(struct canvas2d_context *__single cv, struct canvas2d_pa
     p->h = h;
     p->repeat = repeat;
     p->space = space;
-    p->to_pattern = canvas2d_mat_invert(cv->cur.ctm);  // device -> pattern image space
+    p->to_pattern = canvas2d_matrix_invert(cv->cur.ctm);  // device -> pattern image space
 }
 
 void canvas2d_set_fill_linear_gradient(struct canvas2d_context *__single cv,
@@ -988,7 +986,7 @@ void canvas2d_add_filter_sepia(struct canvas2d_context *__single cv, float amoun
 }
 
 static canvas2d_vec2 xf(struct canvas2d_context *__single cv, float x, float y) {
-    return canvas2d_mat_apply(cv->cur.ctm, (canvas2d_vec2){ .x = x, .y = y });
+    return canvas2d_matrix_apply(cv->cur.ctm, (canvas2d_vec2){ .x = x, .y = y });
 }
 
 // Integer device-space bounding box of a point set, padded by `margin` device
@@ -1827,7 +1825,7 @@ static canvas2d_px8 shade8(f16x8 r, f16x8 g, f16x8 b, f16x8 alpha) {
     return (canvas2d_px8){ r * alpha, g * alpha, b * alpha, alpha };
 }
 
-// mat_apply8 / mat_apply8_persp (8-wide canvas2d_mat_apply over a row) and their
+// mat_apply8 / mat_apply8_persp (8-wide canvas2d_matrix_apply over a row) and their
 // foldv8 result live in canvas2d_geom.h: the gradient and pattern paint loops below
 // and the image sampler both apply a matrix to eight pixel centres at once.
 
@@ -1927,7 +1925,7 @@ static void grad_param_row_persp(struct canvas2d_gradient const *gr, int x0, flo
         }
     }
     for (; i < n; i++) {
-        canvas2d_vec2 const p = canvas2d_mat_apply(gr->to_user,
+        canvas2d_vec2 const p = canvas2d_matrix_apply(gr->to_user,
             (canvas2d_vec2){ .x = (float)x0 + (float)i + 0.5f, .y = y });
         float t;
         t_out[i] = canvas2d_gradient_param_user(gr, p, &t) ? t : -1.0f;
@@ -2022,7 +2020,7 @@ static void paint_tile_gradient(struct canvas2d_context *__single cv, cbbox b,
                                        .y = (float)b.y + (float)py + 0.5f };
                 bool got;
                 if (gr->persp) {
-                    canvas2d_vec2 const up = canvas2d_mat_apply(gr->to_user, dp);
+                    canvas2d_vec2 const up = canvas2d_matrix_apply(gr->to_user, dp);
                     got = canvas2d_gradient_param_user(gr, up, &t);
                 } else {
                     got = canvas2d_gradient_param(gr, dp, &t);
@@ -2116,7 +2114,7 @@ static void paint_tile_pattern(struct canvas2d_context *__single cv, cbbox b, st
     // to_pattern is the device->pattern inverse of the CTM in force at creation;
     // it is non-affine exactly when that CTM was perspective, which is the per-
     // pixel-divide branch.  Affine patterns keep mat_apply8's linear DDA.
-    bool const persp = !canvas2d_mat_is_affine(p->to_pattern);
+    bool const persp = !canvas2d_matrix_is_affine(p->to_pattern);
     f32x8 const lane = { 0, 1, 2, 3, 4, 5, 6, 7 };
     for (int py = 0; py < b.h; py++) {
         float const dy = (float)b.y + (float)py + 0.5f;
@@ -2373,7 +2371,7 @@ static canvas2d_vec2 uv(float x, float y) {
 
 void canvas2d_fill_rect(struct canvas2d_context *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { canvas2d_rec_floats(cv->rec, "fill_rect", (float[]){ x, y, w, h }, 4); }
-    if (!canvas2d_mat_is_affine(cv->cur.ctm)) {
+    if (!canvas2d_matrix_is_affine(cv->cur.ctm)) {
         // Perspective: w-clip + project the user-space quad (a corner may sit at
         // or behind the projection plane), then fill the survivor.
         canvas2d_vec2 const uq[4] = { uv(x, y), uv(x + w, y), uv(x + w, y + h), uv(x, y + h) };
@@ -2686,13 +2684,13 @@ void canvas2d_close_path(struct canvas2d_context *__single cv) {
 
 // Homogeneous w of a user-space point under the CTM (the projection plane's
 // distance term; affine has w == i == 1 everywhere).
-static float ctm_w(canvas2d_mat m, canvas2d_vec2 u) {
+static float ctm_w(canvas2d_matrix m, canvas2d_vec2 u) {
     return m.g * u.x + m.h * u.y + m.i;
 }
 
 // Project one user-space point to device space (full divide; the caller has
 // guaranteed w > 0 by clipping).
-static canvas2d_vec2 project(canvas2d_mat m, canvas2d_vec2 u) {
+static canvas2d_vec2 project(canvas2d_matrix m, canvas2d_vec2 u) {
     float const w = m.g * u.x + m.h * u.y + m.i;
     float const inv = 1.0f / w;
     return (canvas2d_vec2){ .x = (m.a * u.x + m.c * u.y + m.e) * inv,
@@ -2711,7 +2709,7 @@ static canvas2d_vec2 project(canvas2d_mat m, canvas2d_vec2 u) {
 // projected result is exact for a straight edge).  A contour fully behind the
 // plane contributes nothing.  `closed` controls whether the last->first edge is
 // also tested (fills and stroke outlines are closed; an open polyline is not).
-static void clip_project_contour(canvas2d_mat m, canvas2d_vec2 const *__counted_by(n) src,
+static void clip_project_contour(canvas2d_matrix m, canvas2d_vec2 const *__counted_by(n) src,
                                  int n, bool closed, struct canvas2d_path *__single out) {
     if (n < 1) {
         return;
@@ -2753,7 +2751,7 @@ static void clip_project_contour(canvas2d_mat m, canvas2d_vec2 const *__counted_
 static struct canvas2d_path const *perspective_fill_path(struct canvas2d_context *__single cv,
                                                      struct canvas2d_path const *up) {
     canvas2d_path_reset(&cv->pclip);
-    canvas2d_mat const m = cv->cur.ctm;
+    canvas2d_matrix const m = cv->cur.ctm;
     for (int s = 0; s < up->nsubs; s++) {
         canvas2d_subpath const sp = up->subs[s];
         if (sp.count < 2) {
@@ -2782,7 +2780,7 @@ void canvas2d_fill(struct canvas2d_context *__single cv, enum canvas2d_fill_rule
     if (cv->rec) { canvas2d_rec_rule(cv->rec, "fill", rule); }
     // Affine: the device path is correct and rasterizes bit-identically.
     // Perspective: w-clip + project the user-space path first.
-    struct canvas2d_path const *p = canvas2d_mat_is_affine(cv->cur.ctm)
+    struct canvas2d_path const *p = canvas2d_matrix_is_affine(cv->cur.ctm)
                                     ? &cv->path
                                     : perspective_fill_path(cv, &cv->upath);
     fill_device_path(cv, p, rule);
@@ -2842,7 +2840,7 @@ void canvas2d_clip(struct canvas2d_context *__single cv, enum canvas2d_fill_rule
     }
     // Affine clips the device path directly; perspective w-clips + projects the
     // user path first (its subpaths are implicitly closed, like a fill).
-    struct canvas2d_path const *p = canvas2d_mat_is_affine(cv->cur.ctm)
+    struct canvas2d_path const *p = canvas2d_matrix_is_affine(cv->cur.ctm)
                                     ? &cv->path
                                     : perspective_fill_path(cv, &cv->upath);
     // Rasterize the path's coverage into cv->cov over its (clamped) bbox.
@@ -3053,7 +3051,7 @@ static void stroke_perspective_path(struct canvas2d_context *__single cv, struct
     if (!build_stroke_verts_user(cv, up) || cv->scratch_verts.nverts < 3) {
         return;
     }
-    canvas2d_mat const m = cv->cur.ctm;
+    canvas2d_matrix const m = cv->cur.ctm;
     // Project the user-space triangles (clipped) into cv->pclip for both the bbox
     // and the rasterization (one pass, no per-triangle re-clip).
     canvas2d_path_reset(&cv->pclip);
@@ -3100,7 +3098,7 @@ static void stroke_perspective_path(struct canvas2d_context *__single cv, struct
 
 void canvas2d_stroke(struct canvas2d_context *__single cv) {
     if (cv->rec) { canvas2d_rec_op(cv->rec, "stroke"); }
-    if (canvas2d_mat_is_affine(cv->cur.ctm)) {
+    if (canvas2d_matrix_is_affine(cv->cur.ctm)) {
         stroke_device_path(cv, &cv->path);
     } else {
         stroke_perspective_path(cv, &cv->upath);
@@ -3160,7 +3158,7 @@ void canvas2d_stroke_rect(struct canvas2d_context *__single cv, float x, float y
     // current path; the corners go through the CTM exactly as fill_rect's quad.
     // Perspective strokes from a USER-space rect (the perspective stroker projects
     // the outline); affine bakes the CTM into the device-space rect as before.
-    bool const persp = !canvas2d_mat_is_affine(cv->cur.ctm);
+    bool const persp = !canvas2d_matrix_is_affine(cv->cur.ctm);
     struct canvas2d_path rp;
     canvas2d_path_init(&rp);
     if (w == 0.0f && h == 0.0f) {
@@ -3550,7 +3548,7 @@ static void draw_glyph_capture(struct canvas2d_context *__single cv, struct canv
     // its taps never downscale by more than 2x), and the blend toward the
     // ceil-halved level under it tracks the footprint between the two --
     // level-selection popping along a continuous zoom smooths into a fade.
-    canvas2d_mat const m = cv->cur.ctm;
+    canvas2d_matrix const m = cv->cur.ctm;
     float const ex = hypotf(m.a * dw, m.b * dw);
     float const ey = hypotf(m.c * dh, m.d * dh);
     canvas2d_mip hi, lo;
@@ -3657,7 +3655,7 @@ static void paint_color_glyph(void *__single ctx, int fid, void *__single font,
 // only the user-space condense, so the path lands in USER space and is then
 // w-clipped + projected through the CTM.  `persp` selects the two tails.
 static void paint_shaped(struct canvas2d_context *__single cv, struct canvas2d_shaped const *__single s,
-                         float ox, float oy, canvas2d_mat place_to, bool persp, bool stroke) {
+                         float ox, float oy, canvas2d_matrix place_to, bool persp, bool stroke) {
     canvas2d_path_reset(&cv->text_path);
     struct color_glyph_ctx cc = { .cv = cv, .size_px = s->size_px };
     canvas2d_shaped_outline(&cv->text_cache, s, ox, oy, place_to, CANVAS2D_FLATTEN_TOL,
@@ -3694,12 +3692,12 @@ static void do_text(struct canvas2d_context *__single cv, char const *__counted_
     float ox = x - text_align_frac(cv->cur.text_align, cv->cur.direction)
                        * advance * sx;
     float const oy = y + text_baseline_offset(cv);
-    bool const persp = !canvas2d_mat_is_affine(cv->cur.ctm);
+    bool const persp = !canvas2d_matrix_is_affine(cv->cur.ctm);
     // The max-width condense: scale x by sx about the anchor (X' = sx*X +
     // ox*(1-sx), Y' = Y), an affine in USER space.  Identity when sx == 1.
-    canvas2d_mat cond = canvas2d_mat_identity();
+    canvas2d_matrix cond = canvas2d_matrix_identity();
     if (sx != 1.0f) {
-        cond = (canvas2d_mat){ .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
+        cond = (canvas2d_matrix){ .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
                            .e = ox * (1.0f - sx), .f = 0.0f,
                            .g = 0.0f, .h = 0.0f, .i = 1.0f };
     }
@@ -3710,7 +3708,7 @@ static void do_text(struct canvas2d_context *__single cv, char const *__counted_
     }
     // Affine: flatten straight to device space, byte-identical to before (the CTM
     // alone when sx == 1, else CTM . cond as the old code built it).
-    canvas2d_mat const td = sx != 1.0f ? canvas2d_mat_mul(cv->cur.ctm, cond) : cv->cur.ctm;
+    canvas2d_matrix const td = sx != 1.0f ? canvas2d_matrix_mul(cv->cur.ctm, cond) : cv->cur.ctm;
     paint_shaped(cv, s, ox, oy, td, false, stroke);
 }
 
@@ -4465,8 +4463,8 @@ static void draw_image_quad(struct canvas2d_context *__single cv,
     // sample and fold to transparent black.  The premultiplied-data arm
     // (emoji captures, mip and cubic samples) has no premultiply: every
     // channel narrows and scales by ga x coverage in f16.
-    canvas2d_mat const inv = canvas2d_mat_invert(cv->cur.ctm);  // device -> user
-    bool const persp = !canvas2d_mat_is_affine(cv->cur.ctm);  // per-pixel divide?
+    canvas2d_matrix const inv = canvas2d_matrix_invert(cv->cur.ctm);  // device -> user
+    bool const persp = !canvas2d_matrix_is_affine(cv->cur.ctm);  // per-pixel divide?
     float const ga = cv->cur.global_alpha;
     f16x8 const gah = (f16x8)(_Float16)ga;
     bool const fold = shade_folds_coverage(cv);
@@ -4999,7 +4997,7 @@ void canvas2d_fill_path(struct canvas2d_context *__single cv, struct canvas2d_pa
     canvas2d_rec_enter(cv->rec);
     struct p2d_scratch sv;
     p2d_swap_in(cv, p, &sv);
-    if (canvas2d_mat_is_affine(cv->cur.ctm)) {
+    if (canvas2d_matrix_is_affine(cv->cur.ctm)) {
         fill_device_path(cv, &cv->path, rule);
     } else {
         fill_device_path(cv, perspective_fill_path(cv, &cv->upath), rule);
@@ -5016,7 +5014,7 @@ void canvas2d_stroke_path(struct canvas2d_context *__single cv, struct canvas2d_
     canvas2d_rec_enter(cv->rec);
     struct p2d_scratch sv;
     p2d_swap_in(cv, p, &sv);
-    if (canvas2d_mat_is_affine(cv->cur.ctm)) {
+    if (canvas2d_matrix_is_affine(cv->cur.ctm)) {
         stroke_device_path(cv, &cv->path);
     } else {
         stroke_perspective_path(cv, &cv->upath);

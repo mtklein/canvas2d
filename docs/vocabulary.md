@@ -206,7 +206,7 @@ Landed: the tests' one-pixel record is struct rgba (was px4).
 - a: alpha / matrix entry / first operand / quadratic coefficient (in a
   function also holding colour alpha)
 - k: tail count / coverage fraction / scale factor / COSINE
-  (canvas2d_mat_rotate) — count is dominant
+  (canvas2d_matrix_rotate) — count is dominant
 - q: quarter-pi / quotient / query point / staged pixel
 
 This is pretty much unavoidable.  r,g,b,a are going to be color channels, x,y
@@ -219,7 +219,7 @@ Also worth mentioning that 'd' and 'dst' are good for things dealing with
 the underlying destination buffer, 's' or 'src' for the source colors we're
 working on.  s' = blend(s,d), d' = lerp(d,s',cov), that sort of thing.
 
-Landed: cov_lerp8 takes cov (with icov = 1 - cov); canvas2d_mat_rotate pairs c with
+Landed: cov_lerp8 takes cov (with icov = 1 - cov); canvas2d_matrix_rotate pairs c with
 s; emit_shadow's radius is spelled out beside the colour channels; i/j/k keep
 their index/count roles; s/d destination-source letters hold.
 
@@ -455,10 +455,14 @@ canvas2d_line_cap`), defined once in `include/canvas2d_paint_style.h` and
 consumed directly by both the public API and the leaf modules (the
 rasterizer, the stroker).  The seam `_Static_assert`s and the
 public-to-internal conversion casts are gone -- they were identities.
-`composite/blend` and `matrix` remain distinct types: `enum
-canvas2d_composite_op` (the public, web-named operator) versus the internal
-blend enum, and `canvas2d_matrix` (the public affine row) versus the internal
-`canvas2d_mat` -- distinct base names, not mirrors, so no merge applies.
+`composite/blend` stays a distinct pair: `enum canvas2d_composite_op` (the
+public, web-named operator) versus the internal blend enum -- distinct base
+names, not mirrors, so no merge applies.  The matrix mirror is gone: the former
+public 6-element affine `canvas2d_matrix` and the internal 9-element
+`canvas2d_mat` homography collapsed into a single `canvas2d_matrix` (the 3x3
+homography in `include/canvas2d_matrix.h`).  `canvas2d_get_transform` returns
+that CTM whole; callers use `canvas2d_matrix_is_affine` to tell the affine
+subset (bottom row (0, 0, 1)) from a perspective transform.
 
 ### D22. guard/select/discard — consistent.  f16x8_if_then_else (renamed
 from _sel); vsel_bits is the stray spelling (vsel_ prefix vs _sel suffix
@@ -523,7 +527,7 @@ for new code.
 - 2026-06-11 (types): enums always `enum foo`, never typedef'd.  Structs
   split by LITERAL C usage, read off the call signatures: worked with
   almost always by copying values -> typedef (f32x8, canvas2d_vec2, canvas2d_px8,
-  canvas2d_mat); worked with almost always through pointer indirection ->
+  canvas2d_matrix); worked with almost always through pointer indirection ->
   tagged `struct foo`, no typedef, spelled at every use (struct canvas2d_context,
   struct canvas2d_gradient -- its functions all take pointers, the occasional
   save/restore copy notwithstanding).  Anything with a constructor or free
@@ -534,10 +538,10 @@ for new code.
   struct canvas2d_context, canvas2d_path2d, canvas2d_recorder, canvas2d_gradient, canvas2d_pattern,
   canvas2d_shaped, canvas2d_cover, canvas2d_verts, canvas2d_path, canvas2d_text_cache,
   canvas2d_font, canvas2d_glyph_slot, canvas2d_shaping_slot, canvas2d_font_name, rec_image,
-  rec_path.  Typedefs kept (value types): canvas2d_vec2, canvas2d_mat, cbbox,
+  rec_path.  Typedefs kept (value types): canvas2d_vec2, canvas2d_matrix, cbbox,
   canvas2d_premul, canvas2d_unpremul, canvas2d_px8, gradpx8, rgb8, foldv8, the lane
   types, canvas2d_stop, canvas2d_subpath, canvas2d_filter, canvas2d_mip, canvas2d_xspan,
-  p2d_cmd, canvas2d_matrix, canvas2d_text_metrics, canvas2d_shaped_metrics.
+  p2d_cmd, canvas2d_text_metrics, canvas2d_shaped_metrics.
   AWAITING RULING: canvas2d_glyph_run -- genuinely mixed (~50/50; the checked
   core copies whole runs by value per loop, the recorder/replay walk them
   by pointer inside a __counted_by array); keeps its typedef until called.

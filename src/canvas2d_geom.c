@@ -64,12 +64,12 @@ void canvas2d_verts_free(struct canvas2d_verts *v) {
     v->cap = 0;
 }
 
-foldv8 mat_apply8(canvas2d_mat m, f32x8 x, float y) {
+foldv8 mat_apply8(canvas2d_matrix m, f32x8 x, float y) {
     return (foldv8){ .x = m.a * x + m.c * y + m.e,
                      .y = m.b * x + m.d * y + m.f };
 }
 
-foldv8 mat_apply8_persp(canvas2d_mat m, f32x8 x, float y) {
+foldv8 mat_apply8_persp(canvas2d_matrix m, f32x8 x, float y) {
     f32x8 const u = m.a * x + m.c * y + m.e;
     f32x8 const v = m.b * x + m.d * y + m.f;
     f32x8 const w = m.g * x + m.h * y + m.i;

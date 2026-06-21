@@ -12,7 +12,7 @@
 #include "canvas2d_color.h"     // canvas2d_unpremul, canvas2d_premul
 #include "canvas2d_cover.h"     // struct canvas2d_cover
 #include "canvas2d_filter.h"    // canvas2d_filter
-#include "canvas2d_geom.h"      // canvas2d_mat, canvas2d_vec2, struct canvas2d_verts
+#include "canvas2d_geom.h"      // canvas2d_matrix, canvas2d_vec2, struct canvas2d_verts
 #include "canvas2d_gradient.h"  // struct canvas2d_gradient
 #include "canvas2d_path.h"      // struct canvas2d_path
 #include "canvas2d_stroke.h"    // enum canvas2d_line_join, enum canvas2d_line_cap
@@ -70,11 +70,11 @@ struct canvas2d_pattern {
     int w, h;
     enum canvas2d_pattern_repeat repeat;
     enum canvas2d_color_space space;  // the source pixels' space; sampled in it, converted on deposit
-    canvas2d_mat to_pattern;
+    canvas2d_matrix to_pattern;
 };
 
 struct canvas2d_state {
-    canvas2d_mat ctm;
+    canvas2d_matrix ctm;
     canvas2d_unpremul fill;
     enum canvas2d_paint_kind fill_kind;
     struct canvas2d_gradient fill_grad;

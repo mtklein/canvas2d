@@ -91,7 +91,7 @@ static void check_outline(void) {
     if (s) {
         struct canvas2d_path p;
         canvas2d_path_init(&p);
-        float w = canvas2d_shaped_outline(NULL, s, 0.0f, 0.0f, canvas2d_mat_identity(),
+        float w = canvas2d_shaped_outline(NULL, s, 0.0f, 0.0f, canvas2d_matrix_identity(),
                                       0.25f, &p, NULL, NULL);
         CHECK(w > 0.0f);
         CHECK(p.npts > 0 && p.nsubs > 0);   // "ffi" produced outline geometry
@@ -104,7 +104,7 @@ static void check_outline(void) {
     if (e) {
         struct canvas2d_path p;
         canvas2d_path_init(&p);
-        float w = canvas2d_shaped_outline(NULL, e, 0.0f, 0.0f, canvas2d_mat_identity(),
+        float w = canvas2d_shaped_outline(NULL, e, 0.0f, 0.0f, canvas2d_matrix_identity(),
                                       0.25f, &p, NULL, NULL);
         CHECK(w > 0.0f);          // it has an advance (occupies space)
         CHECK(p.npts == 0);     // but a color glyph has no outline path
