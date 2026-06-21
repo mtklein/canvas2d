@@ -168,6 +168,12 @@ struct canvas {
     int nsaved;
     int stack_cap;
     struct cnvs_path path;
+    // The same path in USER space (points untransformed, curves flattened in user
+    // units).  Built alongside `path` so a perspective fill/stroke/clip can w-clip
+    // in homogeneous space and project per docs/decisions/perspective.md; an
+    // affine CTM ignores it and rasterizes the device `path` bit-identically.
+    struct cnvs_path upath;
+    struct cnvs_path pclip;      // scratch: w-clipped + projected device path (perspective)
     struct cnvs_path text_path;  // scratch glyph outlines (fill_text/stroke_text)
     struct cnvs_font *__single font;  // cached for cur.font_size/family/weight/style;
                                       // rebuilt when any of them changes
@@ -220,6 +226,10 @@ struct canvas {
 
 static cnvs_vec2 xf(struct canvas *__single cv, float x, float y);
 static bool ensure_tile(struct canvas *__single cv, int npix);
+static void clip_project_contour(cnvs_mat m, cnvs_vec2 const *__counted_by(n) src,
+                                 int n, bool closed, struct cnvs_path *__single out);
+static void fill_device_path(struct canvas *__single cv, struct cnvs_path const *p,
+                             enum cnvs_fill_rule rule);
 static int sigma_box_radius(float sigma);
 static void shadow_offset_split(float v, int *__single whole, int *__single k256);
 struct canvas_image;  // reified drawImage source; defined with its API below
@@ -331,6 +341,8 @@ struct canvas *__single canvas(int width, int height,
     cv->nsaved = 0;
     cv->stack_cap = 0;
     cnvs_path_init(&cv->path);
+    cnvs_path_init(&cv->upath);
+    cnvs_path_init(&cv->pclip);
     cnvs_path_init(&cv->text_path);
     cv->font = NULL;
     cv->font_built_size = 0.0f;
@@ -361,6 +373,8 @@ void canvas_free(struct canvas *__single cv) {
     cnvs_font_free(cv->font);
     cnvs_text_cache_reset(&cv->text_cache);  // owned shaped lines + glyph curves
     cnvs_path_free(&cv->path);
+    cnvs_path_free(&cv->upath);
+    cnvs_path_free(&cv->pclip);
     cnvs_path_free(&cv->text_path);
     cnvs_verts_free(&cv->scratch_verts);
     cnvs_cover_free(&cv->cover);
@@ -509,6 +523,7 @@ void canvas_reset(struct canvas *__single cv) {
     state_defaults(&cv->cur);
     // Discard the current path.
     cnvs_path_reset(&cv->path);
+    cnvs_path_reset(&cv->upath);
     cv->cur_user = (cnvs_vec2){ .x = 0.0f, .y = 0.0f };
     // Drop the text caches too.  Keeping them would also be correct -- the cache
     // is a pure memo of boundary results, invisible to rendering -- but reset()'s
@@ -571,15 +586,82 @@ void canvas_rotate(struct canvas *__single cv, float radians) {
 
 void canvas_transform(struct canvas *__single cv,
                       float a, float b, float c, float d, float e, float f) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f }, 6); }
-    cnvs_mat const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
+    // Recording is unconditional nine numbers (docs/decisions/perspective.md): the
+    // affine setter logs its six plus the implicit affine bottom row 0 0 1.
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f, 0.0f, 0.0f, 1.0f }, 9); }
+    cnvs_mat const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+                         .g = 0.0f, .h = 0.0f, .i = 1.0f };
+    cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, m);
+}
+
+void canvas_transform_3x3(struct canvas *__single cv, float a, float b, float c,
+                          float d, float e, float f, float g, float h, float i) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "transform", (float[]){ a, b, c, d, e, f, g, h, i }, 9); }
+    cnvs_mat const m = { .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+                         .g = g, .h = h, .i = i };
     cv->cur.ctm = cnvs_mat_mul(cv->cur.ctm, m);
 }
 
 void canvas_set_transform(struct canvas *__single cv,
                           float a, float b, float c, float d, float e, float f) {
-    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f }, 6); }
-    cv->cur.ctm = (cnvs_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f };
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f, 0.0f, 0.0f, 1.0f }, 9); }
+    cv->cur.ctm = (cnvs_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+                              .g = 0.0f, .h = 0.0f, .i = 1.0f };
+}
+
+void canvas_set_transform_3x3(struct canvas *__single cv, float a, float b, float c,
+                              float d, float e, float f, float g, float h, float i) {
+    if (cv->rec) { cnvs_rec_floats(cv->rec, "set_transform", (float[]){ a, b, c, d, e, f, g, h, i }, 9); }
+    cv->cur.ctm = (cnvs_mat){ .a = a, .b = b, .c = c, .d = d, .e = e, .f = f,
+                              .g = g, .h = h, .i = i };
+}
+
+// Solve the homography mapping the source rect (sx,sy,sw,sh) to four destination
+// points, in corner order TL=(x0,y0), TR=(x1,y1), BR=(x2,y2), BL=(x3,y3).  The
+// classic two-stage quad map: first the homography from the UNIT square to the
+// destination quad (Heckbert's closed form), then pre-compose the affine that
+// maps the source rect onto the unit square (a translate+scale, x' = (x-sx)/sw).
+// A degenerate destination (sw or sh zero, or collinear corners) leaves the CTM
+// untouched.
+void canvas_set_perspective_quad(struct canvas *__single cv, float sx, float sy,
+                                 float sw, float sh, float x0, float y0,
+                                 float x1, float y1, float x2, float y2,
+                                 float x3, float y3) {
+    if (sw == 0.0f || sh == 0.0f) {
+        return;
+    }
+    // Unit-square -> destination quad.  Vertices in (0,0),(1,0),(1,1),(0,1) order
+    // matching TL,TR,BR,BL.  dx1=x1-x2, dx2=x3-x2, sumx=x0-x1+x2-x3 (the standard
+    // names); g,h solve the projective row, then the top two rows follow.
+    float const dx1 = x1 - x2, dx2 = x3 - x2;
+    float const dy1 = y1 - y2, dy2 = y3 - y2;
+    float const sX = x0 - x1 + x2 - x3;
+    float const sY = y0 - y1 + y2 - y3;
+    cnvs_mat unit;
+    float const den = dx1 * dy2 - dx2 * dy1;
+    if (den == 0.0f) {
+        return;  // collinear destination corners: no homography
+    }
+    float const g = (sX * dy2 - dx2 * sY) / den;
+    float const h = (dx1 * sY - sX * dy1) / den;
+    // Columns: a,b,g | c,d,h | e,f,i, applied to (u,v,1).
+    unit = (cnvs_mat){
+        .a = x1 - x0 + g * x1,  .b = y1 - y0 + g * y1,  .g = g,
+        .c = x3 - x0 + h * x3,  .d = y3 - y0 + h * y3,  .h = h,
+        .e = x0,                .f = y0,                .i = 1.0f,
+    };
+    // Source rect -> unit square: u = (x - sx)/sw, v = (y - sy)/sh.
+    cnvs_mat const to_unit = {
+        .a = 1.0f / sw, .c = 0.0f,       .e = -sx / sw,
+        .b = 0.0f,      .d = 1.0f / sh,  .f = -sy / sh,
+        .g = 0.0f,      .h = 0.0f,       .i = 1.0f,
+    };
+    cnvs_mat const m = cnvs_mat_mul(unit, to_unit);
+    if (cv->rec) {
+        cnvs_rec_floats(cv->rec, "set_transform",
+                        (float[]){ m.a, m.b, m.c, m.d, m.e, m.f, m.g, m.h, m.i }, 9);
+    }
+    cv->cur.ctm = m;
 }
 
 void canvas_reset_transform(struct canvas *__single cv) {
@@ -2373,8 +2455,22 @@ void canvas_clear_rect(struct canvas *__single cv, float x, float y, float w, fl
                      CANVAS_OP_DESTINATION_OUT);
 }
 
+// A user-space point as a vec2 (no transform), the input to cv->upath.
+static cnvs_vec2 uv(float x, float y) {
+    return (cnvs_vec2){ .x = x, .y = y };
+}
+
 void canvas_fill_rect(struct canvas *__single cv, float x, float y, float w, float h) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "fill_rect", (float[]){ x, y, w, h }, 4); }
+    if (!cnvs_mat_is_affine(cv->cur.ctm)) {
+        // Perspective: w-clip + project the user-space quad (a corner may sit at
+        // or behind the projection plane), then fill the survivor.
+        cnvs_vec2 const uq[4] = { uv(x, y), uv(x + w, y), uv(x + w, y + h), uv(x, y + h) };
+        cnvs_path_reset(&cv->pclip);
+        clip_project_contour(cv->cur.ctm, uq, 4, true, &cv->pclip);
+        fill_device_path(cv, &cv->pclip, CNVS_NONZERO);
+        return;
+    }
     cnvs_vec2 q[4] = { xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h) };
     cbbox const b = points_bbox(cv, q, 4, filter_margin(cv));
@@ -2393,17 +2489,20 @@ void canvas_fill_rect(struct canvas *__single cv, float x, float y, float w, flo
 void canvas_begin_path(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "begin_path"); }
     cnvs_path_reset(&cv->path);
+    cnvs_path_reset(&cv->upath);
 }
 
 void canvas_move_to(struct canvas *__single cv, float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "move_to", (float[]){ x, y }, 2); }
     cnvs_path_move_to(&cv->path, xf(cv, x, y));
+    cnvs_path_move_to(&cv->upath, uv(x, y));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
 void canvas_line_to(struct canvas *__single cv, float x, float y) {
     if (cv->rec) { cnvs_rec_floats(cv->rec, "line_to", (float[]){ x, y }, 2); }
     cnvs_path_line_to(&cv->path, xf(cv, x, y));
+    cnvs_path_line_to(&cv->upath, uv(x, y));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
@@ -2411,6 +2510,7 @@ void canvas_rect(struct canvas *__single cv, float x, float y, float w, float h)
     if (cv->rec) { cnvs_rec_floats(cv->rec, "rect", (float[]){ x, y, w, h }, 4); }
     cnvs_path_rect(&cv->path, xf(cv, x, y), xf(cv, x + w, y),
                    xf(cv, x + w, y + h), xf(cv, x, y + h));
+    cnvs_path_rect(&cv->upath, uv(x, y), uv(x + w, y), uv(x + w, y + h), uv(x, y + h));
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
@@ -2419,6 +2519,8 @@ void canvas_quadratic_curve_to(struct canvas *__single cv,
     if (cv->rec) { cnvs_rec_floats(cv->rec, "quadratic_curve_to", (float[]){ cpx, cpy, x, y }, 4); }
     cnvs_path_quad_to(&cv->path, xf(cv, cpx, cpy), xf(cv, x, y),
                       CANVAS_FLATTEN_TOL);
+    // Flatten in user space too (correct foreshortening once projected).
+    cnvs_path_quad_to(&cv->upath, uv(cpx, cpy), uv(x, y), CANVAS_FLATTEN_TOL);
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
@@ -2427,6 +2529,8 @@ void canvas_bezier_curve_to(struct canvas *__single cv, float c1x, float c1y,
     if (cv->rec) { cnvs_rec_floats(cv->rec, "bezier_curve_to", (float[]){ c1x, c1y, c2x, c2y, x, y }, 6); }
     cnvs_path_cubic_to(&cv->path, xf(cv, c1x, c1y), xf(cv, c2x, c2y),
                        xf(cv, x, y), CANVAS_FLATTEN_TOL);
+    cnvs_path_cubic_to(&cv->upath, uv(c1x, c1y), uv(c2x, c2y), uv(x, y),
+                       CANVAS_FLATTEN_TOL);
     cv->cur_user = (cnvs_vec2){ .x = x, .y = y };
 }
 
@@ -2473,11 +2577,15 @@ void canvas_ellipse(struct canvas *__single cv, float x, float y, float rx, floa
         float const t = start_angle + sweep * ((float)i / (float)segs);
         float const ex = rx * cosf(t);
         float const ey = ry * sinf(t);
-        cnvs_vec2 const p = xf(cv, x + ex * cosr - ey * sinr, y + ex * sinr + ey * cosr);
+        float const ux = x + ex * cosr - ey * sinr;
+        float const uy = y + ex * sinr + ey * cosr;
+        cnvs_vec2 const p = xf(cv, ux, uy);
         if (i == 0 && !cv->path.has_cur) {
             cnvs_path_move_to(&cv->path, p);
+            cnvs_path_move_to(&cv->upath, uv(ux, uy));
         } else {
             cnvs_path_line_to(&cv->path, p);
+            cnvs_path_line_to(&cv->upath, uv(ux, uy));
         }
     }
     float const te = start_angle + sweep;
@@ -2662,6 +2770,87 @@ void canvas_arc_to(struct canvas *__single cv, float x1, float y1, float x2, flo
 void canvas_close_path(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "close_path"); }
     cnvs_path_close(&cv->path);
+    cnvs_path_close(&cv->upath);
+}
+
+// Homogeneous w of a user-space point under the CTM (the projection plane's
+// distance term; affine has w == i == 1 everywhere).
+static float ctm_w(cnvs_mat m, cnvs_vec2 u) {
+    return m.g * u.x + m.h * u.y + m.i;
+}
+
+// Project one user-space point to device space (full divide; the caller has
+// guaranteed w > 0 by clipping).
+static cnvs_vec2 project(cnvs_mat m, cnvs_vec2 u) {
+    float const w = m.g * u.x + m.h * u.y + m.i;
+    float const inv = 1.0f / w;
+    return (cnvs_vec2){ .x = (m.a * u.x + m.c * u.y + m.e) * inv,
+                        .y = (m.b * u.x + m.d * u.y + m.f) * inv };
+}
+
+// w-clip threshold: a vertex with w at or below this projects to garbage (it is
+// at or behind the projection plane), so contours are clipped against w > W_EPS
+// in homogeneous space BEFORE the divide.
+#define CNVS_W_EPS 1e-4f
+
+// Sutherland-Hodgman clip of one USER-space contour against the half-space
+// w > W_EPS, then project the survivors into `out` as one device subpath.  At an
+// edge that crosses the plane, the crossing vertex is found by interpolating x,y
+// linearly in the parameter where w == W_EPS (homogeneous interpolation: the
+// projected result is exact for a straight edge).  A contour fully behind the
+// plane contributes nothing.  `closed` controls whether the last->first edge is
+// also tested (fills and stroke outlines are closed; an open polyline is not).
+static void clip_project_contour(cnvs_mat m, cnvs_vec2 const *__counted_by(n) src,
+                                 int n, bool closed, struct cnvs_path *__single out) {
+    if (n < 1) {
+        return;
+    }
+    bool first = true;
+    int const last = closed ? n : n - 1;
+    for (int k = 0; k < (closed ? n : last); k++) {
+        cnvs_vec2 const a = src[k];
+        cnvs_vec2 const b = src[(k + 1) % n];
+        float const wa = ctm_w(m, a);
+        float const wb = ctm_w(m, b);
+        bool const ina = wa > CNVS_W_EPS;
+        bool const inb = wb > CNVS_W_EPS;
+        // Emit `a` if inside (the start vertex of each edge; a closed walk covers
+        // every vertex once this way).
+        if (ina) {
+            cnvs_vec2 const d = project(m, a);
+            if (first) { cnvs_path_move_to(out, d); first = false; }
+            else       { cnvs_path_line_to(out, d); }
+        }
+        // Emit the crossing vertex when the edge straddles the plane.
+        if (ina != inb) {
+            float const t = (CNVS_W_EPS - wa) / (wb - wa);
+            cnvs_vec2 const x = { .x = a.x + t * (b.x - a.x),
+                                  .y = a.y + t * (b.y - a.y) };
+            cnvs_vec2 const d = project(m, x);
+            if (first) { cnvs_path_move_to(out, d); first = false; }
+            else       { cnvs_path_line_to(out, d); }
+        }
+    }
+    if (!first) {
+        cnvs_path_close(out);
+    }
+}
+
+// Build the device-space path for a perspective fill/clip: w-clip + project every
+// subpath of the USER-space path `up` into cv->pclip (each subpath implicitly
+// closed, as the fill rasterizer treats them).  Returns the device path.
+static struct cnvs_path const *perspective_fill_path(struct canvas *__single cv,
+                                                     struct cnvs_path const *up) {
+    cnvs_path_reset(&cv->pclip);
+    cnvs_mat const m = cv->cur.ctm;
+    for (int s = 0; s < up->nsubs; s++) {
+        cnvs_subpath const sp = up->subs[s];
+        if (sp.count < 2) {
+            continue;
+        }
+        clip_project_contour(m, up->pts + sp.start, sp.count, true, &cv->pclip);
+    }
+    return &cv->pclip;
 }
 
 // Rasterize a device-space path under `rule` and paint it with the fill paint
@@ -2680,8 +2869,13 @@ static void fill_device_path(struct canvas *__single cv, struct cnvs_path const 
 
 void canvas_fill(struct canvas *__single cv, enum canvas_fill_rule rule) {
     if (cv->rec) { cnvs_rec_rule(cv->rec, "fill", rule); }
-    fill_device_path(cv, &cv->path,
-                     rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
+    enum cnvs_fill_rule const r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    // Affine: the device path is correct and rasterizes bit-identically.
+    // Perspective: w-clip + project the user-space path first.
+    struct cnvs_path const *p = cnvs_mat_is_affine(cv->cur.ctm)
+                                    ? &cv->path
+                                    : perspective_fill_path(cv, &cv->upath);
+    fill_device_path(cv, p, r);
 }
 
 // Point-in-path for hit testing.  Each subpath is treated as implicitly closed
@@ -2737,11 +2931,16 @@ void canvas_clip(struct canvas *__single cv, enum canvas_fill_rule rule) {
     if (!nm) {
         return;
     }
+    // Affine clips the device path directly; perspective w-clips + projects the
+    // user path first (its subpaths are implicitly closed, like a fill).
+    struct cnvs_path const *p = cnvs_mat_is_affine(cv->cur.ctm)
+                                    ? &cv->path
+                                    : perspective_fill_path(cv, &cv->upath);
     // Rasterize the path's coverage into cv->cov over its (clamped) bbox.
-    cbbox b = points_bbox(cv, cv->path.pts, cv->path.npts, 0);  // the clip is unfiltered
+    cbbox b = points_bbox(cv, p->pts, p->npts, 0);  // the clip is unfiltered
     if (b.w > 0 && b.h > 0 && ensure_tile(cv, b.w * b.h) &&
         cnvs_cover_reset(&cv->cover, b.w, b.h)) {
-        cover_path_edges(cv, b, &cv->path);
+        cover_path_edges(cv, b, p);
         cnvs_cover_resolve(&cv->cover, b.w, b.h,
                            rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO,
                            cv->cov);
@@ -2918,9 +3117,95 @@ static void stroke_device_path(struct canvas *__single cv, struct cnvs_path cons
     paint_stroke(cv, b);
 }
 
+// Build the stroke triangles for the USER-space path `up` into cv->scratch_verts,
+// width and dash lengths in USER units (NO CTM scale -- the outline is projected
+// afterward, so foreshortening falls out of the projection).  The perspective
+// twin of build_stroke_verts.
+static bool build_stroke_verts_user(struct canvas *__single cv, struct cnvs_path const *up) {
+    cnvs_verts_reset(&cv->scratch_verts);
+    float const half_width = cv->cur.line_width * 0.5f;
+    bool const dashed = cv->cur.dash_count > 0;
+    float const soff = cv->cur.dash_offset;
+    for (int s = 0; s < up->nsubs; s++) {
+        cnvs_subpath const sp = up->subs[s];
+        if (sp.count < 2) {
+            continue;
+        }
+        cnvs_vec2 *poly = up->pts + sp.start;
+        bool ok = dashed
+                      ? cnvs_stroke_dashed(poly, sp.count, sp.closed, half_width,
+                                           cv->cur.dash, cv->cur.dash_count, soff,
+                                           &cv->scratch_verts)
+                      : cnvs_stroke_polyline(poly, sp.count, sp.closed, half_width,
+                                             cv->cur.line_join, cv->cur.line_cap,
+                                             cv->cur.miter_limit, &cv->scratch_verts);
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Stroke under a perspective CTM: build the outline triangles in USER space, then
+// w-clip + project each one and rasterize the survivors.  Each clipped triangle
+// becomes a small convex polygon; feeding its edges (forced winding) unions them
+// with nonzero coverage exactly as the affine stroker does with raw triangles.
+static void stroke_perspective_path(struct canvas *__single cv, struct cnvs_path const *up) {
+    if (!build_stroke_verts_user(cv, up) || cv->scratch_verts.nverts < 3) {
+        return;
+    }
+    cnvs_mat const m = cv->cur.ctm;
+    // Project the user-space triangles (clipped) into cv->pclip for both the bbox
+    // and the rasterization (one pass, no per-triangle re-clip).
+    cnvs_path_reset(&cv->pclip);
+    for (int i = 0; i + 2 < cv->scratch_verts.nverts; i += 3) {
+        cnvs_vec2 const tri[3] = { cv->scratch_verts.data[i],
+                                   cv->scratch_verts.data[i + 1],
+                                   cv->scratch_verts.data[i + 2] };
+        clip_project_contour(m, tri, 3, true, &cv->pclip);
+    }
+    if (cv->pclip.npts < 3) {
+        return;
+    }
+    cbbox b = points_bbox(cv, cv->pclip.pts, cv->pclip.npts, filter_margin(cv));
+    if (b.w <= 0 || b.h <= 0 || !ensure_tile(cv, b.w * b.h) ||
+        !cnvs_cover_reset(&cv->cover, b.w, b.h)) {
+        return;
+    }
+    // Each projected polygon is a subpath; force a consistent winding (its signed
+    // area) so the overlapping join/cap shapes union under nonzero.
+    for (int s = 0; s < cv->pclip.nsubs; s++) {
+        cnvs_subpath const sp = cv->pclip.subs[s];
+        if (sp.count < 3) {
+            continue;
+        }
+        cnvs_vec2 *poly = cv->pclip.pts + sp.start;
+        // Signed area; reverse edge order for a clockwise polygon so every
+        // polygon contributes the same winding sign.
+        float area2 = 0.0f;
+        for (int k = 0; k < sp.count; k++) {
+            cnvs_vec2 const a = poly[k];
+            cnvs_vec2 const c = poly[(k + 1) % sp.count];
+            area2 += a.x * c.y - c.x * a.y;
+        }
+        for (int k = 0; k < sp.count; k++) {
+            cnvs_vec2 const a = poly[k];
+            cnvs_vec2 const c = poly[(k + 1) % sp.count];
+            if (area2 < 0.0f) { cover_edge(cv, b, c, a); }
+            else              { cover_edge(cv, b, a, c); }
+        }
+    }
+    cnvs_cover_resolve(&cv->cover, b.w, b.h, CNVS_NONZERO, cv->cov);
+    paint_stroke(cv, b);
+}
+
 void canvas_stroke(struct canvas *__single cv) {
     if (cv->rec) { cnvs_rec_op(cv->rec, "stroke"); }
-    stroke_device_path(cv, &cv->path);
+    if (cnvs_mat_is_affine(cv->cur.ctm)) {
+        stroke_device_path(cv, &cv->path);
+    } else {
+        stroke_perspective_path(cv, &cv->upath);
+    }
 }
 
 // Twice the signed area of triangle (a,b,c); its sign is the winding, zero means
@@ -2974,22 +3259,31 @@ void canvas_stroke_rect(struct canvas *__single cv, float x, float y, float w, f
     }
     // strokeRect builds and strokes its own rectangle without touching the
     // current path; the corners go through the CTM exactly as fill_rect's quad.
+    // Perspective strokes from a USER-space rect (the perspective stroker projects
+    // the outline); affine bakes the CTM into the device-space rect as before.
+    bool const persp = !cnvs_mat_is_affine(cv->cur.ctm);
     struct cnvs_path rp;
     cnvs_path_init(&rp);
     if (w == 0.0f && h == 0.0f) {
         // Spec: a single-point subpath.  The stroker emits nothing for a
         // zero-length subpath (no caps on a bare point) -- a deviation here.
-        cnvs_path_move_to(&rp, xf(cv, x, y));
+        cnvs_path_move_to(&rp, persp ? uv(x, y) : xf(cv, x, y));
     } else if (w == 0.0f || h == 0.0f) {
         // A degenerate rect is a hairline: an open two-point subpath, so caps
         // (not joins) bracket it.  The far corner coincides for both axes.
-        cnvs_path_move_to(&rp, xf(cv, x, y));
-        cnvs_path_line_to(&rp, xf(cv, x + w, y + h));
+        cnvs_path_move_to(&rp, persp ? uv(x, y) : xf(cv, x, y));
+        cnvs_path_line_to(&rp, persp ? uv(x + w, y + h) : xf(cv, x + w, y + h));
+    } else if (persp) {
+        cnvs_path_rect(&rp, uv(x, y), uv(x + w, y), uv(x + w, y + h), uv(x, y + h));
     } else {
         cnvs_path_rect(&rp, xf(cv, x, y), xf(cv, x + w, y),
                        xf(cv, x + w, y + h), xf(cv, x, y + h));
     }
-    stroke_device_path(cv, &rp);
+    if (persp) {
+        stroke_perspective_path(cv, &rp);
+    } else {
+        stroke_device_path(cv, &rp);
+    }
     cnvs_path_free(&rp);
 }
 
@@ -3458,16 +3752,26 @@ static void paint_color_glyph(void *__single ctx, int fid, void *__single font,
 // during shaping.  One run/pen walk serves outlines and emoji alike:
 // cnvs_shaped_outline does the layout and hands color glyphs back through the
 // callback above.
+// Paint a shaped line.  `place_to` flattens glyph outlines into `cv->text_path`:
+// affine, it is the full device transform (CTM, with any max-width condense) and
+// the path lands in device space, rasterized byte-identically; perspective, it is
+// only the user-space condense, so the path lands in USER space and is then
+// w-clipped + projected through the CTM.  `persp` selects the two tails.
 static void paint_shaped(struct canvas *__single cv, struct cnvs_shaped const *__single s,
-                         float ox, float oy, cnvs_mat to_device, bool stroke) {
+                         float ox, float oy, cnvs_mat place_to, bool persp, bool stroke) {
     cnvs_path_reset(&cv->text_path);
     struct color_glyph_ctx cc = { .cv = cv, .size_px = s->size_px };
-    cnvs_shaped_outline(&cv->text_cache, s, ox, oy, to_device, CANVAS_FLATTEN_TOL,
+    cnvs_shaped_outline(&cv->text_cache, s, ox, oy, place_to, CANVAS_FLATTEN_TOL,
                         &cv->text_path, paint_color_glyph, &cc);
+    if (!persp) {
+        if (stroke) { stroke_device_path(cv, &cv->text_path); }
+        else        { fill_device_path(cv, &cv->text_path, CNVS_NONZERO); }
+        return;
+    }
     if (stroke) {
-        stroke_device_path(cv, &cv->text_path);
+        stroke_perspective_path(cv, &cv->text_path);
     } else {
-        fill_device_path(cv, &cv->text_path, CNVS_NONZERO);
+        fill_device_path(cv, perspective_fill_path(cv, &cv->text_path), CNVS_NONZERO);
     }
 }
 
@@ -3491,14 +3795,24 @@ static void do_text(struct canvas *__single cv, char const *__counted_by(len) te
     float ox = x - text_align_frac(cv->cur.text_align, cv->cur.direction)
                        * advance * sx;
     float const oy = y + text_baseline_offset(cv);
-    cnvs_mat td = cv->cur.ctm;
+    bool const persp = !cnvs_mat_is_affine(cv->cur.ctm);
+    // The max-width condense: scale x by sx about the anchor (X' = sx*X +
+    // ox*(1-sx), Y' = Y), an affine in USER space.  Identity when sx == 1.
+    cnvs_mat cond = cnvs_mat_identity();
     if (sx != 1.0f) {
-        // Scale x by sx about the anchor: X' = sx*X + ox*(1-sx), Y' = Y; then the CTM.
-        cnvs_mat cond = { .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
-                          .e = ox * (1.0f - sx), .f = 0.0f };
-        td = cnvs_mat_mul(cv->cur.ctm, cond);
+        cond = (cnvs_mat){ .a = sx, .b = 0.0f, .c = 0.0f, .d = 1.0f,
+                           .e = ox * (1.0f - sx), .f = 0.0f,
+                           .g = 0.0f, .h = 0.0f, .i = 1.0f };
     }
-    paint_shaped(cv, s, ox, oy, td, stroke);
+    if (persp) {
+        // Flatten glyph outlines into user space (cond only); project later.
+        paint_shaped(cv, s, ox, oy, cond, true, stroke);
+        return;
+    }
+    // Affine: flatten straight to device space, byte-identical to before (the CTM
+    // alone when sx == 1, else CTM . cond as the old code built it).
+    cnvs_mat const td = sx != 1.0f ? cnvs_mat_mul(cv->cur.ctm, cond) : cv->cur.ctm;
+    paint_shaped(cv, s, ox, oy, td, false, stroke);
 }
 
 float canvas_measure_text(struct canvas *__single cv, char const *__null_terminated text) {
@@ -5620,20 +5934,25 @@ static void p2d_replay(struct canvas *__single cv, struct canvas_path2d const *_
 // Every Path2D draw and hit-test runs between the two.
 struct p2d_scratch {
     struct cnvs_path path;
+    struct cnvs_path upath;  // the user-space twin (perspective fill/stroke/clip)
     cnvs_vec2 user;
 };
 
 static void p2d_swap_in(struct canvas *__single cv, struct canvas_path2d const *__single p,
                         struct p2d_scratch *__single sv) {
     sv->path = cv->path;
+    sv->upath = cv->upath;
     sv->user = cv->cur_user;
     cnvs_path_init(&cv->path);
+    cnvs_path_init(&cv->upath);
     p2d_replay(cv, p);
 }
 
 static void p2d_swap_out(struct canvas *__single cv, struct p2d_scratch *__single sv) {
     cnvs_path_free(&cv->path);
+    cnvs_path_free(&cv->upath);
     cv->path = sv->path;
+    cv->upath = sv->upath;
     cv->cur_user = sv->user;
 }
 
@@ -5649,8 +5968,12 @@ void canvas_fill_path(struct canvas *__single cv, struct canvas_path2d const *__
     cnvs_rec_enter(cv->rec);
     struct p2d_scratch sv;
     p2d_swap_in(cv, p, &sv);
-    fill_device_path(cv, &cv->path,
-                     rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO);
+    enum cnvs_fill_rule const r = rule == CANVAS_EVENODD ? CNVS_EVENODD : CNVS_NONZERO;
+    if (cnvs_mat_is_affine(cv->cur.ctm)) {
+        fill_device_path(cv, &cv->path, r);
+    } else {
+        fill_device_path(cv, perspective_fill_path(cv, &cv->upath), r);
+    }
     p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
 }
@@ -5663,7 +5986,11 @@ void canvas_stroke_path(struct canvas *__single cv, struct canvas_path2d const *
     cnvs_rec_enter(cv->rec);
     struct p2d_scratch sv;
     p2d_swap_in(cv, p, &sv);
-    stroke_device_path(cv, &cv->path);
+    if (cnvs_mat_is_affine(cv->cur.ctm)) {
+        stroke_device_path(cv, &cv->path);
+    } else {
+        stroke_perspective_path(cv, &cv->upath);
+    }
     p2d_swap_out(cv, &sv);
     cnvs_rec_leave(cv->rec);
 }

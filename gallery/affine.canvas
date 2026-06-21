@@ -8,7 +8,7 @@ set_line_width 1.20000005
 set_stroke_rgba 0.449999988 0.479999989 0.550000012 0.850000024 srgb
 stroke_rect -32 -32 64 64
 set_line_dash
-transform 1 0 0 1 0 0
+transform 1 0 0 1 0 0 0 0 1
 set_fill_rgba 0.25 0.699999988 0.779999971 0.850000024 srgb
 fill_rect -32 -32 64 64
 set_stroke_rgba 0.949999988 0.970000029 1 0.949999988 srgb
@@ -45,7 +45,7 @@ set_line_width 1.20000005
 set_stroke_rgba 0.449999988 0.479999989 0.550000012 0.850000024 srgb
 stroke_rect -32 -32 64 64
 set_line_dash
-transform 1 0 0.5 1 0 0
+transform 1 0 0.5 1 0 0 0 0 1
 set_fill_rgba 0.25 0.699999988 0.779999971 0.850000024 srgb
 fill_rect -32 -32 64 64
 set_stroke_rgba 0.949999988 0.970000029 1 0.949999988 srgb
@@ -81,7 +81,7 @@ set_line_width 1.20000005
 set_stroke_rgba 0.449999988 0.479999989 0.550000012 0.850000024 srgb
 stroke_rect -32 -32 64 64
 set_line_dash
-transform 1 0.449999988 0 1 0 0
+transform 1 0.449999988 0 1 0 0 0 0 1
 set_fill_rgba 0.25 0.699999988 0.779999971 0.850000024 srgb
 fill_rect -32 -32 64 64
 set_stroke_rgba 0.949999988 0.970000029 1 0.949999988 srgb
@@ -109,7 +109,7 @@ set_line_width 1.20000005
 set_stroke_rgba 0.449999988 0.479999989 0.550000012 0.850000024 srgb
 stroke_rect -32 -32 64 64
 set_line_dash
-transform 1.29999995 0 0 0.649999976 0 0
+transform 1.29999995 0 0 0.649999976 0 0 0 0 1
 set_fill_rgba 0.25 0.699999988 0.779999971 0.850000024 srgb
 fill_rect -32 -32 64 64
 set_stroke_rgba 0.949999988 0.970000029 1 0.949999988 srgb
@@ -136,7 +136,7 @@ set_line_width 1.20000005
 set_stroke_rgba 0.449999988 0.479999989 0.550000012 0.850000024 srgb
 stroke_rect -32 -32 64 64
 set_line_dash
-transform -1 0 0 1 0 0
+transform -1 0 0 1 0 0 0 0 1
 set_fill_rgba 0.25 0.699999988 0.779999971 0.850000024 srgb
 fill_rect -32 -32 64 64
 set_stroke_rgba 0.949999988 0.970000029 1 0.949999988 srgb
@@ -168,7 +168,7 @@ set_line_width 1.20000005
 set_stroke_rgba 0.449999988 0.479999989 0.550000012 0.850000024 srgb
 stroke_rect -32 -32 64 64
 set_line_dash
-transform 1 0.300000012 0.419999987 1 0 0
+transform 1 0.300000012 0.419999987 1 0 0 0 0 1
 set_fill_rgba 0.25 0.699999988 0.779999971 0.850000024 srgb
 fill_rect -32 -32 64 64
 set_stroke_rgba 0.949999988 0.970000029 1 0.949999988 srgb

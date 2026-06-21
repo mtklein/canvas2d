@@ -3086,6 +3086,76 @@ static void nestedclip(void) {
     save(c, "gallery/nestedclip.png");
 }
 
+// Projective geometry (P1): a source rect mapped through set_perspective_quad onto
+// a receding trapezoid (a "floor" seen in perspective).  Everything is authored in
+// the flat SOURCE space -- a checkerboard floor (filled cells), a grid of stroked
+// lines, a filled star motif, and a text label -- and the homography foreshortens
+// it.  No images or gradients: sampling stays affine this phase, so the scene
+// exercises only projective fills/strokes/text.
+static void perspective_scene(void) {
+    struct canvas *__single c = canvas(360, 240, CANVAS_CS_SRGB);
+    if (!c) {
+        return;
+    }
+    record_scene(c, "gallery/perspective.canvas");
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.07f, 0.08f, 0.11f, 1.0f);
+    canvas_fill_rect(c, 0.0f, 0.0f, 360.0f, 240.0f);
+
+    // The source rect is a 0..S unit floor; the destination quad recedes toward
+    // the top (a far edge narrower than the near edge), corner order TL,TR,BR,BL.
+    float const S = 8.0f;
+    canvas_set_perspective_quad(c, 0.0f, 0.0f, S, S,
+                                130.0f, 70.0f,    // TL (far-left)
+                                230.0f, 70.0f,    // TR (far-right)
+                                340.0f, 220.0f,   // BR (near-right)
+                                20.0f,  220.0f);  // BL (near-left)
+
+    // Checkerboard floor: fill alternating source cells.  Each fill is a flat
+    // source-space rect the homography foreshortens.
+    int const n = (int)S;
+    for (int gy = 0; gy < n; gy++) {
+        for (int gx = 0; gx < n; gx++) {
+            bool const dark = ((gx + gy) & 1) != 0;
+            canvas_set_fill_rgba(c, CANVAS_CS_SRGB,
+                                 dark ? 0.16f : 0.28f,
+                                 dark ? 0.18f : 0.34f,
+                                 dark ? 0.24f : 0.46f, 1.0f);
+            canvas_fill_rect(c, (float)gx, (float)gy, 1.0f, 1.0f);
+        }
+    }
+
+    // Grid lines over the floor (stroked in source space, width constant in
+    // source units so it foreshortens with the plane).
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.55f, 0.62f, 0.78f, 0.9f);
+    canvas_set_line_width(c, 0.05f);
+    canvas_begin_path(c);
+    for (int k = 0; k <= n; k++) {
+        canvas_move_to(c, (float)k, 0.0f);
+        canvas_line_to(c, (float)k, S);
+        canvas_move_to(c, 0.0f, (float)k);
+        canvas_line_to(c, S, (float)k);
+    }
+    canvas_stroke(c);
+
+    // A filled star motif standing on the floor, plus its outline.
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.95f, 0.78f, 0.30f, 1.0f);
+    star(c, S * 0.5f, S * 0.5f, S * 0.28f);
+    canvas_fill(c, CANVAS_NONZERO);
+    canvas_set_stroke_rgba(c, CANVAS_CS_SRGB, 0.20f, 0.14f, 0.04f, 1.0f);
+    canvas_set_line_width(c, 0.04f);
+    star(c, S * 0.5f, S * 0.5f, S * 0.28f);
+    canvas_stroke(c);
+
+    // Text laid on the projected plane (small source-space size; foreshortened).
+    canvas_set_fill_rgba(c, CANVAS_CS_SRGB, 0.92f, 0.95f, 1.0f, 1.0f);
+    canvas_set_font_size(c, 0.9f);
+    canvas_set_text_align(c, CANVAS_ALIGN_CENTER);
+    canvas_fill_text(c, "perspective", S * 0.5f, S - 0.6f);
+    canvas_set_text_align(c, CANVAS_ALIGN_START);
+
+    save(c, "gallery/perspective.png");
+}
+
 // fontFamily: the same line drawn in the default Libian TC plus three macOS
 // system fonts.  Each family records its own glyph curves into the program (the
 // Libian model), so the scene replays on a fontless machine; an unavailable
@@ -3353,6 +3423,7 @@ static void render_all(void) {
     colorspaces();
     ellipserot();
     nestedclip();
+    perspective_scene();
     fontfamily();
     fontstyle();
     fonttoggles();

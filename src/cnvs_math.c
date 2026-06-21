@@ -4,55 +4,115 @@
 
 cnvs_mat cnvs_mat_identity(void) {
     return (cnvs_mat){ .a = 1.0f, .c = 0.0f, .e = 0.0f,
-                       .b = 0.0f, .d = 1.0f, .f = 0.0f };
+                       .b = 0.0f, .d = 1.0f, .f = 0.0f,
+                       .g = 0.0f, .h = 0.0f, .i = 1.0f };
+}
+
+bool cnvs_mat_is_affine(cnvs_mat m) {
+    return m.g == 0.0f && m.h == 0.0f && m.i == 1.0f;
 }
 
 cnvs_mat cnvs_mat_mul(cnvs_mat m, cnvs_mat n) {
+    if (cnvs_mat_is_affine(m) && cnvs_mat_is_affine(n)) {
+        // Both affine: the old 2x3 product, expression for expression, so an
+        // affine chain stays bit-identical to the pre-homography era.
+        return (cnvs_mat){
+            .a = m.a * n.a + m.c * n.b,
+            .c = m.a * n.c + m.c * n.d,
+            .e = m.a * n.e + m.c * n.f + m.e,
+            .b = m.b * n.a + m.d * n.b,
+            .d = m.b * n.c + m.d * n.d,
+            .f = m.b * n.e + m.d * n.f + m.f,
+            .g = 0.0f, .h = 0.0f, .i = 1.0f,
+        };
+    }
+    // Full 3x3 product (column vectors: the (a,b,g) etc. layout).
     return (cnvs_mat){
-        .a = m.a * n.a + m.c * n.b,
-        .c = m.a * n.c + m.c * n.d,
-        .e = m.a * n.e + m.c * n.f + m.e,
-        .b = m.b * n.a + m.d * n.b,
-        .d = m.b * n.c + m.d * n.d,
-        .f = m.b * n.e + m.d * n.f + m.f,
+        .a = m.a * n.a + m.c * n.b + m.e * n.g,
+        .b = m.b * n.a + m.d * n.b + m.f * n.g,
+        .g = m.g * n.a + m.h * n.b + m.i * n.g,
+        .c = m.a * n.c + m.c * n.d + m.e * n.h,
+        .d = m.b * n.c + m.d * n.d + m.f * n.h,
+        .h = m.g * n.c + m.h * n.d + m.i * n.h,
+        .e = m.a * n.e + m.c * n.f + m.e * n.i,
+        .f = m.b * n.e + m.d * n.f + m.f * n.i,
+        .i = m.g * n.e + m.h * n.f + m.i * n.i,
     };
 }
 
 cnvs_mat cnvs_mat_translate(float tx, float ty) {
     return (cnvs_mat){ .a = 1.0f, .c = 0.0f, .e = tx,
-                       .b = 0.0f, .d = 1.0f, .f = ty };
+                       .b = 0.0f, .d = 1.0f, .f = ty,
+                       .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
 cnvs_mat cnvs_mat_scale(float sx, float sy) {
     return (cnvs_mat){ .a = sx,   .c = 0.0f, .e = 0.0f,
-                       .b = 0.0f, .d = sy,   .f = 0.0f };
+                       .b = 0.0f, .d = sy,   .f = 0.0f,
+                       .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
 cnvs_mat cnvs_mat_rotate(float radians) {
     float const s = sinf(radians);
     float c = cosf(radians);
     return (cnvs_mat){ .a = c, .c = -s, .e = 0.0f,
-                       .b = s, .d =  c, .f = 0.0f };
+                       .b = s, .d =  c, .f = 0.0f,
+                       .g = 0.0f, .h = 0.0f, .i = 1.0f };
 }
 
 cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p) {
+    if (cnvs_mat_is_affine(m)) {
+        // No divide: identical to the 2x3 apply (w == 1 exactly).
+        return (cnvs_vec2){
+            .x = m.a * p.x + m.c * p.y + m.e,
+            .y = m.b * p.x + m.d * p.y + m.f,
+        };
+    }
+    float const w = m.g * p.x + m.h * p.y + m.i;
+    float const inv = 1.0f / w;
     return (cnvs_vec2){
-        .x = m.a * p.x + m.c * p.y + m.e,
-        .y = m.b * p.x + m.d * p.y + m.f,
+        .x = (m.a * p.x + m.c * p.y + m.e) * inv,
+        .y = (m.b * p.x + m.d * p.y + m.f) * inv,
     };
 }
 
 cnvs_mat cnvs_mat_invert(cnvs_mat m) {
-    float const det = m.a * m.d - m.b * m.c;
+    if (cnvs_mat_is_affine(m)) {
+        // The old 2x3 inverse, arithmetic unchanged, so an affine matrix
+        // inverts bit-identically (the device->user maps the sampler relies on).
+        float const det = m.a * m.d - m.b * m.c;
+        if (det < 1e-12f && det > -1e-12f) {
+            return cnvs_mat_identity();
+        }
+        float const inv = 1.0f / det;
+        cnvs_mat r = { .a =  m.d * inv, .c = -m.c * inv,
+                       .b = -m.b * inv, .d =  m.a * inv,
+                       .g = 0.0f, .h = 0.0f, .i = 1.0f };
+        r.e = -(r.a * m.e + r.c * m.f);
+        r.f = -(r.b * m.e + r.d * m.f);
+        return r;
+    }
+    // General 3x3 inverse via the adjugate / determinant.
+    float const A =  (m.d * m.i - m.f * m.h);
+    float const B = -(m.b * m.i - m.f * m.g);
+    float const C =  (m.b * m.h - m.d * m.g);
+    float const det = m.a * A + m.c * B + m.e * C;
     if (det < 1e-12f && det > -1e-12f) {
         return cnvs_mat_identity();
     }
     float const inv = 1.0f / det;
-    cnvs_mat r = { .a =  m.d * inv, .c = -m.c * inv,
-                   .b = -m.b * inv, .d =  m.a * inv };
-    r.e = -(r.a * m.e + r.c * m.f);
-    r.f = -(r.b * m.e + r.d * m.f);
-    return r;
+    // Adjugate (transpose of the cofactor matrix) scaled by 1/det.
+    return (cnvs_mat){
+        .a = A * inv,
+        .b = B * inv,
+        .g = C * inv,
+        .c = -(m.c * m.i - m.e * m.h) * inv,
+        .d =  (m.a * m.i - m.e * m.g) * inv,
+        .h = -(m.a * m.h - m.c * m.g) * inv,
+        .e =  (m.c * m.f - m.e * m.d) * inv,
+        .f = -(m.a * m.f - m.e * m.b) * inv,
+        .i =  (m.a * m.d - m.c * m.b) * inv,
+    };
 }
 
 cnvs_unpremul cnvs_unpremul_of(float r, float g, float b, float a) {

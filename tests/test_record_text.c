@@ -559,11 +559,12 @@ static uint32_t xorshift32(uint32_t *__single s) {
 // One float through the recorder's emission (fprintf %.9g -- the identical
 // libc formatter cnvs_record.c writes with, via an in-memory FILE) and the
 // replay parser's number reader (a set_transform line, read back via
-// get_transform): the reparsed float32 must be bit-identical.
+// get_transform): the reparsed float32 must be bit-identical.  set_transform
+// now carries the full 3x3 (the affine subset's trailing 0 0 1).
 static bool roundtrips(struct canvas *__single cv, FILE *__single f,
                        char const *__counted_by(cap) line, int cap, float v) {
     rewind(f);
-    fprintf(f, "set_transform %.9g 0 0 1 0 0\n", (double)v);
+    fprintf(f, "set_transform %.9g 0 0 1 0 0 0 0 1\n", (double)v);
     if (fflush(f) != 0) {
         return false;
     }

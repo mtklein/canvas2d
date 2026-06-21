@@ -232,7 +232,7 @@ def main():
         "fontfamily", "fontstyle", "fonttoggles", "fontvariants", "gradients", "gradinterp",
         "hittest",
         "imagecolorspace", "imagedata", "imagedataf16", "imagescale", "joins", "linearlight", "miterdash",
-        "nestedclip", "path2d", "paths", "pattern",
+        "nestedclip", "path2d", "paths", "pattern", "perspective",
         "porterduff", "roundrect", "rtl", "selection", "shadows", "shapes",
         "shaping", "smoothing", "strokerect", "subrect", "text", "textgrid",
         "textmaxwidth", "textmetrics", "textspacing", "winding",

@@ -1319,7 +1319,7 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     }
     blk->started = true;  // any other effective command locks the space in
 
-    float f[8];
+    float f[9];
     bool b;
 
     // --- no-arg ---
@@ -1409,9 +1409,11 @@ static bool replay_line(struct canvas *__single cv, struct replay_blocks *__sing
     else if (tok_eq(data, le, cs, cl, "add_fill_color_stop"))   { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_cs(data, le, &j, &sp)) return false; canvas_add_fill_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
     else if (tok_eq(data, le, cs, cl, "add_stroke_color_stop")) { enum canvas_color_space sp; if (!read_floats(data, le, &j, f, 5) || !read_cs(data, le, &j, &sp)) return false; canvas_add_stroke_color_stop(cv, sp, f[0], f[1], f[2], f[3], f[4]); return true; }
 
+    // --- 9 float (the full 3x3 CTM; affine lines carry a trailing 0 0 1) ---
+    else if (tok_eq(data, le, cs, cl, "transform"))                  { if (!read_floats(data, le, &j, f, 9)) return false; canvas_transform_3x3(cv, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]); }
+    else if (tok_eq(data, le, cs, cl, "set_transform"))              { if (!read_floats(data, le, &j, f, 9)) return false; canvas_set_transform_3x3(cv, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8]); }
+
     // --- 6 float ---
-    else if (tok_eq(data, le, cs, cl, "transform"))                  { if (!read_floats(data, le, &j, f, 6)) return false; canvas_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
-    else if (tok_eq(data, le, cs, cl, "set_transform"))              { if (!read_floats(data, le, &j, f, 6)) return false; canvas_set_transform(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "bezier_curve_to"))            { if (!read_floats(data, le, &j, f, 6)) return false; canvas_bezier_curve_to(cv, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "set_fill_radial_gradient"))   { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 6)) return false; canvas_set_fill_radial_gradient(cv, sp, al, f[0], f[1], f[2], f[3], f[4], f[5]); }
     else if (tok_eq(data, le, cs, cl, "set_stroke_radial_gradient")) { enum canvas_color_space sp; enum canvas_alpha_type al; if (!read_interp(data, le, &j, &sp, &al) || !read_floats(data, le, &j, f, 6)) return false; canvas_set_stroke_radial_gradient(cv, sp, al, f[0], f[1], f[2], f[3], f[4], f[5]); }

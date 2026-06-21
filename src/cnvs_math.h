@@ -24,9 +24,13 @@ typedef uint8_t  uchar4   __attribute__((ext_vector_type(4)));
 typedef uint8_t  uchar8   __attribute__((ext_vector_type(8)));
 typedef uint8_t  uchar16  __attribute__((ext_vector_type(16)));
 
-// 2D affine transforms (HTML Canvas 2D convention).  A matrix maps (x, y) to
-//     (a*x + c*y + e,  b*x + d*y + f),
-// the (a, b, c, d, e, f) of CanvasRenderingContext2D.setTransform().
+// 2D projective (homography) transforms, a deliberate extension beyond the HTML
+// Canvas 2D affine spec (docs/decisions/perspective.md).  A matrix maps (x, y) to
+//     x' = (a*x + c*y + e) / w,  y' = (b*x + d*y + f) / w,  w = g*x + h*y + i.
+// Affine is the (g, h, i) = (0, 0, 1) subset -- then w == 1, no divide, and the
+// (a, b, c, d, e, f) are the CanvasRenderingContext2D.setTransform() six.  The
+// affine subset stays on a divide-free fast path so existing scenes compute bit
+// for bit as before.
 
 typedef struct {
     float x, y;
@@ -64,22 +68,31 @@ cnvs_premul cnvs_premultiply(cnvs_unpremul c);
 cnvs_unpremul cnvs_unpremultiply(cnvs_premul c);
 
 typedef struct {
-    float a, b, c, d, e, f;
+    float a, b, c, d, e, f, g, h, i;
 } cnvs_mat;
 
 cnvs_mat cnvs_mat_identity(void);
+
+// Whether the bottom row is (0, 0, 1) -- the affine subset, on which apply/mul/
+// invert take a divide-free path that reproduces the old 2x3 arithmetic exactly.
+bool cnvs_mat_is_affine(cnvs_mat m);
 
 // mat_apply(mat_mul(m, n), p) == apply(m, apply(n, p)): n is applied first, as
 // when Canvas chains translate() then scale().
 cnvs_mat cnvs_mat_mul(cnvs_mat m, cnvs_mat n);
 
+// translate/scale/rotate build affine matrices (g = h = 0, i = 1); their (a..f)
+// values are unchanged from the 2x3 era.
 cnvs_mat cnvs_mat_translate(float tx, float ty);
 cnvs_mat cnvs_mat_scale(float sx, float sy);
 cnvs_mat cnvs_mat_rotate(float radians);
 
+// Apply to (x, y): affine maps with no divide (bit-identical to the 2x3 era);
+// projective divides by w.
 cnvs_vec2 cnvs_mat_apply(cnvs_mat m, cnvs_vec2 p);
 
-// Inverse; identity if (near-)singular.
+// Inverse; identity if (near-)singular.  Affine inputs yield the affine inverse
+// bit-identically.
 cnvs_mat cnvs_mat_invert(cnvs_mat m);
 
 // clamp01 -- THE clamp (D1, docs/vocabulary.md): the output is guaranteed in
