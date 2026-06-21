@@ -123,26 +123,24 @@ canvas2d_unpremul canvas2d_unpremul_of(float r, float g, float b, float a) {
 }
 
 canvas2d_premul canvas2d_premultiply(canvas2d_unpremul c) {
-    // {r*a, g*a, b*a, a}, clamped to [0,1], in _Float16 directly
-    // (docs/decisions/color-axis.md).
-    f16x4 const p = { c.r, c.g, c.b, c.a };
-    _Float16 a = p[3];
-    f16x4 out = p * (f16x4){ a, a, a, (_Float16)1.0f };
-    out = __builtin_elementwise_min((f16x4)(_Float16)1.0f,
-                                    __builtin_elementwise_max((f16x4)(_Float16)0.0f, out));
-    return (canvas2d_premul){ .r = out[0], .g = out[1], .b = out[2], .a = out[3] };
+    // {r*a, g*a, b*a, a} in _Float16 (docs/decisions/color-axis.md).  Alpha
+    // clamps to [0,1]; the colour planes keep NO bound -- extended linear sRGB
+    // carries colour both above the [0,1] gamut (HDR) and below it (wide gamut),
+    // and the only place either collapses is the output encode+quantize (the
+    // same doctrine as canvas2d_px8_clamp_premul_lin).
+    _Float16 const a = __builtin_elementwise_max((_Float16)0.0f,
+                       __builtin_elementwise_min((_Float16)1.0f, c.a));
+    return (canvas2d_premul){ .r = c.r * a, .g = c.g * a, .b = c.b * a, .a = a };
 }
 
 canvas2d_unpremul canvas2d_unpremultiply(canvas2d_premul c) {
-    // r/a, g/a, b/a (lane 3 divides to a/a and is overwritten with a),
-    // clamped to [0,1].
-    _Float16 a = c.a;
+    // r/a, g/a, b/a; alpha clamps to [0,1].  The colour planes keep NO bound
+    // (extended linear sRGB -- HDR above the gamut, wide gamut below); only the
+    // output encode+quantize collapses the range.
+    _Float16 const a = c.a;
     if (a <= (_Float16)0.0f) {  // fully transparent un-premultiplies to all zero
         return (canvas2d_unpremul){ .r = 0, .g = 0, .b = 0, .a = 0 };
     }
-    f16x4 u = (f16x4){ c.r, c.g, c.b, c.a } / a;
-    u[3] = a;
-    u = __builtin_elementwise_min((f16x4)(_Float16)1.0f,
-                                  __builtin_elementwise_max((f16x4)(_Float16)0.0f, u));
-    return (canvas2d_unpremul){ .r = u[0], .g = u[1], .b = u[2], .a = u[3] };
+    _Float16 const ca = __builtin_elementwise_min((_Float16)1.0f, a);
+    return (canvas2d_unpremul){ .r = c.r / a, .g = c.g / a, .b = c.b / a, .a = ca };
 }
