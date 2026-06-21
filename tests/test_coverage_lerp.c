@@ -47,7 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// --- the double-precision reference (mirrors canvas.c's blend kernels) ------
+// --- the double-precision reference (mirrors canvas2d.c's blend kernels) ------
 
 typedef struct {
     double r, g, b, a;

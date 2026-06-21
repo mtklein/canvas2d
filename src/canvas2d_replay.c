@@ -33,7 +33,7 @@
                                         // declare (a sanity cap: the storage
                                         // grows per arriving line, so memory
                                         // tracks the file's actual size)
-#define REPLAY_RESIZE_DIM_MAX 16384     // resize dims (mirrors canvas.c's
+#define REPLAY_RESIZE_DIM_MAX 16384     // resize dims (mirrors canvas2d_context.h's
                                         // CANVAS2D_DIM_MAX: the recorder only
                                         // writes a resize that succeeded)
 #define REPLAY_BITMAP_DIM_MAX 512    // capture dims cap: bounds a bitmap
@@ -1611,7 +1611,7 @@ static bool replay_line(struct canvas2d_context *__single cv, struct replay_bloc
         return true;  // dash consumed the rest of the line
     }
 
-    // --- text blocks (cross-line state; see canvas.h on the program format) ---
+    // --- text blocks (cross-line state; see canvas2d.h on the program format) ---
     else if (tok_eq(data, le, cs, cl, "font"))   { return replay_font(cv, blk, data, le, j); }
     else if (tok_eq(data, le, cs, cl, "glyph"))  { return replay_glyph(cv, blk, data, le, j); }
     else if (tok_eq(data, le, cs, cl, "bitmap")) { return replay_bitmap(blk, data, le, j); }

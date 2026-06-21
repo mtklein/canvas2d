@@ -96,7 +96,7 @@ enum canvas2d_pattern_repeat {
 enum canvas2d_color_type { CANVAS2D_COLOR_UNORM8, CANVAS2D_COLOR_F16 };
 enum canvas2d_alpha_type { CANVAS2D_ALPHA_UNPREMUL, CANVAS2D_ALPHA_PREMUL };
 
-// globalCompositeOperation.  The blend kernels (canvas.c) dispatch on this
+// globalCompositeOperation.  The blend kernels (canvas2d.c) dispatch on this
 // order directly: the first 11 are Porter-Duff operators, then the separable
 // blend modes, then the four non-separable ones.
 enum canvas2d_composite_op {
@@ -215,8 +215,8 @@ void canvas2d_reset_transform(struct canvas2d_context *__single cv);
 //     x' = (a*x + c*y + e) / w,  y' = (b*x + d*y + f) / w,  w = g*x + h*y + i.
 // Affine is the (g, h, i) = (0, 0, 1) subset; the six-argument setters above set
 // it and stay on a divide-free, byte-identical path.  Geometry (fills, strokes,
-// text) renders projectively; sampling (gradients/images/patterns) is still
-// affine-sampled this phase.
+// text) and sampling (gradients/images/patterns) both render projectively; the
+// affine subset keeps the divide-free linear path.
 void canvas2d_set_transform_3x3(struct canvas2d_context *__single cv, float a, float b, float c,
                               float d, float e, float f, float g, float h, float i);
 void canvas2d_transform_3x3(struct canvas2d_context *__single cv, float a, float b, float c,
@@ -498,7 +498,7 @@ void canvas2d_set_image_smoothing_enabled(struct canvas2d_context *__single cv, 
 // canvas2d_image_build_mips (without it, the draw stays bilinear); a borrowed
 // bitmap's rebuilds per such draw, the quality knob being the caller's
 // opt-in to that cost.  high additionally upgrades magnification to a 4x4
-// Catmull-Rom (the BC-spline family; the (B, C) pair is one line in canvas.c
+// Catmull-Rom (the BC-spline family; the (B, C) pair is one line in canvas2d.c
 // if Mitchell is wanted instead), its taps premultiplied so negative lobes
 // cannot synthesize colour from transparent texels.
 void canvas2d_set_image_smoothing_quality(struct canvas2d_context *__single cv,

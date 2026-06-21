@@ -1,8 +1,8 @@
 #pragma once
 
 // Text canvas-program *recorder* -- the write side of the .canvas text format
-// that canvas2d_replay.c reads.  canvas2d_record_to() (canvas.h) installs a recorder on
-// a canvas; canvas.c then calls these emit helpers from each recordable public
+// that canvas2d_replay.c reads.  canvas2d_record_to() (canvas2d.h) installs a recorder on
+// a canvas; canvas2d.c then calls these emit helpers from each recordable public
 // op, so a live drawing session is written out as one command per line.  The
 // command spellings, enum names, and argument order match the replay parser
 // value-for-value -- record_to and replay_from are inverses over the text-format

@@ -10,7 +10,7 @@
 // realizing either.  An image owns a copy of its pixels, which gives them
 // identity -- the hook derived data caches against.  The canvas methods that
 // draw FROM an image (canvas2d_draw_image / _scaled / _subrect) and the snapshot
-// constructor (canvas2d_snapshot) live in canvas.h.
+// constructor (canvas2d_snapshot) live in canvas2d.h.
 struct canvas2d_image;
 
 // Construct an image, one typed constructor per colour type, each taking its

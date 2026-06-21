@@ -385,16 +385,17 @@ bare `ninja` in the checked variants and again under the `tsan` variant.
 ```
         public API (include/canvas2d.h)
                   │
-   canvas.c  ── state stack, CTM, styles; rasterizes coverage, shades tiles, and
+   canvas2d.c ── state stack, CTM, styles; rasterizes coverage, shades tiles, and
       │          blends them onto its own premultiplied RGBA16F target (all 26
       │          composite/blend modes, one planar kernel)
-      ├── canvas2d_math     2x3 affine transforms
+      ├── canvas2d_matrix   3x3 homography (affine subset divide-free)
+      ├── canvas2d_math     SIMD lane vocabulary + clamp/convert helpers
       ├── canvas2d_path     subpath storage + adaptive Bézier/arc flattening
       ├── canvas2d_cover     analytic (signed-area) coverage → per-pixel alpha
       ├── canvas2d_gradient linear/radial/conic gradients, evaluated per pixel into a tile
       ├── canvas2d_stroke   polyline → stroke triangles (joins, caps, dashes)
       ├── canvas2d_image    clipped 2D RGBA8 blits (get/putImageData)
-      ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
+      ├── canvas2d_blur     separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
       ├── canvas2d_geom     growable vertex/int buffers
       ├── canvas2d_zlib     deflate + strict inflate (RFC 1950/1951) + adler32
       ├── canvas2d_png      → PNG: 16-bit Rec.2020/PQ (BT.2100) Up-filtered encoder, output only
@@ -415,9 +416,9 @@ One boundary crosses to a system framework, behind a bounds-safe C ABI:
   size and transform — or, for a color glyph (emoji), one fixed-size RGBA8
   capture that every draw samples through a mip pyramid.
 
-Compositing runs in canvas.c, not a separate module: geometry, antialiasing,
+Compositing runs in canvas2d.c, not a separate module: geometry, antialiasing,
 gradient evaluation, and clipping produce premultiplied `_Float16` RGBA16F
-tiles, and canvas.c's planar blend kernels composite them onto the
+tiles, and canvas2d.c's planar blend kernels composite them onto the
 premultiplied target (all 26 modes, ~350 lines, over `__counted_by` tiles).
 `_Float16` is both the storage and the compute type, and planar (SoA) is the
 compute layout: the blend, filter, premultiply, and readback kernels process
@@ -563,7 +564,7 @@ detail: [docs/stencil-blur.md](docs/stencil-blur.md) (blur),
 
 - `filter` — the eight colour functions as per-pixel matrix kernels over
   premultiplied tiles ([canvas2d_filter.c](src/canvas2d_filter.c)), `blur()` as an
-  RGBA16F box blur ([blur.c](src/blur.c)) against transparency, and
+  RGBA16F box blur ([canvas2d_blur.c](src/canvas2d_blur.c)) against transparency, and
   `drop-shadow()` (the tile over a blurred, offset, tinted copy of its alpha).
   Not offered: the CSS string form and `url()` SVG reference filters.
 

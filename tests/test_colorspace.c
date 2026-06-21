@@ -1,4 +1,4 @@
-// The working-space parameter (canvas.h) and the linear-light pipeline.  Three
+// The working-space parameter (canvas2d.h) and the linear-light pipeline.  Three
 // claims:
 //   1. The working space is a required choice between sRGB and linear, and it
 //      survives reset()/resize() -- the space is on the canvas, not the
@@ -256,7 +256,7 @@ static void linear_multiply_differs(void) {
 //
 // On a LINEAR canvas the spec-in-sRGB modes (overlay, darken, lighten, the
 // dodge/burn pair, hard/soft-light, additive lighter, and the non-separable
-// hue/saturation/color/luminosity) run through canvas.c's encode->sRGB / blend /
+// hue/saturation/color/luminosity) run through canvas2d.c's encode->sRGB / blend /
 // decode->linear wrapper.  This sweep paints each over a known backdrop on a
 // CANVAS2D_CS_LINEAR_SRGB canvas and checks the centre pixel against a
 // double-precision oracle computed in the SAME frame the wrapper uses.

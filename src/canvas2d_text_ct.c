@@ -372,8 +372,8 @@ void canvas2d_glyph_bounds(void *font, uint16_t glyph, float *x0, float *y0,
 //     kCTLigatureAttributeName = 0 (a pragmatic mapping: Core Text exposes no
 //     single "speed" knob, so the speed hint is spelled as no kerning + no
 //     ligatures).  The other values leave ligatures at the default.
-// The enum values must match canvas.h (AUTO=0/NORMAL=1/NONE=2 for kerning;
-// AUTO=0/OPTIMIZE_SPEED=1 for rendering); the boundary keeps no canvas.h
+// The enum values must match canvas2d.h (AUTO=0/NORMAL=1/NONE=2 for kerning;
+// AUTO=0/OPTIMIZE_SPEED=1 for rendering); the boundary keeps no canvas2d.h
 // dependency, so they are spelled here as the documented integers.
 enum { CT_KERNING_NONE = 2, CT_RENDERING_OPTIMIZE_SPEED = 1 };
 

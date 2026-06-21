@@ -8,7 +8,7 @@ pixel (so it indexes outside the current position, into the flag's forward-only
 `__counted_by` model), and its two passes have different memory behaviour
 (horizontal is contiguous; vertical strides a full row at a time).
 
-[../src/blur.c](../src/blur.c) is a running-sum box blur of an 8-bit mask, radius
+[../src/canvas2d_blur.c](../src/canvas2d_blur.c) is a running-sum box blur of an 8-bit mask, radius
 `r`, edges clamped: each pass adds the entering sample and subtracts the leaving
 one, so it is O(1) per pixel regardless of `r`. `canvas2d_blur_box_h` walks each row
 (stride 1); `canvas2d_blur_box_v` walks each column (stride `w`); a third variant,

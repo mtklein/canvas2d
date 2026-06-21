@@ -1,7 +1,7 @@
 // PNG writer: 16-bit RGBA, non-interlaced, Up-filtered rows, deflate via
 // canvas2d_zlib.  The colour is BT.2100 -- Rec.2020 primaries, PQ (ST 2084)
 // transfer -- signalled by a cICP chunk; the pixel pipeline that produces it is
-// in canvas.c (canvas2d_encode_png).  Encode only; nothing reads PNGs back.
+// in canvas2d_encode.c (canvas2d_encode_png).  Encode only; nothing reads PNGs back.
 //
 // Samples are big-endian (PNG byte order for bit depth 16).  Row filtering is
 // Up-ONLY (every row's filter byte is 2): each row encodes as its byte-wise

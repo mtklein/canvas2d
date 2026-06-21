@@ -1,10 +1,10 @@
 #pragma once
 
-// The blend stage's seam, internal to the canvas (canvas.c implements it):
+// The blend stage's seam, internal to the canvas (canvas2d.c implements it):
 // composite a premultiplied tile onto the canvas's premultiplied RGBA16F
 // target under an enum canvas2d_composite_op.  Declared here so the blend oracles
 // (test_blend, test_coverage_lerp) can drive the kernels directly;
-// canvas.c's own paint paths are the production callers.
+// canvas2d.c's own paint paths are the production callers.
 //
 // Tiles and the target are premultiplied RGBA16F (canvas2d_premul), row-major, top
 // row first.  putImageData is blend with COPY, clearRect is blend with

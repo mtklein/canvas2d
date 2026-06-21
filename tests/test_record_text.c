@@ -19,7 +19,7 @@
 //     the canvas drawable;
 //   - the float round-trip property: every %.9g-printed float32 (denormals,
 //     -0, extremes included) reparses to the identical float32.
-// See docs/text-boundary.md and canvas.h's record_to/replay_from contracts.
+// See docs/text-boundary.md and canvas2d.h's record_to/replay_from contracts.
 
 #include "test_util.h"
 

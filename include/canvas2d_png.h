@@ -7,7 +7,7 @@
 // (filter byte 2), one IDAT carrying a canvas2d_zlib deflate stream, plus a cICP
 // chunk signalling BT.2100 (Rec.2020 primaries, PQ transfer).  The pixels are
 // already in that encoding; the colour pipeline that produces them is in
-// canvas.c (canvas2d_encode_png).  Up-only is a deliberate trade (see canvas2d_png.c):
+// canvas2d_encode.c (canvas2d_encode_png).  Up-only is a deliberate trade (see canvas2d_png.c):
 // it vectorizes as a whole-row subtract with no left-neighbor recurrence.
 // Deterministic: identical pixels -> identical PNG bytes, always.
 

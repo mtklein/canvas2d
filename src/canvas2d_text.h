@@ -80,7 +80,7 @@ struct canvas2d_shaped {
 // boundary as counted (bytes, len) slices -- CFStringCreateWithBytes takes exactly
 // that -- so checked callers hand over the (ptr, len) pairs they already hold: no
 // NUL-terminated copy exists anywhere internal, and the shim cannot over-read a
-// non-terminated buffer.  (The public canvas.h API keeps its __null_terminated
+// non-terminated buffer.  (The public canvas2d.h API keeps its __null_terminated
 // ergonomics; the strlen happens once at that entry point, in-rules.)
 struct canvas2d_shaped *__single canvas2d_shape_text(char const *__counted_by(name_len) name, int name_len,
                                  float size_px, bool rtl, int weight, bool italic,
@@ -470,8 +470,8 @@ struct canvas2d_shaping_slot *__single canvas2d_text_cache_shaping_slot(struct c
 // recording starts with nothing serialized yet.
 void canvas2d_text_cache_unmark(struct canvas2d_text_cache *__single c);
 
-// The per-canvas cache handle, for tests and stats (implemented in canvas.c).
-// Deliberately not in the public canvas.h: tests include internal headers.
+// The per-canvas cache handle, for tests and stats (implemented in canvas2d.c).
+// Deliberately not in the public canvas2d.h: tests include internal headers.
 struct canvas2d_context;
 struct canvas2d_text_cache *__single canvas2d_canvas_text_cache(struct canvas2d_context *__single cv);
 
@@ -570,7 +570,7 @@ typedef struct {
 // can't serve a glyph, a run that still has its font handle falls back to a
 // live canvas2d_glyph_bounds; a handle-less run's glyph contributes no ink.  The
 // font-wide metrics (ascent/descent/em/baselines) derive from ascent_px/
-// descent_px -- the primary font's vertical metrics at size_px, which canvas.c
+// descent_px -- the primary font's vertical metrics at size_px, which canvas2d.c
 // reads through its cached vmetrics record -- and size_px.  s may be NULL
 // (font-wide metrics only).
 void canvas2d_measure_shaped(struct canvas2d_text_cache *__single cache,

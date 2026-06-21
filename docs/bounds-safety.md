@@ -213,7 +213,7 @@ area it leaves to its right into a per-pixel accumulation buffer, and a per-row
 prefix sum turns that into winding-weighted coverage the fill rule folds to
 `[0,1]` — exact in both axes. Clipping is a per-pixel coverage mask, gradients
 are evaluated per pixel, and the result is a finished tile the blend stage
-composites ([canvas.c](../src/canvas.c)'s planar blend kernels).
+composites ([canvas2d.c](../src/canvas2d.c)'s planar blend kernels).
 
 The alternative — MSAA on a GPU — antialiases only the geometry it is handed,
 and a scan-converted fill is a stack of 1px-tall rectangles, so its top and
