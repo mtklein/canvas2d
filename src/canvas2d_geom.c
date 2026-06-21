@@ -37,12 +37,12 @@ bool canvas2d_verts_append(struct canvas2d_verts *v, canvas2d_vec2 const *__coun
     canvas2d_vec2 *__counted_by(cnt) dst = v->data + v->nverts;
     int i = 0;
     for (; i + 8 <= cnt; i += 8) {  // a stroke block stages 36-48 verts
-        float16 q;
+        f32x16 q;
         memcpy(&q, src + i, sizeof q);
         memcpy(dst + i, &q, sizeof q);
     }
     for (; i + 4 <= cnt; i += 4) {
-        float8 q;
+        f32x8 q;
         memcpy(&q, src + i, sizeof q);
         memcpy(dst + i, &q, sizeof q);
     }
@@ -64,15 +64,15 @@ void canvas2d_verts_free(struct canvas2d_verts *v) {
     v->cap = 0;
 }
 
-foldv8 mat_apply8(canvas2d_mat m, float8 x, float y) {
+foldv8 mat_apply8(canvas2d_mat m, f32x8 x, float y) {
     return (foldv8){ .x = m.a * x + m.c * y + m.e,
                      .y = m.b * x + m.d * y + m.f };
 }
 
-foldv8 mat_apply8_persp(canvas2d_mat m, float8 x, float y) {
-    float8 const u = m.a * x + m.c * y + m.e;
-    float8 const v = m.b * x + m.d * y + m.f;
-    float8 const w = m.g * x + m.h * y + m.i;
-    float8 const inv = (float8)1.0f / w;
+foldv8 mat_apply8_persp(canvas2d_mat m, f32x8 x, float y) {
+    f32x8 const u = m.a * x + m.c * y + m.e;
+    f32x8 const v = m.b * x + m.d * y + m.f;
+    f32x8 const w = m.g * x + m.h * y + m.i;
+    f32x8 const inv = (f32x8)1.0f / w;
     return (foldv8){ .x = u * inv, .y = v * inv };
 }

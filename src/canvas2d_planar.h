@@ -18,18 +18,18 @@
 // 8-pixel slab.
 
 #include "canvas2d_color.h"  // canvas2d_premul, canvas2d_unpremul
-#include "canvas2d_math.h"   // half4, half8, float16, int8, short8, uchar4, uchar8
+#include "canvas2d_math.h"   // f16x4, f16x8, f16x16, i32x8, i16x8, u8x4, u8x8
 
 #include <arm_neon.h>
 #include <ptrcheck.h>
 #include <stdint.h>
 #include <string.h>
 
-// One slab: eight pixels, channel-planar.  A half8 is one channel plane
-// (canvas2d_math.h's generic lane vocabulary; a half4 is one AoS pixel, a uchar8
+// One slab: eight pixels, channel-planar.  A f16x8 is one channel plane
+// (canvas2d_math.h's generic lane vocabulary; a f16x4 is one AoS pixel, a u8x8
 // one byte plane).
 typedef struct {
-    half8 r, g, b, a;
+    f16x8 r, g, b, a;
 } canvas2d_px8;
 
 // Bit-exact lane select: a where the mask lane is set (-1, from a vector
@@ -37,16 +37,16 @@ typedef struct {
 // unselected lane may hold the inf/NaN of a guarded divide and must be
 // discarded exactly -- this is how scalar `p ? q : r` branches translate to
 // lanes without changing any selected value.
-static inline half8 half8_if_then_else(short8 m, half8 a, half8 b) {
-    return (half8)(((short8)a & m) | ((short8)b & ~m));
+static inline f16x8 f16x8_if_then_else(i16x8 m, f16x8 a, f16x8 b) {
+    return (f16x8)(((i16x8)a & m) | ((i16x8)b & ~m));
 }
 
 // --- the f16 tile seam (canvas2d_premul is four contiguous _Float16) ------------
 
 static inline canvas2d_px8 canvas2d_px8_load(canvas2d_premul const *__counted_by(8) p) {
     float16x8x4_t v = vld4q_f16((float16_t const *)p);
-    return (canvas2d_px8){ (half8)v.val[0], (half8)v.val[1],
-                       (half8)v.val[2], (half8)v.val[3] };
+    return (canvas2d_px8){ (f16x8)v.val[0], (f16x8)v.val[1],
+                       (f16x8)v.val[2], (f16x8)v.val[3] };
 }
 
 static inline void canvas2d_px8_store(canvas2d_premul *__counted_by(8) p, canvas2d_px8 px) {
@@ -59,10 +59,10 @@ static inline void canvas2d_px8_store(canvas2d_premul *__counted_by(8) p, canvas
 // Transparent-black lanes are inert through every kernel (no divide here is
 // unguarded), and the partial store writes only the first k pixels back.
 static inline canvas2d_px8 canvas2d_px8_load_k(canvas2d_premul const *__counted_by(k) p, int k) {
-    canvas2d_px8 o = { .r = (half8)(_Float16)0.0f, .g = (half8)(_Float16)0.0f,
-                   .b = (half8)(_Float16)0.0f, .a = (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { .r = (f16x8)(_Float16)0.0f, .g = (f16x8)(_Float16)0.0f,
+                   .b = (f16x8)(_Float16)0.0f, .a = (f16x8)(_Float16)0.0f };
     for (int i = 0; i < k && i < 8; i++) {
-        half4 px;
+        f16x4 px;
         memcpy(&px, &p[i], sizeof px);  // one bounds check, four channels
         o.r[i] = px[0];
         o.g[i] = px[1];
@@ -75,7 +75,7 @@ static inline canvas2d_px8 canvas2d_px8_load_k(canvas2d_premul const *__counted_
 static inline void canvas2d_px8_store_k(canvas2d_premul *__counted_by(k) p, int k,
                                     canvas2d_px8 px) {
     for (int i = 0; i < k && i < 8; i++) {
-        half4 q = { px.r[i], px.g[i], px.b[i], px.a[i] };
+        f16x4 q = { px.r[i], px.g[i], px.b[i], px.a[i] };
         memcpy(&p[i], &q, sizeof q);
     }
 }
@@ -87,26 +87,26 @@ static inline void canvas2d_px8_store_k(canvas2d_premul *__counted_by(k) p, int 
 // stays visible at the call site.
 static inline canvas2d_px8 canvas2d_px8_load_rgba8(uint8_t const *__counted_by(32) p) {
     uint8x8x4_t v = vld4_u8(p);
-    return (canvas2d_px8){ __builtin_convertvector((uchar8)v.val[0], half8),
-                       __builtin_convertvector((uchar8)v.val[1], half8),
-                       __builtin_convertvector((uchar8)v.val[2], half8),
-                       __builtin_convertvector((uchar8)v.val[3], half8) };
+    return (canvas2d_px8){ __builtin_convertvector((u8x8)v.val[0], f16x8),
+                       __builtin_convertvector((u8x8)v.val[1], f16x8),
+                       __builtin_convertvector((u8x8)v.val[2], f16x8),
+                       __builtin_convertvector((u8x8)v.val[3], f16x8) };
 }
 
 // Planes of finished byte values in [0, 255.5) narrowed (truncating, the
 // convert's rounding) and re-interleaved to eight RGBA8 pixels.
 static inline void canvas2d_px8_store_rgba8(uint8_t *__counted_by(32) p, canvas2d_px8 px) {
-    uint8x8x4_t v = { { (uint8x8_t)__builtin_convertvector(px.r, uchar8),
-                        (uint8x8_t)__builtin_convertvector(px.g, uchar8),
-                        (uint8x8_t)__builtin_convertvector(px.b, uchar8),
-                        (uint8x8_t)__builtin_convertvector(px.a, uchar8) } };
+    uint8x8x4_t v = { { (uint8x8_t)__builtin_convertvector(px.r, u8x8),
+                        (uint8x8_t)__builtin_convertvector(px.g, u8x8),
+                        (uint8x8_t)__builtin_convertvector(px.b, u8x8),
+                        (uint8x8_t)__builtin_convertvector(px.a, u8x8) } };
     vst4_u8(p, v);
 }
 
 static inline canvas2d_px8 canvas2d_px8_load_rgba8_k(uint8_t const *__counted_by(4 * k) p,
                                              int k) {
-    canvas2d_px8 o = { .r = (half8)(_Float16)0.0f, .g = (half8)(_Float16)0.0f,
-                   .b = (half8)(_Float16)0.0f, .a = (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { .r = (f16x8)(_Float16)0.0f, .g = (f16x8)(_Float16)0.0f,
+                   .b = (f16x8)(_Float16)0.0f, .a = (f16x8)(_Float16)0.0f };
     for (int i = 0; i < k && i < 8; i++) {
         uint8_t px[4];
         memcpy(px, &p[i * 4], sizeof px);
@@ -121,8 +121,8 @@ static inline canvas2d_px8 canvas2d_px8_load_rgba8_k(uint8_t const *__counted_by
 static inline void canvas2d_px8_store_rgba8_k(uint8_t *__counted_by(4 * k) p, int k,
                                           canvas2d_px8 px) {
     for (int i = 0; i < k && i < 8; i++) {
-        half4 const v = { px.r[i], px.g[i], px.b[i], px.a[i] };
-        uchar4 q = __builtin_convertvector(v, uchar4);
+        f16x4 const v = { px.r[i], px.g[i], px.b[i], px.a[i] };
+        u8x4 q = __builtin_convertvector(v, u8x4);
         memcpy(&p[i * 4], &q, sizeof q);
     }
 }
@@ -134,16 +134,16 @@ static inline void canvas2d_px8_store_rgba8_k(uint8_t *__counted_by(4 * k) p, in
 // into canvas2d_px8_premultiply -- the shade stage's fold is the one consumer.
 static inline canvas2d_px8 canvas2d_px8_load_unpremul(canvas2d_unpremul const *__counted_by(8) p) {
     float16x8x4_t v = vld4q_f16((float16_t const *)p);
-    return (canvas2d_px8){ (half8)v.val[0], (half8)v.val[1],
-                       (half8)v.val[2], (half8)v.val[3] };
+    return (canvas2d_px8){ (f16x8)v.val[0], (f16x8)v.val[1],
+                       (f16x8)v.val[2], (f16x8)v.val[3] };
 }
 
 static inline canvas2d_px8 canvas2d_px8_load_unpremul_k(canvas2d_unpremul const *__counted_by(k) p,
                                                 int k) {
-    canvas2d_px8 o = { .r = (half8)(_Float16)0.0f, .g = (half8)(_Float16)0.0f,
-                   .b = (half8)(_Float16)0.0f, .a = (half8)(_Float16)0.0f };
+    canvas2d_px8 o = { .r = (f16x8)(_Float16)0.0f, .g = (f16x8)(_Float16)0.0f,
+                   .b = (f16x8)(_Float16)0.0f, .a = (f16x8)(_Float16)0.0f };
     for (int i = 0; i < k && i < 8; i++) {
-        half4 px;
+        f16x4 px;
         memcpy(&px, &p[i], sizeof px);  // one bounds check, four channels
         o.r[i] = px[0];
         o.g[i] = px[1];
@@ -167,21 +167,21 @@ static inline void canvas2d_px8_store_unpremul(canvas2d_unpremul *__counted_by(8
 static inline void canvas2d_px8_store_unpremul_k(canvas2d_unpremul *__counted_by(k) p, int k,
                                              canvas2d_px8 px) {
     for (int i = 0; i < k && i < 8; i++) {
-        half4 q = { px.r[i], px.g[i], px.b[i], px.a[i] };
+        f16x4 q = { px.r[i], px.g[i], px.b[i], px.a[i] };
         memcpy(&p[i], &q, sizeof q);
     }
 }
 
 // --- the coverage seam (one contiguous byte per pixel; no deinterleave) -----
 
-static inline half8 half8_from_u8(uint8_t const *__counted_by(8) p) {
-    uchar8 b;
+static inline f16x8 f16x8_from_u8(uint8_t const *__counted_by(8) p) {
+    u8x8 b;
     memcpy(&b, p, sizeof b);  // one bounds check, eight samples
-    return __builtin_convertvector(b, half8);
+    return __builtin_convertvector(b, f16x8);
 }
 
-static inline half8 half8_from_u8_k(uint8_t const *__counted_by(k) p, int k) {
-    half8 o = (half8)(_Float16)0.0f;
+static inline f16x8 f16x8_from_u8_k(uint8_t const *__counted_by(k) p, int k) {
+    f16x8 o = (f16x8)(_Float16)0.0f;
     for (int i = 0; i < k && i < 8; i++) {
         o[i] = (_Float16)p[i];
     }
@@ -191,7 +191,7 @@ static inline half8 half8_from_u8_k(uint8_t const *__counted_by(k) p, int k) {
 // --- shared alpha math -------------------------------------------------------
 
 // Attenuate all four planes (premultiplied scaling: alpha scales too).
-static inline canvas2d_px8 canvas2d_px8_scale(canvas2d_px8 p, half8 k) {
+static inline canvas2d_px8 canvas2d_px8_scale(canvas2d_px8 p, f16x8 k) {
     return (canvas2d_px8){ p.r * k, p.g * k, p.b * k, p.a * k };
 }
 
@@ -199,7 +199,7 @@ static inline canvas2d_px8 canvas2d_px8_scale(canvas2d_px8 p, half8 k) {
 // plane -- alpha included -- to [0,1].  Lane-wise exactly canvas2d_premultiply
 // (canvas2d_math.c), planes instead of one pixel's lanes.
 static inline canvas2d_px8 canvas2d_px8_premultiply(canvas2d_px8 p) {
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
     canvas2d_px8 o = { p.r * p.a, p.g * p.a, p.b * p.a, p.a };
     o.r = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.r));
     o.g = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, o.g));
@@ -215,8 +215,8 @@ static inline canvas2d_px8 canvas2d_px8_premultiply(canvas2d_px8 p) {
 // survive into the COPY blend.  A peer of canvas2d_px8_premultiply (which clamps
 // every plane to [0,1]); kept separate so the u8 path's clamp stays untouched.
 static inline canvas2d_px8 canvas2d_px8_premultiply_unclamped(canvas2d_px8 p) {
-    half8 const zero = (half8)(_Float16)0.0f, one = (half8)(_Float16)1.0f;
-    half8 const a = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, p.a));
+    f16x8 const zero = (f16x8)(_Float16)0.0f, one = (f16x8)(_Float16)1.0f;
+    f16x8 const a = __builtin_elementwise_min(one, __builtin_elementwise_max(zero, p.a));
     return (canvas2d_px8){ p.r * a, p.g * a, p.b * a, a };  // colour planes unbounded
 }
 
@@ -224,8 +224,8 @@ static inline canvas2d_px8 canvas2d_px8_premultiply_unclamped(canvas2d_px8 p) {
 // every channel -- alpha included -- clamps into [0, ao], preserving the
 // premultiplied invariant rgb <= a.
 static inline canvas2d_px8 canvas2d_px8_clamp_premul(canvas2d_px8 co) {
-    half8 const zero = (half8)(_Float16)0.0f;
-    half8 const ao = __builtin_elementwise_min(co.a, (half8)(_Float16)1.0f);
+    f16x8 const zero = (f16x8)(_Float16)0.0f;
+    f16x8 const ao = __builtin_elementwise_min(co.a, (f16x8)(_Float16)1.0f);
     co.r = __builtin_elementwise_max(zero, __builtin_elementwise_min(ao, co.r));
     co.g = __builtin_elementwise_max(zero, __builtin_elementwise_min(ao, co.g));
     co.b = __builtin_elementwise_max(zero, __builtin_elementwise_min(ao, co.b));
@@ -242,8 +242,8 @@ static inline canvas2d_px8 canvas2d_px8_clamp_premul(canvas2d_px8 co) {
 // rather than a branch inside canvas2d_px8_clamp_premul, so the sRGB path's exact
 // [0,ao] rounding is provably untouched (reached only on a linear canvas).
 static inline canvas2d_px8 canvas2d_px8_clamp_premul_lin(canvas2d_px8 co) {
-    half8 const zero = (half8)(_Float16)0.0f;
+    f16x8 const zero = (f16x8)(_Float16)0.0f;
     co.a = __builtin_elementwise_max(zero,
-               __builtin_elementwise_min(co.a, (half8)(_Float16)1.0f));
+               __builtin_elementwise_min(co.a, (f16x8)(_Float16)1.0f));
     return co;  // colour planes unbounded
 }

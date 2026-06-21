@@ -35,7 +35,7 @@ names that disambiguate them from a same-stem public header: `canvas2d_blit.h`
 representation, distinct from the public builder in `canvas2d_path2d.h`).
 
 The single exception is the SIMD lane vocabulary -- the unprefixed lane vector
-types (`half4`, `float8`, `uint16`, `short8`, `uchar4`, ...) and the lane helpers
+types (`f16x4`, `f32x8`, `u32x16`, `i16x8`, `u8x4`, ...) and the lane helpers
 that live with them in `src/canvas2d_math.h`.  These keep their bare names
 pending a separate normalization pass; they are not part of this namespace.
 
@@ -98,7 +98,7 @@ Yeah, k255 should be 255, inv255 for 1/255.
 
 Landed: holds -- k255 is 255.0, inv255 is 1/255.
 
-### C5. `mask` — clip mask (u8 plane) / SIMD compare mask (short8, was
+### C5. `mask` — clip mask (u8 plane) / SIMD compare mask (i16x8, was
 mask8 — type already renamed) / shadow silhouette mask.  Clip and shadow
 masks are arguably one concept (a u8 coverage plane) under two names.
 
@@ -119,7 +119,7 @@ Landed: slab is the 8-pixel planar unit (defined in canvas2d_planar.h: a canvas2
 one slab); format, DEFLATE, staged-vertex, and mip blocks keep "block".
 
 ### C7. `half` — the f16 type family vs win/2 rounding bias (blur quant8)
-vs 0.5f bias (unpremul_quant8 declares `_Float16 const half` amid half8
+vs 0.5f bias (unpremul_quant8 declares `_Float16 const half` amid f16x8
 types) vs half-width (stroke hw).
 
 `half` on its own should be fp16, very idiomatic.  I don't see any conflict
@@ -245,7 +245,7 @@ will be between the requested bounds no matter what.  clamp01(NaN) needs to
 return _some_ value in [0,1], etc.  (of course if NaN is one of the boundaries
 this is a meaningless promise but why would we ever do that)
 
-Landed: one clamp01, one home -- canvas2d_clamp01 + float8_clamp01 in canvas2d_math.h,
+Landed: one clamp01, one home -- canvas2d_clamp01 + f32x8_clamp01 in canvas2d_math.h,
 both NaN-laundering; the gradient's NaN-passing copy and its vclamp01 are
 gone, clamp_lo joined the guarantee, and "pins" no longer means clamp in
 prose.  Zero pixels moved (gallery byte-identical, oracles green).
@@ -460,12 +460,12 @@ canvas2d_composite_op` (the public, web-named operator) versus the internal
 blend enum, and `canvas2d_matrix` (the public affine row) versus the internal
 `canvas2d_mat` -- distinct base names, not mirrors, so no merge applies.
 
-### D22. guard/select/discard — consistent.  half8_if_then_else (renamed
+### D22. guard/select/discard — consistent.  f16x8_if_then_else (renamed
 from _sel); vsel_bits is the stray spelling (vsel_ prefix vs _sel suffix
 era; now _if_then_else era).
 
-Landed: float8_if_then_else (was vsel_bits), the f32 twin of
-half8_if_then_else.
+Landed: f32x8_if_then_else (was vsel_bits), the f32 twin of
+f16x8_if_then_else.
 
 ## The len/size/count audit
 
@@ -506,7 +506,7 @@ for new code.
 (recorded as made)
 - 2026-06-11: lane types are OpenCL-isomorphic — halfN/floatN/intN/shortN/
   ucharN; same spelling as OpenCL = same meaning, different spelling needs
-  a reason (half8_if_then_else vs OpenCL select(): different argument
+  a reason (f16x8_if_then_else vs OpenCL select(): different argument
   order, hence different name).
 - 2026-06-11: k255 split — inv255 is 1/255; k255 is 255 (0f6a0af).
 - 2026-06-11 (structural, from the abstraction docket): the compositor stops
@@ -522,7 +522,7 @@ for new code.
   large files.
 - 2026-06-11 (types): enums always `enum foo`, never typedef'd.  Structs
   split by LITERAL C usage, read off the call signatures: worked with
-  almost always by copying values -> typedef (float8, canvas2d_vec2, canvas2d_px8,
+  almost always by copying values -> typedef (f32x8, canvas2d_vec2, canvas2d_px8,
   canvas2d_mat); worked with almost always through pointer indirection ->
   tagged `struct foo`, no typedef, spelled at every use (struct canvas2d_context,
   struct canvas2d_gradient -- its functions all take pointers, the occasional

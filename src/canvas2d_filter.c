@@ -155,12 +155,12 @@ static canvas2d_px8 filter_block(canvas2d_px8 p, canvas2d_filter const *__single
     q.b = (_Float16)fn->m[6] * p.r + (_Float16)fn->m[7] * p.g
         + (_Float16)fn->m[8] * p.b + (_Float16)fn->off[2] * p.a;
     q.a = (_Float16)fn->ka * p.a;
-    half8 const zero = (half8)(_Float16)0.0f;
+    f16x8 const zero = (f16x8)(_Float16)0.0f;
     q.r = __builtin_elementwise_max(q.r, zero);
     q.g = __builtin_elementwise_max(q.g, zero);
     q.b = __builtin_elementwise_max(q.b, zero);
     q.a = __builtin_elementwise_max(q.a, zero);
-    half8 const lim = __builtin_elementwise_min(q.a, (half8)(_Float16)1.0f);
+    f16x8 const lim = __builtin_elementwise_min(q.a, (f16x8)(_Float16)1.0f);
     q.r = __builtin_elementwise_min(q.r, lim);
     q.g = __builtin_elementwise_min(q.g, lim);
     q.b = __builtin_elementwise_min(q.b, lim);

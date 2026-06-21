@@ -150,7 +150,7 @@ static void default_identical(void) {
     for (int i = 0; i <= 64; i++) {
         float const t = (float)i / 64.0f;
         canvas2d_unpremul const got = canvas2d_gradient_color_at(&g, t);
-        // The exact component lerp the original code did (half4, narrow once).
+        // The exact component lerp the original code did (f16x4, narrow once).
         canvas2d_unpremul want;
         int const n = g.stop_count;
         if (t <= g.stops[0].offset)            want = g.stops[0].color;
@@ -161,9 +161,9 @@ static void default_identical(void) {
                 if (t <= hi.offset) {
                     float const span = hi.offset - lo.offset;
                     float const u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
-                    half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
-                    half4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
-                    half4 const c = lov + (hiv - lov) * (_Float16)u;
+                    f16x4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
+                    f16x4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
+                    f16x4 const c = lov + (hiv - lov) * (_Float16)u;
                     want = (canvas2d_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
                     break;
                 }

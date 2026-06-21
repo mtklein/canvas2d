@@ -115,7 +115,7 @@ static void accum_row(struct canvas2d_cover *c, int w, int y,
         }
         int x = clo + 2;
         for (; x + 8 <= chi; x += 8) {
-            float8 v;
+            f32x8 v;
             memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
             v += d;
             memcpy(c->acc + base + x, &v, sizeof v);  // bounds-checked vector store
@@ -186,25 +186,25 @@ static uint8_t cover_to_u8(enum canvas2d_fill_rule rule, float run) {
 // Coverage-fold a vector of 8 winding values to 0..255, matching cover_to_u8 lane
 // by lane.  run values are finite (a prefix sum of finite areas), so the saturating
 // guards in canvas2d_f2u8 reduce to a [0,255] clamp the convert handles by construction.
-static uchar8 cover_to_u8x8(enum canvas2d_fill_rule rule, float8 run) {
-    float8 cov;
+static u8x8 cover_to_u8x8(enum canvas2d_fill_rule rule, f32x8 run) {
+    f32x8 cov;
     if (rule == CANVAS2D_EVENODD) {
-        float8 const t = run * 0.5f;
-        float8 const m = (t - __builtin_elementwise_floor(t)) * 2.0f;  // [0, 2)
+        f32x8 const t = run * 0.5f;
+        f32x8 const m = (t - __builtin_elementwise_floor(t)) * 2.0f;  // [0, 2)
         cov = __builtin_elementwise_min(m, 2.0f - m);           // == m>1 ? 2-m : m, bit-exact
     } else {
-        cov = __builtin_elementwise_min((float8)1.0f, __builtin_elementwise_abs(run));
+        cov = __builtin_elementwise_min((f32x8)1.0f, __builtin_elementwise_abs(run));
     }
-    float8 const v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
-    return __builtin_convertvector(v, uchar8);
+    f32x8 const v = cov * 255.0f + 0.5f;  // in [0.5, 255.5]; truncating the convert rounds
+    return __builtin_convertvector(v, u8x8);
 }
 
 // Inclusive prefix sum across the 8 lanes, in-register (Hillis-Steele: 3
 // shift-add steps, each adding the lane d positions back, low lanes
 // zero-filled).  The tree association differs from a left-to-right scalar
 // sum, so the float rounding differs by <=1 ULP before the 8-bit quantize.
-static inline float8 prefix_sum8(float8 v) {
-    float8 const z = (float8){ 0, 0, 0, 0, 0, 0, 0, 0 };
+static inline f32x8 prefix_sum8(f32x8 v) {
+    f32x8 const z = (f32x8){ 0, 0, 0, 0, 0, 0, 0, 0 };
     v += __builtin_shufflevector(v, z, 8, 0, 1, 2, 3, 4, 5, 6);  // += lane-1 (zero-fill)
     v += __builtin_shufflevector(v, z, 8, 8, 0, 1, 2, 3, 4, 5);  // += lane-2
     v += __builtin_shufflevector(v, z, 8, 8, 8, 8, 0, 1, 2, 3);  // += lane-4
@@ -221,10 +221,10 @@ void canvas2d_cover_resolve(struct canvas2d_cover *c, int w, int h, enum canvas2
         float carry = 0.0f;  // running total of all deltas before this block, this row
         int x = 0;
         for (; x + 8 <= w; x += 8) {
-            float8 v;
+            f32x8 v;
             memcpy(&v, c->acc + base + x, sizeof v);  // bounds-checked vector load
             v = prefix_sum8(v) + carry;               // inclusive prefix sum + carry-in
-            uchar8 b = cover_to_u8x8(rule, v);
+            u8x8 b = cover_to_u8x8(rule, v);
             memcpy(out + base + x, &b, sizeof b);     // bounds-checked vector store
             carry = v[7];                             // running total through this block
         }

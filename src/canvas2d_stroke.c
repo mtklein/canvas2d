@@ -212,26 +212,26 @@ bool canvas2d_stroke_polyline(canvas2d_vec2 const *__counted_by(n) pts, int n, b
     int s = 0;
     while (s < nseg) {
         if (nseg - s >= 4 && s + 4 < m) {
-            float8 q0, q1;
+            f32x8 q0, q1;
             memcpy(&q0, pts + s, sizeof q0);      // one bounds check, 4 points
             memcpy(&q1, pts + s + 1, sizeof q1);  // (x0,y0,x1,y1,...)
-            float8 const dq = q1 - q0;                 // lane-wise p1 - p0
-            float4 const dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
-            float4 const dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
-            float4 len = __builtin_elementwise_sqrt(dx * dx + dy * dy);
+            f32x8 const dq = q1 - q0;                 // lane-wise p1 - p0
+            f32x4 const dx = __builtin_shufflevector(dq, dq, 0, 2, 4, 6);
+            f32x4 const dy = __builtin_shufflevector(dq, dq, 1, 3, 5, 7);
+            f32x4 len = __builtin_elementwise_sqrt(dx * dx + dy * dy);
             // Degenerate lanes divide too (IEEE: huge/inf/NaN, all discarded);
             // the emission pass skips them exactly where seg_dir bails.
-            float4 dirx = dx / len;
-            float4 diry = dy / len;
-            float4 const nrmx = -diry * half_width;
-            float4 const nrmy =  dirx * half_width;
+            f32x4 dirx = dx / len;
+            f32x4 diry = dy / len;
+            f32x4 const nrmx = -diry * half_width;
+            f32x4 const nrmy =  dirx * half_width;
             // Corners in AoS form: nrm re-interleaved, then p +/- nrm is the
             // same lane-wise fadd/fsub the scalar corner math does.
-            float8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
-            float8 const za0 = q0 + nrm;
-            float8 const zb0 = q0 - nrm;
-            float8 const za1 = q1 + nrm;
-            float8 const zb1 = q1 - nrm;
+            f32x8 nrm = __builtin_shufflevector(nrmx, nrmy, 0, 4, 1, 5, 2, 6, 3, 7);
+            f32x8 const za0 = q0 + nrm;
+            f32x8 const zb0 = q0 - nrm;
+            f32x8 const za1 = q1 + nrm;
+            f32x8 const zb1 = q1 - nrm;
 
             // Transpose each quad's corners into vertex order -- (a0,b0,b1)
             // (a0,b1,a1) -- as three 16-byte stores.  A macro because shuffle
@@ -239,11 +239,11 @@ bool canvas2d_stroke_polyline(canvas2d_vec2 const *__counted_by(n) pts, int n, b
             canvas2d_vec2 quads[24];
 #define CANVAS2D_PUT_QUAD(i)                                                         \
     do {                                                                         \
-        float4 t0 = __builtin_shufflevector(za0, zb0, 2 * (i), 2 * (i) + 1,      \
+        f32x4 t0 = __builtin_shufflevector(za0, zb0, 2 * (i), 2 * (i) + 1,      \
                                             8 + 2 * (i), 9 + 2 * (i));           \
-        float4 t1 = __builtin_shufflevector(zb1, za0, 2 * (i), 2 * (i) + 1,      \
+        f32x4 t1 = __builtin_shufflevector(zb1, za0, 2 * (i), 2 * (i) + 1,      \
                                             8 + 2 * (i), 9 + 2 * (i));           \
-        float4 t2 = __builtin_shufflevector(zb1, za1, 2 * (i), 2 * (i) + 1,      \
+        f32x4 t2 = __builtin_shufflevector(zb1, za1, 2 * (i), 2 * (i) + 1,      \
                                             8 + 2 * (i), 9 + 2 * (i));           \
         memcpy(quads + 6 * (i), &t0, sizeof t0);                                 \
         memcpy(quads + 6 * (i) + 2, &t1, sizeof t1);                             \
@@ -275,45 +275,45 @@ bool canvas2d_stroke_polyline(canvas2d_vec2 const *__counted_by(n) pts, int n, b
             // lane 0 with no carry yet) are computed and discarded.  Like the
             // quads, the wedges transpose to vertex order in-register; only
             // the two decision masks spill.
-            int4 const degen = len < (float4)1e-6f;
+            i32x4 const degen = len < (f32x4)1e-6f;
             bool const vjoin = join != CANVAS2D_JOIN_ROUND && !__builtin_reduce_or(degen);
             canvas2d_vec2 wedges[24];  // 4 joins x (pa, v, pb, pa, tip, pb)
             int col4[4], ok4[4];
             if (vjoin) {
-                float4 const p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
-                float4 const p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
-                float4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
-                float4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
+                f32x4 const p0x = __builtin_shufflevector(q0,   q0,   0, 2, 4, 6);
+                f32x4 const p0y = __builtin_shufflevector(q0,   q0,   1, 3, 5, 7);
+                f32x4 d0x = __builtin_shufflevector(dirx, dirx, 0, 0, 1, 2);
+                f32x4 d0y = __builtin_shufflevector(diry, diry, 0, 0, 1, 2);
                 d0x[0] = prev_dir.x;  // constant-index insert: stays in-register
                 d0y[0] = prev_dir.y;
-                float4 const crs = d0x * diry - d0y * dirx;
-                int4 col = (crs > (float4)-1e-6f) & (crs < (float4)1e-6f);
-                int4 const pos = crs > (float4)0.0f;
+                f32x4 const crs = d0x * diry - d0y * dirx;
+                i32x4 col = (crs > (f32x4)-1e-6f) & (crs < (f32x4)1e-6f);
+                i32x4 const pos = crs > (f32x4)0.0f;
                 // Outer side is opposite the turn (bit-exact +/-1 select).
-                float4 sgn = (float4)((pos & (int4)(float4)-1.0f) |
-                                      (~pos & (int4)(float4)1.0f));
-                float4 const pax = p0x + sgn * -d0y  * half_width;
-                float4 const pay = p0y + sgn *  d0x  * half_width;
-                float4 const pbx = p0x + sgn * -diry * half_width;
-                float4 const pby = p0y + sgn *  dirx * half_width;
+                f32x4 sgn = (f32x4)((pos & (i32x4)(f32x4)-1.0f) |
+                                      (~pos & (i32x4)(f32x4)1.0f));
+                f32x4 const pax = p0x + sgn * -d0y  * half_width;
+                f32x4 const pay = p0y + sgn *  d0x  * half_width;
+                f32x4 const pbx = p0x + sgn * -diry * half_width;
+                f32x4 const pby = p0y + sgn *  dirx * half_width;
                 // Miter tip = intersection of the outer edges (pa,d0),(pb,d1).
-                float4 const sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
-                float4 const tipx = pax + d0x * sm;
-                float4 const tipy = pay + d0y * sm;
-                float4 const mx = tipx - p0x;
-                float4 const my = tipy - p0y;
+                f32x4 const sm = ((pbx - pax) * diry - (pby - pay) * dirx) / crs;
+                f32x4 const tipx = pax + d0x * sm;
+                f32x4 const tipy = pay + d0y * sm;
+                f32x4 const mx = tipx - p0x;
+                f32x4 const my = tipy - p0y;
                 float const mlim = miter_limit * half_width;
-                int4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
-                float8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
-                float8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
-                float8 const ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
+                i32x4 ok = __builtin_elementwise_sqrt(mx * mx + my * my) <= mlim;
+                f32x8 zpa  = __builtin_shufflevector(pax,  pay,  0, 4, 1, 5, 2, 6, 3, 7);
+                f32x8 zpb  = __builtin_shufflevector(pbx,  pby,  0, 4, 1, 5, 2, 6, 3, 7);
+                f32x8 const ztip = __builtin_shufflevector(tipx, tipy, 0, 4, 1, 5, 2, 6, 3, 7);
 #define CANVAS2D_PUT_WEDGE(i)                                                        \
     do {                                                                         \
-        float4 t0 = __builtin_shufflevector(zpa, q0, 2 * (i), 2 * (i) + 1,       \
+        f32x4 t0 = __builtin_shufflevector(zpa, q0, 2 * (i), 2 * (i) + 1,       \
                                             8 + 2 * (i), 9 + 2 * (i));           \
-        float4 t1 = __builtin_shufflevector(zpb, zpa, 2 * (i), 2 * (i) + 1,      \
+        f32x4 t1 = __builtin_shufflevector(zpb, zpa, 2 * (i), 2 * (i) + 1,      \
                                             8 + 2 * (i), 9 + 2 * (i));           \
-        float4 t2 = __builtin_shufflevector(ztip, zpb, 2 * (i), 2 * (i) + 1,     \
+        f32x4 t2 = __builtin_shufflevector(ztip, zpb, 2 * (i), 2 * (i) + 1,     \
                                             8 + 2 * (i), 9 + 2 * (i));           \
         memcpy(wedges + 6 * (i), &t0, sizeof t0);                                \
         memcpy(wedges + 6 * (i) + 2, &t1, sizeof t1);                            \

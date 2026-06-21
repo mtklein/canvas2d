@@ -105,7 +105,7 @@ static void filter_up(uint8_t *__counted_by(n) out,
                       uint8_t const *__counted_by(n) prev, int n) {
     int i = 0;
     for (; i + 16 <= n; i += 16) {
-        uchar16 c, p;
+        u8x16 c, p;
         memcpy(&c, cur + i, sizeof c);   // bounds-checked vector loads
         memcpy(&p, prev + i, sizeof p);
         c -= p;
@@ -153,7 +153,7 @@ canvas2d_png_encode(uint16_t const *__counted_by(width * height * 4) pixels,
             // lays the bytes down big-endian.  Scalar tail for samples % 8.
             int x = 0;
             for (; x + 8 <= samples; x += 8) {
-                ushort8 v;
+                u16x8 v;
                 memcpy(&v, row + x, sizeof v);       // bounds-checked vector load
                 v = (v << 8) | (v >> 8);             // swap each 16-bit lane
                 memcpy(dst + x * 2, &v, sizeof v);   // bounds-checked vector store
