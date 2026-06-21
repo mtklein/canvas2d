@@ -8,7 +8,7 @@ pass does not have to rediscover it.
 The rasterizer produces an 8-bit coverage value for every pixel of a fill's
 bounding box ([canvas2d_cover.c](../src/canvas2d_cover.c)): `add_edge` accumulates signed
 area into a dense `w*h` float buffer, `resolve` turns it into a dense `w*h` byte
-mask, [paint_tile](../src/canvas.c) shades that into a dense premultiplied tile, and
+mask, [paint_tile](../src/canvas2d.c) shades that into a dense premultiplied tile, and
 the blend stage composites the whole tile. Clip masks are dense coverage too, held by
 value in every saved state.
 
@@ -46,7 +46,7 @@ skipping that work across resolve → paint → blit.
 3. **The dense tile was the GPU-compositor boundary.** Geometry/AA happen on the
    CPU and bake into a dense premultiplied tile; the since-removed GPU (Metal)
    backend blended every tile pixel by design ("the GPU just composites"), so RLE
-   could only help the CPU-side stages. With blending now in-house (canvas.c),
+   could only help the CPU-side stages. With blending now in-house (canvas2d.c),
    this constraint no longer binds — but the dense-tile seam itself remains.
 
 ## Where it *would* pay off (if revisited)
@@ -57,7 +57,7 @@ skipping that work across resolve → paint → blit.
   (clip intersection is CPU-only). The slice to prototype first.
 - **Very sparse content** — text runs, thin strokes, intricate paths — where the
   bbox is mostly empty and runs are long enough to amortize the per-run overhead.
-- **The blend kernels** ([canvas.c](../src/canvas.c))
+- **The blend kernels** ([canvas2d.c](../src/canvas2d.c))
   skipping fully-transparent source runs.
 
 ## Conclusion

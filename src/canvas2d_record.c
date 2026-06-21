@@ -1,5 +1,5 @@
 // Text canvas-program recorder (canvas2d_record.h).  Writes the same one-command-per-
-// line format canvas2d_replay.c parses, straight to a FILE*; canvas.c calls these from
+// line format canvas2d_replay.c parses, straight to a FILE*; canvas2d.c calls these from
 // each recordable public op.  Everything here is plain bounds-safe C -- counted
 // float runs, __null_terminated names/text -- so the write side plays by the same
 // -fbounds-safety rules as the read side.

@@ -117,7 +117,7 @@ static void draw_program(struct canvas2d_context *__single cv) {
     canvas2d_set_filter_none(cv);
 
     // Text (Latin + CJK, no leading whitespace / newline so it round-trips).
-    // The text ops also emit their font/glyph/shape blocks (see canvas.h), so
+    // The text ops also emit their font/glyph/shape blocks (see canvas2d.h), so
     // this pins the blocks' spellings against the parser too.
     canvas2d_set_font_size(cv, 12.0f);
     canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);

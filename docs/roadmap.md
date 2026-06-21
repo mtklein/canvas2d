@@ -23,7 +23,7 @@ SIMD targets:
    the same math as fixed-function source-over plus a framebuffer-fetch shader; see
    [decisions/metal-backend.md](decisions/metal-backend.md).)
 2. ~~**A software blend stage**~~ — **done**, and blending is now a stage of
-   [canvas.c](../src/canvas.c) itself, not a backend: the per-pixel
+   [canvas2d.c](../src/canvas2d.c) itself, not a backend: the per-pixel
    `blend8(src, dst, mode)`
    kernel is all 26 composite/blend modes, premultiplied, over `__counted_by`
    tiles, ~350 lines of checked C compositing onto the canvas's own RGBA16F
@@ -32,12 +32,12 @@ SIMD targets:
    bit-for-bit identical to it by a tolerance-0 differential; once measurements showed
    the CPU path faster on the flagship workload, Metal was removed, the GPU-parity
    rounding it required was dropped, and the compositor object itself was later
-   dissolved into canvas.c (see
+   dissolved into canvas2d.c (see
    [decisions/backend-differential.md](decisions/backend-differential.md) and
    [decisions/metal-backend.md](decisions/metal-backend.md)).
 3. ~~**Shadows**~~ — **done** (fills/strokes/text/images). The op's source
    alpha — the spec's "render the shadow from image A", post-filter — is
-   blurred by [blur.c](../src/blur.c)'s separable box passes (the stencil-loop
+   blurred by [canvas2d_blur.c](../src/canvas2d_blur.c)'s separable box passes (the stencil-loop
    probe, three passes ≈ Gaussian), tinted, offset, and composited under the
    shape — all in checked C. `filter`
    `blur()` (item 5) shares the same three-pass structure.
@@ -48,7 +48,7 @@ SIMD targets:
    form ([canvas2d_filter.c](../src/canvas2d_filter.c)) and applies per pixel to the
    op's premultiplied tile, before its shadow and composite.
 5. ~~**`filter` `blur()`**~~ — **done**. An RGBA16F flavour of
-   [blur.c](../src/blur.c)'s running-sum box blur (three passes ≈ Gaussian,
+   [canvas2d_blur.c](../src/canvas2d_blur.c)'s running-sum box blur (three passes ≈ Gaussian,
    stdDev = the given px) over the op's premultiplied tile, blurring against
    transparency rather than clamped edges; each paint site widens its bbox by
    the filter chain's spread so the soft skirt outgrows the shape. Held to a
@@ -165,7 +165,7 @@ Internals (not API features) considered and deferred:
   against, so its chain rebuilds per minifying draw; a mip-less image
   deliberately falls back to bilinear), and `high` magnifies through a 4×4
   Catmull-Rom (premultiplied taps, the BC-spline pair one swappable line in
-  canvas.c).  Sources are RGBA8 only and DOM source kinds are out of scope
+  canvas2d.c).  Sources are RGBA8 only and DOM source kinds are out of scope
   below; an image source is sampled in its own tagged space and the resolved
   sample converts to the working space on deposit (the colour-management row
   above) -- filtering stays in the source's space by design.
@@ -195,7 +195,7 @@ Internals (not API features) considered and deferred:
   source alpha (the spec's "render the shadow from image A": paint alpha,
   coverage, global alpha, and any filters all shape it — a transparent sprite
   shadows its alpha shape, not its quad) is blurred (a CPU box-blur, three
-  passes ≈ Gaussian, [blur.c](../src/blur.c)), tinted, offset, and composited
+  passes ≈ Gaussian, [canvas2d_blur.c](../src/canvas2d_blur.c)), tinted, offset, and composited
   under the shape, all in checked C. Offsets honour subpixel fractions on a
   1/256th-px grid (one 2-tap lerp pass per axis after the blur — translation
   in its convolution form). One deviation remains: the blur approximates the

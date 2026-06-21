@@ -1,11 +1,11 @@
 #pragma once
 
 // The canvas's private object model: struct canvas2d_context and struct canvas2d_state and
-// their paint helpers.  canvas.c owns the drawing logic; this header exposes the
+// their paint helpers.  canvas2d.c owns the drawing logic; this header exposes the
 // layout so the output stages carved into their own translation units
 // (canvas2d_encode.c, canvas2d_imagedata.c) can read the surface and scratch buffers
 // directly, without duplicating the struct.  Not a public boundary -- it carries
-// the working-space, target, and tile internals canvas.h deliberately hides.
+// the working-space, target, and tile internals canvas2d.h deliberately hides.
 
 #include "canvas2d.h"
 
@@ -138,7 +138,7 @@ struct canvas2d_state {
 struct canvas2d_context {
     int width;
     int height;
-    // The working colour space (canvas.h): CANVAS2D_CS_SRGB composites directly on
+    // The working colour space (canvas2d.h): CANVAS2D_CS_SRGB composites directly on
     // the encoded bytes (no transfer ever runs); CANVAS2D_CS_LINEAR_SRGB
     // composites in extended linear sRGB.  Chosen at creation, immutable -- it is
     // NOT in struct canvas2d_state, so save/restore never touch it, and

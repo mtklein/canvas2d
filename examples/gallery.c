@@ -2460,7 +2460,7 @@ static void rtl(void) {
 // test_shaping.c idiom).
 #define S(lit) ("" lit), ((int)sizeof lit - 1)
 
-// The pinned family the canvas itself shapes with (canvas.h: the typeface is
+// The pinned family the canvas itself shapes with (canvas2d.h: the typeface is
 // fixed to Libian TC).  Shaping here with the same name, size, and direction
 // reproduces fill_text's layout exactly, so hit-test geometry computed from
 // these lines lands where the canvas draws the glyphs.
@@ -3092,8 +3092,8 @@ static void nestedclip(void) {
 // a receding trapezoid (a "floor" seen in perspective).  Everything is authored in
 // the flat SOURCE space -- a checkerboard floor (filled cells), a grid of stroked
 // lines, a filled star motif, and a text label -- and the homography foreshortens
-// it.  No images or gradients: sampling stays affine this phase, so the scene
-// exercises only projective fills/strokes/text.
+// it.  No images or gradients: the scene exercises only projective
+// fills/strokes/text.
 static void perspective_scene(void) {
     struct canvas2d_context *__single c = canvas2d(360, 240, CANVAS2D_CS_SRGB);
     if (!c) {

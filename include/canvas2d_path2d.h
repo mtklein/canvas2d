@@ -10,7 +10,7 @@
 // path, whose points are baked at build time).  NULL on allocation failure; free
 // with canvas2d_path2d_free.  The canvas methods that consume a Path2D
 // (canvas2d_fill_path / canvas2d_stroke_path / canvas2d_clip_path / the hit tests) live
-// in canvas.h.
+// in canvas2d.h.
 struct canvas2d_path2d;
 struct canvas2d_path2d *__single canvas2d_path2d(void);
 void canvas2d_path2d_free(struct canvas2d_path2d *__single p);

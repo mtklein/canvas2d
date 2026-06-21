@@ -1,6 +1,6 @@
 // imageSmoothingQuality's sampler tiers: the premultiplied mip chain +
 // trilinear minification (medium/high) and the 4x4 BC-spline magnification
-// (high).  The cubic pins are Catmull-Rom's values -- if canvas.c's
+// (high).  The cubic pins are Catmull-Rom's values -- if canvas2d.c's
 // CUBIC_B/CUBIC_C one-liner swaps to Mitchell, re-pin here (the half-phase
 // weight 0.5625 becomes ~0.47, so 143 becomes ~120).
 

@@ -254,10 +254,9 @@ static bool contains(char const *__counted_by(len) buf, int len,
     return false;
 }
 
-// The colour-space tag is interpretation metadata that the sampler does NOT
-// yet honour (the LINEAR-WORKING-SPACE deferral in canvas.c's
-// draw_image_quad), so there is no pixel effect to assert -- this test pins
-// the TAG'S PLUMBING AND SERIALIZATION only:
+// The colour-space tag is interpretation metadata the sampler honours on draw
+// (sample_to_working in canvas2d.c's draw_image_quad converts the sampled source
+// into the working space).  This test pins the TAG'S PLUMBING AND SERIALIZATION:
 //   1. A CANVAS2D_CS_LINEAR_SRGB-tagged image records with the optional `linear`
 //      token on its `image` block line, and the file replays cleanly (the
 //      parser accepts and threads the tag).
@@ -265,8 +264,6 @@ static bool contains(char const *__counted_by(len) buf, int len,
 //      sRGB, so every existing sRGB program stays byte-identical.
 //   3. Record -> replay -> re-record of the linear-tagged image is
 //      byte-idempotent: the tag survives a full round trip intact.
-// When the sampler honours the tag (the deferred mip-pyramid-and-taps work),
-// add the pixel assertion here; today there is nothing to measure.
 static void colorspace_tag_serialization(void) {
     char const *__null_terminated lin_path = "build/test_imageobj_lin.canvas";
     char const *__null_terminated srgb_path = "build/test_imageobj_srgb.canvas";

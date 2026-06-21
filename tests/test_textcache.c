@@ -209,7 +209,7 @@ static void check_fallback_fonts(void) {
 }
 
 // reset(): the cache goes back to its initial (empty) state -- documented with
-// the reset contract in canvas.c -- and a post-reset draw is cold but correct.
+// the reset contract in canvas2d.c -- and a post-reset draw is cold but correct.
 static void check_reset(void) {
     struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     struct canvas2d_context *__single fresh = canvas2d(W, H, CANVAS2D_CS_SRGB);

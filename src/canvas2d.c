@@ -3799,7 +3799,7 @@ int canvas2d_text_selection(struct canvas2d_context *__single cv, char const *__
 }
 
 // The per-canvas text cache, for tests and stats -- declared in canvas2d_text.h so
-// it stays off the public canvas.h surface (tests include internal headers).
+// it stays off the public canvas2d.h surface (tests include internal headers).
 struct canvas2d_text_cache *__single canvas2d_canvas_text_cache(struct canvas2d_context *__single cv) {
     return &cv->text_cache;
 }

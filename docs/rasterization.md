@@ -103,7 +103,7 @@ Caveats on these numbers:
 ## 2. The architecture today
 
 One pipeline, per op, over the op's device-space bounding box
-([canvas.c](../src/canvas.c)):
+([canvas2d.c](../src/canvas2d.c)):
 
 1. **Flatten** at path-build time ([canvas2d_path.c](../src/canvas2d_path.c)): curves
    subdivide adaptively (`cross_chord2` flatness, depth-capped, NaN-as-flat) into
@@ -142,12 +142,12 @@ One pipeline, per op, over the op's device-space bounding box
    per lane — the taps are data-dependent gathers — inside the planar fold,
    with the device→source coordinate chain vectorized (elementwise, bit-exact
    per lane).
-5. **Blend** ([canvas.c](../src/canvas.c)'s blend kernels +
+5. **Blend** ([canvas2d.c](../src/canvas2d.c)'s blend kernels +
    [canvas2d_planar.h](../src/canvas2d_planar.h)): 8 pixels per step as four f16 channel
    planes, ld4/st4 at the seams, all 26 modes straight-line vector code,
    compositing onto the canvas's own premultiplied RGBA16F target.  There is
    no compositor: the old object, its ABI, and its copies (the per-clip-change
-   mask copy, the per-readback target copy) dissolved into canvas.c — the
+   mask copy, the per-readback target copy) dissolved into canvas2d.c — the
    kernels read the canvas's clip mask directly (`canvas2d_blend.h` is the
    internal seam the oracle tests drive) and readback un-premultiplies
    straight off the target.  Effective coverage (op plane × clip mask)
@@ -628,7 +628,7 @@ Two things the model surfaces that a refactor must not blur past:
   for several blend modes, but not all of them." The criterion, from
   `co = Fa·s + Fb·d`: fold ≡ lerp exactly when `Fa` is `sa`-free and `Fb` is
   affine in `sa` with `Fb(0)=1`. As landed (`coverage_folds`, now in
-  [canvas.c](../src/canvas.c), re-folded in the seam-efficiency
+  [canvas2d.c](../src/canvas2d.c), re-folded in the seam-efficiency
   pass): source-over, destination-over, destination-out, source-atop, xor,
   AND all 15 blend modes fold; copy, the in/out family, destination-atop,
   and **lighter** lerp — shade skips its coverage fold for those, the op's

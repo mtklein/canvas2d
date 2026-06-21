@@ -48,7 +48,8 @@ typedef struct canvas2d_premul {
 canvas2d_unpremul canvas2d_unpremul_of(float r, float g, float b, float a);
 
 // premultiply scales rgb by a; unpremultiply divides it back (a == 0 -> all-zero).
-// Both clamp to [0,1].
+// Both clamp alpha to [0,1] and leave the colour planes unbounded (extended
+// linear sRGB carries colour outside the [0,1] gamut).
 canvas2d_premul canvas2d_premultiply(canvas2d_unpremul c);
 canvas2d_unpremul canvas2d_unpremultiply(canvas2d_premul c);
 
@@ -72,7 +73,7 @@ typedef struct {
 float canvas2d_srgb_to_linear(float c);
 float canvas2d_linear_to_srgb(float l);
 
-// Per-channel transfer over an RGB triple (alpha is the caller's, untouched).
+// Per-channel sRGB<->linear transfer over an RGB triple.
 canvas2d_rgb canvas2d_rgb_srgb_to_linear(canvas2d_rgb c);
 canvas2d_rgb canvas2d_rgb_linear_to_srgb(canvas2d_rgb c);
 
