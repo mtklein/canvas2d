@@ -8,6 +8,22 @@ the web spec's names where the project implements it, OpenCL's names for
 lane/vector vocabulary, Mike's len rule (size = bytes, nfoo/foo_count = element
 counts, len = spatial).
 
+## Prefixes: public vs internal
+
+`canvas_` is the public API; `cnvs_` is internal.  The public header
+include/canvas.h is 100% `canvas_*`; every src/ module is `cnvs_*`.  The prefix
+alone tells you whether a symbol is API or implementation, and the public
+boundary stays airtight.  `cnvs_` (disemvowelled "canvas") is deliberately
+distinct from `canvas_` so the two never blur at a glance; it is not a
+rename-to-`canvas_` candidate.  New public symbols take `canvas_`, new internal
+symbols (and new src/ files) take `cnvs_`.
+
+Landed: airtight at the public header (zero `cnvs_` leaks).  Internal exceptions
+to normalize: `blur_*` / `blur.{c,h}` (the lone module with no family prefix) ->
+`cnvs_blur_*` / `cnvs_blur.{c,h}`; any internal helper wearing the public prefix
+-> `cnvs_*`.  `canvas_free`, `canvas_record_to`, `canvas_replay_from` are
+legitimately public.
+
 ## Collisions (same word, different meanings)
 
 ### C1. `cap` — four meanings
