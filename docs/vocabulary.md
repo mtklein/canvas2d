@@ -8,21 +8,35 @@ the web spec's names where the project implements it, OpenCL's names for
 lane/vector vocabulary, Mike's len rule (size = bytes, nfoo/foo_count = element
 counts, len = spatial).
 
-## Prefixes: public vs internal
+## Prefixes: two axes -- domain and visibility
 
-`canvas_` is the public API; `cnvs_` is internal.  The public header
-include/canvas.h is 100% `canvas_*`; every src/ module is `cnvs_*`.  The prefix
-alone tells you whether a symbol is API or implementation, and the public
-boundary stays airtight.  `cnvs_` (disemvowelled "canvas") is deliberately
-distinct from `canvas_` so the two never blur at a glance; it is not a
-rename-to-`canvas_` candidate.  New public symbols take `canvas_`, new internal
-symbols (and new src/ files) take `cnvs_`.
+Two prefixes, two axes.  **Domain (the prefix):** `canvas_` is the
+rendering-context API and its companion objects (Path2D, canvas_image) --
+everything *about* a canvas; `cnvs_` is everything else -- the project's
+standalone utilities and its internal implementation.  **Visibility (the header
+location):** a header in include/ is public, one in src/ is internal.  So a
+`cnvs_` header in include/ is a deliberately-exposed utility (the zlib codec, the
+PNG encoder, colour-space conversion, the matrix/homography math); a `cnvs_`
+header in src/ is internal.  `cnvs_` (disemvowelled "canvas") stays visually
+distinct from `canvas_` so the two domains never blur; it is not a rename
+candidate.
 
-Landed: airtight at the public header (zero `cnvs_` leaks).  Internal exceptions
-to normalize: `blur_*` / `blur.{c,h}` (the lone module with no family prefix) ->
-`cnvs_blur_*` / `cnvs_blur.{c,h}`; any internal helper wearing the public prefix
--> `cnvs_*`.  `canvas_free`, `canvas_record_to`, `canvas_replay_from` are
-legitimately public.
+New symbols: context API + its objects -> `canvas_` in include/; a freestanding
+utility meant for callers -> `cnvs_` in include/; internal implementation ->
+`cnvs_` in src/.
+
+History: this began as "canvas_ public, cnvs_ internal, airtight at the public
+header."  Mike chose the **full utility belt** (2026-06-21): expose zlib, the PNG
+encoder (already buffer-based -- `cnvs_png_encode` takes a raw uint16 RGBA buffer,
+not a canvas), colour-space conversion, and the matrix/homography math as public
+`cnvs_` headers, so `cnvs_` now spans public-utility and internal, split by
+location.  The moves are low-churn: the build is `-Iinclude -Isrc`, so a bare
+`#include "cnvs_x.h"` resolves wherever the file sits.  cnvs_math.h is a grab-bag
+(matrix + lane vocab + colour types + clamp/convert) -- expose only the geometry
+(and the colour types colour-space needs); keep the lane/compute vocabulary
+internal.  Still pending: normalize `blur_*` / `blur.{c,h}` -> `cnvs_blur_*`
+(internal); internal helpers wearing the public `canvas_` prefix -> `cnvs_`.
+`canvas_free`, `canvas_record_to`, `canvas_replay_from` are legitimately public.
 
 ## Collisions (same word, different meanings)
 
