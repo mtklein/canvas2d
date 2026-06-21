@@ -210,8 +210,32 @@ void canvas_transform(struct canvas *__single cv,
 void canvas_set_transform(struct canvas *__single cv,
                           float a, float b, float c, float d, float e, float f);
 void canvas_reset_transform(struct canvas *__single cv);
+
+// Projective (perspective) transforms -- a deliberate extension beyond the
+// affine Canvas 2D spec (docs/decisions/perspective.md).  The CTM is a 3x3
+// homography applied to (x, y, 1):
+//     x' = (a*x + c*y + e) / w,  y' = (b*x + d*y + f) / w,  w = g*x + h*y + i.
+// Affine is the (g, h, i) = (0, 0, 1) subset; the six-argument setters above set
+// it and stay on a divide-free, byte-identical path.  Geometry (fills, strokes,
+// text) renders projectively; sampling (gradients/images/patterns) is still
+// affine-sampled this phase.
+void canvas_set_transform_3x3(struct canvas *__single cv, float a, float b, float c,
+                              float d, float e, float f, float g, float h, float i);
+void canvas_transform_3x3(struct canvas *__single cv, float a, float b, float c,
+                          float d, float e, float f, float g, float h, float i);
+
+// Set the CTM to the homography that maps the source rect (sx, sy, sw, sh)
+// corners onto four destination points, corner order TL=(x0,y0), TR=(x1,y1),
+// BR=(x2,y2), BL=(x3,y3).  A degenerate destination (sw or sh zero, or collinear
+// destination corners) leaves the CTM unchanged.
+void canvas_set_perspective_quad(struct canvas *__single cv, float sx, float sy,
+                                 float sw, float sh, float x0, float y0,
+                                 float x1, float y1, float x2, float y2,
+                                 float x3, float y3);
+
 // The current transform (matching getTransform): the matrix built up by
 // translate/scale/rotate/transform and reset by set_transform/reset_transform.
+// Reports only the affine (a..f) part of the CTM.
 canvas_matrix canvas_get_transform(struct canvas *__single cv);
 
 // Solid fill paint.  `space` names the colour space the (r,g,b) are given in
