@@ -21,3 +21,21 @@ struct cnvs_verts {
 bool cnvs_verts_append(struct cnvs_verts *v, cnvs_vec2 const *__counted_by(k) src, int k);
 void cnvs_verts_reset(struct cnvs_verts *v);
 void cnvs_verts_free(struct cnvs_verts *v);
+
+// cnvs_mat_apply for eight pixel centres along one row: only x varies and the
+// affine map is elementwise, so the scalar expression runs per lane bit for
+// bit.
+typedef struct {
+    float8 x, y;
+} foldv8;
+
+foldv8 mat_apply8(cnvs_mat m, float8 x, float y);
+
+// Perspective-correct cnvs_mat_apply, eight pixel centres along one row.  The
+// three homogeneous numerators u = a*x + c*y + e, v = b*x + d*y + f, and
+// w = g*x + h*y + i are each LINEAR in x, so they step with the row (computed
+// here 8 wide); the source coord is (u/w, v/w), the per-pixel divide the only
+// added work over the affine mat_apply8.  Used only on the !cnvs_mat_is_affine
+// sampler branches -- the affine branch keeps mat_apply8's divide-free DDA, bit
+// for bit.  This is the 8-wide twin of cnvs_mat_apply's projective arm.
+foldv8 mat_apply8_persp(cnvs_mat m, float8 x, float y);
