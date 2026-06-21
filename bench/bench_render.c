@@ -5,7 +5,7 @@
 // rendering does, not isolated kernels.  Profile it with `sample`.
 #include "bench_reps.h"
 
-#include "canvas.h"
+#include "canvas2d.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -17,72 +17,72 @@
 
 // One frame: a deterministic scene (varies slightly with `f`) covering the ops a
 // real page mixes -- the point is proportion, not a pretty picture.
-static void scene(struct canvas *__single cv, int f) {
+static void scene(struct canvas2d_context *__single cv, int f) {
     float w = (float)DIM, h = (float)DIM;
-    canvas_clear_rect(cv, 0.0f, 0.0f, w, h);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.10f, 0.12f, 0.15f, 1.0f);  // opaque background
-    canvas_fill_rect(cv, 0.0f, 0.0f, w, h);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, w, h);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.10f, 0.12f, 0.15f, 1.0f);  // opaque background
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, w, h);
 
     // A handful of translucent star fills (concave coverage + per-fill blend).
     for (int i = 0; i < 6; i++) {
         float const cx = 30.0f + (float)((i * 47 + f * 3) % 200);
         float const cy = 40.0f + (float)((i * 31 + f * 5) % 180);
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.2f + 0.1f * (float)i, 0.5f, 0.9f - 0.1f * (float)i, 0.8f);
-        canvas_begin_path(cv);
-        canvas_move_to(cv, cx + 20.0f, cy);
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.2f + 0.1f * (float)i, 0.5f, 0.9f - 0.1f * (float)i, 0.8f);
+        canvas2d_begin_path(cv);
+        canvas2d_move_to(cv, cx + 20.0f, cy);
         for (int k = 1; k < 10; k++) {
             float const a = 6.2831853f * (float)k / 10.0f;
             float const r = (k % 2) ? 8.0f : 20.0f;
-            canvas_line_to(cv, cx + r * cosf(a), cy + r * sinf(a));
+            canvas2d_line_to(cv, cx + r * cosf(a), cy + r * sinf(a));
         }
-        canvas_close_path(cv);
-        canvas_fill(cv, CANVAS_NONZERO);
+        canvas2d_close_path(cv);
+        canvas2d_fill(cv, CANVAS2D_NONZERO);
     }
 
     // Linear + radial gradient fills (the 8-wide param solve + stop lerp rows).
-    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, w, h);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.3f, 0.2f, 0.9f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.2f, 0.4f, 1.0f, 0.9f);
-    canvas_fill_rect(cv, 20.0f, 20.0f, 100.0f, 100.0f);
+    canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, w, h);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.3f, 0.2f, 0.9f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.2f, 0.4f, 1.0f, 0.9f);
+    canvas2d_fill_rect(cv, 20.0f, 20.0f, 100.0f, 100.0f);
 
-    canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 180.0f, 180.0f, 4.0f, 180.0f, 180.0f, 60.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 0.95f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.1f, 0.2f, 0.5f, 0.0f);
-    canvas_fill_rect(cv, 120.0f, 120.0f, 120.0f, 120.0f);
+    canvas2d_set_fill_radial_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 180.0f, 180.0f, 4.0f, 180.0f, 180.0f, 60.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 0.95f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.1f, 0.2f, 0.5f, 0.0f);
+    canvas2d_fill_rect(cv, 120.0f, 120.0f, 120.0f, 120.0f);
 
     // A curved stroke.
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.85f, 0.2f, 0.9f);
-    canvas_set_line_width(cv, 3.0f);
-    canvas_begin_path(cv);
-    canvas_move_to(cv, 10.0f, 200.0f);
-    canvas_bezier_curve_to(cv, 80.0f, 120.0f, 160.0f, 240.0f, 240.0f, 160.0f);
-    canvas_stroke(cv);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.95f, 0.85f, 0.2f, 0.9f);
+    canvas2d_set_line_width(cv, 3.0f);
+    canvas2d_begin_path(cv);
+    canvas2d_move_to(cv, 10.0f, 200.0f);
+    canvas2d_bezier_curve_to(cv, 80.0f, 120.0f, 160.0f, 240.0f, 240.0f, 160.0f);
+    canvas2d_stroke(cv);
 
     // A circular clip with fills under it (clip coverage mask).
-    canvas_save(cv);
-    canvas_begin_path(cv);
-    canvas_arc(cv, 128.0f, 128.0f, 70.0f, 0.0f, 6.2831853f, false);
-    canvas_clip(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.4f, 0.7f, 0.6f);
-    canvas_fill_rect(cv, 60.0f, 60.0f, 140.0f, 140.0f);
-    canvas_restore(cv);
+    canvas2d_save(cv);
+    canvas2d_begin_path(cv);
+    canvas2d_arc(cv, 128.0f, 128.0f, 70.0f, 0.0f, 6.2831853f, false);
+    canvas2d_clip(cv, CANVAS2D_NONZERO);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.4f, 0.7f, 0.6f);
+    canvas2d_fill_rect(cv, 60.0f, 60.0f, 140.0f, 140.0f);
+    canvas2d_restore(cv);
 
     // A blend-mode composite (blend math beyond source-over).
-    enum canvas_composite_op modes[3] = { CANVAS_OP_MULTIPLY, CANVAS_OP_SCREEN,
-                                     CANVAS_OP_LIGHTEN };
-    canvas_set_global_composite_operation(cv, modes[f % 3]);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.3f, 0.5f, 0.7f);
-    canvas_fill_rect(cv, 80.0f, 30.0f, 90.0f, 90.0f);
-    canvas_set_global_composite_operation(cv, CANVAS_OP_SOURCE_OVER);
+    enum canvas2d_composite_op modes[3] = { CANVAS2D_OP_MULTIPLY, CANVAS2D_OP_SCREEN,
+                                     CANVAS2D_OP_LIGHTEN };
+    canvas2d_set_global_composite_operation(cv, modes[f % 3]);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.9f, 0.3f, 0.5f, 0.7f);
+    canvas2d_fill_rect(cv, 80.0f, 30.0f, 90.0f, 90.0f);
+    canvas2d_set_global_composite_operation(cv, CANVAS2D_OP_SOURCE_OVER);
 }
 
 int main(void) {
-    struct canvas *__single cv = canvas(DIM, DIM, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(DIM, DIM, CANVAS2D_CS_SRGB);
     int const len = DIM * DIM * 4;
     uint8_t *px = malloc((size_t)len);
     if (!cv || !px) {
         free(px);
-        canvas_free(cv);
+        canvas2d_free(cv);
         return 1;
     }
 
@@ -100,13 +100,13 @@ int main(void) {
         for (int f = 0; f < FRAMES; f++) {
             scene(cv, f);
             if (read_each) {
-                canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);  // readback: in-place unpremultiply
+                canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);  // readback: in-place unpremultiply
                 sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
             }
         }
     }
     if (!read_each) {
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);  // a single readback at the end
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);  // a single readback at the end
         sink += (double)px[(DIM / 2 * DIM + DIM / 2) * 4];
     }
     double const secs = bench_now_s() - t0;
@@ -116,7 +116,7 @@ int main(void) {
     // finished-frame throughput, comparable across canvas sizes.)
     bench_report_throughput(secs, (double)DIM * (double)DIM * (double)FRAMES * (double)reps);
     free(px);
-    canvas_free(cv);
+    canvas2d_free(cv);
     fprintf(stderr, "sink=%.0f\n", sink);
     return 0;
 }

@@ -1,4 +1,4 @@
-// Differential fuzz: our strict zlib inflate (src/cnvs_zlib.c) against the
+// Differential fuzz: our strict zlib inflate (src/canvas2d_zlib.c) against the
 // SYSTEM zlib (-lz) on the same adversarial bytes at the same output cap --
 // the H5 oracle from docs/decisions/codec-outsourcing.md at fuzz time, renting
 // reference zlib's correctness without shipping its bytes.  The oracle is
@@ -19,7 +19,7 @@
 // pollute the seed dir:
 //   ./build/fuzz/fuzz_zlib_diff -max_len=4096 /tmp/zlib_diff_corpus fuzz/seeds_zlib
 
-#include "cnvs_zlib.h"
+#include "canvas2d_zlib.h"
 
 #include <assert.h>
 #include <ptrcheck.h>
@@ -53,7 +53,7 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     }
     int consumed = 0;
     int const r = ref_inflate(refs, cap, data, (int)size, &consumed);
-    int o = cnvs_zlib_inflate(mine, cap, data, (int)size);
+    int o = canvas2d_zlib_inflate(mine, cap, data, (int)size);
     if (r < 0) {
         assert(o == -1);  // ours never accepts what the reference rejects
     } else if (consumed == (int)size) {
@@ -62,21 +62,21 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     } else {
         // Trailing garbage: the documented strictness delta, one way only.
         assert(o == -1);
-        o = cnvs_zlib_inflate(mine, cap, data, consumed);
+        o = canvas2d_zlib_inflate(mine, cap, data, consumed);
         assert(o == r);  // the bare stream must agree exactly
         assert(r == 0 || memcmp(mine, refs, (size_t)r) == 0);
     }
     if (r >= 0) {
         // Round-trip the payload through our deflate, then back through BOTH
         // decoders against exact-size heap buffers (redzones bite on overrun).
-        int const zcap = cnvs_zlib_bound(r);
+        int const zcap = canvas2d_zlib_bound(r);
         uint8_t *z = malloc((size_t)zcap);
         uint8_t *back = malloc(r > 0 ? (size_t)r : 1);
         uint8_t *back2 = malloc(r > 0 ? (size_t)r : 1);
         if (z && back && back2) {
-            int const zn = cnvs_zlib_deflate(z, zcap, refs, r);
+            int const zn = canvas2d_zlib_deflate(z, zcap, refs, r);
             assert(zn > 0);
-            assert(cnvs_zlib_inflate(back, r, z, zn) == r);
+            assert(canvas2d_zlib_inflate(back, r, z, zn) == r);
             assert(r == 0 || memcmp(back, refs, (size_t)r) == 0);
             int used = 0;
             assert(ref_inflate(back2, r, z, zn, &used) == r);

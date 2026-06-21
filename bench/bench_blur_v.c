@@ -2,7 +2,7 @@
 // apart, so this is the cache-unfriendly axis).  Pairs with bench_blur_h.c.
 #include "bench_reps.h"
 
-#include "blur.h"
+#include "canvas2d_blur.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -28,7 +28,7 @@ int main(void) {
     int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
-            blur_box_v(dst, src, DIM, DIM, RADIUS);
+            canvas2d_blur_box_v(dst, src, DIM, DIM, RADIUS);
             sink += (double)dst[n / 2];
         }
     }

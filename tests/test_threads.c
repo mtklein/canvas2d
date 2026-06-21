@@ -1,5 +1,5 @@
-#include "canvas.h"
-#include "canvas_path2d.h"
+#include "canvas2d.h"
+#include "canvas2d_path2d.h"
 #include "test_util.h"
 
 #include <math.h>
@@ -55,66 +55,66 @@ enum {
 // Scenes, drawn in logical scene space ([0,SCENE_W) x [0,SCENE_H)).
 // ---------------------------------------------------------------------------
 
-static void scene_gradients(struct canvas *__single cv) {
+static void scene_gradients(struct canvas2d_context *__single cv) {
     // Linear wash over the whole scene.
-    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.10f, 0.05f, 0.30f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.05f, 0.25f, 0.45f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.30f, 0.10f, 0.20f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
+    canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 0.10f, 0.05f, 0.30f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.5f, 0.05f, 0.25f, 0.45f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.30f, 0.10f, 0.20f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
 
     // A grid of radial blobs, straddling tile seams on purpose.
     for (int i = 0; i < 12; i++) {
         float const cx = 128.0f + 256.0f * (float)(i % 4);
         float const cy = 128.0f + 256.0f * (float)(i / 4);
-        canvas_set_fill_radial_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, cx - 20.0f, cy - 20.0f, 8.0f,
+        canvas2d_set_fill_radial_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, cx - 20.0f, cy - 20.0f, 8.0f,
                                         cx, cy, 110.0f);
-        canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.9f, 0.4f, 1.0f);
-        canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.8f, 0.2f, 0.4f, 0.0f);
-        canvas_begin_path(cv);
-        canvas_arc(cv, cx, cy, 110.0f, 0.0f, 6.2831853f, false);
-        canvas_fill(cv, CANVAS_NONZERO);
+        canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.9f, 0.4f, 1.0f);
+        canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.8f, 0.2f, 0.4f, 0.0f);
+        canvas2d_begin_path(cv);
+        canvas2d_arc(cv, cx, cy, 110.0f, 0.0f, 6.2831853f, false);
+        canvas2d_fill(cv, CANVAS2D_NONZERO);
     }
 
     // A conic-gradient pinwheel centred on a four-tile corner.
-    canvas_set_fill_conic_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.5f, 512.0f, 256.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 0.2f, 0.8f, 0.9f, 0.9f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.5f, 0.9f, 0.3f, 0.8f, 0.9f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.2f, 0.8f, 0.9f, 0.9f);
-    canvas_begin_path(cv);
-    canvas_arc(cv, 512.0f, 256.0f, 150.0f, 0.0f, 6.2831853f, false);
-    canvas_fill(cv, CANVAS_NONZERO);
+    canvas2d_set_fill_conic_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.5f, 512.0f, 256.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 0.2f, 0.8f, 0.9f, 0.9f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.5f, 0.9f, 0.3f, 0.8f, 0.9f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.2f, 0.8f, 0.9f, 0.9f);
+    canvas2d_begin_path(cv);
+    canvas2d_arc(cv, 512.0f, 256.0f, 150.0f, 0.0f, 6.2831853f, false);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
 
     // Shadowed rounded rects.
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.8f);
-    canvas_set_shadow_blur(cv, 12.0f);
-    canvas_set_shadow_offset_x(cv, 8.0f);
-    canvas_set_shadow_offset_y(cv, 10.0f);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.85f, 0.30f, 1.0f);
-    canvas_begin_path(cv);
-    canvas_round_rect(cv, 180.0f, 430.0f, 300.0f, 200.0f, 28.0f);
-    canvas_fill(cv, CANVAS_NONZERO);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.30f, 0.85f, 0.55f, 0.9f);
-    canvas_begin_path(cv);
-    canvas_round_rect(cv, 620.0f, 80.0f, 260.0f, 170.0f, 40.0f);
-    canvas_fill(cv, CANVAS_NONZERO);
-    canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);  // shadows off
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.8f);
+    canvas2d_set_shadow_blur(cv, 12.0f);
+    canvas2d_set_shadow_offset_x(cv, 8.0f);
+    canvas2d_set_shadow_offset_y(cv, 10.0f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.95f, 0.85f, 0.30f, 1.0f);
+    canvas2d_begin_path(cv);
+    canvas2d_round_rect(cv, 180.0f, 430.0f, 300.0f, 200.0f, 28.0f);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.30f, 0.85f, 0.55f, 0.9f);
+    canvas2d_begin_path(cv);
+    canvas2d_round_rect(cv, 620.0f, 80.0f, 260.0f, 170.0f, 40.0f);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
+    canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);  // shadows off
 
     // A dashed gradient stroke weaving across every tile column.
-    canvas_set_stroke_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 600.0f, (float)SCENE_W, 700.0f);
-    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
-    canvas_add_stroke_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 0.4f, 0.1f, 1.0f);
-    canvas_set_line_width(cv, 14.0f);
-    canvas_set_line_cap(cv, CANVAS_CAP_ROUND);
+    canvas2d_set_stroke_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 600.0f, (float)SCENE_W, 700.0f);
+    canvas2d_add_stroke_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+    canvas2d_add_stroke_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 1.0f, 0.4f, 0.1f, 1.0f);
+    canvas2d_set_line_width(cv, 14.0f);
+    canvas2d_set_line_cap(cv, CANVAS2D_CAP_ROUND);
     float const dash[2] = { 36.0f, 22.0f };
-    canvas_set_line_dash(cv, dash, 2);
-    canvas_begin_path(cv);
-    canvas_move_to(cv, -20.0f, 620.0f);
-    canvas_bezier_curve_to(cv, 300.0f, 500.0f, 700.0f, 760.0f, 1050.0f, 640.0f);
-    canvas_stroke(cv);
+    canvas2d_set_line_dash(cv, dash, 2);
+    canvas2d_begin_path(cv);
+    canvas2d_move_to(cv, -20.0f, 620.0f);
+    canvas2d_bezier_curve_to(cv, 300.0f, 500.0f, 700.0f, 760.0f, 1050.0f, 640.0f);
+    canvas2d_stroke(cv);
 }
 
-static void scene_pattern_path2d(struct canvas *__single cv) {
+static void scene_pattern_path2d(struct canvas2d_context *__single cv) {
     // Procedural 16x16 RGBA pattern source, built per render (per canvas: the
     // pattern source is borrowed, so each tile render owns its own copy).
     enum { PW = 16, PH = 16, PLEN = PW * PH * 4 };
@@ -129,11 +129,11 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
             pat[i + 3] = 255;
         }
     }
-    canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, pat, PW, PH, CANVAS_REPEAT);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
+    canvas2d_set_fill_pattern(cv, CANVAS2D_CS_SRGB, pat, PW, PH, CANVAS2D_REPEAT);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
 
     // A Path2D star spanning several tiles, filled even-odd then stroked.
-    struct canvas_path2d *__single star = canvas_path2d();
+    struct canvas2d_path2d *__single star = canvas2d_path2d();
     if (star) {
         for (int i = 0; i <= 10; i++) {
             float const r = (i & 1) ? 130.0f : 320.0f;
@@ -141,44 +141,44 @@ static void scene_pattern_path2d(struct canvas *__single cv) {
             float const x = 512.0f + r * cosf(a);
             float const y = 384.0f + r * sinf(a);
             if (i == 0) {
-                canvas_path2d_move_to(star, x, y);
+                canvas2d_path2d_move_to(star, x, y);
             } else {
-                canvas_path2d_line_to(star, x, y);
+                canvas2d_path2d_line_to(star, x, y);
             }
         }
-        canvas_path2d_close_path(star);
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.15f, 0.2f, 0.6f, 0.85f);
-        canvas_fill_path(cv, star, CANVAS_EVENODD);
-        canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
-        canvas_set_line_width(cv, 6.0f);
-        canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
-        canvas_stroke_path(cv, star);
-        canvas_path2d_free(star);
+        canvas2d_path2d_close_path(star);
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.15f, 0.2f, 0.6f, 0.85f);
+        canvas2d_fill_path(cv, star, CANVAS2D_EVENODD);
+        canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 1.0f, 1.0f, 1.0f);
+        canvas2d_set_line_width(cv, 6.0f);
+        canvas2d_set_line_join(cv, CANVAS2D_JOIN_ROUND);
+        canvas2d_stroke_path(cv, star);
+        canvas2d_path2d_free(star);
     }
 
     // A Path2D ring used as a clip; pattern-strokes inside it.
-    struct canvas_path2d *__single ring = canvas_path2d();
+    struct canvas2d_path2d *__single ring = canvas2d_path2d();
     if (ring) {
-        canvas_path2d_arc(ring, 260.0f, 200.0f, 150.0f, 0.0f, 6.2831853f, false);
-        canvas_save(cv);
-        canvas_clip_path(cv, ring, CANVAS_NONZERO);
-        canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.85f, 0.2f, 1.0f);
-        canvas_set_line_width(cv, 10.0f);
+        canvas2d_path2d_arc(ring, 260.0f, 200.0f, 150.0f, 0.0f, 6.2831853f, false);
+        canvas2d_save(cv);
+        canvas2d_clip_path(cv, ring, CANVAS2D_NONZERO);
+        canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.85f, 0.2f, 1.0f);
+        canvas2d_set_line_width(cv, 10.0f);
         for (int i = 0; i < 6; i++) {
-            canvas_begin_path(cv);
-            canvas_move_to(cv, 60.0f, 60.0f + 50.0f * (float)i);
-            canvas_line_to(cv, 460.0f, 110.0f + 50.0f * (float)i);
-            canvas_stroke(cv);
+            canvas2d_begin_path(cv);
+            canvas2d_move_to(cv, 60.0f, 60.0f + 50.0f * (float)i);
+            canvas2d_line_to(cv, 460.0f, 110.0f + 50.0f * (float)i);
+            canvas2d_stroke(cv);
         }
-        canvas_restore(cv);
-        canvas_path2d_free(ring);
+        canvas2d_restore(cv);
+        canvas2d_path2d_free(ring);
     }
 }
 
-static void scene_text(struct canvas *__single cv) {
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.98f, 0.96f, 0.92f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.15f, 1.0f);
+static void scene_text(struct canvas2d_context *__single cv) {
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.98f, 0.96f, 0.92f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)SCENE_W, (float)SCENE_H);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.1f, 0.15f, 1.0f);
 
     // Latin + Chinese rows at several sizes: concurrent shaping on distinct
     // canvases, same strings, so the per-canvas shape caches fill in parallel.
@@ -191,31 +191,31 @@ static void scene_text(struct canvas *__single cv) {
     };
     for (int row = 0; row < 8; row++) {
         float const size = 22.0f + 7.0f * (float)(row % 4);
-        canvas_set_font_size(cv, size);
-        canvas_fill_text(cv, lines[row % 4], 24.0f, 60.0f + 88.0f * (float)row);
+        canvas2d_set_font_size(cv, size);
+        canvas2d_fill_text(cv, lines[row % 4], 24.0f, 60.0f + 88.0f * (float)row);
     }
 
     // measure_text feeds a position (the measure path crosses the boundary too).
-    canvas_set_font_size(cv, 30.0f);
-    float const w = canvas_measure_text(cv, "measured");
-    canvas_fill_text(cv, "measured", 980.0f - w, 60.0f);
+    canvas2d_set_font_size(cv, 30.0f);
+    float const w = canvas2d_measure_text(cv, "measured");
+    canvas2d_fill_text(cv, "measured", 980.0f - w, 60.0f);
 
     // Emoji: the colour-glyph capture path, straddling tile seams.
-    canvas_set_font_size(cv, 64.0f);
-    canvas_fill_text(cv, "\xF0\x9F\x8C\x88\xF0\x9F\x8E\xA8", 200.0f, 280.0f);  // 🌈🎨
-    canvas_set_font_size(cv, 40.0f);
-    canvas_fill_text(cv, "\xF0\x9F\xA6\x8A", 500.0f, 530.0f);                  // 🦊
+    canvas2d_set_font_size(cv, 64.0f);
+    canvas2d_fill_text(cv, "\xF0\x9F\x8C\x88\xF0\x9F\x8E\xA8", 200.0f, 280.0f);  // 🌈🎨
+    canvas2d_set_font_size(cv, 40.0f);
+    canvas2d_fill_text(cv, "\xF0\x9F\xA6\x8A", 500.0f, 530.0f);                  // 🦊
 
     // Stroked text, centre-aligned across a vertical seam.
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.6f, 0.1f, 0.3f, 1.0f);
-    canvas_set_line_width(cv, 1.5f);
-    canvas_set_font_size(cv, 48.0f);
-    canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
-    canvas_stroke_text(cv, "seamless", 512.0f, 740.0f);
-    canvas_set_text_align(cv, CANVAS_ALIGN_START);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.6f, 0.1f, 0.3f, 1.0f);
+    canvas2d_set_line_width(cv, 1.5f);
+    canvas2d_set_font_size(cv, 48.0f);
+    canvas2d_set_text_align(cv, CANVAS2D_ALIGN_CENTER);
+    canvas2d_stroke_text(cv, "seamless", 512.0f, 740.0f);
+    canvas2d_set_text_align(cv, CANVAS2D_ALIGN_START);
 }
 
-static void draw_scene(struct canvas *__single cv, int scene) {
+static void draw_scene(struct canvas2d_context *__single cv, int scene) {
     switch (scene) {
         case 0: scene_gradients(cv);     break;
         case 1: scene_pattern_path2d(cv); break;
@@ -234,25 +234,25 @@ static bool render_tile(int scene, int tile, uint8_t *__counted_by(len) out, int
     (void)len;
     int const tx = TILE * (tile % COLS);
     int const ty = TILE * (tile / COLS);
-    struct canvas *__single cv = canvas(TILE, TILE, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(TILE, TILE, CANVAS2D_CS_SRGB);
     if (!cv) {
         return false;
     }
-    canvas_translate(cv, (float)-tx, (float)-ty);
+    canvas2d_translate(cv, (float)-tx, (float)-ty);
     draw_scene(cv, scene);
 
     int const tlen = TILE * TILE * 4;
     uint8_t *__counted_by(tlen) px = malloc((size_t)tlen);
     bool const ok = px != NULL;
     if (ok) {
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, tlen);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, tlen);
         for (int row = 0; row < TILE; row++) {
             memcpy(out + ((ty + row) * SCENE_W + tx) * 4,
                    px + row * TILE * 4, TILE * 4);
         }
         free(px);
     }
-    canvas_free(cv);
+    canvas2d_free(cv);
     return ok;
 }
 

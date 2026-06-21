@@ -1,12 +1,12 @@
-// cnvs_replay_text: a valid program replays and draws; malformed input is
+// canvas2d_replay_text: a valid program replays and draws; malformed input is
 // rejected (returns false) without crashing.  Under the debug variant this runs
 // with ASan+UBSan and -fbounds-safety, so a parser memory bug on adversarial
 // input would trap here.  See docs/decisions/security-review.md.
 
 #include "test_util.h"
 
-#include "canvas.h"
-#include "cnvs_replay.h"
+#include "canvas2d.h"
+#include "canvas2d_replay.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -14,10 +14,10 @@
 
 // sizeof-1 keeps the literal an array (bounds known), avoiding the
 // __null_terminated->__counted_by seam at the call.
-#define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
+#define REPLAY(cv, s) canvas2d_replay_text((cv), (s), sizeof(s) - 1)
 
 int main(void) {
-    struct canvas *__single cv = canvas(64, 48, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(64, 48, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
 
     // A valid program: comments, blank lines, no trailing newline on the last line.
@@ -38,7 +38,7 @@ int main(void) {
 
     // It actually drew: the grey fill is visible.
     uint8_t px[64 * 48 * 4];
-    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 64, 48, px, (int)sizeof px);
+    canvas2d_get_image_data(cv, CANVAS2D_CS_SRGB, 0, 0, 64, 48, px, (int)sizeof px);
     CHECK(px[0] == 128 || px[0] == 127);
 
     // Malformed inputs are all rejected (and, crucially, don't crash).
@@ -74,7 +74,7 @@ int main(void) {
         "fill_rect 4 12 8 8\n"
         "set_stroke_pattern 0 no-repeat\n"));
     // The 1x1 red source landed via put_image_data.
-    canvas_get_image_data(cv, CANVAS_CS_SRGB, 24, 4, 1, 1, px, 4);
+    canvas2d_get_image_data(cv, CANVAS2D_CS_SRGB, 24, 4, 1, 1, px, 4);
     CHECK(px[0] == 255 && px[1] == 0 && px[2] == 0 && px[3] == 255);
 
     // The scalar ops: conic gradients, per-corner radii, smoothing, the
@@ -216,11 +216,11 @@ int main(void) {
     // of the two COMPOSITING spaces (oklab is not a working space, only an
     // interpolation one), and carry exactly that one token.
     {
-        struct canvas *__single ws = canvas(8, 8, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single ws = canvas2d(8, 8, CANVAS2D_CS_SRGB);
         CHECK(ws != NULL);
         CHECK(REPLAY(ws, "working_space linear\n"
                          "fill_rect 0 0 8 8\n"));
-        canvas_free(ws);
+        canvas2d_free(ws);
     }
     CHECK(!REPLAY(cv, "fill_rect 0 0 1 1\n"
                       "working_space linear\n"));   // not leading
@@ -276,7 +276,7 @@ int main(void) {
     {
         char big[5000];
         memset(big, '1', sizeof big);
-        CHECK(!cnvs_replay_text(cv, big, sizeof big));
+        CHECK(!canvas2d_replay_text(cv, big, sizeof big));
     }
 
     // Adversarial bytes (no newline, high bytes, lone multibyte leads) must not
@@ -284,10 +284,10 @@ int main(void) {
     {
         char junk[] = { (char)0xF0, (char)0x80, 'm', 'o', 'v', 'e', '_', 't', 'o',
                         ' ', '1', (char)0xFF, 0x7F };
-        (void)cnvs_replay_text(cv, junk, sizeof junk);
+        (void)canvas2d_replay_text(cv, junk, sizeof junk);
         CHECK(cv != NULL);
     }
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     return TEST_REPORT();
 }

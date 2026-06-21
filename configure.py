@@ -121,7 +121,7 @@ BASE_FRAMEWORKS = "-framework CoreText -framework CoreGraphics -framework CoreFo
 
 # Platform-boundary C sources: built without -fbounds-safety at -Wall -Wextra
 # because they bind un-annotated system headers, behind a bounds-safe ABI.
-BOUNDARY_C = {"cnvs_text_ct.c"}
+BOUNDARY_C = {"canvas2d_text_ct.c"}
 
 # Test-only system libraries, by source basename.  The differential oracle (H5
 # in docs/decisions/codec-outsourcing.md) links the SYSTEM zlib so reference
@@ -155,8 +155,8 @@ _DEBUG = ("-O0 -g -fsanitize=address,integer,undefined -fno-sanitize-recover=all
 # Redefine the allocator to the fault injector (tests/oom_alloc.c) for the OOM and
 # coverage builds.  Invisible to -fbounds-safety: stdlib.h's annotated malloc
 # declaration macro-expands onto the wrapper, so size tracking is preserved.
-OOM_DEFINES = ("-Dmalloc=cnvs_oom_malloc -Drealloc=cnvs_oom_realloc "
-               "-Dcalloc=cnvs_oom_calloc")
+OOM_DEFINES = ("-Dmalloc=canvas2d_oom_malloc -Drealloc=canvas2d_oom_realloc "
+               "-Dcalloc=canvas2d_oom_calloc")
 
 # --- libFuzzer fuzz targets (opt-in `ninja fuzzers`; see homebrew_clang() above) ----
 # fuzzer-no-link instruments every TU for SanitizerCoverage; the libFuzzer driver
@@ -172,7 +172,7 @@ FUZZ_CFLAGS = ("-std=c23 -g -O1 -fno-omit-frame-pointer -Ifuzz/shim -Ifuzz "
                "-Iinclude -Isrc -Wall -Wno-unknown-warning-option")
 # Modules the libFuzzer harnesses do NOT link.  Currently empty: every src/*.c is
 # part of the render core a harness can reach.  The fuzz core is the whole canvas
-# render core (core_c, globbed), so a new cnvs_*.c module is picked up
+# render core (core_c, globbed), so a new canvas2d_*.c module is picked up
 # automatically.  Kept as an *exclude* set (rather than an include list)
 # because an include list grows with every feature and silently drifts out of
 # date; an empty exclude needs no maintenance.
@@ -390,7 +390,7 @@ def main():
     # `__unsafe_forge*` / `__unsafe_indexable` is the deliberate exit from it.  After
     # the tag-pointer probe (the last legitimate forge user) was retired, the whole
     # checked tree -- src/ include/ tests/ examples/, with NO exemptions (even the one
-    # boundary TU, cnvs_text_ct.c, is plain C with zero __unsafe spellings) -- contains
+    # boundary TU, canvas2d_text_ct.c, is plain C with zero __unsafe spellings) -- contains
     # no `__unsafe` token.  This greps for one and FAILS the build if it reappears, so a
     # future edit can't silently reintroduce an escape hatch into checked code.  Empty
     # grep -> touch the stamp; any hit (or a grep error, folded into the match text via
@@ -679,7 +679,7 @@ def main():
     # The fault injector itself: instrumented, NOT redefined, NOT checked.  It must
     # hand back exactly what libc hands it, and -fbounds-safety's alloc_size return
     # check traps a non-NULL return whose size is zero -- which is precisely what
-    # macOS malloc(0)/calloc(0, n) produce (cnvs_shape callocs 0 runs for an empty
+    # macOS malloc(0)/calloc(0, n) produce (canvas2d_shape callocs 0 runs for an empty
     # string).  Compiled unchecked like the other boundary shims; checked callers
     # still get size tracking from oom_alloc.h's alloc_size declarations.
     w("rule cc_cov_shim")
@@ -760,7 +760,7 @@ def main():
     # `if (!p) return false` OOM guards that coverage flagged as the dominant
     # untaken branch class; the normal suite never fails an allocation.  The macro
     # redefine is invisible to -fbounds-safety: stdlib.h's malloc declaration (with
-    # __sized_by_or_null/alloc_size) macro-expands onto cnvs_oom_malloc, so size
+    # __sized_by_or_null/alloc_size) macro-expands onto canvas2d_oom_malloc, so size
     # tracking is preserved.  Folded into `all`.
     w("rule cc_oom")
     w(f"  command = clang $cstd {BOUNDS} {_DEBUG} $cwarn $cinc {OOM_DEFINES} -MMD -MF $out.d -c $in -o $out")

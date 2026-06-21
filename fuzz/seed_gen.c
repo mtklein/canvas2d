@@ -21,7 +21,7 @@ static void f32(struct buf *s, float f)   { uint8_t t[4]; memcpy(t, &f, 4); for 
 static void rng(struct buf *s, int lo, int v) { int d = v - lo; u8(s, (d >> 8) & 0xFF); u8(s, d & 0xFF); }  // -> lo + d
 static void op(struct buf *s, enum fuzz_op o)  { u8(s, (int)o); }
 
-static void canvas_hw(struct buf *s, int w, int h) { rng(s, 1, w); rng(s, 1, h); }
+static void canvas2d_hw(struct buf *s, int w, int h) { rng(s, 1, w); rng(s, 1, h); }
 
 static void write_seed(char const *dir, int idx, struct buf const *s) {
     char path[512];
@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
     int idx = 0;
 
     {   // filled triangle
-        struct buf s = { 0 }; canvas_hw(&s, 128, 128);
+        struct buf s = { 0 }; canvas2d_hw(&s, 128, 128);
         op(&s, OP_SET_FILL_RGBA); f32(&s, 0.8f); f32(&s, 0.2f); f32(&s, 0.2f); f32(&s, 1.0f);
         op(&s, OP_BEGIN_PATH);
         op(&s, OP_MOVE_TO); f32(&s, 10); f32(&s, 10);
@@ -49,7 +49,7 @@ int main(int argc, char **argv) {
         write_seed(dir, idx++, &s);
     }
     {   // stroked bezier with dashes and joins
-        struct buf s = { 0 }; canvas_hw(&s, 200, 80);
+        struct buf s = { 0 }; canvas2d_hw(&s, 200, 80);
         op(&s, OP_SET_LINE_WIDTH); f32(&s, 4.0f);
         op(&s, OP_SET_LINE_JOIN); rng(&s, 0, 1);
         op(&s, OP_SET_LINE_DASH); rng(&s, 0, 2); f32(&s, 6); f32(&s, 3);
@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         write_seed(dir, idx++, &s);
     }
     {   // arc + ellipse + round_rect fills, even-odd
-        struct buf s = { 0 }; canvas_hw(&s, 160, 160);
+        struct buf s = { 0 }; canvas2d_hw(&s, 160, 160);
         op(&s, OP_SET_FILL_RULE); rng(&s, 0, 1);
         op(&s, OP_BEGIN_PATH);
         op(&s, OP_ARC); f32(&s, 80); f32(&s, 80); f32(&s, 50); f32(&s, 0); f32(&s, 6.2831853f); u8(&s, 0);
@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
         write_seed(dir, idx++, &s);
     }
     {   // gradient fill + clip + transform
-        struct buf s = { 0 }; canvas_hw(&s, 200, 120);
+        struct buf s = { 0 }; canvas2d_hw(&s, 200, 120);
         op(&s, OP_TRANSLATE); f32(&s, 20); f32(&s, 10);
         op(&s, OP_ROTATE); f32(&s, 0.2f);
         op(&s, OP_FILL_LINEAR_GRAD); f32(&s, 0); f32(&s, 0); f32(&s, 180); f32(&s, 0);
@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
         write_seed(dir, idx++, &s);
     }
     {   // save/restore + image data round-trip + draw_image
-        struct buf s = { 0 }; canvas_hw(&s, 96, 96);
+        struct buf s = { 0 }; canvas2d_hw(&s, 96, 96);
         op(&s, OP_SAVE);
         op(&s, OP_SET_GLOBAL_ALPHA); f32(&s, 0.5f);
         op(&s, OP_FILL_RECT); f32(&s, 8); f32(&s, 8); f32(&s, 40); f32(&s, 40);
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
         write_seed(dir, idx++, &s);
     }
     {   // composite modes over a gradient
-        struct buf s = { 0 }; canvas_hw(&s, 120, 120);
+        struct buf s = { 0 }; canvas2d_hw(&s, 120, 120);
         op(&s, OP_SET_COMPOSITE); rng(&s, 0, 13);
         op(&s, OP_SET_FILL_RGBA); f32(&s, 0.2f); f32(&s, 0.6f); f32(&s, 0.9f); f32(&s, 0.7f);
         op(&s, OP_BEGIN_PATH);

@@ -12,54 +12,54 @@
 
 #include "test_util.h"
 
-#include "canvas.h"
-#include "canvas_path2d.h"
-#include "cnvs_replay.h"
+#include "canvas2d.h"
+#include "canvas2d_path2d.h"
+#include "canvas2d_replay.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
 
-static void draw_some(struct canvas *__single cv, int seed) {
-    canvas_save(cv);
-    canvas_translate(cv, (float)(seed % 7), (float)(seed % 5));
-    canvas_rotate(cv, 0.1f * (float)seed);
+static void draw_some(struct canvas2d_context *__single cv, int seed) {
+    canvas2d_save(cv);
+    canvas2d_translate(cv, (float)(seed % 7), (float)(seed % 5));
+    canvas2d_rotate(cv, 0.1f * (float)seed);
 
     // Clip to a path (allocates a full-canvas mask; save() above snapshotted the
     // previous one, restore() below frees this and brings the old one back).
-    canvas_begin_path(cv);
-    canvas_rect(cv, 4.0f, 4.0f, 40.0f, 30.0f);
-    canvas_clip(cv, CANVAS_NONZERO);
+    canvas2d_begin_path(cv);
+    canvas2d_rect(cv, 4.0f, 4.0f, 40.0f, 30.0f);
+    canvas2d_clip(cv, CANVAS2D_NONZERO);
 
     // Gradient fill (grows the parameter/colour row buffers), then a solid
     // fill and a stroke.
-    canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL, 0.0f, 0.0f, 48.0f, 0.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    canvas_begin_path(cv);
-    canvas_arc(cv, 24.0f, 24.0f, 18.0f, 0.0f, 6.2831853f, false);
-    canvas_fill(cv, CANVAS_NONZERO);
+    canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL, 0.0f, 0.0f, 48.0f, 0.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    canvas2d_begin_path(cv);
+    canvas2d_arc(cv, 24.0f, 24.0f, 18.0f, 0.0f, 6.2831853f, false);
+    canvas2d_fill(cv, CANVAS2D_NONZERO);
 
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
-    canvas_set_line_width(cv, 2.0f);
-    canvas_begin_path(cv);
-    canvas_move_to(cv, 2.0f, 2.0f);
-    canvas_bezier_curve_to(cv, 20.0f, 0.0f, 30.0f, 40.0f, 46.0f, 20.0f);
-    canvas_stroke(cv);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_set_line_width(cv, 2.0f);
+    canvas2d_begin_path(cv);
+    canvas2d_move_to(cv, 2.0f, 2.0f);
+    canvas2d_bezier_curve_to(cv, 20.0f, 0.0f, 30.0f, 40.0f, 46.0f, 20.0f);
+    canvas2d_stroke(cv);
 
     // Nested save/restore to stress the clip-mask stack ownership.
-    canvas_save(cv);
-    canvas_begin_path(cv);
-    canvas_rect(cv, 10.0f, 10.0f, 10.0f, 10.0f);
-    canvas_clip(cv, CANVAS_NONZERO);
-    canvas_fill_rect(cv, 0.0f, 0.0f, 48.0f, 48.0f);
-    canvas_restore(cv);
+    canvas2d_save(cv);
+    canvas2d_begin_path(cv);
+    canvas2d_rect(cv, 10.0f, 10.0f, 10.0f, 10.0f);
+    canvas2d_clip(cv, CANVAS2D_NONZERO);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, 48.0f, 48.0f);
+    canvas2d_restore(cv);
 
-    canvas_restore(cv);
+    canvas2d_restore(cv);
 }
 
 int main(void) {
     for (int i = 0; i < 16; i++) {
-        struct canvas *__single cv = canvas(48, 48, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(48, 48, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
@@ -68,27 +68,27 @@ int main(void) {
 
         // Image data round-trip (get allocates, blit, free; put builds a tile).
         uint8_t buf[48 * 48 * 4];
-        canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 48, 48, buf, (int)sizeof buf);
-        canvas_put_image_data(cv, CANVAS_CS_SRGB, buf, (int)sizeof buf, 24, 24, 4, 4);
+        canvas2d_get_image_data(cv, CANVAS2D_CS_SRGB, 0, 0, 48, 48, buf, (int)sizeof buf);
+        canvas2d_put_image_data(cv, CANVAS2D_CS_SRGB, buf, (int)sizeof buf, 24, 24, 4, 4);
 
         // drawImage source (its own bbox tile + premultiplied sampling path).
         uint8_t src[16 * 16 * 4];
         for (int k = 0; k < (int)sizeof src; k++) {
             src[k] = (uint8_t)(k * 7);
         }
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 16, 16, 2.0f, 2.0f, 40.0f, 40.0f);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 16, 16, 2.0f, 2.0f, 40.0f, 40.0f);
 
         // Font cache: a size change frees the old face and builds a new one.
-        canvas_set_font_size(cv, 12.0f + (float)i);
-        (void)canvas_measure_text(cv, "Ag");
+        canvas2d_set_font_size(cv, 12.0f + (float)i);
+        (void)canvas2d_measure_text(cv, "Ag");
 
         // Emoji: the canonical capture and its lazily-built mip pyramid are
         // cache-owned heap buffers, freed with the canvas -- draw twice so the
         // hit path (no second allocation) runs under the leak gate too.
-        canvas_fill_text(cv, "\xF0\x9F\x99\x82", 4.0f, 40.0f);  // 🙂
-        canvas_fill_text(cv, "\xF0\x9F\x99\x82", 20.0f, 40.0f);
+        canvas2d_fill_text(cv, "\xF0\x9F\x99\x82", 4.0f, 40.0f);  // 🙂
+        canvas2d_fill_text(cv, "\xF0\x9F\x99\x82", 20.0f, 40.0f);
 
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 
     // Record/replay ownership: the recorder's content-dedupe copies (one per
@@ -99,42 +99,42 @@ int main(void) {
     // truncated-block drop paths, which a failing replay exercises.
     for (int i = 0; i < 4; i++) {
         char const *__null_terminated path = "build/test_leak.canvas";
-        struct canvas *__single cv = canvas(48, 48, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(48, 48, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             continue;
         }
-        CHECK(canvas_record_to(cv, path));
+        CHECK(canvas2d_record_to(cv, path));
         uint8_t src[8 * 8 * 4];
         for (int k = 0; k < (int)sizeof src; k++) {
             src[k] = (uint8_t)(k * 3);
         }
-        canvas_draw_bitmap(cv, CANVAS_CS_SRGB, src, 8, 8, 2.0f, 2.0f);
-        canvas_set_fill_pattern(cv, CANVAS_CS_SRGB, src, 8, 8, CANVAS_REPEAT);
-        canvas_fill_rect(cv, 0.0f, 0.0f, 24.0f, 24.0f);
-        struct canvas_path2d *__single p2 = canvas_path2d();
+        canvas2d_draw_bitmap(cv, CANVAS2D_CS_SRGB, src, 8, 8, 2.0f, 2.0f);
+        canvas2d_set_fill_pattern(cv, CANVAS2D_CS_SRGB, src, 8, 8, CANVAS2D_REPEAT);
+        canvas2d_fill_rect(cv, 0.0f, 0.0f, 24.0f, 24.0f);
+        struct canvas2d_path2d *__single p2 = canvas2d_path2d();
         if (p2) {
-            canvas_path2d_rect(p2, 4.0f, 4.0f, 20.0f, 20.0f);
-            canvas_fill_path(cv, p2, CANVAS_NONZERO);
-            canvas_stroke_path(cv, p2);  // dedupe hit: no second copy
-            canvas_path2d_free(p2);
+            canvas2d_path2d_rect(p2, 4.0f, 4.0f, 20.0f, 20.0f);
+            canvas2d_fill_path(cv, p2, CANVAS2D_NONZERO);
+            canvas2d_stroke_path(cv, p2);  // dedupe hit: no second copy
+            canvas2d_path2d_free(p2);
         }
-        canvas_fill_text(cv, "Ag", 4.0f, 40.0f);
-        canvas_free(cv);  // closes the recording, freeing its copies
+        canvas2d_fill_text(cv, "Ag", 4.0f, 40.0f);
+        canvas2d_free(cv);  // closes the recording, freeing its copies
 
-        struct canvas *__single rv = canvas(48, 48, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single rv = canvas2d(48, 48, CANVAS2D_CS_SRGB);
         CHECK(rv != NULL);
         if (!rv) {
             continue;
         }
-        CHECK(canvas_replay_from(rv, path));
+        CHECK(canvas2d_replay_from(rv, path));
         // Truncated blocks: the pending path and pending image state must
         // free on the failure path too.
         static char const trunc_path[] = "path 0 2\nm 1 2\n";
-        CHECK(!cnvs_replay_text(rv, trunc_path, sizeof trunc_path - 1));
+        CHECK(!canvas2d_replay_text(rv, trunc_path, sizeof trunc_path - 1));
         static char const trunc_image[] = "image 0 1 1 12 1\n";
-        CHECK(!cnvs_replay_text(rv, trunc_image, sizeof trunc_image - 1));
-        canvas_free(rv);  // frees the adopted image blocks
+        CHECK(!canvas2d_replay_text(rv, trunc_image, sizeof trunc_image - 1));
+        canvas2d_free(rv);  // frees the adopted image blocks
     }
     return TEST_REPORT();
 }

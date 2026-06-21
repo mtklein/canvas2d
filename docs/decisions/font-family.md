@@ -1,11 +1,11 @@
 # Memo: the font-family project — un-pinning the typeface
 
 **Scope read:** `src/canvas.c` (`k_font_family`, `ensure_font`, `shape_text`, the text
-state in `cur`), `src/cnvs_text.{h,c}` (the shaping cache keyed by `(size, direction,
+state in `cur`), `src/canvas2d_text.{h,c}` (the shaping cache keyed by `(size, direction,
 letterSpacing, wordSpacing, text)`; glyph data keyed by `(font name, glyph id)` with
-`CNVS_FONT_INTERN_N = 16` name slots; `cnvs_run_font_name`), `src/cnvs_text_ct.c` (the
+`CANVAS2D_FONT_INTERN_N = 16` name slots; `canvas2d_run_font_name`), `src/canvas2d_text_ct.c` (the
 Core Text boundary: `CTFontCreateWithName`, `CTFontCreateCopyWithAttributes`,
-`CTFontGetSymbolicTraits`), `src/cnvs_record.c` / `src/cnvs_replay.c`, `docs/text-boundary.md`,
+`CTFontGetSymbolicTraits`), `src/canvas2d_record.c` / `src/canvas2d_replay.c`, `docs/text-boundary.md`,
 `docs/roadmap.md` (the "Partial — Text styling" gaps).
 
 ## Context
@@ -50,7 +50,7 @@ Every attribute that affects shaping or glyph identity must (a) join the shaping
 (b) be a recorded sanitized state op (like `set_font_size`), and (c) ride the block
 serialization so fontless replay reproduces it.  The byte gate is the backstop.
 
-**F1 — font family as state.**  `canvas_set_font_family(cv, name)`; family copied into
+**F1 — font family as state.**  `canvas2d_set_font_family(cv, name)`; family copied into
 `cur` (rides save/restore; `reset()` → Libian TC).  `ensure_font`/`shape_text` use
 `cur.font_family`; `ensure_font` rebuilds `cv->font` on family change as well as size.  The
 family joins the shaping cache key and the `shaping` block line (the existing name-keyed
@@ -59,7 +59,7 @@ with 2–3 system fonts; fallback test (bogus family → Core Text cascade → r
 resolved name).  Existing scenes' `.canvas` gain a family token on their shaping lines; no
 `.png` change (default is still Libian TC).
 
-**F2 — weight & style.**  `canvas_set_font_weight` / `canvas_set_font_style`.  Font identity
+**F2 — weight & style.**  `canvas2d_set_font_weight` / `canvas2d_set_font_style`.  Font identity
 becomes `(family, weight, style)`, resolved through a `CTFontDescriptor` with symbolic
 traits (Core Text synthesizes when the face lacks them, per decision 3).  Glyph-cache key
 and font-block serialization gain weight/style so bold-A ≠ regular-A; setters + recorded

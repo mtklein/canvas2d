@@ -43,9 +43,9 @@ SIMD targets:
    `blur()` (item 5) shares the same three-pass structure.
 4. ~~**`filter`, the colour functions**~~ — **done** (`brightness`, `contrast`,
    `grayscale`, `hue-rotate`, `invert`, `opacity`, `saturate`, `sepia`), behind
-   a typed API (`canvas_add_filter_*` — no CSS string parsing). Each compiles
+   a typed API (`canvas2d_add_filter_*` — no CSS string parsing). Each compiles
    at add time to a 3x3 matrix + alpha-scaled offset in closed premultiplied
-   form ([cnvs_filter.c](../src/cnvs_filter.c)) and applies per pixel to the
+   form ([canvas2d_filter.c](../src/canvas2d_filter.c)) and applies per pixel to the
    op's premultiplied tile, before its shadow and composite.
 5. ~~**`filter` `blur()`**~~ — **done**. An RGBA16F flavour of
    [blur.c](../src/blur.c)'s running-sum box blur (three passes ≈ Gaussian,
@@ -79,7 +79,7 @@ Internals (not API features) considered and deferred:
   wide, 13–15% faster on the flagship renders, with the 8-bit round-trip still
   exhaustively exact and blends within 1/255 of a double reference (both now
   pinned as tests). The lone f32 holdout is the blur's running-sum accumulator,
-  kept on measured accuracy grounds (`blur.h`).
+  kept on measured accuracy grounds (`canvas2d_blur.h`).
 
 ## Partial — implemented but narrower than spec
 
@@ -103,7 +103,7 @@ Internals (not API features) considered and deferred:
   shaping cache key too. All serialize through record/replay. No CSS `font`
   shorthand (the individual setters cover it).
 - **Text shaping**: `fillText`/`strokeText`, `measureText`, `textAlign`, and
-  `maxWidth` all go through Core Text shaping (`cnvs_shape_text`) with font fallback
+  `maxWidth` all go through Core Text shaping (`canvas2d_shape_text`) with font fallback
   — so code points Libian TC lacks now both draw and measure (color emoji from one
   canonical 160px RGBA8 capture per glyph, mip-sampled at draw; other fallback
   runs as outlines), and a string measures the way it draws. The shaper's
@@ -111,15 +111,15 @@ Internals (not API features) considered and deferred:
   and bidi reordering all draw through the public API, with the `direction`
   attribute setting the paragraph base the runs are ordered against (the
   gallery's `rtl` scene; `test_rtl`, `test_shaping`). The shaped line also
-  answers selection and caret queries — `cnvs_shaped_selection` maps a logical
+  answers selection and caret queries — `canvas2d_shaped_selection` maps a logical
   range to its visual x-spans (a bidi range splits into several),
-  `cnvs_shaped_x_at_index` places a caret with mid-cluster indices snapped to
-  the cluster's edge, and `cnvs_shaped_index_at_x` hit-tests a click back to a
+  `canvas2d_shaped_x_at_index` places a caret with mid-cluster indices snapped to
+  the cluster's edge, and `canvas2d_shaped_index_at_x` hit-tests a click back to a
   logical index (the gallery's `selection` scene; `test_shaping`). These are
-  internal (`cnvs_text.h`) — no public mirror yet.
-- **PNG I/O**: `canvas_write_png` writes a BT.2100 PNG — 16-bit, Rec.2020
+  internal (`canvas2d_text.h`) — no public mirror yet.
+- **PNG I/O**: `canvas2d_write_png` writes a BT.2100 PNG — 16-bit, Rec.2020
   primaries, PQ (ST 2084) transfer, signalled by a `cICP` chunk — with real
-  compression (Up-filtered rows + the in-house `cnvs_zlib` deflate; Up-only
+  compression (Up-filtered rows + the in-house `canvas2d_zlib` deflate; Up-only
   because it vectorizes as whole-row ops with no left-neighbor recurrence). The
   surface is transformed into that encoding on the way out regardless of working
   space, so wide-gamut and HDR values from a linear canvas carry through. Output
@@ -136,14 +136,14 @@ Internals (not API features) considered and deferred:
   to the CTM in effect when it is set.
 - **Colour management** — the canvas has a working colour space, `sRGB`
   (default, gamma-encoded) or `extended-linear-sRGB`, fixed at creation
-  (`canvas_in_space`); compositing runs in that space, so linear-light blending
+  (`canvas2d_in_space`); compositing runs in that space, so linear-light blending
   is available. Every colour the API takes or returns names its space ({sRGB,
   extended-linear-sRGB, Oklab}); untagged input is sRGB (the legacy spelling)
   and the tagged forms convert at the boundary. Gradients interpolate in a
   chosen space (sRGB / linear / Oklab) and alpha mode (unpremultiplied /
   premultiplied), set independently. Conversions are the sRGB transfer, a
   linear-sRGB↔Oklab pair, and the Rec.2020 matrix + PQ transfer the PNG output
-  uses ([cnvs_color.c](../src/cnvs_color.c)). Image sources are sampled in their
+  uses ([canvas2d_color.c](../src/canvas2d_color.c)). Image sources are sampled in their
   own tagged space and the resolved sample converts to the working space on
   deposit (the image format governs filtering, the canvas governs compositing).
   One deliberate limit: **compositing uses sRGB primaries only** (no Display-P3 /
@@ -152,15 +152,15 @@ Internals (not API features) considered and deferred:
 - **`getImageData`** returns RGBA8 in a chosen colour space (sRGB /
   extended-linear-sRGB / Oklab); no `pixelFormat` (`rgba-float16`, the
   `Float16Array`-backed `ImageData`).
-- **`drawImage`** sources borrowed RGBA8 bitmaps (`canvas_draw_bitmap*`) and
-  reified images (`canvas_draw_image*`); image storage is {unorm8, f16} ×
+- **`drawImage`** sources borrowed RGBA8 bitmaps (`canvas2d_draw_bitmap*`) and
+  reified images (`canvas2d_draw_image*`); image storage is {unorm8, f16} ×
   {unpremultiplied, premultiplied}, each carrying a colour-space tag.
-  `canvas_snapshot` is canvas-as-source: the surface is premultiplied f16 and
+  `canvas2d_snapshot` is canvas-as-source: the surface is premultiplied f16 and
   so is the snapshot, one memcpy.
   `imageSmoothingQuality` is live — `low` samples bilinearly
   (nearest-neighbour when smoothing is disabled), `medium`/`high` antialias
   minification through a premultiplied mip chain with trilinear filtering
-  (an image's chain caches via the explicit `canvas_image_build_mips`, the
+  (an image's chain caches via the explicit `canvas2d_image_build_mips`, the
   user deciding when to pay; a borrowed bitmap has no identity to cache
   against, so its chain rebuilds per minifying draw; a mip-less image
   deliberately falls back to bilinear), and `high` magnifies through a 4×4
@@ -205,7 +205,7 @@ Internals (not API features) considered and deferred:
   `saturate`, `sepia`), `blur()`, and `drop-shadow()` (both three box passes ≈
   the spec's Gaussian, like shadows), applied in list order to every painted
   op. What keeps it in this section is the interface: it's a typed API
-  (`canvas_add_filter_*`), and the CSS string form (`ctx.filter =
+  (`canvas2d_add_filter_*`), and the CSS string form (`ctx.filter =
   "grayscale(1) blur(2px)"`) is deliberately not parsed — string parsing has
   nothing for `-fbounds-safety` to say, the same call as `Path2D`'s SVG
   path-data strings above. (The spec's other `filter` form, `url()` into an
@@ -232,7 +232,7 @@ Listed for completeness; most have no meaning without a document/host:
   - `willReadFrequently` hints the backing store be kept CPU-side so
     `getImageData` doesn't stall on a GPU readback — a CPU-only renderer
     satisfies it by construction.
-  - `colorSpace` is implemented — the canvas working space (`canvas_in_space`)
+  - `colorSpace` is implemented — the canvas working space (`canvas2d_in_space`)
     plus the tagged colour API (the colour-management row above). Only the
     spec's string-keyed `PredefinedColorSpace` spelling and wide-gamut
     primaries (`display-p3`) are unimplemented.
@@ -242,7 +242,7 @@ Listed for completeness; most have no meaning without a document/host:
     offered ([decisions/float16-color-type.md](decisions/float16-color-type.md),
     [decisions/color-axis.md](decisions/color-axis.md)).
   - Context loss is GPU-process death; a CPU renderer has nothing to lose
-    (`canvas_is_context_lost` honestly returns false).
+    (`canvas2d_is_context_lost` honestly returns false).
 - Non-buffer `drawImage` sources tied to the DOM (`HTMLVideoElement`, `VideoFrame`,
   `ImageBitmap`, …). Canvas-as-source, once the one genuine gap here, is now
-  `canvas_snapshot` (the partial row above).
+  `canvas2d_snapshot` (the partial row above).

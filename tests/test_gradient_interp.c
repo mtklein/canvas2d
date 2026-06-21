@@ -1,4 +1,4 @@
-// Gradient interpolation as TWO orthogonal knobs (src/cnvs_gradient.c): the
+// Gradient interpolation as TWO orthogonal knobs (src/canvas2d_gradient.c): the
 // colour SPACE {sRGB, linear sRGB, Oklab} and the colour-coordinate ALPHA
 // {unpremul, premul}.  Claims:
 //
@@ -13,7 +13,7 @@
 //      transparent-red fade carries red into the mid-ramp under unpremul (a
 //      muddy tint) but never under premul (clean -- blue dominates throughout,
 //      the red weighted to nothing).
-//   4. cnvs_gradient_color_row (planar) == cnvs_gradient_color_at (scalar)
+//   4. canvas2d_gradient_color_row (planar) == canvas2d_gradient_color_at (scalar)
 //      bit-for-bit on every non-default combo, including the t<0 sentinel and
 //      the n%8 tail -- the determinism the replay gate depends on.
 //
@@ -21,13 +21,13 @@
 
 #include "test_util.h"
 
-#include "cnvs_gradient.h"
-#include "cnvs_math.h"
+#include "canvas2d_gradient.h"
+#include "canvas2d_math.h"
 
 #include <math.h>
 #include <string.h>
 
-// ---- A double-precision mirror of the colour pipeline cnvs_color.c runs in
+// ---- A double-precision mirror of the colour pipeline canvas2d_color.c runs in
 //      f32.  Used only to bound the evaluator's error; the totality tricks
 //      (odd-extension transfer, cbrt) are irrelevant here -- the test stops are
 //      all in [0,1] -- but spelled the same so the reference is the real
@@ -71,16 +71,16 @@ static rgb_d oklab_to_lin_d(oklab_d c) {
 }
 
 // One stop colour (WORKING space `linear` flag) to the chosen interpolation
-// SPACE's coordinates, in double.  Mirrors cnvs_gradient.c's stop_to_interp.
-static rgb_d stop_to_interp_d(cnvs_unpremul c, enum canvas_color_space interp, bool linear) {
-    if (interp == CANVAS_CS_SRGB) {
+// SPACE's coordinates, in double.  Mirrors canvas2d_gradient.c's stop_to_interp.
+static rgb_d stop_to_interp_d(canvas2d_unpremul c, enum canvas2d_color_space interp, bool linear) {
+    if (interp == CANVAS2D_CS_SRGB) {
         return (rgb_d){ (double)c.r, (double)c.g, (double)c.b };
     }
     rgb_d const lin = linear
         ? (rgb_d){ (double)c.r, (double)c.g, (double)c.b }
         : (rgb_d){ srgb_to_linear_d((double)c.r), srgb_to_linear_d((double)c.g),
                    srgb_to_linear_d((double)c.b) };
-    if (interp == CANVAS_CS_LINEAR_SRGB) {
+    if (interp == CANVAS2D_CS_LINEAR_SRGB) {
         return (rgb_d){ lin.r, lin.g, lin.b };
     }
     oklab_d const lab = lin_to_oklab_d(lin);
@@ -88,12 +88,12 @@ static rgb_d stop_to_interp_d(cnvs_unpremul c, enum canvas_color_space interp, b
 }
 
 // The chosen interp coords + alpha back to the working space, in double.
-// Mirrors cnvs_gradient.c's interp_to_stop.
-static rgb_d interp_to_stop_d(rgb_d c, enum canvas_color_space interp, bool linear) {
-    if (interp == CANVAS_CS_SRGB) {
+// Mirrors canvas2d_gradient.c's interp_to_stop.
+static rgb_d interp_to_stop_d(rgb_d c, enum canvas2d_color_space interp, bool linear) {
+    if (interp == CANVAS2D_CS_SRGB) {
         return c;
     }
-    rgb_d const lin = interp == CANVAS_CS_LINEAR_SRGB
+    rgb_d const lin = interp == CANVAS2D_CS_LINEAR_SRGB
         ? c
         : oklab_to_lin_d((oklab_d){ c.r, c.g, c.b });
     if (linear) {
@@ -104,9 +104,9 @@ static rgb_d interp_to_stop_d(rgb_d c, enum canvas_color_space interp, bool line
 }
 
 // The reference general lerp of two stop colours at parameter u, in double.
-// Mirrors cnvs_gradient.c's general_lerp exactly.
-static void ref_general_lerp(cnvs_unpremul lo, cnvs_unpremul hi, double u,
-                             enum canvas_color_space interp, enum canvas_alpha_type alpha,
+// Mirrors canvas2d_gradient.c's general_lerp exactly.
+static void ref_general_lerp(canvas2d_unpremul lo, canvas2d_unpremul hi, double u,
+                             enum canvas2d_color_space interp, enum canvas2d_alpha_type alpha,
                              bool linear, double *__counted_by(4) out) {
     rgb_d const lc = stop_to_interp_d(lo, interp, linear);
     rgb_d const hc = stop_to_interp_d(hi, interp, linear);
@@ -114,7 +114,7 @@ static void ref_general_lerp(cnvs_unpremul lo, cnvs_unpremul hi, double u,
     double const a  = la + (ha - la) * u;
 
     rgb_d res;
-    if (alpha == CANVAS_ALPHA_PREMUL) {
+    if (alpha == CANVAS2D_ALPHA_PREMUL) {
         double const px = lc.r * la + (hc.r * ha - lc.r * la) * u;
         double const py = lc.g * la + (hc.g * ha - lc.g * la) * u;
         double const pz = lc.b * la + (hc.b * ha - lc.b * la) * u;
@@ -140,31 +140,31 @@ static bool dnear(double a, double b, double tol) { return fabs(a - b) <= tol; }
 static void default_identical(void) {
     // A gradient left at the default interp (zero -> sRGB + unpremul) must equal
     // a plain component lerp of the stops, bit for bit.
-    struct cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f } };
-    cnvs_gradient_add_stop(&g, 0.00f, cnvs_unpremul_of(0.90f, 0.20f, 0.25f, 1.0f));
-    cnvs_gradient_add_stop(&g, 0.50f, cnvs_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
-    cnvs_gradient_add_stop(&g, 1.00f, cnvs_unpremul_of(0.15f, 0.25f, 0.90f, 0.4f));
-    CHECK(g.interp == CANVAS_CS_SRGB);                 // designated-init defaults
-    CHECK(g.interp_alpha == CANVAS_ALPHA_UNPREMUL);
+    struct canvas2d_gradient g = { .kind = CANVAS2D_GRAD_LINEAR, .p1 = { .x = 1.0f } };
+    canvas2d_gradient_add_stop(&g, 0.00f, canvas2d_unpremul_of(0.90f, 0.20f, 0.25f, 1.0f));
+    canvas2d_gradient_add_stop(&g, 0.50f, canvas2d_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
+    canvas2d_gradient_add_stop(&g, 1.00f, canvas2d_unpremul_of(0.15f, 0.25f, 0.90f, 0.4f));
+    CHECK(g.interp == CANVAS2D_CS_SRGB);                 // designated-init defaults
+    CHECK(g.interp_alpha == CANVAS2D_ALPHA_UNPREMUL);
 
     for (int i = 0; i <= 64; i++) {
         float const t = (float)i / 64.0f;
-        cnvs_unpremul const got = cnvs_gradient_color_at(&g, t);
+        canvas2d_unpremul const got = canvas2d_gradient_color_at(&g, t);
         // The exact component lerp the original code did (half4, narrow once).
-        cnvs_unpremul want;
+        canvas2d_unpremul want;
         int const n = g.stop_count;
         if (t <= g.stops[0].offset)            want = g.stops[0].color;
         else if (t >= g.stops[n - 1].offset)   want = g.stops[n - 1].color;
         else {
             for (int s = 0; s + 1 < n; s++) {
-                cnvs_stop const lo = g.stops[s], hi = g.stops[s + 1];
+                canvas2d_stop const lo = g.stops[s], hi = g.stops[s + 1];
                 if (t <= hi.offset) {
                     float const span = hi.offset - lo.offset;
                     float const u = span > 0.0f ? (t - lo.offset) / span : 0.0f;
                     half4 const lov = { lo.color.r, lo.color.g, lo.color.b, lo.color.a };
                     half4 const hiv = { hi.color.r, hi.color.g, hi.color.b, hi.color.a };
                     half4 const c = lov + (hiv - lov) * (_Float16)u;
-                    want = (cnvs_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
+                    want = (canvas2d_unpremul){ .r = c[0], .g = c[1], .b = c[2], .a = c[3] };
                     break;
                 }
             }
@@ -175,35 +175,35 @@ static void default_identical(void) {
     // And the planar row is byte-identical to the scalar on the default too.
     enum { N = 67 };
     static float t[N];
-    static cnvs_unpremul row[N];
+    static canvas2d_unpremul row[N];
     for (int i = 0; i < N; i++) t[i] = (float)i / (float)(N - 1);
-    cnvs_gradient_color_row(&g, t, N, row);
+    canvas2d_gradient_color_row(&g, t, N, row);
     for (int i = 0; i < N; i++) {
-        cnvs_unpremul const want = cnvs_gradient_color_at(&g, t[i]);
+        canvas2d_unpremul const want = canvas2d_gradient_color_at(&g, t[i]);
         CHECK(memcmp(&row[i], &want, sizeof want) == 0);
     }
 }
 
 // ---- Claim 2: a ramp matches the double reference (any space x alpha).
-static void matches_reference(struct cnvs_gradient const *gr) {
-    bool const linear = gr->space == CANVAS_CS_LINEAR_SRGB;
+static void matches_reference(struct canvas2d_gradient const *gr) {
+    bool const linear = gr->space == CANVAS2D_CS_LINEAR_SRGB;
     for (int i = 0; i <= 200; i++) {
         float const t = (float)i / 200.0f;
-        cnvs_unpremul const got = cnvs_gradient_color_at(gr, t);
+        canvas2d_unpremul const got = canvas2d_gradient_color_at(gr, t);
         // Resolve the surrounding stop pair + u exactly as the evaluator does.
         int const n = gr->stop_count;
         double want[4];
         if (t <= gr->stops[0].offset) {
-            cnvs_unpremul c = gr->stops[0].color;
+            canvas2d_unpremul c = gr->stops[0].color;
             want[0] = (double)c.r; want[1] = (double)c.g;
             want[2] = (double)c.b; want[3] = (double)c.a;
         } else if (t >= gr->stops[n - 1].offset) {
-            cnvs_unpremul c = gr->stops[n - 1].color;
+            canvas2d_unpremul c = gr->stops[n - 1].color;
             want[0] = (double)c.r; want[1] = (double)c.g;
             want[2] = (double)c.b; want[3] = (double)c.a;
         } else {
             for (int s = 0; s + 1 < n; s++) {
-                cnvs_stop const lo = gr->stops[s], hi = gr->stops[s + 1];
+                canvas2d_stop const lo = gr->stops[s], hi = gr->stops[s + 1];
                 if (t <= hi.offset) {
                     float const span = hi.offset - lo.offset;
                     double const u = span > 0.0f ? (double)((t - lo.offset) / span) : 0.0;
@@ -221,10 +221,10 @@ static void matches_reference(struct cnvs_gradient const *gr) {
 }
 
 // ---- Claim 4: planar row == scalar, bit for bit, on a non-default gradient.
-static void row_matches_scalar(struct cnvs_gradient const *gr) {
+static void row_matches_scalar(struct canvas2d_gradient const *gr) {
     enum { N = 1029 };  // N % 8 == 5: the 8-wide body and the scalar tail both run
     static float t[N];
-    static cnvs_unpremul row[N];
+    static canvas2d_unpremul row[N];
     int k = 0;
     t[k++] = -1.0f;  // the "outside" sentinel -> transparent black
     for (int s = 0; s < gr->stop_count && k + 3 <= N; s++) {
@@ -237,24 +237,24 @@ static void row_matches_scalar(struct cnvs_gradient const *gr) {
     for (; k < N; k++) {
         t[k] = (float)(k - base) / (float)(N - 1 - base);
     }
-    cnvs_gradient_color_row(gr, t, N, row);
+    canvas2d_gradient_color_row(gr, t, N, row);
     for (int i = 0; i < N; i++) {
-        cnvs_unpremul want = t[i] >= 0.0f
-            ? cnvs_gradient_color_at(gr, t[i])
-            : cnvs_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
+        canvas2d_unpremul want = t[i] >= 0.0f
+            ? canvas2d_gradient_color_at(gr, t[i])
+            : canvas2d_unpremul_of(0.0f, 0.0f, 0.0f, 0.0f);
         CHECK(memcmp(&row[i], &want, sizeof want) == 0);
     }
 }
 
 // Build a three-stop red->green->blue gradient with the given interp config.
-static struct cnvs_gradient make_rgb_ramp(enum canvas_color_space interp,
-                                          enum canvas_alpha_type alpha,
-                                          enum canvas_color_space space) {
-    struct cnvs_gradient g = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f },
+static struct canvas2d_gradient make_rgb_ramp(enum canvas2d_color_space interp,
+                                          enum canvas2d_alpha_type alpha,
+                                          enum canvas2d_color_space space) {
+    struct canvas2d_gradient g = { .kind = CANVAS2D_GRAD_LINEAR, .p1 = { .x = 1.0f },
                                .interp = interp, .interp_alpha = alpha, .space = space };
-    cnvs_gradient_add_stop(&g, 0.00f, cnvs_unpremul_of(0.90f, 0.10f, 0.10f, 1.0f));
-    cnvs_gradient_add_stop(&g, 0.50f, cnvs_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
-    cnvs_gradient_add_stop(&g, 1.00f, cnvs_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));
+    canvas2d_gradient_add_stop(&g, 0.00f, canvas2d_unpremul_of(0.90f, 0.10f, 0.10f, 1.0f));
+    canvas2d_gradient_add_stop(&g, 0.50f, canvas2d_unpremul_of(0.10f, 0.80f, 0.20f, 1.0f));
+    canvas2d_gradient_add_stop(&g, 1.00f, canvas2d_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));
     return g;
 }
 
@@ -266,23 +266,23 @@ int main(void) {
     //    modes, on both sRGB and linear working spaces.  (At alpha == 1 here
     //    premul == unpremul, but the premul branch still runs its own code, so
     //    exercising it pins that arithmetic too.)
-    enum canvas_color_space const spaces[3] = {
-        CANVAS_CS_SRGB, CANVAS_CS_LINEAR_SRGB, CANVAS_CS_OKLAB,
+    enum canvas2d_color_space const spaces[3] = {
+        CANVAS2D_CS_SRGB, CANVAS2D_CS_LINEAR_SRGB, CANVAS2D_CS_OKLAB,
     };
-    enum canvas_alpha_type const alphas[2] = {
-        CANVAS_ALPHA_UNPREMUL, CANVAS_ALPHA_PREMUL,
+    enum canvas2d_alpha_type const alphas[2] = {
+        CANVAS2D_ALPHA_UNPREMUL, CANVAS2D_ALPHA_PREMUL,
     };
-    enum canvas_color_space const works[2] = {
-        CANVAS_CS_SRGB, CANVAS_CS_LINEAR_SRGB,
+    enum canvas2d_color_space const works[2] = {
+        CANVAS2D_CS_SRGB, CANVAS2D_CS_LINEAR_SRGB,
     };
     for (int si = 0; si < 3; si++) {
         for (int ai = 0; ai < 2; ai++) {
             for (int wi = 0; wi < 2; wi++) {
-                struct cnvs_gradient g = make_rgb_ramp(spaces[si], alphas[ai], works[wi]);
+                struct canvas2d_gradient g = make_rgb_ramp(spaces[si], alphas[ai], works[wi]);
                 matches_reference(&g);
                 // The non-default combos route the row through the scalar path;
                 // pin that bit-identity (the default's row is checked in claim 1).
-                if (!(spaces[si] == CANVAS_CS_SRGB && alphas[ai] == CANVAS_ALPHA_UNPREMUL)) {
+                if (!(spaces[si] == CANVAS2D_CS_SRGB && alphas[ai] == CANVAS2D_ALPHA_UNPREMUL)) {
                     row_matches_scalar(&g);
                 }
             }
@@ -294,15 +294,15 @@ int main(void) {
     //    coords into the mid-ramp; under premul the vanishing red contributes
     //    nothing, so blue dominates everywhere.
     for (int si = 0; si < 3; si++) {
-        struct cnvs_gradient un = { .kind = CNVS_GRAD_LINEAR, .p1 = { .x = 1.0f },
-                                    .interp = spaces[si], .interp_alpha = CANVAS_ALPHA_UNPREMUL,
-                                    .space = CANVAS_CS_SRGB };
-        struct cnvs_gradient pm = un;
-        pm.interp_alpha = CANVAS_ALPHA_PREMUL;
-        cnvs_gradient_add_stop(&un, 0.0f, cnvs_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));  // opaque blue
-        cnvs_gradient_add_stop(&un, 1.0f, cnvs_unpremul_of(0.90f, 0.15f, 0.15f, 0.0f));  // transparent red
-        cnvs_gradient_add_stop(&pm, 0.0f, cnvs_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));
-        cnvs_gradient_add_stop(&pm, 1.0f, cnvs_unpremul_of(0.90f, 0.15f, 0.15f, 0.0f));
+        struct canvas2d_gradient un = { .kind = CANVAS2D_GRAD_LINEAR, .p1 = { .x = 1.0f },
+                                    .interp = spaces[si], .interp_alpha = CANVAS2D_ALPHA_UNPREMUL,
+                                    .space = CANVAS2D_CS_SRGB };
+        struct canvas2d_gradient pm = un;
+        pm.interp_alpha = CANVAS2D_ALPHA_PREMUL;
+        canvas2d_gradient_add_stop(&un, 0.0f, canvas2d_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));  // opaque blue
+        canvas2d_gradient_add_stop(&un, 1.0f, canvas2d_unpremul_of(0.90f, 0.15f, 0.15f, 0.0f));  // transparent red
+        canvas2d_gradient_add_stop(&pm, 0.0f, canvas2d_unpremul_of(0.15f, 0.25f, 0.90f, 1.0f));
+        canvas2d_gradient_add_stop(&pm, 1.0f, canvas2d_unpremul_of(0.90f, 0.15f, 0.15f, 0.0f));
 
         // The reference matches both, and the planar row matches the scalar.
         matches_reference(&un);
@@ -313,8 +313,8 @@ int main(void) {
         bool any_diff = false;
         for (int i = 1; i < 100; i++) {  // skip t==0 (alpha 1, equal) and t==1 (alpha 0)
             float const t = (float)i / 100.0f;
-            cnvs_unpremul const u = cnvs_gradient_color_at(&un, t);
-            cnvs_unpremul const p = cnvs_gradient_color_at(&pm, t);
+            canvas2d_unpremul const u = canvas2d_gradient_color_at(&un, t);
+            canvas2d_unpremul const p = canvas2d_gradient_color_at(&pm, t);
             // Premul keeps the colour clean blue: b dominates r at every point.
             CHECK((float)p.b > (float)p.r);
             // Alpha is identical (always lerps linearly, unpremultiplied).
@@ -325,8 +325,8 @@ int main(void) {
 
         // The unpremul midpoint drags red in: its r is materially larger than
         // the premul midpoint's r (the bleed made concrete).
-        cnvs_unpremul const um = cnvs_gradient_color_at(&un, 0.5f);
-        cnvs_unpremul const pmid = cnvs_gradient_color_at(&pm, 0.5f);
+        canvas2d_unpremul const um = canvas2d_gradient_color_at(&un, 0.5f);
+        canvas2d_unpremul const pmid = canvas2d_gradient_color_at(&pm, 0.5f);
         CHECK((float)um.r > (float)pmid.r + 0.05f);
         // Alpha at the midpoint is ~0.5 in both (linear, unpremultiplied).
         CHECK(dnear((double)um.a, 0.5, 2.0 / 255.0));

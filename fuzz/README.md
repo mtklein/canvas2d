@@ -1,6 +1,6 @@
 # canvas2d fuzzing
 
-A coverage-guided fuzz target for the public `canvas_*` API. The input is decoded
+A coverage-guided fuzz target for the public `canvas2d_*` API. The input is decoded
 by a **total** byte→op stream (`fuzz_api.c`): every byte string is a valid
 program (opcodes/counts taken modulo their range; a short read ends the program),
 so the fuzzer drives deep into the renderer instead of bouncing off validation.
@@ -60,7 +60,7 @@ harness's `main` (compiled *without* `-DFUZZ_NO_MAIN`) replays files:
 python3 configure.py && ninja build/release/test_png   # builds release core objects
 cc -std=c23 -Os -Iinclude -Isrc -c fuzz/fuzz_api.c -o /tmp/h.o      # Apple clang, no -fbounds-safety
 cc -Os /tmp/h.o \
-   build/release/obj/{canvas,blur,cnvs_cover,cnvs_geom,cnvs_gradient,cnvs_image,cnvs_math,cnvs_mem,cnvs_path,cnvs_png,cnvs_record,cnvs_replay,cnvs_stroke,cnvs_text,cnvs_text_ct}.o \
+   build/release/obj/{canvas,blur,canvas2d_cover,canvas2d_geom,canvas2d_gradient,canvas2d_image,canvas2d_math,canvas2d_mem,canvas2d_path,canvas2d_png,canvas2d_record,canvas2d_replay,canvas2d_stroke,canvas2d_text,canvas2d_text_ct}.o \
    -framework CoreText -framework CoreGraphics -framework CoreFoundation -o /tmp/fuzz_replay
 ./tmp/fuzz_replay <crash-file>     # OOB-write classes -> exit 133 (SIGTRAP)
 ```
@@ -79,19 +79,19 @@ for the OOB-write classes.
   the font-cache destroy-then-recreate, image-data buffers), so a coverage fuzzer
   reaches the interprocedural lifetime paths the static analyzer can't follow.
   ASan use-after-free / -scope / -return is the oracle.
-- **`fuzz_text.c`** — the **unchecked Core Text shim** (`cnvs_text_ct.c`, built
+- **`fuzz_text.c`** — the **unchecked Core Text shim** (`canvas2d_text_ct.c`, built
   *without* `-fbounds-safety`) via the public text API: adversarial UTF-8 through
   the hand-written `utf8_next` decoder, surrogate composition, and the
   `CGPathApply`→`emit` glyph-outline callback. ASan is the *only* net in that TU,
   so this is where fuzzing earns the most. Seeds in `fuzz/seeds_text/` cover ASCII,
   2/3/4-byte sequences, astral, and malformed/truncated bytes. (141k execs: clean.)
-- **`fuzz_png.c`** — the PNG encoder (`cnvs_png_write`) on fuzzed dimensions +
+- **`fuzz_png.c`** — the PNG encoder (`canvas2d_png_write`) on fuzzed dimensions +
   pixel content, encoding to `/dev/null`. Exercises the size arithmetic
   (`rawlen`/`zcap`/`total`), the Up-filter row kernel, the deflate it feeds,
   the pre-sized write cursor, and the CRC32 paths (the encoder is 16-bit RGBA,
   feeding the in-house LZ77 + Huffman deflate). With `-fbounds-safety` off here,
   ASan independently witnesses the cursor never overruns.
-- **`fuzz_inflate.c`** — the strict zlib **inflate** (`src/cnvs_zlib.c`) on
+- **`fuzz_inflate.c`** — the strict zlib **inflate** (`src/canvas2d_zlib.c`) on
   adversarial bytes — the most CVE-scarred parser class in C: Huffman table
   construction from untrusted code lengths, 16/17/18 repeat handling, window
   back-references (overlapping copies included), stored-block length fields,
@@ -110,7 +110,7 @@ for the OOB-write classes.
   payload either side inflates is re-deflated by our encoder and must
   re-inflate identically under both decoders. Shares `fuzz/seeds_zlib/`:
   `./build/fuzz/fuzz_zlib_diff -max_len=4096 /tmp/zlib_diff_corpus fuzz/seeds_zlib`.
-- **`fuzz_replay.c`** — the text canvas-program parser ([cnvs_replay.c](../src/cnvs_replay.c))
+- **`fuzz_replay.c`** — the text canvas-program parser ([canvas2d_replay.c](../src/canvas2d_replay.c))
   on adversarial raw bytes (need not be UTF-8 or NUL-terminated): tokenizing,
   number parsing, line handling, and the `__null_terminated` seam — a classic C
   text-parsing attack surface, and the "Role B" strict-format validating parser

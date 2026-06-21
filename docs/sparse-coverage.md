@@ -6,7 +6,7 @@ pass does not have to rediscover it.
 ## Today: dense coverage
 
 The rasterizer produces an 8-bit coverage value for every pixel of a fill's
-bounding box ([cnvs_cover.c](../src/cnvs_cover.c)): `add_edge` accumulates signed
+bounding box ([canvas2d_cover.c](../src/canvas2d_cover.c)): `add_edge` accumulates signed
 area into a dense `w*h` float buffer, `resolve` turns it into a dense `w*h` byte
 mask, [paint_tile](../src/canvas.c) shades that into a dense premultiplied tile, and
 the blend stage composites the whole tile. Clip masks are dense coverage too, held by

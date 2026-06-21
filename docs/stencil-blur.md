@@ -10,8 +10,8 @@ pixel (so it indexes outside the current position, into the flag's forward-only
 
 [../src/blur.c](../src/blur.c) is a running-sum box blur of an 8-bit mask, radius
 `r`, edges clamped: each pass adds the entering sample and subtracts the leaving
-one, so it is O(1) per pixel regardless of `r`. `blur_box_h` walks each row
-(stride 1); `blur_box_v` walks each column (stride `w`); a third variant,
+one, so it is O(1) per pixel regardless of `r`. `canvas2d_blur_box_h` walks each row
+(stride 1); `canvas2d_blur_box_v` walks each column (stride `w`); a third variant,
 `blur_box_v_pf`, added `__builtin_prefetch` to the strided reads (since retired
 — see below). [../tests/test_blur.c](../tests/test_blur.c) holds both passes to a
 brute-force reference, bit for bit.
@@ -71,12 +71,12 @@ exactly the parts where bounds-safety is already free.
 
 The open question was whether forming a prefetch address gets bounds-checked. It
 does not. `__builtin_prefetch(&src[i], 0, 0)` emits a `prfm` and adds no `brk`:
-`blur_box_v` and `blur_box_v_pf` carry the same single bounds-check trap site. A
+`canvas2d_blur_box_v` and `blur_box_v_pf` carry the same single bounds-check trap site. A
 prefetch is a hint, not an access; the address converts to `void const *`
 (bounds dropped, always allowed) and nothing is checked. So prefetch composes
 with `-fbounds-safety` at zero cost and needs no forge.
 
-It also did not help — `blur_box_v_pf` ran a hair slower than `blur_box_v` (≈92
+It also did not help — `blur_box_v_pf` ran a hair slower than `canvas2d_blur_box_v` (≈92
 vs 90 ms). A constant-stride column walk is the case the hardware prefetcher
 already handles, and the running sum touches one new sample per step, so there
 is little memory-level parallelism for an explicit prefetch to expose; the

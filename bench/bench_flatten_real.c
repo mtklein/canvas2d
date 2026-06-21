@@ -6,7 +6,7 @@
 #include "bench_reps.h"
 #include "bench_util.h"
 
-#include "cnvs_path.h"
+#include "canvas2d_path.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -16,48 +16,48 @@
 
 // A quarter-circle as a cubic (kappa = 4/3*(sqrt(2)-1)): centre (cx,cy),
 // radius r, start angle a0 sweeping +90 degrees.
-static void arc_quadrant(struct cnvs_path *p, float cx, float cy, float r, float a0) {
+static void arc_quadrant(struct canvas2d_path *p, float cx, float cy, float r, float a0) {
     float const k = 0.5522847498f * r;
     float const c0 = cosf(a0), s0 = sinf(a0);
     float const a1 = a0 + (float)M_PI_2, c1 = cosf(a1), s1 = sinf(a1);
-    cnvs_vec2 const p0 = { cx + r * c0, cy + r * s0 };
-    cnvs_vec2 const p3 = { cx + r * c1, cy + r * s1 };
-    cnvs_vec2 const cp1 = { p0.x - k * s0, p0.y + k * c0 };
-    cnvs_vec2 const cp2 = { p3.x + k * s1, p3.y - k * c1 };
-    cnvs_path_move_to(p, p0);
-    cnvs_path_cubic_to(p, cp1, cp2, p3, 0.25f);
+    canvas2d_vec2 const p0 = { cx + r * c0, cy + r * s0 };
+    canvas2d_vec2 const p3 = { cx + r * c1, cy + r * s1 };
+    canvas2d_vec2 const cp1 = { p0.x - k * s0, p0.y + k * c0 };
+    canvas2d_vec2 const cp2 = { p3.x + k * s1, p3.y - k * c1 };
+    canvas2d_path_move_to(p, p0);
+    canvas2d_path_cubic_to(p, cp1, cp2, p3, 0.25f);
 }
 
 // A shallow cubic over a chord a->b, control points bowed perpendicular by a
 // small fraction of the chord -- the gentle curvature of a glyph stroke.
-static void gentle_cubic(struct cnvs_path *p, cnvs_vec2 a, cnvs_vec2 b, float bow) {
+static void gentle_cubic(struct canvas2d_path *p, canvas2d_vec2 a, canvas2d_vec2 b, float bow) {
     float const dx = b.x - a.x, dy = b.y - a.y;
-    cnvs_vec2 const c1 = { a.x + dx / 3.0f - dy * bow, a.y + dy / 3.0f + dx * bow };
-    cnvs_vec2 const c2 = { a.x + 2.0f * dx / 3.0f - dy * bow,
+    canvas2d_vec2 const c1 = { a.x + dx / 3.0f - dy * bow, a.y + dy / 3.0f + dx * bow };
+    canvas2d_vec2 const c2 = { a.x + 2.0f * dx / 3.0f - dy * bow,
                            a.y + 2.0f * dy / 3.0f + dx * bow };
-    cnvs_path_move_to(p, a);
-    cnvs_path_cubic_to(p, c1, c2, b, 0.25f);
+    canvas2d_path_move_to(p, a);
+    canvas2d_path_cubic_to(p, c1, c2, b, 0.25f);
 }
 
 int main(void) {
-    struct cnvs_path path;
-    cnvs_path_init(&path);
+    struct canvas2d_path path;
+    canvas2d_path_init(&path);
     double sink = 0.0;
 
     int const reps = bench_reps();
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
-            cnvs_path_reset(&path);
+            canvas2d_path_reset(&path);
             for (int k = 0; k < CURVES; k++) {
                 if (k % 2 == 0) {  // roundRect/ellipse-scale arc, radius 4..132px
                     float const r = 4.0f + bench_frand() * 128.0f;
                     arc_quadrant(&path, bench_frand() * 512.0f, bench_frand() * 512.0f,
                                  r, bench_frand() * 6.2831853f);
                 } else {  // glyph-stroke-scale gentle cubic, chord 8..72px
-                    cnvs_vec2 const a = bench_rpt(512.0f, 512.0f);
+                    canvas2d_vec2 const a = bench_rpt(512.0f, 512.0f);
                     float const ang = bench_frand() * 6.2831853f;
                     float const len = 8.0f + bench_frand() * 64.0f;
-                    cnvs_vec2 const b = { a.x + len * cosf(ang), a.y + len * sinf(ang) };
+                    canvas2d_vec2 const b = { a.x + len * cosf(ang), a.y + len * sinf(ang) };
                     gentle_cubic(&path, a, b, 0.05f + bench_frand() * 0.15f);
                 }
             }
@@ -65,7 +65,7 @@ int main(void) {
         }
     }
 
-    cnvs_path_free(&path);
+    canvas2d_path_free(&path);
     fprintf(stderr, "sink=%.0f\n", sink);
     return 0;
 }

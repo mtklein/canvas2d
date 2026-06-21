@@ -77,7 +77,7 @@ self-intersecting star, each masking the same flood of stripes:
 
 ![clip](gallery/clip.png)
 
-Nested clips — three `canvas_clip` calls in nested save/restore levels,
+Nested clips — three `canvas2d_clip` calls in nested save/restore levels,
 each narrowing the active region: a circle, then a rotated rectangle
 intersected with it, then a star intersected with both. Faint outlines show
 each boundary; rainbow stripes reveal the triple intersection:
@@ -251,8 +251,8 @@ footprint, not the nominal font size):
 ![emojiscale](gallery/emojiscale.png)
 
 `imageSmoothingQuality` — one row per quality tier. The rocket is a
-`canvas_snapshot` of a scratch canvas with its mips built by
-`canvas_image_build_mips`; the test card is a `canvas_image` without mips. The
+`canvas2d_snapshot` of a scratch canvas with its mips built by
+`canvas2d_image_build_mips`; the test card is a `canvas2d_image` without mips. The
 minify ramp downscales the rocket axis-aligned: `low` (the default) is bilinear
 and shimmers as the taps undersample; `medium` samples a premultiplied mip
 chain with trilinear filtering. The magnify cell (right) is a hard-edged test
@@ -263,7 +263,7 @@ checker, and a diagonal:
 
 `filter` — a gradient tile under two translucent discs through each of the eight
 colour functions, plus `blur()` and `drop-shadow()` rows. Each function is a
-typed call (`canvas_add_filter_*`), applied to the op's premultiplied tile
+typed call (`canvas2d_add_filter_*`), applied to the op's premultiplied tile
 before its shadow and composite: the colour functions are a 3×3 matrix +
 alpha-scaled offset, `blur()` is three box passes (≈ Gaussian) with the painted
 region grown for the skirt, and `drop-shadow()` composites the drawing over a
@@ -374,7 +374,7 @@ locks, no atomics, no shared mutable state in `src/` (every `static` is a
 `const` table). Distinct canvases are independent and may be used from distinct
 threads concurrently; N canvases over small tiles is the supported way to
 parallelize. A single canvas is not internally synchronized: using one canvas
-(or sharing a `canvas_path2d` still being mutated) from two threads requires
+(or sharing a `canvas2d_path2d` still being mutated) from two threads requires
 the caller's own serialization. `tests/test_threads.c` covers it: pthread
 workers each rendering their own 256×256 tile canvas of a shared scene,
 stitched and byte-compared against the same tiling rendered serially, run by a
@@ -383,33 +383,33 @@ bare `ninja` in the checked variants and again under the `tsan` variant.
 ## Architecture
 
 ```
-        public API (include/canvas.h)
+        public API (include/canvas2d.h)
                   │
    canvas.c  ── state stack, CTM, styles; rasterizes coverage, shades tiles, and
       │          blends them onto its own premultiplied RGBA16F target (all 26
       │          composite/blend modes, one planar kernel)
-      ├── cnvs_math     2x3 affine transforms
-      ├── cnvs_path     subpath storage + adaptive Bézier/arc flattening
-      ├── cnvs_cover     analytic (signed-area) coverage → per-pixel alpha
-      ├── cnvs_gradient linear/radial/conic gradients, evaluated per pixel into a tile
-      ├── cnvs_stroke   polyline → stroke triangles (joins, caps, dashes)
-      ├── cnvs_image    clipped 2D RGBA8 blits (get/putImageData)
+      ├── canvas2d_math     2x3 affine transforms
+      ├── canvas2d_path     subpath storage + adaptive Bézier/arc flattening
+      ├── canvas2d_cover     analytic (signed-area) coverage → per-pixel alpha
+      ├── canvas2d_gradient linear/radial/conic gradients, evaluated per pixel into a tile
+      ├── canvas2d_stroke   polyline → stroke triangles (joins, caps, dashes)
+      ├── canvas2d_image    clipped 2D RGBA8 blits (get/putImageData)
       ├── blur          separable box blur (shadows + filter blur()/drop-shadow(), ≈ Gaussian)
-      ├── cnvs_geom     growable vertex/int buffers
-      ├── cnvs_zlib     deflate + strict inflate (RFC 1950/1951) + adler32
-      ├── cnvs_png      → PNG: 16-bit Rec.2020/PQ (BT.2100) Up-filtered encoder, output only
-      ├── cnvs_color    sRGB transfer + linear-sRGB ↔ Oklab conversions
-      ├── cnvs_record   draw calls → text canvas-program (the write side)
-      ├── cnvs_replay   text canvas-program → draw calls (the read side)
+      ├── canvas2d_geom     growable vertex/int buffers
+      ├── canvas2d_zlib     deflate + strict inflate (RFC 1950/1951) + adler32
+      ├── canvas2d_png      → PNG: 16-bit Rec.2020/PQ (BT.2100) Up-filtered encoder, output only
+      ├── canvas2d_color    sRGB transfer + linear-sRGB ↔ Oklab conversions
+      ├── canvas2d_record   draw calls → text canvas-program (the write side)
+      ├── canvas2d_replay   text canvas-program → draw calls (the read side)
       │
-      ▼   cnvs_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
-      cnvs_text_ct.c  ── Core Text shaping + glyphs; built without -fbounds-safety
+      ▼   canvas2d_text.h   (C ABI: shaped runs, glyph outlines/bitmaps, font metrics)
+      canvas2d_text_ct.c  ── Core Text shaping + glyphs; built without -fbounds-safety
 ```
 
-Everything above the `cnvs_text.h` ABI line compiles under `-fbounds-safety`.
+Everything above the `canvas2d_text.h` ABI line compiles under `-fbounds-safety`.
 One boundary crosses to a system framework, behind a bounds-safe C ABI:
 
-- The [Core Text shim](src/cnvs_text_ct.c) shapes UTF-8 into glyph runs (with
+- The [Core Text shim](src/canvas2d_text_ct.c) shapes UTF-8 into glyph runs (with
   font fallback) and hands each glyph across once in canonical form: font-unit
   outline curves — which the same coverage rasterizer fills/strokes at every
   size and transform — or, for a color glyph (emoji), one fixed-size RGBA8
@@ -422,7 +422,7 @@ premultiplied target (all 26 modes, ~350 lines, over `__counted_by` tiles).
 `_Float16` is both the storage and the compute type, and planar (SoA) is the
 compute layout: the blend, filter, premultiply, and readback kernels process
 eight pixels at a time as four 8-lane channel planes, deinterleaved at the
-buffer seams by ld4/st4 ([src/cnvs_planar.h](src/cnvs_planar.h)). The storage
+buffer seams by ld4/st4 ([src/canvas2d_planar.h](src/canvas2d_planar.h)). The storage
 type and layout, and their measurements, are in
 [docs/decisions/color-axis.md](docs/decisions/color-axis.md) and
 [docs/decisions/float16-color-type.md](docs/decisions/float16-color-type.md). A
@@ -432,7 +432,7 @@ CPU path won the flagship workload — see
 [docs/decisions/metal-backend.md](docs/decisions/metal-backend.md) and
 [docs/decisions/backend-differential.md](docs/decisions/backend-differential.md).
 
-> [cnvs_text_ct.c](src/cnvs_text_ct.c) is the only translation unit not under
+> [canvas2d_text_ct.c](src/canvas2d_text_ct.c) is the only translation unit not under
 > `-fbounds-safety`. The Core Text headers carry no bounds attributes, so
 > binding them from checked code would require forging every opaque handle and a
 > scoped cast for `CGPathApply`'s callback; isolating that in one unchecked TU
@@ -444,39 +444,39 @@ CPU path won the flagship workload — see
 ## Public API (subset of Canvas 2D, snake_case)
 
 ```c
-struct canvas *cv = canvas(width, height);   // (write struct canvas *__single cv under -fbounds-safety)
-canvas_resize(cv, width, height)                             // realloc + clear + reset
-canvas_is_context_lost                                        // always false (headless)
-canvas_save / canvas_restore / canvas_reset
-canvas_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
-canvas_set_fill_rgba / set_stroke_rgba / set_global_alpha    // colours take an explicit colour space
-canvas_set_global_composite_operation                        // 26 GCO modes
-canvas_set_shadow_color_rgba / set_shadow_blur / set_shadow_offset_x / set_shadow_offset_y
-canvas_set_filter_none / add_filter_blur / add_filter_brightness / add_filter_contrast /
+struct canvas2d_context *cv = canvas2d(width, height);   // (write struct canvas2d_context *__single cv under -fbounds-safety)
+canvas2d_resize(cv, width, height)                             // realloc + clear + reset
+canvas2d_is_context_lost                                        // always false (headless)
+canvas2d_save / canvas2d_restore / canvas2d_reset
+canvas2d_translate / scale / rotate / transform / set_transform / reset_transform / get_transform
+canvas2d_set_fill_rgba / set_stroke_rgba / set_global_alpha    // colours take an explicit colour space
+canvas2d_set_global_composite_operation                        // 26 GCO modes
+canvas2d_set_shadow_color_rgba / set_shadow_blur / set_shadow_offset_x / set_shadow_offset_y
+canvas2d_set_filter_none / add_filter_blur / add_filter_brightness / add_filter_contrast /
     add_filter_drop_shadow / add_filter_grayscale / add_filter_hue_rotate /
     add_filter_invert / add_filter_opacity / add_filter_saturate / add_filter_sepia
-canvas_set_fill_linear_gradient / set_fill_radial_gradient / set_fill_conic_gradient / add_fill_color_stop / set_fill_pattern
-canvas_set_stroke_linear_gradient / set_stroke_radial_gradient / set_stroke_conic_gradient / add_stroke_color_stop / set_stroke_pattern
-canvas_set_line_width / set_line_join / set_line_cap / set_miter_limit
-canvas_set_line_dash / get_line_dash / set_line_dash_offset
-canvas_clear_rect / fill_rect / stroke_rect
-canvas_begin_path / move_to / line_to / rect / quadratic_curve_to /
+canvas2d_set_fill_linear_gradient / set_fill_radial_gradient / set_fill_conic_gradient / add_fill_color_stop / set_fill_pattern
+canvas2d_set_stroke_linear_gradient / set_stroke_radial_gradient / set_stroke_conic_gradient / add_stroke_color_stop / set_stroke_pattern
+canvas2d_set_line_width / set_line_join / set_line_cap / set_miter_limit
+canvas2d_set_line_dash / get_line_dash / set_line_dash_offset
+canvas2d_clear_rect / fill_rect / stroke_rect
+canvas2d_begin_path / move_to / line_to / rect / quadratic_curve_to /
     bezier_curve_to / arc / ellipse / round_rect / round_rect_radii / arc_to / close_path
-canvas_fill(rule) / canvas_stroke / canvas_clip(rule) / is_point_in_path / is_point_in_stroke
-canvas_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas_path2d_free
-canvas_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
-canvas_get_image_data / put_image_data / create_image_data / read_rgba / write_png / encode_png
-canvas_get_image_data_f16 / put_image_data_f16 / put_image_data_dirty_f16 / create_image_data_f16  // rgba-float16, extended range
-canvas_draw_bitmap / draw_bitmap_scaled / draw_bitmap_subrect   // borrowed RGBA8
-canvas_image_unorm8 / canvas_image_f16 / canvas_snapshot / canvas_image_build_mips / canvas_image_width / canvas_image_height / canvas_image_free
-canvas_draw_image / draw_image_scaled / draw_image_subrect   // reified image
-canvas_set_image_smoothing_enabled / set_image_smoothing_quality
-canvas_set_font_size / set_text_align / set_text_baseline / set_direction
-canvas_set_font_family / set_font_weight / set_font_style / set_letter_spacing / set_word_spacing
-canvas_set_font_kerning / set_text_rendering / set_lang / set_font_variant_caps / set_font_stretch
-canvas_measure_text / measure_text_full / fill_text / fill_text_max / stroke_text / stroke_text_max  // default Libian TC, UTF-8
-canvas_text_index_at_x / text_x_at_index / text_selection   // hit-test / caret / selection spans
-canvas_free(cv);
+canvas2d_fill(rule) / canvas2d_stroke / canvas2d_clip(rule) / is_point_in_path / is_point_in_stroke
+canvas2d_path2d() / ..._move_to / line_to / curves / arc / rect / round_rect / close / add_path / canvas2d_path2d_free
+canvas2d_fill_path / stroke_path / clip_path / is_point_in_path2d / is_point_in_stroke_path  // Path2D
+canvas2d_get_image_data / put_image_data / create_image_data / read_rgba / write_png / encode_png
+canvas2d_get_image_data_f16 / put_image_data_f16 / put_image_data_dirty_f16 / create_image_data_f16  // rgba-float16, extended range
+canvas2d_draw_bitmap / draw_bitmap_scaled / draw_bitmap_subrect   // borrowed RGBA8
+canvas2d_image_unorm8 / canvas2d_image_f16 / canvas2d_snapshot / canvas2d_image_build_mips / canvas2d_image_width / canvas2d_image_height / canvas2d_image_free
+canvas2d_draw_image / draw_image_scaled / draw_image_subrect   // reified image
+canvas2d_set_image_smoothing_enabled / set_image_smoothing_quality
+canvas2d_set_font_size / set_text_align / set_text_baseline / set_direction
+canvas2d_set_font_family / set_font_weight / set_font_style / set_letter_spacing / set_word_spacing
+canvas2d_set_font_kerning / set_text_rendering / set_lang / set_font_variant_caps / set_font_stretch
+canvas2d_measure_text / measure_text_full / fill_text / fill_text_max / stroke_text / stroke_text_max  // default Libian TC, UTF-8
+canvas2d_text_index_at_x / text_x_at_index / text_selection   // hit-test / caret / selection spans
+canvas2d_free(cv);
 ```
 
 Coordinates are pixels, origin top-left, +y down.
@@ -498,7 +498,7 @@ partial, planned).
 | `clip()` — arbitrary paths, intersection, save/restore nesting | ✅ coverage mask |
 | Gradients — linear + radial + conic, fills and strokes, multi-stop; interpolation space (sRGB/linear/Oklab) × alpha (premul/unpremul) | ✅ per-pixel exact stop lerp, 8-wide (≤0.16/255 of exact, hard stops exact) |
 | Anti-aliasing | ✅ analytic coverage, both axes (fills, strokes, clips) |
-| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas_image`s in any of {unorm8, f16} × {unpremul, premul}, each carrying a colour-space tag (sampled in its own space, the resolved sample converted to the working space on deposit); `canvas_snapshot` is canvas-as-source (premultiplied f16, one memcpy); `canvas_image_build_mips` caches the pyramid explicitly | ◑ DOM sources out of scope |
+| `drawImage` — transform/clip/alpha-aware, `imageSmoothingEnabled` (bilinear/nearest), `imageSmoothingQuality` (medium/high: premultiplied mips + trilinear minification; high: 4×4 Catmull-Rom magnification); sources are borrowed bitmaps or reified `canvas2d_image`s in any of {unorm8, f16} × {unpremul, premul}, each carrying a colour-space tag (sampled in its own space, the resolved sample converted to the working space on deposit); `canvas2d_snapshot` is canvas-as-source (premultiplied f16, one memcpy); `canvas2d_image_build_mips` caches the pyramid explicitly | ◑ DOM sources out of scope |
 | Colour — every colour input/output names a colour space {sRGB, extended-linear-sRGB, Oklab}; compositing in sRGB or extended-linear-sRGB; on a linear canvas extended values (HDR above 1, wide gamut below 0) carry through fills, gradients, images, and shadows to the Rec.2020 / PQ output | ◑ sRGB primaries for compositing (no Display-P3 / Rec.2020 working space) |
 | Text — `fillText`/`strokeText`, any font family (default Libian TC) + weight/style, `letterSpacing`/`wordSpacing`, `fontKerning`/`textRendering`/`lang`/`fontVariantCaps`/`fontStretch`, Latin + Chinese (UTF-8), color emoji (Core Text fallback; one canonical 160px capture per glyph, mip-sampled at draw), gradient/stroke/transform, `textAlign`/`textBaseline`, `direction` (rtl: bidi run order, neutral resolution, start/end), selection/caret queries | ✅ full `measureText` TextMetrics; no CSS `font` shorthand |
 | Record/replay — `record_to`/`replay_from`: a session writes a self-contained text canvas-program covering every pixel-affecting op (font/glyph/bitmap/shape blocks for text, numbered image blocks naming their {unorm8, f16} × {unpremul, premul} format for bitmap/image/putImageData/pattern sources with `image_mips` carrying mip state, numbered path blocks for Path2D, plus op lines with optional per-colour space tokens); replay reproduces the render with no Core Text call — gallery scenes replay byte-for-byte on a machine without the fonts (gated by `test_replay_gallery`) | ✅ see [docs/text-boundary.md](docs/text-boundary.md) |
@@ -562,7 +562,7 @@ detail: [docs/stencil-blur.md](docs/stencil-blur.md) (blur),
 `globalCompositeOperation`, the blend kernels, shadows, and `filter` are done.
 
 - `filter` — the eight colour functions as per-pixel matrix kernels over
-  premultiplied tiles ([cnvs_filter.c](src/cnvs_filter.c)), `blur()` as an
+  premultiplied tiles ([canvas2d_filter.c](src/canvas2d_filter.c)), `blur()` as an
   RGBA16F box blur ([blur.c](src/blur.c)) against transparency, and
   `drop-shadow()` (the tile over a blurred, offset, tinted copy of its alpha).
   Not offered: the CSS string form and `url()` SVG reference filters.
@@ -579,7 +579,7 @@ Not planned:
 
 ```
 configure.py             generates build.ninja (all variants + gates; self-regenerates)
-include/canvas.h         public API
+include/canvas2d.h         public API
 src/                     core; Core Text shim
 tests/                   unit + pixel tests, a bounds-safety trap test, the OOM fault-injection sweep, the threaded tile-stitch harness
 bench/                   isolated kernel benches + end-to-end (ninja benchcmp / profile / throughput)

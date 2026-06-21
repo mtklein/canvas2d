@@ -1,4 +1,4 @@
-#include "canvas.h"
+#include "canvas2d.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
@@ -14,7 +14,7 @@ int main(void) {
     // A 2x1 source: left pixel red, right pixel blue.
     uint8_t src[8] = { 255, 0, 0, 255,  0, 0, 255, 255 };
 
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         free(px);
@@ -24,9 +24,9 @@ int main(void) {
     // Smoothing OFF: nearest-neighbour upscaling gives a hard red|blue edge at the
     // midline -- no blended pixels.  Source x maps as fsx = dest_x / 20, so the
     // split is at dest x = 20.
-    canvas_set_image_smoothing_enabled(cv, false);
-    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
+    canvas2d_set_image_smoothing_enabled(cv, false);
+    canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, clen);
     CHECK(px_near(pixel_at(px, clen, W, 19, 20), 255, 0, 0, 255, 1));  // left of split
     CHECK(px_near(pixel_at(px, clen, W, 20, 20), 0, 0, 255, 255, 1));  // right of split
     CHECK(px_near(pixel_at(px, clen, W, 5, 20), 255, 0, 0, 255, 1));
@@ -34,10 +34,10 @@ int main(void) {
 
     // Smoothing ON (default): bilinear blends across the midline -- the columns
     // straddling the split carry both red and blue (a purple), not a pure colour.
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_image_smoothing_enabled(cv, true);
-    canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, px, clen);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_set_image_smoothing_enabled(cv, true);
+    canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 2, 1, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, clen);
     struct rgba a = pixel_at(px, clen, W, 19, 20);
     struct rgba b = pixel_at(px, clen, W, 20, 20);
     CHECK(a.r > 30 && a.b > 30);   // blended, not pure red
@@ -46,7 +46,7 @@ int main(void) {
     CHECK(px_near(pixel_at(px, clen, W, 3, 20), 255, 0, 0, 255, 2));
     CHECK(px_near(pixel_at(px, clen, W, 37, 20), 0, 0, 255, 255, 2));
 
-    canvas_free(cv);
+    canvas2d_free(cv);
     free(px);
     return TEST_REPORT();
 }

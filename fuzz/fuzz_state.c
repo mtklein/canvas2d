@@ -9,7 +9,7 @@
 // Build: ninja fuzzers.  Standard libFuzzer entry; the file-replay main (behind
 // FUZZ_NO_MAIN) lets the same binary reproduce a crasher.
 
-#include "canvas.h"
+#include "canvas2d.h"
 
 #include <ptrcheck.h>
 #include <stdint.h>
@@ -36,7 +36,7 @@ enum {
 
 int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) {
     struct cursor c = { .p = data, .size = size, .at = 0, .eof = 0 };
-    struct canvas *__single cv = canvas(40, 40, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(40, 40, CANVAS2D_CS_SRGB);
     if (!cv) { return 0; }
 
     uint8_t img[16 * 16 * 4];
@@ -45,47 +45,47 @@ int LLVMFuzzerTestOneInput(uint8_t const *__counted_by(size) data, size_t size) 
     int budget = 0;
     while (!c.eof && budget++ < 3000) {
         switch ((int)((unsigned)u8(&c) % (unsigned)S_OP_COUNT)) {
-            case S_SAVE:    canvas_save(cv); break;       // snapshots clip mask + state
-            case S_RESTORE: canvas_restore(cv); break;    // frees cur mask, adopts saved
+            case S_SAVE:    canvas2d_save(cv); break;       // snapshots clip mask + state
+            case S_RESTORE: canvas2d_restore(cv); break;    // frees cur mask, adopts saved
             case S_CLIP_RECT:
-                canvas_begin_path(cv);
-                canvas_rect(cv, coord(&c), coord(&c), coord(&c), coord(&c));
-                canvas_clip(cv, CANVAS_NONZERO);                          // alloc full-canvas mask, intersect
+                canvas2d_begin_path(cv);
+                canvas2d_rect(cv, coord(&c), coord(&c), coord(&c), coord(&c));
+                canvas2d_clip(cv, CANVAS2D_NONZERO);                          // alloc full-canvas mask, intersect
                 break;
             case S_CLIP_CIRCLE:
-                canvas_begin_path(cv);
-                canvas_arc(cv, coord(&c), coord(&c), coord(&c), 0.0f, 6.2831853f, false);
-                canvas_clip(cv, CANVAS_NONZERO);
+                canvas2d_begin_path(cv);
+                canvas2d_arc(cv, coord(&c), coord(&c), coord(&c), 0.0f, 6.2831853f, false);
+                canvas2d_clip(cv, CANVAS2D_NONZERO);
                 break;
-            case S_TRANSLATE: canvas_translate(cv, coord(&c), coord(&c)); break;
-            case S_SCALE:     canvas_scale(cv, coord(&c) * 0.1f, coord(&c) * 0.1f); break;
-            case S_ROTATE:    canvas_rotate(cv, coord(&c) * 0.1f); break;
-            case S_FONT_SIZE: canvas_set_font_size(cv, (float)u8(&c)); break;  // font rebuild
-            case S_MEASURE:   (void)canvas_measure_text(cv, "Ag1"); break;
-            case S_FILL_TEXT: canvas_fill_text(cv, "Mq", coord(&c), coord(&c)); break;
-            case S_FILL_RECT: canvas_fill_rect(cv, coord(&c), coord(&c),
+            case S_TRANSLATE: canvas2d_translate(cv, coord(&c), coord(&c)); break;
+            case S_SCALE:     canvas2d_scale(cv, coord(&c) * 0.1f, coord(&c) * 0.1f); break;
+            case S_ROTATE:    canvas2d_rotate(cv, coord(&c) * 0.1f); break;
+            case S_FONT_SIZE: canvas2d_set_font_size(cv, (float)u8(&c)); break;  // font rebuild
+            case S_MEASURE:   (void)canvas2d_measure_text(cv, "Ag1"); break;
+            case S_FILL_TEXT: canvas2d_fill_text(cv, "Mq", coord(&c), coord(&c)); break;
+            case S_FILL_RECT: canvas2d_fill_rect(cv, coord(&c), coord(&c),
                                                coord(&c), coord(&c)); break;
             case S_GET_IMAGE: {
                 uint8_t out[8 * 8 * 4];
-                canvas_get_image_data(cv, CANVAS_CS_SRGB, (int)u8(&c) - 8, (int)u8(&c) - 8, 8, 8,
+                canvas2d_get_image_data(cv, CANVAS2D_CS_SRGB, (int)u8(&c) - 8, (int)u8(&c) - 8, 8, 8,
                                       out, (int)sizeof out);
                 break;
             }
             case S_PUT_IMAGE:
-                canvas_put_image_data(cv, CANVAS_CS_SRGB, img, (int)sizeof img, 16, 16,
+                canvas2d_put_image_data(cv, CANVAS2D_CS_SRGB, img, (int)sizeof img, 16, 16,
                                       (int)u8(&c) - 8, (int)u8(&c) - 8);
                 break;
             case S_GRADIENT:
-                canvas_set_fill_linear_gradient(cv, CANVAS_CS_SRGB, CANVAS_ALPHA_UNPREMUL,
+                canvas2d_set_fill_linear_gradient(cv, CANVAS2D_CS_SRGB, CANVAS2D_ALPHA_UNPREMUL,
                                                 0.0f, 0.0f, coord(&c), coord(&c));
-                canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
-                canvas_add_fill_color_stop(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+                canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+                canvas2d_add_fill_color_stop(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
                 break;
-            case S_RESET: canvas_reset_transform(cv); break;
+            case S_RESET: canvas2d_reset_transform(cv); break;
             default: break;
         }
     }
-    canvas_free(cv);   // frees the whole state stack + cur mask + font
+    canvas2d_free(cv);   // frees the whole state stack + cur mask + font
     return 0;
 }
 

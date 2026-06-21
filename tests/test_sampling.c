@@ -4,8 +4,8 @@
 // CUBIC_B/CUBIC_C one-liner swaps to Mitchell, re-pin here (the half-phase
 // weight 0.5625 becomes ~0.47, so 143 becomes ~120).
 
-#include "canvas.h"
-#include "canvas_image.h"
+#include "canvas2d.h"
+#include "canvas2d_image.h"
 #include "test_pixels.h"
 #include "test_util.h"
 
@@ -27,21 +27,21 @@ static void flat_exact(void) {
         src[i * 4 + 2] = 200;
         src[i * 4 + 3] = 255;
     }
-    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, N, N, 4.0f, 4.0f, 8.0f, 8.0f);  // 4x minify
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_MEDIUM);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, N, N, 4.0f, 4.0f, 8.0f, 8.0f);  // 4x minify
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 37, 90, 200, 255, 0));
 
-        canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-        canvas_draw_bitmap_subrect(cv, CANVAS_CS_SRGB, src, N, N, 8.0f, 8.0f, 8.0f, 8.0f,
+        canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_HIGH);
+        canvas2d_draw_bitmap_subrect(cv, CANVAS2D_CS_SRGB, src, N, N, 8.0f, 8.0f, 8.0f, 8.0f,
                                   0.0f, 0.0f, 32.0f, 32.0f);  // 4x magnify, cubic
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 16, 16), 37, 90, 200, 255, 1));
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 
@@ -63,21 +63,21 @@ static void stripes_average(void) {
             src[o + 3] = 255;
         }
     }
-    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, N, N, 0.0f, 0.0f, 4.0f, 4.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_MEDIUM);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, N, N, 0.0f, 0.0f, 4.0f, 4.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 1, 1), 128, 128, 128, 255, 1));
 
-        canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
-        canvas_set_image_smoothing_enabled(cv, false);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, N, N, 0.0f, 0.0f, 4.0f, 4.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
+        canvas2d_set_image_smoothing_enabled(cv, false);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, N, N, 0.0f, 0.0f, 4.0f, 4.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         struct rgba const p = pixel_at(px, len, N, 1, 1);
         CHECK(p.r == 0 || p.r == 255);  // one pole, not the average
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 
@@ -100,20 +100,20 @@ static void catmullrom_phase(void) {
             src[o + 3] = 255;
         }
     }
-    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 4, 4, 0.5f, 0.5f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_HIGH);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 4, 4, 0.5f, 0.5f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 143, 143, 143, 255, 1));
 
-        canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_MEDIUM);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 4, 4, 0.5f, 0.5f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_MEDIUM);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 4, 4, 0.5f, 0.5f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(px_near(pixel_at(px, len, N, 8, 8), 128, 128, 128, 255, 1));
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 
@@ -132,21 +132,21 @@ static void no_transparent_bleed(void) {
         src[lo + 0] = 255; src[lo + 1] = 0; src[lo + 2] = 0;   src[lo + 3] = 0;
         src[ro + 0] = 0;   src[ro + 1] = 0; src[ro + 2] = 255; src[ro + 3] = 255;
     }
-    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (cv) {
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 2, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_HIGH);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 2, 2, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(pixel_at(px, len, N, 8, 8).r <= 1);   // premultiplied taps: no ghost red
         CHECK(pixel_at(px, len, N, 8, 8).b >= 200);
 
-        canvas_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_LOW);
-        canvas_draw_bitmap_scaled(cv, CANVAS_CS_SRGB, src, 2, 2, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)N, (float)N);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_LOW);
+        canvas2d_draw_bitmap_scaled(cv, CANVAS2D_CS_SRGB, src, 2, 2, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         CHECK(pixel_at(px, len, N, 8, 8).r > 50);   // straight-alpha bilinear bleeds
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 
@@ -157,7 +157,7 @@ static void no_transparent_bleed(void) {
 // byte values / 255 should sample to the same result a byte image of those
 // bytes does, within f16/quantize tolerance.  We reference each f16 draw against
 // the equivalent unorm8 draw rather than re-deriving the kernels.  A premul cubic
-// arm covers CANVAS_ALPHA_PREMUL through the magnifying 4x4 path.
+// arm covers CANVAS2D_ALPHA_PREMUL through the magnifying 4x4 path.
 
 // Build a 4x4 source with a single bright column at x==1 (the catmullrom_phase
 // pattern), opaque, into both byte and f16 (straight) buffers.
@@ -186,27 +186,27 @@ static void f16_nearest_matches_unorm8(void) {
     uint8_t b8[4 * 4 * 4];
     _Float16 f16[4 * 4 * 4];
     fill_column4(b8, f16);
-    struct canvas_image *__single imf = canvas_image_f16(CANVAS_CS_SRGB, f16, 4, 4, CANVAS_ALPHA_UNPREMUL);
-    struct canvas_image *__single imu = canvas_image_unorm8(CANVAS_CS_SRGB, b8, 4, 4, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single cf = canvas(N, N, CANVAS_CS_SRGB);
-    struct canvas *__single cu = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_image *__single imf = canvas2d_image_f16(CANVAS2D_CS_SRGB, f16, 4, 4, CANVAS2D_ALPHA_UNPREMUL);
+    struct canvas2d_image *__single imu = canvas2d_image_unorm8(CANVAS2D_CS_SRGB, b8, 4, 4, CANVAS2D_ALPHA_UNPREMUL);
+    struct canvas2d_context *__single cf = canvas2d(N, N, CANVAS2D_CS_SRGB);
+    struct canvas2d_context *__single cu = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(imf != NULL && imu != NULL && cf != NULL && cu != NULL);
     if (imf && imu && cf && cu) {
-        canvas_set_image_smoothing_enabled(cf, false);  // -> sample_src_nearest_f16
-        canvas_set_image_smoothing_enabled(cu, false);
-        canvas_draw_image_scaled(cf, imf, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_draw_image_scaled(cu, imu, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cf, CANVAS_CS_SRGB, px_f, len);
-        canvas_read_rgba(cu, CANVAS_CS_SRGB, px_u, len);
+        canvas2d_set_image_smoothing_enabled(cf, false);  // -> sample_src_nearest_f16
+        canvas2d_set_image_smoothing_enabled(cu, false);
+        canvas2d_draw_image_scaled(cf, imf, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas2d_draw_image_scaled(cu, imu, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cf, CANVAS2D_CS_SRGB, px_f, len);
+        canvas2d_read_rgba(cu, CANVAS2D_CS_SRGB, px_u, len);
         struct rgba const pf = pixel_at(px_f, len, N, 5, 5);
         struct rgba const pu = pixel_at(px_u, len, N, 5, 5);
         CHECK(px_near(pf, pu.r, pu.g, pu.b, pu.a, 1));
         CHECK(pf.r == 0 || pf.r == 255);  // a nearest pole, not a blend
     }
-    canvas_image_free(imf);
-    canvas_image_free(imu);
-    if (cf) { canvas_free(cf); }
-    if (cu) { canvas_free(cu); }
+    canvas2d_image_free(imf);
+    canvas2d_image_free(imu);
+    if (cf) { canvas2d_free(cf); }
+    if (cu) { canvas2d_free(cu); }
 }
 
 // f16 CUBIC (high-quality magnification): an f16 image magnified at high reaches
@@ -221,26 +221,26 @@ static void f16_cubic_magnify(void) {
     uint8_t b8[4 * 4 * 4];
     _Float16 f16[4 * 4 * 4];
     fill_column4(b8, f16);
-    struct canvas_image *__single imf = canvas_image_f16(CANVAS_CS_SRGB, f16, 4, 4, CANVAS_ALPHA_UNPREMUL);
-    struct canvas_image *__single imu = canvas_image_unorm8(CANVAS_CS_SRGB, b8, 4, 4, CANVAS_ALPHA_UNPREMUL);
-    struct canvas *__single cf = canvas(N, N, CANVAS_CS_SRGB);
-    struct canvas *__single cu = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_image *__single imf = canvas2d_image_f16(CANVAS2D_CS_SRGB, f16, 4, 4, CANVAS2D_ALPHA_UNPREMUL);
+    struct canvas2d_image *__single imu = canvas2d_image_unorm8(CANVAS2D_CS_SRGB, b8, 4, 4, CANVAS2D_ALPHA_UNPREMUL);
+    struct canvas2d_context *__single cf = canvas2d(N, N, CANVAS2D_CS_SRGB);
+    struct canvas2d_context *__single cu = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(imf != NULL && imu != NULL && cf != NULL && cu != NULL);
     if (imf && imu && cf && cu) {
-        canvas_set_image_smoothing_quality(cf, CANVAS_SMOOTHING_HIGH);  // -> cubic_f16
-        canvas_set_image_smoothing_quality(cu, CANVAS_SMOOTHING_HIGH);
-        canvas_draw_image_scaled(cf, imf, 0.5f, 0.5f, 16.0f, 16.0f);
-        canvas_draw_image_scaled(cu, imu, 0.5f, 0.5f, 16.0f, 16.0f);
-        canvas_read_rgba(cf, CANVAS_CS_SRGB, px_f, len);
-        canvas_read_rgba(cu, CANVAS_CS_SRGB, px_u, len);
+        canvas2d_set_image_smoothing_quality(cf, CANVAS2D_SMOOTHING_HIGH);  // -> cubic_f16
+        canvas2d_set_image_smoothing_quality(cu, CANVAS2D_SMOOTHING_HIGH);
+        canvas2d_draw_image_scaled(cf, imf, 0.5f, 0.5f, 16.0f, 16.0f);
+        canvas2d_draw_image_scaled(cu, imu, 0.5f, 0.5f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cf, CANVAS2D_CS_SRGB, px_f, len);
+        canvas2d_read_rgba(cu, CANVAS2D_CS_SRGB, px_u, len);
         CHECK(px_near(pixel_at(px_f, len, N, 8, 8), 143, 143, 143, 255, 2));
         struct rgba const pu = pixel_at(px_u, len, N, 8, 8);
         CHECK(px_near(pixel_at(px_f, len, N, 8, 8), pu.r, pu.g, pu.b, pu.a, 2));
     }
-    canvas_image_free(imf);
-    canvas_image_free(imu);
-    if (cf) { canvas_free(cf); }
-    if (cu) { canvas_free(cu); }
+    canvas2d_image_free(imf);
+    canvas2d_image_free(imu);
+    if (cf) { canvas2d_free(cf); }
+    if (cu) { canvas2d_free(cu); }
 }
 
 // A PREMUL unorm8 image magnified through the cubic: a transparent-red /
@@ -260,47 +260,47 @@ static void premul_unorm8_cubic(void) {
         // right: opaque blue -> premul == straight at a==255
         src[ro + 0] = 0; src[ro + 1] = 0; src[ro + 2] = 255; src[ro + 3] = 255;
     }
-    struct canvas_image *__single im = canvas_image_unorm8(CANVAS_CS_SRGB, src, 2, 2, CANVAS_ALPHA_PREMUL);
-    struct canvas *__single cv = canvas(N, N, CANVAS_CS_SRGB);
+    struct canvas2d_image *__single im = canvas2d_image_unorm8(CANVAS2D_CS_SRGB, src, 2, 2, CANVAS2D_ALPHA_PREMUL);
+    struct canvas2d_context *__single cv = canvas2d(N, N, CANVAS2D_CS_SRGB);
     CHECK(im != NULL && cv != NULL);
     if (im && cv) {
-        canvas_set_image_smoothing_quality(cv, CANVAS_SMOOTHING_HIGH);
-        canvas_draw_image_scaled(cv, im, 0.0f, 0.0f, 16.0f, 16.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, px, len);
+        canvas2d_set_image_smoothing_quality(cv, CANVAS2D_SMOOTHING_HIGH);
+        canvas2d_draw_image_scaled(cv, im, 0.0f, 0.0f, 16.0f, 16.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, px, len);
         struct rgba const p = pixel_at(px, len, N, 8, 8);
         CHECK(p.r <= 1);     // premultiplied taps: no ghost red from the clear texel
         CHECK(p.b >= 100);   // blue carries through the boundary
     }
-    canvas_image_free(im);
-    if (cv) { canvas_free(cv); }
+    canvas2d_image_free(im);
+    if (cv) { canvas2d_free(cv); }
 }
 
 // Regression (translated from the subrect_saturated_sample fuzz seed): a
 // draw_image_subrect with an infinite source-rect extent drove the bilinear
-// tap's float->int index cast past INT_MAX, which once overflowed.  cnvs_f2i now
+// tap's float->int index cast past INT_MAX, which once overflowed.  canvas2d_f2i now
 // saturates (inf/huge -> INT_MAX, NaN -> 0), so the draw is bounded.  Under the
 // debug sanitizers (ASan + UBSan over the -fbounds-safety core) this asserts no
 // integer-overflow UB and no out-of-bounds tap; on a linear canvas, matching the
 // original crasher's working space.  (The seed's 122399e998 token parsed to +inf.)
 static void subrect_infinite_extent(void) {
     uint8_t const px[4] = { 200, 100, 50, 255 };  // a 1x1 source
-    struct canvas *__single cv = canvas(8, 8, CANVAS_CS_LINEAR_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(8, 8, CANVAS2D_CS_LINEAR_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    struct canvas_image *__single img =
-        canvas_image_unorm8(CANVAS_CS_SRGB, px, 1, 1, CANVAS_ALPHA_UNPREMUL);
+    struct canvas2d_image *__single img =
+        canvas2d_image_unorm8(CANVAS2D_CS_SRGB, px, 1, 1, CANVAS2D_ALPHA_UNPREMUL);
     CHECK(img != NULL);
     if (img) {
         // sww = 1, shh = +inf: the reduced crasher's source rect.  Must not trap.
-        canvas_draw_image_subrect(cv, img, 0.0f, 0.0f, 1.0f, INFINITY,
+        canvas2d_draw_image_subrect(cv, img, 0.0f, 0.0f, 1.0f, INFINITY,
                                   0.0f, 3.0f, 2.832f, 1.0f);
-        canvas_image_free(img);
+        canvas2d_image_free(img);
     }
     uint8_t out[8 * 8 * 4];
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, out, (int)sizeof out);  // ran to completion
-    canvas_free(cv);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, out, (int)sizeof out);  // ran to completion
+    canvas2d_free(cv);
 }
 
 int main(void) {

@@ -1,7 +1,7 @@
 // Isolated benchmark: clipped 2D RGBA8 blit (the getImageData copy path).
 #include "bench_reps.h"
 
-#include "cnvs_image.h"
+#include "canvas2d_blit.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -28,7 +28,7 @@ int main(void) {
     for (int rep = 0; rep < reps; rep++) {
         for (int it = 0; it < ITERS; it++) {
             int const off = it % 64 - 32;  // some iterations clip at the edges
-            cnvs_blit_rgba(dst, DIM, DIM, off, off, src, DIM, DIM, 0, 0, DIM, DIM);
+            canvas2d_blit_rgba(dst, DIM, DIM, off, off, src, DIM, DIM, 0, 0, DIM, DIM);
             sink += (double)dst[0];
         }
     }

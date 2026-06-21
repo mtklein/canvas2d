@@ -10,7 +10,7 @@
 //     bit for bit (the serialized ink bounds + vmetrics earning their keep);
 //   - dedup: a repeated string emits its blocks once per recording, the
 //     emoji bitmap block very much included;
-//   - size: the bitmap block rides DEFLATED under its base64 (cnvs_zlib), so
+//   - size: the bitmap block rides DEFLATED under its base64 (canvas2d_zlib), so
 //     a one-emoji program -- ~137 KB when the capture was raw base64 -- now
 //     records at roughly half that;
 //   - strict parsing: truncated/malformed blocks (bitmap chunk miscounts,
@@ -23,10 +23,10 @@
 
 #include "test_util.h"
 
-#include "canvas.h"
-#include "cnvs_replay.h"
-#include "cnvs_text.h"
-#include "cnvs_zlib.h"
+#include "canvas2d.h"
+#include "canvas2d_replay.h"
+#include "canvas2d_text.h"
+#include "canvas2d_zlib.h"
 
 #include <math.h>
 #include <ptrcheck.h>
@@ -42,36 +42,36 @@
 
 // sizeof-1 keeps the literal an array (bounds known), avoiding the
 // __null_terminated->__counted_by seam at the call.
-#define REPLAY(cv, s) cnvs_replay_text((cv), (s), sizeof(s) - 1)
+#define REPLAY(cv, s) canvas2d_replay_text((cv), (s), sizeof(s) - 1)
 
 // A text scene: Latin + CJK + emoji, two sizes, align/baseline variations,
 // fill and stroke.  Coordinates are simple decimals; the text round-trips by
 // design.  The emoji line proves the bitmap blocks earn their keep: replay
 // draws it from the serialized capture, fontless and boundary-free.
-static void draw_text_scene(struct canvas *__single cv) {
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+static void draw_text_scene(struct canvas2d_context *__single cv) {
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
-    canvas_set_font_size(cv, 17.5f);
-    canvas_fill_text(cv, "Waffle 隸書", 4.0f, 24.0f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
+    canvas2d_set_font_size(cv, 17.5f);
+    canvas2d_fill_text(cv, "Waffle 隸書", 4.0f, 24.0f);
 
-    canvas_set_font_size(cv, 23.0f);
-    canvas_set_text_align(cv, CANVAS_ALIGN_CENTER);
-    canvas_set_text_baseline(cv, CANVAS_BASELINE_MIDDLE);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.5f, 0.15f, 0.1f, 1.0f);
-    canvas_fill_text(cv, "Waffle 隸書", 64.0f, 48.0f);  // same bytes, other size
+    canvas2d_set_font_size(cv, 23.0f);
+    canvas2d_set_text_align(cv, CANVAS2D_ALIGN_CENTER);
+    canvas2d_set_text_baseline(cv, CANVAS2D_BASELINE_MIDDLE);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.5f, 0.15f, 0.1f, 1.0f);
+    canvas2d_fill_text(cv, "Waffle 隸書", 64.0f, 48.0f);  // same bytes, other size
 
-    canvas_set_text_align(cv, CANVAS_ALIGN_RIGHT);
-    canvas_set_text_baseline(cv, CANVAS_BASELINE_TOP);
-    canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.3f, 0.1f, 1.0f);
-    canvas_set_line_width(cv, 1.0f);
-    canvas_stroke_text(cv, "kerning", 120.0f, 64.0f);
+    canvas2d_set_text_align(cv, CANVAS2D_ALIGN_RIGHT);
+    canvas2d_set_text_baseline(cv, CANVAS2D_BASELINE_TOP);
+    canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.3f, 0.1f, 1.0f);
+    canvas2d_set_line_width(cv, 1.0f);
+    canvas2d_stroke_text(cv, "kerning", 120.0f, 64.0f);
 
-    canvas_set_text_align(cv, CANVAS_ALIGN_LEFT);
-    canvas_set_text_baseline(cv, CANVAS_BASELINE_ALPHABETIC);
-    canvas_set_font_size(cv, 21.0f);
-    canvas_fill_text(cv, "a\xF0\x9F\x8C\x88z", 4.0f, 88.0f);  // a 🌈 z
+    canvas2d_set_text_align(cv, CANVAS2D_ALIGN_LEFT);
+    canvas2d_set_text_baseline(cv, CANVAS2D_BASELINE_ALPHABETIC);
+    canvas2d_set_font_size(cv, 21.0f);
+    canvas2d_fill_text(cv, "a\xF0\x9F\x8C\x88z", 4.0f, 88.0f);  // a 🌈 z
 }
 
 // Read up to cap bytes of `path` into buf; byte count, or -1 if it won't open.
@@ -123,7 +123,7 @@ static bool feq_bits(float a, float b) {
     return ua == ub;
 }
 
-static bool metrics_eq(canvas_text_metrics a, canvas_text_metrics b) {
+static bool metrics_eq(canvas2d_text_metrics a, canvas2d_text_metrics b) {
     return feq_bits(a.width, b.width) &&
            feq_bits(a.actual_bounding_box_left, b.actual_bounding_box_left) &&
            feq_bits(a.actual_bounding_box_right, b.actual_bounding_box_right) &&
@@ -146,71 +146,71 @@ static void check_round_trip(void) {
 
     uint8_t recorded_px[NPX];
     float w17 = 0.0f, w23 = 0.0f, we = 0.0f;
-    canvas_text_metrics m17, m23, me;
+    canvas2d_text_metrics m17, m23, me;
     memset(&m17, 0, sizeof m17);
     memset(&m23, 0, sizeof m23);
     memset(&me, 0, sizeof me);
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
+        CHECK(canvas2d_record_to(cv, path));
         draw_text_scene(cv);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
-        canvas_set_font_size(cv, 17.5f);
-        w17 = canvas_measure_text(cv, "Waffle 隸書");
-        m17 = canvas_measure_text_full(cv, "Waffle 隸書");
-        canvas_set_font_size(cv, 23.0f);
-        w23 = canvas_measure_text(cv, "Waffle 隸書");
-        m23 = canvas_measure_text_full(cv, "Waffle 隸書");
-        canvas_set_font_size(cv, 21.0f);
-        we = canvas_measure_text(cv, "a\xF0\x9F\x8C\x88z");
-        me = canvas_measure_text_full(cv, "a\xF0\x9F\x8C\x88z");
-        canvas_free(cv);  // flush + close the file
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded_px, (int)sizeof recorded_px);
+        canvas2d_set_font_size(cv, 17.5f);
+        w17 = canvas2d_measure_text(cv, "Waffle 隸書");
+        m17 = canvas2d_measure_text_full(cv, "Waffle 隸書");
+        canvas2d_set_font_size(cv, 23.0f);
+        w23 = canvas2d_measure_text(cv, "Waffle 隸書");
+        m23 = canvas2d_measure_text_full(cv, "Waffle 隸書");
+        canvas2d_set_font_size(cv, 21.0f);
+        we = canvas2d_measure_text(cv, "a\xF0\x9F\x8C\x88z");
+        me = canvas2d_measure_text_full(cv, "a\xF0\x9F\x8C\x88z");
+        canvas2d_free(cv);  // flush + close the file
     }
     CHECK(w17 > 0.0f && w23 > w17 && we > 0.0f);
     CHECK(me.actual_bounding_box_ascent > 0.0f);  // the emoji ink measured
 
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_replay_from(cv, path));
+        CHECK(canvas2d_replay_from(cv, path));
 
         // The proof of self-containment: every text lookup during replay hit
         // the cache the blocks pre-populated -- the boundary was never asked
         // to shape a line or fetch a glyph.
-        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        struct canvas2d_text_cache *__single c = canvas2d_canvas_text_cache(cv);
         CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
         CHECK(c->shaping_hits > 0);
         CHECK(c->glyph_hits > 0);
 
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
 
         // Measurement replays from the serialized ink bounds + vmetrics: the
         // values match the recording canvas's bit for bit, still boundary-free
         // -- the emoji line included (its ink box rides the bitmap block, and
         // both canvases scale it through the same capture-px math).
-        canvas_set_font_size(cv, 17.5f);
-        CHECK(feq_bits(canvas_measure_text(cv, "Waffle 隸書"), w17));
-        CHECK(metrics_eq(canvas_measure_text_full(cv, "Waffle 隸書"), m17));
-        canvas_set_font_size(cv, 23.0f);
-        CHECK(feq_bits(canvas_measure_text(cv, "Waffle 隸書"), w23));
-        CHECK(metrics_eq(canvas_measure_text_full(cv, "Waffle 隸書"), m23));
-        canvas_set_font_size(cv, 21.0f);
-        CHECK(feq_bits(canvas_measure_text(cv, "a\xF0\x9F\x8C\x88z"), we));
-        CHECK(metrics_eq(canvas_measure_text_full(cv, "a\xF0\x9F\x8C\x88z"), me));
+        canvas2d_set_font_size(cv, 17.5f);
+        CHECK(feq_bits(canvas2d_measure_text(cv, "Waffle 隸書"), w17));
+        CHECK(metrics_eq(canvas2d_measure_text_full(cv, "Waffle 隸書"), m17));
+        canvas2d_set_font_size(cv, 23.0f);
+        CHECK(feq_bits(canvas2d_measure_text(cv, "Waffle 隸書"), w23));
+        CHECK(metrics_eq(canvas2d_measure_text_full(cv, "Waffle 隸書"), m23));
+        canvas2d_set_font_size(cv, 21.0f);
+        CHECK(feq_bits(canvas2d_measure_text(cv, "a\xF0\x9F\x8C\x88z"), we));
+        CHECK(metrics_eq(canvas2d_measure_text_full(cv, "a\xF0\x9F\x8C\x88z"), me));
         CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
 
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 
@@ -221,30 +221,30 @@ static void check_dedup(void) {
     char const *__null_terminated twice = "build/test_record_text_d2.canvas";
 
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, once));
-        canvas_set_font_size(cv, 16.0f);
-        canvas_fill_text(cv, "echo", 4.0f, 24.0f);
-        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, once));
+        canvas2d_set_font_size(cv, 16.0f);
+        canvas2d_fill_text(cv, "echo", 4.0f, 24.0f);
+        canvas2d_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
+        canvas2d_free(cv);
     }
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, twice));
-        canvas_set_font_size(cv, 16.0f);
-        canvas_fill_text(cv, "echo", 4.0f, 24.0f);
-        canvas_fill_text(cv, "echo", 4.0f, 48.0f);
-        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);
-        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 40.0f, 48.0f);
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, twice));
+        canvas2d_set_font_size(cv, 16.0f);
+        canvas2d_fill_text(cv, "echo", 4.0f, 24.0f);
+        canvas2d_fill_text(cv, "echo", 4.0f, 48.0f);
+        canvas2d_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);
+        canvas2d_fill_text(cv, "\xF0\x9F\x8D\x95", 40.0f, 48.0f);
+        canvas2d_free(cv);
     }
 
     // Static buffers: roomy enough even if a capture ever compressed badly.
@@ -285,15 +285,15 @@ static void check_dedup(void) {
 static void check_size(void) {
     char const *__null_terminated path = "build/test_record_text_z.canvas";
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
-        canvas_set_font_size(cv, 32.0f);
-        canvas_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, path));
+        canvas2d_set_font_size(cv, 32.0f);
+        canvas2d_fill_text(cv, "\xF0\x9F\x8D\x95", 4.0f, 48.0f);  // 🍕
+        canvas2d_free(cv);
     }
     static char buf[1 << 19];
     int const n = slurp(path, buf, (int)sizeof buf);
@@ -335,7 +335,7 @@ static int b64enc(char *__counted_by(cap) out, int cap,
 // the recorder writes with; snprintf's -fbounds-safety macro form trips
 // -Wgnu-statement-expression) and replay it, returning the parse verdict.
 __attribute__((format(printf, 2, 3)))
-static bool replay_fmt(struct canvas *__single cv, char const *__null_terminated fmt,
+static bool replay_fmt(struct canvas2d_context *__single cv, char const *__null_terminated fmt,
                        ...) {
     static char prog[1024];
     FILE *__single f = fmemopen(prog, sizeof prog, "w");
@@ -352,13 +352,13 @@ static bool replay_fmt(struct canvas *__single cv, char const *__null_terminated
     if (!ok || n <= 0 || (size_t)n >= sizeof prog) {
         return false;
     }
-    return cnvs_replay_text(cv, prog, (size_t)n);
+    return canvas2d_replay_text(cv, prog, (size_t)n);
 }
 
 // Strict parsing: malformed blocks stop replay (false) without corrupting the
 // canvas -- it draws normally afterwards.
 static void check_strict(void) {
-    struct canvas *__single cv = canvas(64, 48, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(64, 48, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -440,14 +440,14 @@ static void check_strict(void) {
         "run -1 0 0 1 10 1e999 0\n"));                       // overflowed advance
 
     // Bitmap blocks carry the capture DEFLATED under the base64, so the
-    // well-formed cases wrap real cnvs_zlib_deflate streams.  A 2x2 premul
+    // well-formed cases wrap real canvas2d_zlib_deflate streams.  A 2x2 premul
     // RGBA capture (16 bytes: three transparent pixels, one opaque white)...
     uint8_t raw16[16];
     for (int i = 0; i < 16; i++) {
         raw16[i] = i < 12 ? 0 : 0xFF;
     }
     uint8_t z16[64];
-    int const zn16 = cnvs_zlib_deflate(z16, (int)sizeof z16, raw16, 16);
+    int const zn16 = canvas2d_zlib_deflate(z16, (int)sizeof z16, raw16, 16);
     CHECK(zn16 > 3);  // header + adler alone are 6 bytes; > 3 lets us chunk
     char zb16[128] = { 0 };
     CHECK(b64enc(zb16, (int)sizeof zb16, z16, zn16 > 0 ? zn16 : 0) > 0);
@@ -485,7 +485,7 @@ static void check_strict(void) {
         // 12 bytes against the header's 2x2 (16)...
         uint8_t zwrong[64];
         char zwb[128] = { 0 };
-        int wn = cnvs_zlib_deflate(zwrong, (int)sizeof zwrong, raw16, 12);
+        int wn = canvas2d_zlib_deflate(zwrong, (int)sizeof zwrong, raw16, 12);
         CHECK(wn > 0);
         CHECK(b64enc(zwb, (int)sizeof zwb, zwrong, wn > 0 ? wn : 0) > 0);
         CHECK(!replay_fmt(cv,
@@ -496,7 +496,7 @@ static void check_strict(void) {
         for (int i = 0; i < 20; i++) {
             raw20[i] = (uint8_t)(i * 7);
         }
-        wn = cnvs_zlib_deflate(zwrong, (int)sizeof zwrong, raw20, 20);
+        wn = canvas2d_zlib_deflate(zwrong, (int)sizeof zwrong, raw20, 20);
         CHECK(wn > 0);
         CHECK(b64enc(zwb, (int)sizeof zwb, zwrong, wn > 0 ? wn : 0) > 0);
         CHECK(!replay_fmt(cv,
@@ -535,18 +535,18 @@ static void check_strict(void) {
     #undef BM_FONT
 
     // Not corrupted: the canvas still draws.
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, 64.0f, 48.0f);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 1.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, 64.0f, 48.0f);
     uint8_t px[64 * 48 * 4];
-    canvas_get_image_data(cv, CANVAS_CS_SRGB, 0, 0, 64, 48, px, (int)sizeof px);
+    canvas2d_get_image_data(cv, CANVAS2D_CS_SRGB, 0, 0, 64, 48, px, (int)sizeof px);
     CHECK(px[0] == 255);
 
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // xorshift32, run in 64-bit and masked back: the wrap is by design, so keep
 // it out of -fsanitize=integer's unsigned-shift check (the mix32 pattern in
-// cnvs_text.c).
+// canvas2d_text.c).
 static uint32_t xorshift32(uint32_t *__single s) {
     uint64_t x = *s;
     x = (x ^ (x << 13)) & 0xFFFFFFFFu;
@@ -557,11 +557,11 @@ static uint32_t xorshift32(uint32_t *__single s) {
 }
 
 // One float through the recorder's emission (fprintf %.9g -- the identical
-// libc formatter cnvs_record.c writes with, via an in-memory FILE) and the
+// libc formatter canvas2d_record.c writes with, via an in-memory FILE) and the
 // replay parser's number reader (a set_transform line, read back via
 // get_transform): the reparsed float32 must be bit-identical.  set_transform
 // now carries the full 3x3 (the affine subset's trailing 0 0 1).
-static bool roundtrips(struct canvas *__single cv, FILE *__single f,
+static bool roundtrips(struct canvas2d_context *__single cv, FILE *__single f,
                        char const *__counted_by(cap) line, int cap, float v) {
     rewind(f);
     fprintf(f, "set_transform %.9g 0 0 1 0 0 0 0 1\n", (double)v);
@@ -572,16 +572,16 @@ static bool roundtrips(struct canvas *__single cv, FILE *__single f,
     if (n <= 0 || n > cap) {
         return false;
     }
-    if (!cnvs_replay_text(cv, line, (size_t)n)) {
+    if (!canvas2d_replay_text(cv, line, (size_t)n)) {
         return false;
     }
-    return feq_bits(canvas_get_transform(cv).a, v);
+    return feq_bits(canvas2d_get_transform(cv).a, v);
 }
 
 // The float round-trip property: emit/parse identity over denormals, negative
 // zero, extremes, powers of two, and a large random sweep of bit patterns.
 static void check_float_round_trip(void) {
-    struct canvas *__single cv = canvas(8, 8, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(8, 8, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -590,7 +590,7 @@ static void check_float_round_trip(void) {
     FILE *__single f = fmemopen(line, sizeof line, "w");
     CHECK(f != NULL);
     if (!f) {
-        canvas_free(cv);
+        canvas2d_free(cv);
         return;
     }
 
@@ -650,7 +650,7 @@ static void check_float_round_trip(void) {
     CHECK(bad == 0);
 
     (void)fclose(f);
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // stroke_rect and fill_text_max -- the last two ops the gallery text scenes
@@ -664,60 +664,60 @@ static void check_new_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.12f, 1.0f);
-        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        CHECK(canvas2d_record_to(cv, path));
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.1f, 0.12f, 1.0f);
+        canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
 
         // stroke_rect with a thick join, and a rotated-CTM quad (corners go
         // through the transform), and the degenerate hairline.
-        canvas_set_stroke_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.5f, 0.3f, 1.0f);
-        canvas_set_line_width(cv, 6.0f);
-        canvas_set_line_join(cv, CANVAS_JOIN_ROUND);
-        canvas_stroke_rect(cv, 8.0f, 8.0f, 40.0f, 30.0f);
-        canvas_save(cv);
-        canvas_translate(cv, 90.0f, 30.0f);
-        canvas_rotate(cv, 0.3f);
-        canvas_stroke_rect(cv, -20.0f, -14.0f, 40.0f, 28.0f);
-        canvas_restore(cv);
-        canvas_set_line_cap(cv, CANVAS_CAP_ROUND);
-        canvas_stroke_rect(cv, 8.0f, 60.0f, 40.0f, 0.0f);  // degenerate hairline
+        canvas2d_set_stroke_rgba(cv, CANVAS2D_CS_SRGB, 0.9f, 0.5f, 0.3f, 1.0f);
+        canvas2d_set_line_width(cv, 6.0f);
+        canvas2d_set_line_join(cv, CANVAS2D_JOIN_ROUND);
+        canvas2d_stroke_rect(cv, 8.0f, 8.0f, 40.0f, 30.0f);
+        canvas2d_save(cv);
+        canvas2d_translate(cv, 90.0f, 30.0f);
+        canvas2d_rotate(cv, 0.3f);
+        canvas2d_stroke_rect(cv, -20.0f, -14.0f, 40.0f, 28.0f);
+        canvas2d_restore(cv);
+        canvas2d_set_line_cap(cv, CANVAS2D_CAP_ROUND);
+        canvas2d_stroke_rect(cv, 8.0f, 60.0f, 40.0f, 0.0f);  // degenerate hairline
 
         // fill_text_max: an overflowing phrase condensed to a finite width, and
         // an unconstrained one (max_width <= 0 imposes no limit).
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.9f, 0.92f, 0.95f, 1.0f);
-        canvas_set_font_size(cv, 22.0f);
-        canvas_fill_text_max(cv, "Condense me to fit", 4.0f, 88.0f, 60.0f);
-        canvas_fill_text_max(cv, "free", 70.0f, 88.0f, -1.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
-        canvas_free(cv);  // flush + close
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.9f, 0.92f, 0.95f, 1.0f);
+        canvas2d_set_font_size(cv, 22.0f);
+        canvas2d_fill_text_max(cv, "Condense me to fit", 4.0f, 88.0f, 60.0f);
+        canvas2d_fill_text_max(cv, "free", 70.0f, 88.0f, -1.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded_px, (int)sizeof recorded_px);
+        canvas2d_free(cv);  // flush + close
     }
 
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_replay_from(cv, path));
-        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        CHECK(canvas2d_replay_from(cv, path));
+        struct canvas2d_text_cache *__single c = canvas2d_canvas_text_cache(cv);
         CHECK(c->shaping_misses == 0);  // fill_text_max replayed boundary-free
         CHECK(c->glyph_misses == 0);
         CHECK(c->shaping_hits > 0);
         CHECK(c->glyph_hits > 0);
 
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 
     // Strict parsing of the new op lines (the canvas still draws after each).
-    struct canvas *__single cv = canvas(32, 32, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(32, 32, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -734,7 +734,7 @@ static void check_new_ops(void) {
         "run 0 0 0 1 43 7.224 0\n"
         "fill_text_max 4 20 50 H\n"));
     CHECK(!REPLAY(cv, "fill_text_max 4 20 H\n"));       // missing max_width
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // The shadow setters round-trip: a drop-shadowed fill_text (the gallery's emoji
@@ -747,42 +747,42 @@ static void check_shadow_ops(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.95f, 1.0f);
-        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_shadow_color_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.55f);
-        canvas_set_shadow_blur(cv, 6.0f);
-        canvas_set_shadow_offset_x(cv, 3.0f);
-        canvas_set_shadow_offset_y(cv, 4.0f);
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.2f, 0.6f, 1.0f);
-        canvas_set_font_size(cv, 28.0f);
-        canvas_fill_text(cv, "shadow", 6.0f, 50.0f);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, path));
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.95f, 0.95f, 0.95f, 1.0f);
+        canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas2d_set_shadow_color_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.55f);
+        canvas2d_set_shadow_blur(cv, 6.0f);
+        canvas2d_set_shadow_offset_x(cv, 3.0f);
+        canvas2d_set_shadow_offset_y(cv, 4.0f);
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.2f, 0.6f, 1.0f);
+        canvas2d_set_font_size(cv, 28.0f);
+        canvas2d_fill_text(cv, "shadow", 6.0f, 50.0f);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded_px, (int)sizeof recorded_px);
+        canvas2d_free(cv);
     }
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_replay_from(cv, path));
-        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        CHECK(canvas2d_replay_from(cv, path));
+        struct canvas2d_text_cache *__single c = canvas2d_canvas_text_cache(cv);
         CHECK(c->shaping_misses == 0);
         CHECK(c->glyph_misses == 0);
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 
     // Strict parse of the shadow op lines.
-    struct canvas *__single cv = canvas(32, 32, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(32, 32, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
@@ -793,7 +793,7 @@ static void check_shadow_ops(void) {
     CHECK(!REPLAY(cv, "set_shadow_color_rgba 0 0 0 srgb\n"));  // too few floats
     CHECK(!REPLAY(cv, "set_shadow_blur\n"));                // missing float
     CHECK(!REPLAY(cv, "set_shadow_offset_x 3 4\n"));        // trailing junk
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // Direction rides the shape block: the same bytes drawn under ltr and then rtl
@@ -810,23 +810,23 @@ static void check_direction_blocks(void) {
     uint8_t recorded_px[NPX];
     float w_ltr = 0.0f, w_rtl = 0.0f;
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
-        canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-        canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
-        canvas_set_font_size(cv, 20.0f);
-        canvas_fill_text(cv, mixed, 4.0f, 32.0f);
-        w_ltr = canvas_measure_text(cv, mixed);
-        canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
-        canvas_fill_text(cv, mixed, 4.0f, 70.0f);   // same bytes, other paragraph
-        w_rtl = canvas_measure_text(cv, mixed);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
-        canvas_free(cv);
+        CHECK(canvas2d_record_to(cv, path));
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
+        canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+        canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
+        canvas2d_set_font_size(cv, 20.0f);
+        canvas2d_fill_text(cv, mixed, 4.0f, 32.0f);
+        w_ltr = canvas2d_measure_text(cv, mixed);
+        canvas2d_set_direction(cv, CANVAS2D_DIRECTION_RTL);
+        canvas2d_fill_text(cv, mixed, 4.0f, 70.0f);   // same bytes, other paragraph
+        w_rtl = canvas2d_measure_text(cv, mixed);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded_px, (int)sizeof recorded_px);
+        canvas2d_free(cv);
     }
     CHECK(w_ltr > 0.0f && w_rtl > 0.0f);  // draw-measure agreement holds per
                                           // direction (same key, same line)
@@ -843,30 +843,30 @@ static void check_direction_blocks(void) {
     CHECK(count_lines(buf, n, "set_direction ") == 1);
 
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_replay_from(cv, path));
-        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        CHECK(canvas2d_replay_from(cv, path));
+        struct canvas2d_text_cache *__single c = canvas2d_canvas_text_cache(cv);
         CHECK(c->shaping_misses == 0);  // both lines came from their blocks
         CHECK(c->glyph_misses == 0);
         CHECK(c->shaping_hits > 0);
 
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
 
         // Measurement after replay reads the same per-direction lines.  (The
         // replayed program left the canvas rtl; measure each side explicitly.)
-        canvas_set_font_size(cv, 20.0f);
-        canvas_set_direction(cv, CANVAS_DIRECTION_LTR);
-        CHECK(feq_bits(canvas_measure_text(cv, mixed), w_ltr));
-        canvas_set_direction(cv, CANVAS_DIRECTION_RTL);
-        CHECK(feq_bits(canvas_measure_text(cv, mixed), w_rtl));
+        canvas2d_set_font_size(cv, 20.0f);
+        canvas2d_set_direction(cv, CANVAS2D_DIRECTION_LTR);
+        CHECK(feq_bits(canvas2d_measure_text(cv, mixed), w_ltr));
+        canvas2d_set_direction(cv, CANVAS2D_DIRECTION_RTL);
+        CHECK(feq_bits(canvas2d_measure_text(cv, mixed), w_rtl));
         CHECK(c->shaping_misses == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 

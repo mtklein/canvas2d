@@ -11,8 +11,8 @@
 //   - an in-memory record -> replay round trip with a non-default weight+style
 //     reproduces the surface byte for byte.
 
-#include "canvas.h"
-#include "cnvs_text.h"  // the cache handle: interned faces + stats
+#include "canvas2d.h"
+#include "canvas2d_text.h"  // the cache handle: interned faces + stats
 
 #include "test_util.h"
 
@@ -57,36 +57,36 @@ static int ink_bytes(uint8_t const *__counted_by(n) px, int n) {
 }
 
 // Draw `text` once under the current state into a fresh read-back buffer.
-static void render_text(struct canvas *__single cv, char const *__null_terminated text,
+static void render_text(struct canvas2d_context *__single cv, char const *__null_terminated text,
                         uint8_t *__counted_by(NPX) out) {
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);
-    canvas_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
-    canvas_fill_text(cv, text, 4.0f, 44.0f);
-    canvas_read_rgba(cv, CANVAS_CS_SRGB, out, NPX);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 0.0f);
+    canvas2d_clear_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.0f, 0.0f, 0.0f, 1.0f);
+    canvas2d_fill_text(cv, text, 4.0f, 44.0f);
+    canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, out, NPX);
 }
 
 // Bold differs from regular: a real bold face lays the text out at different
 // advances and/or paints different ink.
 static void test_bold_vs_regular(void) {
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    canvas_set_font_family(cv, "Helvetica");
-    canvas_set_font_size(cv, 32.0f);
+    canvas2d_set_font_family(cv, "Helvetica");
+    canvas2d_set_font_size(cv, 32.0f);
     char const *__null_terminated text = "Weighty";
 
-    canvas_set_font_weight(cv, 400);
-    float const w_reg = canvas_measure_text(cv, text);
+    canvas2d_set_font_weight(cv, 400);
+    float const w_reg = canvas2d_measure_text(cv, text);
     uint8_t *__counted_by(NPX) reg = malloc(NPX);
     uint8_t *__counted_by(NPX) bold = malloc(NPX);
     CHECK(reg != NULL && bold != NULL);
     if (reg && bold) {
         render_text(cv, text, reg);
-        canvas_set_font_weight(cv, 700);
-        float const w_bold = canvas_measure_text(cv, text);
+        canvas2d_set_font_weight(cv, 700);
+        float const w_bold = canvas2d_measure_text(cv, text);
         render_text(cv, text, bold);
         // Different advances and/or different ink: at least one must hold.
         CHECK(differ(w_reg, w_bold) || memcmp(reg, bold, NPX) != 0);
@@ -95,33 +95,33 @@ static void test_bold_vs_regular(void) {
         free(reg);
         free(bold);
     }
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // Italic differs from normal: a real oblique face paints different (slanted) ink.
 static void test_italic_vs_normal(void) {
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    canvas_set_font_family(cv, "Helvetica");
-    canvas_set_font_size(cv, 32.0f);
+    canvas2d_set_font_family(cv, "Helvetica");
+    canvas2d_set_font_size(cv, 32.0f);
     char const *__null_terminated text = "Slanted";
 
     uint8_t *__counted_by(NPX) up = malloc(NPX);
     uint8_t *__counted_by(NPX) it = malloc(NPX);
     CHECK(up != NULL && it != NULL);
     if (up && it) {
-        canvas_set_font_style(cv, CANVAS_FONT_STYLE_NORMAL);
+        canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_NORMAL);
         render_text(cv, text, up);
-        canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
+        canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_ITALIC);
         render_text(cv, text, it);
         CHECK(memcmp(up, it, NPX) != 0);  // the slant moved pixels
         free(up);
         free(it);
     }
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // The aliasing guard.  A family with no real italic face (Papyrus) gets a
@@ -131,30 +131,30 @@ static void test_italic_vs_normal(void) {
 // the cache identity includes weight/style.  Drawn regular FIRST, so the regular
 // glyph is cached; the italic draw must not pull that cached regular outline.
 static void test_synth_no_alias(void) {
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    canvas_set_font_family(cv, "Papyrus");
-    canvas_set_font_size(cv, 30.0f);
+    canvas2d_set_font_family(cv, "Papyrus");
+    canvas2d_set_font_size(cv, 30.0f);
     char const *__null_terminated text = "Papyrus";
 
     uint8_t *__counted_by(NPX) reg = malloc(NPX);
     uint8_t *__counted_by(NPX) it = malloc(NPX);
     CHECK(reg != NULL && it != NULL);
     if (reg && it) {
-        canvas_set_font_style(cv, CANVAS_FONT_STYLE_NORMAL);
+        canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_NORMAL);
         render_text(cv, text, reg);       // regular cached first
         CHECK(drew_anything(reg, NPX));
-        canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
+        canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_ITALIC);
         render_text(cv, text, it);        // synth italic: must not alias regular
         CHECK(drew_anything(it, NPX));
         CHECK(memcmp(reg, it, NPX) != 0);  // the synthesized slant is visible
 
         // The cache interned two distinct faces for the same family/name: the
         // regular and the synthesized italic occupy separate ids.
-        struct cnvs_text_cache *__single c = cnvs_canvas_text_cache(cv);
+        struct canvas2d_text_cache *__single c = canvas2d_canvas_text_cache(cv);
         bool saw_upright = false, saw_italic = false;
         for (int i = 0; i < c->nfonts; i++) {
             if (c->font[i].italic) {
@@ -167,83 +167,83 @@ static void test_synth_no_alias(void) {
         free(reg);
         free(it);
     }
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // Weight clamps to [100, 900]; a garbage style enum is ignored.
 static void test_clamp_and_ignore(void) {
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    canvas_set_font_family(cv, "Helvetica");
-    canvas_set_font_size(cv, 32.0f);
+    canvas2d_set_font_family(cv, "Helvetica");
+    canvas2d_set_font_size(cv, 32.0f);
     char const *__null_terminated text = "Clamp";
 
     // 50 clamps to 100, which measures like an explicit 100.
-    canvas_set_font_weight(cv, 50);
-    float const w_lo_clamped = canvas_measure_text(cv, text);
-    canvas_set_font_weight(cv, 100);
-    CHECK(exact(canvas_measure_text(cv, text), w_lo_clamped));
+    canvas2d_set_font_weight(cv, 50);
+    float const w_lo_clamped = canvas2d_measure_text(cv, text);
+    canvas2d_set_font_weight(cv, 100);
+    CHECK(exact(canvas2d_measure_text(cv, text), w_lo_clamped));
 
     // 1000 clamps to 900, which measures like an explicit 900.
-    canvas_set_font_weight(cv, 1000);
-    float const w_hi_clamped = canvas_measure_text(cv, text);
-    canvas_set_font_weight(cv, 900);
-    CHECK(exact(canvas_measure_text(cv, text), w_hi_clamped));
+    canvas2d_set_font_weight(cv, 1000);
+    float const w_hi_clamped = canvas2d_measure_text(cv, text);
+    canvas2d_set_font_weight(cv, 900);
+    CHECK(exact(canvas2d_measure_text(cv, text), w_hi_clamped));
 
     // A garbage style value is ignored: the style stays italic.
-    canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
+    canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_ITALIC);
     uint8_t *__counted_by(NPX) before = malloc(NPX);
     uint8_t *__counted_by(NPX) after = malloc(NPX);
     CHECK(before != NULL && after != NULL);
     if (before && after) {
-        canvas_set_font_weight(cv, 400);
+        canvas2d_set_font_weight(cv, 400);
         render_text(cv, text, before);
-        canvas_set_font_style(cv, (enum canvas_font_style)999);  // garbage: ignored
+        canvas2d_set_font_style(cv, (enum canvas2d_font_style)999);  // garbage: ignored
         render_text(cv, text, after);
         CHECK(memcmp(before, after, NPX) == 0);  // still italic, unchanged
         free(before);
         free(after);
     }
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // reset() restores 400 / NORMAL.
 static void test_reset_restores_default(void) {
-    struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+    struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
     CHECK(cv != NULL);
     if (!cv) {
         return;
     }
-    canvas_set_font_family(cv, "Helvetica");
-    canvas_set_font_size(cv, 32.0f);
+    canvas2d_set_font_family(cv, "Helvetica");
+    canvas2d_set_font_size(cv, 32.0f);
     char const *__null_terminated text = "Default";
 
-    float const w_default = canvas_measure_text(cv, text);  // 400, normal
-    canvas_set_font_weight(cv, 900);
-    canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
-    CHECK(differ(canvas_measure_text(cv, text), w_default));
+    float const w_default = canvas2d_measure_text(cv, text);  // 400, normal
+    canvas2d_set_font_weight(cv, 900);
+    canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_ITALIC);
+    CHECK(differ(canvas2d_measure_text(cv, text), w_default));
 
-    canvas_reset(cv);
-    canvas_set_font_family(cv, "Helvetica");  // reset cleared family + size too
-    canvas_set_font_size(cv, 32.0f);
-    CHECK(exact(canvas_measure_text(cv, text), w_default));  // back to 400/normal
+    canvas2d_reset(cv);
+    canvas2d_set_font_family(cv, "Helvetica");  // reset cleared family + size too
+    canvas2d_set_font_size(cv, 32.0f);
+    CHECK(exact(canvas2d_measure_text(cv, text), w_default));  // back to 400/normal
 
-    canvas_free(cv);
+    canvas2d_free(cv);
 }
 
 // A non-default weight+style scene for the round trip.
-static void draw_scene(struct canvas *__single cv) {
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
-    canvas_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
-    canvas_set_fill_rgba(cv, CANVAS_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
-    canvas_set_font_family(cv, "Helvetica");
-    canvas_set_font_weight(cv, 700);
-    canvas_set_font_style(cv, CANVAS_FONT_STYLE_ITALIC);
-    canvas_set_font_size(cv, 28.0f);
-    canvas_fill_text(cv, "Bold It", 6.0f, 44.0f);
+static void draw_scene(struct canvas2d_context *__single cv) {
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.95f, 0.95f, 0.9f, 1.0f);
+    canvas2d_fill_rect(cv, 0.0f, 0.0f, (float)W, (float)H);
+    canvas2d_set_fill_rgba(cv, CANVAS2D_CS_SRGB, 0.1f, 0.1f, 0.4f, 1.0f);
+    canvas2d_set_font_family(cv, "Helvetica");
+    canvas2d_set_font_weight(cv, 700);
+    canvas2d_set_font_style(cv, CANVAS2D_FONT_STYLE_ITALIC);
+    canvas2d_set_font_size(cv, 28.0f);
+    canvas2d_fill_text(cv, "Bold It", 6.0f, 44.0f);
 }
 
 // Record a bold-italic scene, then replay it onto a fresh canvas: the surfaces
@@ -255,29 +255,29 @@ static void test_record_replay_roundtrip(void) {
 
     uint8_t recorded_px[NPX];
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_record_to(cv, path));
+        CHECK(canvas2d_record_to(cv, path));
         draw_scene(cv);
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, recorded_px, (int)sizeof recorded_px);
-        canvas_free(cv);  // flush + close
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, recorded_px, (int)sizeof recorded_px);
+        canvas2d_free(cv);  // flush + close
     }
     CHECK(drew_anything(recorded_px, NPX));
 
     {
-        struct canvas *__single cv = canvas(W, H, CANVAS_CS_SRGB);
+        struct canvas2d_context *__single cv = canvas2d(W, H, CANVAS2D_CS_SRGB);
         CHECK(cv != NULL);
         if (!cv) {
             return;
         }
-        CHECK(canvas_replay_from(cv, path));
+        CHECK(canvas2d_replay_from(cv, path));
         uint8_t replayed_px[NPX];
-        canvas_read_rgba(cv, CANVAS_CS_SRGB, replayed_px, (int)sizeof replayed_px);
+        canvas2d_read_rgba(cv, CANVAS2D_CS_SRGB, replayed_px, (int)sizeof replayed_px);
         CHECK(memcmp(recorded_px, replayed_px, sizeof recorded_px) == 0);
-        canvas_free(cv);
+        canvas2d_free(cv);
     }
 }
 

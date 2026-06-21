@@ -5,11 +5,11 @@
 #include "bench_reps.h"
 #include "bench_util.h"
 
-#include "cnvs_cover.h"
-#include "cnvs_geom.h"
-#include "cnvs_path.h"
-#include "cnvs_png.h"
-#include "cnvs_stroke.h"
+#include "canvas2d_cover.h"
+#include "canvas2d_geom.h"
+#include "canvas2d_path.h"
+#include "canvas2d_png.h"
+#include "canvas2d_stroke.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,10 +19,10 @@ int main(void) {
     // unchanged); `ninja profile` raises it for a longer, samplable run.
     int const reps = bench_reps();
 
-    struct cnvs_path path;
-    cnvs_path_init(&path);
-    struct cnvs_verts verts = { .data = NULL, .nverts = 0, .cap = 0 };
-    struct cnvs_cover cover = { .acc = NULL, .cap = 0 };
+    struct canvas2d_path path;
+    canvas2d_path_init(&path);
+    struct canvas2d_verts verts = { .data = NULL, .nverts = 0, .cap = 0 };
+    struct canvas2d_cover cover = { .acc = NULL, .cap = 0 };
 
     int const w = 512;
     int const h = 512;
@@ -32,32 +32,32 @@ int main(void) {
 
     for (int rep = 0; rep < reps; rep++) {
         for (int f = 0; f < frames && cov; f++) {
-            cnvs_path_reset(&path);
+            canvas2d_path_reset(&path);
 
             // Concave, self-intersecting star polygons -> stress the fill rasterizer.
             bench_stars(&path, 40, (float)w, (float)h);
 
             // Cubic Beziers -> stress adaptive de Casteljau flattening.
             for (int k = 0; k < 40; k++) {
-                cnvs_path_move_to(&path, bench_rpt((float)w, (float)h));
-                cnvs_path_cubic_to(&path, bench_rpt((float)w, (float)h),
+                canvas2d_path_move_to(&path, bench_rpt((float)w, (float)h));
+                canvas2d_path_cubic_to(&path, bench_rpt((float)w, (float)h),
                                    bench_rpt((float)w, (float)h),
                                    bench_rpt((float)w, (float)h), 0.25f);
             }
 
             bench_cover_path(&cover, w, h, &path);
-            cnvs_cover_resolve(&cover, w, h, CNVS_NONZERO, cov);
+            canvas2d_cover_resolve(&cover, w, h, CANVAS2D_NONZERO, cov);
             sink += (double)cov[(h / 2) * w + w / 2];
 
-            cnvs_verts_reset(&verts);
+            canvas2d_verts_reset(&verts);
             for (int s = 0; s < path.nsubs; s++) {
-                cnvs_subpath const sp = path.subs[s];
+                canvas2d_subpath const sp = path.subs[s];
                 if (sp.count < 2) {
                     continue;
                 }
-                cnvs_vec2 *poly = path.pts + sp.start;
-                cnvs_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
-                                     CNVS_JOIN_MITER, CNVS_CAP_BUTT, 10.0f, &verts);
+                canvas2d_vec2 *poly = path.pts + sp.start;
+                canvas2d_stroke_polyline(poly, sp.count, sp.closed, 2.0f,
+                                     CANVAS2D_JOIN_MITER, CANVAS2D_CAP_BUTT, 10.0f, &verts);
             }
             sink += (double)verts.nverts;
         }
@@ -72,7 +72,7 @@ int main(void) {
                 px[i] = (uint16_t)((i * 37 + frames) & 0xFFFF);
             }
             for (int i = 0; i < 40; i++) {
-                if (cnvs_png_write("/dev/null", px, iw, ih)) {
+                if (canvas2d_png_write("/dev/null", px, iw, ih)) {
                     sink += 1.0;
                 }
             }
@@ -80,9 +80,9 @@ int main(void) {
         }
     }
 
-    cnvs_path_free(&path);
-    cnvs_verts_free(&verts);
-    cnvs_cover_free(&cover);
+    canvas2d_path_free(&path);
+    canvas2d_verts_free(&verts);
+    canvas2d_cover_free(&cover);
     free(cov);
 
     fprintf(stderr, "sink=%.0f\n", sink);  // defeat dead-code elimination

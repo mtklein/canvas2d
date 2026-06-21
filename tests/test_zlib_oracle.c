@@ -24,7 +24,7 @@
 // harness) gets -lz on its own link edge (configure.py's EXTRA_LIBS); no
 // canvas library object in any variant links it.
 
-#include "cnvs_zlib.h"
+#include "canvas2d_zlib.h"
 #include "test_util.h"
 
 #include <stdlib.h>
@@ -72,13 +72,13 @@ static int ref_inflate(uint8_t *__counted_by(dcap) dst, int dcap,
 // (a) Our deflate must be real zlib: the reference decoder reproduces the
 // input from our stream and consumes every byte of it (no slack emission).
 static void ours_to_ref(uint8_t const *__counted_by(n) src, int n) {
-    int const zcap = cnvs_zlib_bound(n);
+    int const zcap = canvas2d_zlib_bound(n);
     int const pcap = n > 0 ? n : 1;
     uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
     uint8_t *__counted_by_or_null(pcap) back = malloc((size_t)pcap);
     CHECK(z != NULL && back != NULL);
     if (z && back) {
-        int const zn = cnvs_zlib_deflate(z, zcap, src, n);
+        int const zn = canvas2d_zlib_deflate(z, zcap, src, n);
         CHECK(zn > 0);
         if (zn > 0) {
             int consumed = 0;
@@ -103,7 +103,7 @@ static void ref_to_ours(uint8_t const *__counted_by(n) src, int n) {
         for (int l = 0; l < (int)(sizeof ref_levels / sizeof ref_levels[0]); l++) {
             uLongf zlen = (uLongf)zcap;
             CHECK(compress2(z, &zlen, src, (uLong)n, ref_levels[l]) == Z_OK);
-            CHECK(cnvs_zlib_inflate(back, n, z, (int)zlen) == n);
+            CHECK(canvas2d_zlib_inflate(back, n, z, (int)zlen) == n);
             CHECK(n == 0 || memcmp(back, src, (size_t)n) == 0);
         }
     }
@@ -125,14 +125,14 @@ static void agree(uint8_t const *__counted_by(zn) zs, int zn, int pcap,
                   uint8_t *__counted_by(pcap) ours, uint8_t *__counted_by(pcap) refs) {
     int consumed = 0;
     int const r = ref_inflate(refs, pcap, zs, zn, &consumed);
-    int o = cnvs_zlib_inflate(ours, pcap, zs, zn);
+    int o = canvas2d_zlib_inflate(ours, pcap, zs, zn);
     if (r < 0) {
         CHECK(o == -1);  // ours never accepts what the reference rejects
         return;
     }
     if (consumed < zn) {
         CHECK(o == -1);  // the documented strictness delta, one way only
-        o = cnvs_zlib_inflate(ours, pcap, zs, consumed);
+        o = canvas2d_zlib_inflate(ours, pcap, zs, consumed);
     }
     CHECK(o == r);
     CHECK(r == 0 || memcmp(ours, refs, (size_t)r) == 0);
@@ -250,7 +250,7 @@ static void test_corpus(void) {
 // and our deflate's fixed-Huffman stream, each truncated and bit-flipped.
 static void test_corruption_agreement(void) {
     enum { pn = 20001, pcap = pn + 8 };
-    int const zcap = cnvs_zlib_bound(pn);  // > compressBound(pn): fits both encoders
+    int const zcap = canvas2d_zlib_bound(pn);  // > compressBound(pn): fits both encoders
     uint8_t *__counted_by_or_null(pn) plain = malloc((size_t)pn);
     uint8_t *__counted_by_or_null(zcap) z = malloc((size_t)zcap);
     CHECK(plain != NULL && z != NULL);
@@ -265,7 +265,7 @@ static void test_corruption_agreement(void) {
             CHECK(compress2(z, &zlen, plain, (uLong)pn, levels[l]) == Z_OK);
             corruptions(z, (int)zlen, pcap);
         }
-        int const zn = cnvs_zlib_deflate(z, zcap, plain, pn);
+        int const zn = canvas2d_zlib_deflate(z, zcap, plain, pn);
         CHECK(zn > 0);
         if (zn > 0) {
             corruptions(z, zn, pcap);
@@ -284,7 +284,7 @@ static void test_corruption_agreement(void) {
 static void test_trailing_garbage_delta(void) {
     uint8_t const plain[8] = { 'c', 'a', 'n', 'v', 'a', 's', '2', 'd' };
     uint8_t z[64];
-    int const zn = cnvs_zlib_deflate(z, 60, plain, (int)sizeof plain);
+    int const zn = canvas2d_zlib_deflate(z, 60, plain, (int)sizeof plain);
     CHECK(zn > 0 && zn <= 60);
     if (zn <= 0 || zn > 60) {
         return;
@@ -299,8 +299,8 @@ static void test_trailing_garbage_delta(void) {
         CHECK(ref_inflate(out, (int)sizeof out, z, zn + extra, &consumed) == 8);
         CHECK(consumed == zn);  // the reference stopped at stream end...
         CHECK(memcmp(out, plain, sizeof plain) == 0);
-        CHECK(cnvs_zlib_inflate(out, (int)sizeof out, z, zn + extra) == -1);  // ...ours refuses
-        CHECK(cnvs_zlib_inflate(out, (int)sizeof out, z, zn) == 8);  // the bare stream is fine
+        CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, z, zn + extra) == -1);  // ...ours refuses
+        CHECK(canvas2d_zlib_inflate(out, (int)sizeof out, z, zn) == 8);  // the bare stream is fine
         CHECK(memcmp(out, plain, sizeof plain) == 0);
     }
 }
